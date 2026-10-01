@@ -106,7 +106,7 @@ describe("the dependants queue says how much is waiting (e2e)", () => {
     filedId = res.body.id as string;
     // One statement: a desk login another suite deletes mid-read is wholly in or out.
     const told = await db.user.findMany({
-      where: { notifications: { some: { kind: "REQUEST_WAITING", dependentId: filedId } } },
+      where: { notifications: { some: { kind: "REQUEST_WAITING", subjectId: filedId } } },
       select: { role: true, employeeId: true },
     });
     assert.ok(told.length > 0, "nobody was told a dependant waits to be decided");
@@ -124,7 +124,7 @@ describe("the dependants queue says how much is waiting (e2e)", () => {
       .send({ approve: true });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const told = await db.notification.findMany({
-      where: { kind: "REQUEST_DECIDED", dependentId: filedId },
+      where: { kind: "REQUEST_DECIDED", subjectId: filedId },
       select: { approved: true, user: { select: { employeeId: true } } },
     });
     assert.equal(told.length, 1, "the answer reached nobody, or somebody twice");

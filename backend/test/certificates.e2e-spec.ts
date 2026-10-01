@@ -272,10 +272,10 @@ describe("letters of employment and income (e2e)", () => {
   });
 
   it("tells the desk a letter is waiting, and the asker when it is decided", async () => {
-    const told = await db.notification.count({ where: { kind: "REQUEST_WAITING", certificateId: asked } });
+    const told = await db.notification.count({ where: { kind: "REQUEST_WAITING", subjectId: asked } });
     assert.ok(told > 0, "nobody on the desk was told a letter is waiting");
     const decided = await db.notification.findMany({
-      where: { kind: "REQUEST_DECIDED", certificateId: asked },
+      where: { kind: "REQUEST_DECIDED", subjectId: asked },
       select: { approved: true, user: { select: { email: true } } },
     });
     assert.deepEqual(decided.map((one) => [one.user.email, one.approved]), [[EMAIL, true]]);

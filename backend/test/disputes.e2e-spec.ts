@@ -226,7 +226,7 @@ describe("disputing a payslip (e2e)", () => {
 
   it("tells the pay desk a dispute is waiting", async () => {
     const told = await db.user.findMany({
-      where: { notifications: { some: { kind: "REQUEST_WAITING", payslipId: issuedSlipId } } },
+      where: { notifications: { some: { kind: "REQUEST_WAITING", subjectId: disputeId } } },
       select: { role: true },
     });
     assert.ok(told.length > 0, "nobody was told a dispute is waiting");
@@ -403,7 +403,10 @@ describe("disputing a payslip (e2e)", () => {
       where: { userId: login.id, kind: "DISPUTE_ANSWERED" },
     });
     assert.ok(notice, "nobody told the person the answer had arrived");
-    assert.equal(notice.payslipId, issuedSlipId);
+    assert.deepEqual([notice.subjectType, notice.subjectId], ["DISPUTE", disputeId]);
+    const read = await request(http).get(`/notifications/${notice.id}`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(read.status, 200, JSON.stringify(read.body));
+    assert.deepEqual(read.body.subject.parent, { type: "PAYSLIP", id: issuedSlipId }, "the answer does not open the payslip it is about");
   });
 
   it("files the dispute and its answer under the payslip", async () => {

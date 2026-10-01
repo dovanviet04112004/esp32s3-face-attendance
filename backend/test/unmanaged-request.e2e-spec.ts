@@ -66,7 +66,7 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
   async function toldAbout(requestId: string): Promise<{ role: string; employeeId: number | null }[]> {
     // One statement: a desk login another suite deletes mid-read is wholly in or out.
     return db.user.findMany({
-      where: { notifications: { some: { kind: "REQUEST_WAITING", requestId } } },
+      where: { notifications: { some: { kind: "REQUEST_WAITING", subjectId: requestId } } },
       select: { role: true, employeeId: true },
     });
   }
@@ -123,7 +123,7 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
 
   it("tells somebody it is waiting", async () => {
     const told = await db.notification.count({
-      where: { kind: "REQUEST_WAITING", requestId: filed.get(LONE) },
+      where: { kind: "REQUEST_WAITING", subjectId: filed.get(LONE) },
     });
     assert.ok(told > 0, "nobody was told this request is waiting");
   });

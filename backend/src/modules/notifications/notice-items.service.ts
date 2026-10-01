@@ -494,19 +494,10 @@ export class NoticeItemsService {
         ? []
         : await this.db.$queryRaw<Seated[]>`
             INSERT INTO "Notification" ("id", "userId", "kind", "itemId", "subjectType", "subjectId",
-                                        "subjectEmployeeId", "dedupKey", "facts", "readAt", "requestId", "advanceId",
-                                        "certificateId", "profileChangeId", "dependentId", "payslipId", "approved",
-                                        "contractId")
+                                        "subjectEmployeeId", "dedupKey", "facts", "readAt", "approved")
             SELECT gen_random_uuid()::text, seat."userId", ${QUEUE_KIND[item.queue]}::"NoticeKind", i."id", i."subjectType",
                    i."subjectId", i."employeeId", i."key", i."facts", CASE WHEN ${quiet}::boolean THEN now() END,
-                   CASE WHEN i."subjectType" = 'REQUEST' THEN i."subjectId" END,
-                   CASE WHEN i."subjectType" = 'ADVANCE' THEN i."subjectId" END,
-                   CASE WHEN i."subjectType" = 'CERTIFICATE' THEN i."subjectId" END,
-                   CASE WHEN i."subjectType" = 'PROFILE_CHANGE' THEN i."subjectId" END,
-                   CASE WHEN i."subjectType" = 'DEPENDENT' THEN i."subjectId" END,
-                   (SELECT d."payslipId" FROM "PayslipDispute" d WHERE i."subjectType" = 'DISPUTE' AND d."id" = i."subjectId"),
-                   CASE WHEN i."queue" = 'ADVANCES_TO_PAY' THEN true END,
-                   CASE WHEN i."subjectType" = 'CONTRACT' THEN i."subjectId" END
+                   CASE WHEN i."queue" = 'ADVANCES_TO_PAY' THEN true END
               FROM "NoticeItem" i
              CROSS JOIN unnest(${audience}::text[]) AS seat("userId")
               JOIN "User" u ON u."id" = seat."userId"

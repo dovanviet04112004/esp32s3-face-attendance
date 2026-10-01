@@ -30,7 +30,6 @@ interface Row {
   category: string;
   readAt: string | null;
   archivedAt: string | null;
-  requestId: string | null;
   subject: { type: string; id: string | null; hidden: boolean; person: { code: string } | null } | null;
   item: { key: string; state: string } | null;
 }
@@ -57,7 +56,7 @@ describe("the bell's list, counts and marks (e2e)", () => {
   const post = (who: Who, path: string, body: object) =>
     request(http).post(path).set("Authorization", `Bearer ${tokenOf.get(who)}`).send(body);
 
-  // A decided request about someone, as the old bell wrote them: subject, key and the reference the bell still reads.
+  // A decided request about someone, as the writer stores it: subject and key, the subject alone naming the request.
   function decided(userId: string, about: Who, at: Date, requestId: string = randomUUID()): Prisma.NotificationCreateManyInput {
     return {
       userId,
@@ -65,7 +64,6 @@ describe("the bell's list, counts and marks (e2e)", () => {
       subjectType: "REQUEST",
       subjectId: requestId,
       subjectEmployeeId: idOf.get(about),
-      requestId,
       approved: true,
       facts: { outcome: "APPROVED" },
       dedupKey: `request-decided:request:${requestId}`,
@@ -142,7 +140,7 @@ describe("the bell's list, counts and marks (e2e)", () => {
     const res = await get("reader", `/notifications?search=${codeOf("needle")}`);
     const page = res.body as PageBody;
     assert.equal(page.total, 1, "the search did not narrow to the one row");
-    assert.equal(page.rows[0].requestId, needleRequest);
+    assert.equal(page.rows[0].subject?.id, needleRequest);
     assert.equal(page.rows[0].subject?.person?.code, codeOf("needle"));
   });
 
@@ -168,7 +166,6 @@ describe("the bell's list, counts and marks (e2e)", () => {
         subjectType: "REQUEST",
         subjectId,
         subjectEmployeeId: idOf.get("plain"),
-        requestId: subjectId,
         dedupKey: itemKey,
       },
     });
@@ -193,7 +190,7 @@ describe("the bell's list, counts and marks (e2e)", () => {
   it("marks every row about one record, as its page does on opening", async () => {
     const res = await post("reader", "/notifications/read", { subject: { type: "REQUEST", id: needleRequest } });
     assert.equal(res.body.changed, 1);
-    const row = await db.notification.findFirstOrThrow({ where: { userId: loginOf.get("reader"), requestId: needleRequest } });
+    const row = await db.notification.findFirstOrThrow({ where: { userId: loginOf.get("reader"), subjectId: needleRequest } });
     assert.ok(row.readAt);
   });
 
@@ -201,7 +198,7 @@ describe("the bell's list, counts and marks (e2e)", () => {
     const res = await post("reader", "/notifications/archive", { all: true, search: codeOf("needle") });
     assert.equal(res.body.changed, 1);
     const archived = (await get("reader", "/notifications?status=archived")).body as PageBody;
-    assert.deepEqual(archived.rows.map((row) => row.requestId), [needleRequest]);
+    assert.deepEqual(archived.rows.map((row) => row.subject?.id), [needleRequest]);
     assert.equal(((await get("reader", "/notifications")).body as PageBody).total, CROWD, "the put-away row still listed");
     assert.equal((await post("reader", "/notifications/unarchive", { all: true, status: "archived" })).body.changed, 1);
   });
@@ -228,7 +225,8 @@ describe("the bell's list, counts and marks (e2e)", () => {
     const about = page.rows.find((row) => row.kind === "REQUEST_DECIDED");
     assert.equal(about?.subject?.hidden, true, "an employee saw a name outside their reach");
     assert.equal(about?.subject?.person, null);
-    assert.equal(about?.requestId, null, "a hidden subject left its id behind");
+    assert.equal(about?.subject?.id, null, "a hidden subject left its id behind");
+    assert.equal("requestId" in (about ?? {}), false, "a row still carries the reference column the contract drops");
     assert.equal(((await get("plain", `/notifications?search=${codeOf("needle")}`)).body as PageBody).total, 0);
   });
 

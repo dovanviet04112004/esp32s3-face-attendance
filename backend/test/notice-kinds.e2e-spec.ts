@@ -130,7 +130,8 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     const first = await toldOf();
     assert.ok(first, "whoever pressed run was not told");
     assert.equal(first.subjectType, "PAYROLL_RUN");
-    assert.equal(first.periodId, period.id, "the notice opens no period");
+    const read = await request(app.getHttpServer()).get(`/notifications/${first.id}`).set("Authorization", `Bearer ${tokenOf.get("pay")}`);
+    assert.deepEqual(read.body.subject?.parent, { type: "PAYROLL_PERIOD", id: period.id }, "the notice opens no period");
     assert.equal(factsOf(first).failed, false);
     assert.equal(factsOf(first).payslips, 0);
     await db.notification.update({ where: { id: first.id }, data: { readAt: new Date() } });

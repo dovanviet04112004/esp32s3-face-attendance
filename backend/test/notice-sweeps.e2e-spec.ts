@@ -74,8 +74,8 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     return db.noticeItem.findUniqueOrThrow({ where: { key: itemKey(queue, id) } });
   }
 
-  function stalledFor(ref: "advanceId" | "certificateId" | "profileChangeId" | "dependentId", id: string) {
-    return db.notification.findFirst({ where: { userId: loginOf.get("asker"), kind: "REQUEST_STALLED", [ref]: id } });
+  function stalledFor(id: string) {
+    return db.notification.findFirst({ where: { userId: loginOf.get("asker"), kind: "REQUEST_STALLED", subjectId: id } });
   }
 
   async function sweep(): Promise<void> {
@@ -128,18 +128,18 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     await stalled.sweep();
 
     const cases = [
-      ["ADVANCES_TO_DECIDE", advance, "advanceId", "desk"],
-      ["CERTIFICATES", letter, "certificateId", "desk"],
-      ["PROFILE_CHANGES", change, "profileChangeId", "desk"],
-      ["DEPENDENTS", dependant, "dependentId", "pay"],
+      ["ADVANCES_TO_DECIDE", advance, "desk"],
+      ["CERTIFICATES", letter, "desk"],
+      ["PROFILE_CHANGES", change, "desk"],
+      ["DEPENDENTS", dependant, "pay"],
     ] as const;
-    for (const [queue, id, ref, holder] of cases) {
+    for (const [queue, id, holder] of cases) {
       const item = await itemOf(queue, id);
       assert.equal(item.lastMark, 3, `${queue} did not speak at its third day`);
       const seat = await db.notification.findFirstOrThrow({ where: { itemId: item.id, userId: loginOf.get(holder) } });
       assert.equal(seat.remindCount, 1, `${queue}: ${holder} was not reminded`);
       assert.equal(seat.readAt, null);
-      const told = await stalledFor(ref, id);
+      const told = await stalledFor(id);
       assert.equal(told?.daysWaited, 3, `${queue}: the asker was not told how long it has waited`);
     }
   });
@@ -152,7 +152,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     assert.equal(item.lastMark, 7);
     const seat = await db.notification.findFirstOrThrow({ where: { itemId: item.id, userId: loginOf.get("desk") } });
     assert.equal(seat.remindCount, 1, "two sweeps both spoke");
-    assert.equal((await stalledFor("certificateId", letter))?.remindCount, 0, "the asker heard the mark twice");
+    assert.equal((await stalledFor(letter))?.remindCount, 0, "the asker heard the mark twice");
   });
 
   it("says a missed mark once, at the highest mark passed", async () => {
@@ -162,7 +162,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     await stalled.sweep();
     await stalled.sweep();
     assert.equal((await itemOf("DEPENDENTS", dependant)).lastMark, 7);
-    const told = await stalledFor("dependentId", dependant);
+    const told = await stalledFor(dependant);
     assert.equal(told?.remindCount, 0, "a caught-up mark was said more than once");
     assert.equal(told?.daysWaited, 9);
   });
@@ -201,7 +201,8 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     const seat = await db.notification.findFirstOrThrow({ where: { itemId: item.id, userId: loginOf.get("pay") } });
     assert.equal(seat.remindCount, 2, "the overdue mark was said other than once");
     const told = await db.notification.findFirst({ where: { userId: loginOf.get("asker"), kind: "REQUEST_STALLED", subjectId: id } });
-    assert.equal(told?.payslipId, slip.id, "the asker's notice does not open the disputed payslip");
+    const shown = await request(app.getHttpServer()).get(`/notifications/${told?.id}`).set("Authorization", `Bearer ${tokenOf.get("asker")}`);
+    assert.deepEqual(shown.body.subject?.parent, { type: "PAYSLIP", id: slip.id }, "the asker's notice does not open the disputed payslip");
   });
 
   it("opens contract work for the desk a month out, reminds at 15, warns at 7 once, and closes it renewed", async () => {
@@ -213,7 +214,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     assert.equal(item.level, "ACTION");
     assert.equal((await seatOf(item.key, "desk"))?.readAt, null, "the desk was not told");
     assert.equal(await seatOf(item.key, "renewed"), null, "the signer sits in the group of their own contract");
-    const signer = await db.notification.findFirst({ where: { kind: "CONTRACT_ENDING", contractId: held.id } });
+    const signer = await db.notification.findFirst({ where: { kind: "CONTRACT_ENDING", subjectId: held.id } });
     assert.equal(signer?.daysLeft, 30, "the signer's own notice was not written");
 
     await db.employmentContract.update({ where: { id: held.id }, data: { endDate: day(15) } });

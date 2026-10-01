@@ -105,7 +105,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   it("tells the desk, and tells it about this advance", async () => {
     // One statement: a desk login another suite deletes mid-read is wholly in or out.
     const told = await db.user.findMany({
-      where: { notifications: { some: { kind: "REQUEST_WAITING", advanceId: filedId } } },
+      where: { notifications: { some: { kind: "REQUEST_WAITING", subjectId: filedId } } },
       select: { role: true, employeeId: true },
     });
     assert.ok(told.length > 0, "nobody was told an advance is waiting");
@@ -180,7 +180,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     assert.equal(res.body.state, "APPROVED");
 
     const told = await db.notification.findMany({
-      where: { kind: "REQUEST_DECIDED", advanceId: filedId },
+      where: { kind: "REQUEST_DECIDED", subjectId: filedId },
       select: { approved: true, user: { select: { employeeId: true } } },
     });
     assert.equal(told.length, 1);
@@ -191,7 +191,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   it("hands the approved advance to the desk that pays it, and never to the asker", async () => {
     // One statement: a desk login another suite deletes mid-read is wholly in or out.
     const told = await db.user.findMany({
-      where: { notifications: { some: { kind: "REQUEST_WAITING", advanceId: filedId, approved: true } } },
+      where: { notifications: { some: { kind: "REQUEST_WAITING", subjectId: filedId, approved: true } } },
       select: { role: true, employeeId: true },
     });
     assert.ok(told.length > 0, "nobody was told an approved advance waits to be paid");
@@ -283,7 +283,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
 
   it("tells the asker once that the money went out", async () => {
     const told = await db.notification.findMany({
-      where: { kind: "ADVANCE_PAID", advanceId: filedId },
+      where: { kind: "ADVANCE_PAID", subjectId: filedId },
       select: { user: { select: { employeeId: true } } },
     });
     assert.equal(told.length, 1, "paying an advance told nobody, or told somebody twice");

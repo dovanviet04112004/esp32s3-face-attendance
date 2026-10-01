@@ -322,10 +322,14 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
 
     const steadySlip = issued.find((one) => one.employeeId === steadyId);
     const told = await db.notification.findMany({
-      where: { kind: "PAYSLIP_ISSUED", periodId, user: { email: STEADY_EMAIL } },
-      select: { payslipId: true },
+      where: { kind: "PAYSLIP_ISSUED", subjectId: { in: issued.map((one) => one.id) }, user: { email: STEADY_EMAIL } },
+      select: { subjectType: true, subjectId: true },
     });
-    assert.deepEqual(told.map((one) => one.payslipId), [steadySlip?.id], "the notice does not open the payslip it is about");
+    assert.deepEqual(
+      told.map((one) => [one.subjectType, one.subjectId]),
+      [["PAYSLIP", steadySlip?.id]],
+      "the notice does not open the payslip it is about",
+    );
     const settled = await db.salaryAdvance.findUniqueOrThrow({ where: { id: carried.id } });
     assert.equal(settled.state, "SETTLED");
     assert.equal(settled.payslipId, steadySlip?.id);

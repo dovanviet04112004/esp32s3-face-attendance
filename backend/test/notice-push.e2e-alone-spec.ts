@@ -145,7 +145,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     assert.equal((await post("boss", `/requests/${id}/decide`, { approve: true })).status, 201);
     const [decided] = await pushesTo("asker", 1);
     assert.ok(decided, "the asker got no push for the answer");
-    const row = await db.notification.findFirstOrThrow({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", requestId: id } });
+    const row = await db.notification.findFirstOrThrow({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", subjectId: id } });
     assert.equal(decided.body.id, row.id, "the push names some other row");
     assert.equal(decided.body.tag, row.dedupKey);
     assert.ok(!JSON.stringify(decided.body).includes(RUN), "a name reached the lock screen");
@@ -183,7 +183,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     assert.equal((await post("boss", `/requests/${id}/decide`, { approve: false, note: "e2e" })).status, 201);
     await new Promise((done) => setTimeout(done, 1500));
     assert.equal((await pushesTo("asker", 0)).length, at, "a push the person turned off went out");
-    const row = await db.notification.findFirst({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", requestId: id } });
+    const row = await db.notification.findFirst({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", subjectId: id } });
     assert.ok(row && row.archivedAt === null, "turning push off silenced the bell too");
   });
 

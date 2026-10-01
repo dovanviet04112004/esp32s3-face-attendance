@@ -53,7 +53,7 @@ describe("stale requests (e2e)", () => {
   }
 
   function noticesFor(requestId: string) {
-    return db.notification.findMany({ where: { requestId }, orderBy: { kind: "asc" } });
+    return db.notification.findMany({ where: { subjectId: requestId }, orderBy: { kind: "asc" } });
   }
 
   before(async () => {
@@ -86,7 +86,7 @@ describe("stale requests (e2e)", () => {
   });
 
   after(async () => {
-    await db.notification.deleteMany({ where: { requestId: { in: filed } } });
+    await db.notification.deleteMany({ where: { subjectId: { in: filed } } });
     await db.request.deleteMany({ where: { id: { in: filed } } });
     await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });
@@ -140,7 +140,7 @@ describe("stale requests (e2e)", () => {
   it("speaks again on one row at the next mark", async () => {
     const id = await fileAt(3);
     await stale.sweep();
-    await db.notification.updateMany({ where: { requestId: id }, data: { readAt: new Date() } });
+    await db.notification.updateMany({ where: { subjectId: id }, data: { readAt: new Date() } });
     await age(id, 7);
     await stale.sweep();
     const rows = await noticesFor(id);

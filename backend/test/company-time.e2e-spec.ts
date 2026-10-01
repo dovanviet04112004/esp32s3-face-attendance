@@ -78,7 +78,7 @@ describe("company time (e2e)", () => {
   }
 
   async function sweep(): Promise<void> {
-    await db.notification.deleteMany({ where: { requestId: { in: filed } } });
+    await db.notification.deleteMany({ where: { subjectId: { in: filed } } });
     await db.request.deleteMany({ where: { id: { in: filed } } });
     await db.attendanceRecord.deleteMany({ where: { deviceId: DEVICE } });
     await db.user.deleteMany({ where: { email: { in: CODES.map(MAIL) } } });
@@ -253,7 +253,7 @@ describe("company time (e2e)", () => {
       filed.push(row.id);
       return row.id;
     };
-    const stalledOf = (id: string) => db.notification.findFirst({ where: { requestId: id, kind: "REQUEST_STALLED" } });
+    const stalledOf = (id: string) => db.notification.findFirst({ where: { subjectId: id, kind: "REQUEST_STALLED" } });
     // 23:50 on the 9th in Vietnam, the 9th in UTC too: five days by the company, four by UTC.
     const five = await fileAt(new Date("2031-03-09T16:50:00.000Z"), "2031-05-05");
     // 08:00 on the 11th in Vietnam, 01:00 UTC: three days by the company, two by UTC.
@@ -282,7 +282,7 @@ describe("company time (e2e)", () => {
     const onMark = await contractOf(ENDING_30, "2031-04-13");
     await alerts.sweep(HALF_PAST_MIDNIGHT);
 
-    const toldOf = (id: string) => db.notification.findFirst({ where: { kind: "CONTRACT_ENDING", contractId: id } });
+    const toldOf = (id: string) => db.notification.findFirst({ where: { kind: "CONTRACT_ENDING", subjectId: id } });
     assert.equal((await toldOf(onMark))?.daysLeft, 30, "30 days left by the company's calendar was not told");
     assert.equal((await toldOf(early))?.daysLeft, 29, "29 days left was counted from UTC midnight");
   });

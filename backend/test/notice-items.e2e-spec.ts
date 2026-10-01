@@ -147,7 +147,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
 
     const late = await post("deskA", `/requests/${id}/decide`, { approve: false, note: "e2e" });
     assert.equal(late.status, 409, "a second decision was not answered as already handled");
-    const told = await db.notification.count({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", requestId: id } });
+    const told = await db.notification.count({ where: { userId: loginOf.get("asker"), kind: "REQUEST_DECIDED", subjectId: id } });
     assert.equal(told, 1, "the asker heard the decision other than once");
   });
 
@@ -162,7 +162,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.deepEqual(answers.map((one) => one.status).sort(), [201, 409]);
     const winner = answers[0].status === 201 ? "deskA" : "deskB";
     await closedFor(item, winner, "DONE", "APPROVED");
-    const told = await db.notification.count({ where: { userId: loginOf.get("orphan"), kind: "REQUEST_DECIDED", requestId: id } });
+    const told = await db.notification.count({ where: { userId: loginOf.get("orphan"), kind: "REQUEST_DECIDED", subjectId: id } });
     assert.equal(told, 1);
   });
 
@@ -292,7 +292,8 @@ describe("work a group shares, closed once for all (e2e)", () => {
     const id = raised.body.id as string;
     const item = await itemOf("DISPUTES", id);
     const payRow = await seatOf(item, "pay");
-    assert.equal(payRow?.payslipId, slip.id, "the desk's row lost the slip the bell opens");
+    const shown = await request(http).get(`/notifications/${payRow?.id}`).set("Authorization", `Bearer ${tokenOf.get("pay")}`);
+    assert.deepEqual(shown.body.subject?.parent, { type: "PAYSLIP", id: slip.id }, "the desk's row lost the slip the bell opens");
 
     const answered = await post("pay", `/payslip-disputes/${id}/answer`, { outcome: "REJECTED", answer: "Đã đối chiếu" });
     assert.equal(answered.status, 201, JSON.stringify(answered.body));

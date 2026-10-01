@@ -251,7 +251,7 @@ describe("who the feed talks to (e2e)", () => {
     assert.equal(answer?.body.kind, "REQUEST_DECIDED");
     // The message names the row and nothing more; the row carries what it is about (KEHOACH 9.21.4).
     const row = await db.notification.findUniqueOrThrow({ where: { id: String(answer?.body.id) } });
-    assert.equal(row.requestId, requestId);
+    assert.deepEqual([row.subjectType, row.subjectId], ["REQUEST", requestId]);
     assert.equal(row.approved, false);
     assert.deepEqual(stranger.heard, [], "an answer reached somebody outside the tree");
     under.socket.close();

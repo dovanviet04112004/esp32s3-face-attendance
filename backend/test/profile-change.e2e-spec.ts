@@ -424,10 +424,10 @@ describe("changing a personal detail through an approval (e2e)", () => {
   });
 
   it("tells the desk a change is waiting, and the person when it is decided", async () => {
-    const waiting = await db.notification.count({ where: { kind: "REQUEST_WAITING", profileChangeId: bankChange } });
+    const waiting = await db.notification.count({ where: { kind: "REQUEST_WAITING", subjectId: bankChange } });
     assert.ok(waiting > 0, "nobody on the desk was told a change is waiting");
     const decided = await db.notification.findMany({
-      where: { kind: "REQUEST_DECIDED", profileChangeId: bankChange },
+      where: { kind: "REQUEST_DECIDED", subjectId: bankChange },
       select: { approved: true, user: { select: { employeeId: true } } },
     });
     assert.deepEqual(decided.map((one) => [one.user.employeeId, one.approved]), [[employeeId, true]]);

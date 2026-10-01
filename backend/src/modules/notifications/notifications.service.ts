@@ -115,23 +115,37 @@ export interface ItemSummary {
 
 type RawSubject = "subjectType" | "subjectId" | "subjectEmployeeId" | "dedupKey";
 
-export type NoticeRow = Omit<Notification, RawSubject> & {
+// The eight reference columns the expand left behind; nothing writes or reads them, and the contract drops them (KEHOACH 9.21.4).
+type OldReference =
+  | "requestId"
+  | "advanceId"
+  | "periodId"
+  | "payslipId"
+  | "contractId"
+  | "certificateId"
+  | "profileChangeId"
+  | "dependentId";
+
+export type NoticeRow = Omit<Notification, RawSubject | OldReference> & {
   category: NoticeCategory;
   item: ItemSummary | null;
   subject: SubjectView | null;
 };
 
-// A hidden subject must not leave a way in through the references the bell still reads (KEHOACH 9.21.4).
-const REFERENCES = [
-  "requestId",
-  "advanceId",
-  "periodId",
-  "payslipId",
-  "contractId",
-  "certificateId",
-  "profileChangeId",
-  "dependentId",
-] as const satisfies readonly (keyof Notification)[];
+function withoutOldReferences<T extends Pick<Notification, OldReference>>(row: T): Omit<T, OldReference> {
+  const {
+    requestId: _request,
+    advanceId: _advance,
+    periodId: _period,
+    payslipId: _payslip,
+    contractId: _contract,
+    certificateId: _certificate,
+    profileChangeId: _change,
+    dependentId: _dependent,
+    ...kept
+  } = row;
+  return kept;
+}
 
 export type NoticeStatus = "unread" | "action" | "all" | "archived";
 
@@ -357,8 +371,7 @@ export class NotificationsService {
     const subjects = await this.subjects.describe(viewer, rows);
     const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
     return rows.map(({ item, subjectType: _type, subjectId: _id, subjectEmployeeId: _person, dedupKey: _key, ...row }, at) => ({
-      ...row,
-      ...(subjects[at]?.hidden ? Object.fromEntries(REFERENCES.map((ref) => [ref, null])) : {}),
+      ...withoutOldReferences(row),
       category: NOTICE_KINDS[row.kind].category,
       item: item && {
         key: item.key,
@@ -525,21 +538,17 @@ export class NotificationsService {
       }
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
       const landed: Announced[] = [];
-      // Twenty parameters a row: a thousand rows stay far under the 65,535 one statement takes.
+      // Twelve parameters a row: a thousand rows stay far under the 65,535 one statement takes.
       // A login deleted after the lookup is skipped, not fatal to the batch.
       for (let at = 0; at < sends.length; at += kBatch) {
         const rows = sends.slice(at, at + kBatch).map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
         landed.push(
           ...(await this.db.$queryRaw<Announced[]>`
             INSERT INTO "Notification" ("id", "userId", "kind", "subjectType", "subjectId", "subjectEmployeeId",
-                                        "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
-                                        "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId",
-                                        "daysLeft", "daysWaited", "approved")
+                                        "dedupKey", "facts", "archivedAt", "daysLeft", "daysWaited", "approved")
             SELECT v.*
               FROM (VALUES ${Prisma.join(rows)}) AS v("id", "userId", "kind", "subjectType", "subjectId",
-                   "subjectEmployeeId", "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
-                   "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId", "daysLeft",
-                   "daysWaited", "approved")
+                   "subjectEmployeeId", "dedupKey", "facts", "archivedAt", "daysLeft", "daysWaited", "approved")
               JOIN "User" u ON u."id" = v."userId"
                FOR KEY SHARE OF u
             ON CONFLICT ("userId", "dedupKey") DO UPDATE
@@ -777,9 +786,7 @@ export class NotificationsService {
     return Prisma.sql`(
       ${id}, ${send.userId}, ${kind}::"NoticeKind", ${subjectType}::"NoticeSubject", ${subjectId}::text,
       ${send.employeeId}::int, ${dedupKey}, ${JSON.stringify(stored)}::jsonb,
-      CASE WHEN ${muted}::boolean THEN now() END, ${facts.requestId ?? null}::text, ${facts.advanceId ?? null}::text,
-      ${facts.periodId ?? null}::text, ${facts.payslipId ?? null}::text, ${facts.contractId ?? null}::text,
-      ${facts.certificateId ?? null}::text, ${facts.profileChangeId ?? null}::text, ${facts.dependentId ?? null}::text,
+      CASE WHEN ${muted}::boolean THEN now() END,
       ${facts.daysLeft ?? null}::int, ${facts.daysWaited ?? null}::int, ${facts.approved ?? null}::boolean
     )`;
   }
