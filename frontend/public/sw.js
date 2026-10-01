@@ -4,6 +4,8 @@ const SHELL = "shell-v3";
 // One drawer per account, named READS:<sub>, since Cache Storage keys by URL alone (KEHOACH 4.7).
 const READS = "reads-v4";
 const KEEP = [SHELL];
+
+importScripts("/sw-words.js");
 const LOCAL = ["localhost", "127.0.0.1"];
 
 function drawer(name) {
@@ -75,8 +77,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const url = new URL(request.url);
-  // A dev build reuses chunk names, so holding the first copy of one pins the
-  // whole app to the first build the browser ever saw.
+  // A dev build reuses chunk names: keeping the first copy pins the app to the first build it saw.
   const addressed = !LOCAL.includes(url.hostname);
   if (addressed && url.origin === self.location.origin && url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request));
@@ -107,94 +108,12 @@ self.addEventListener("message", (event) => {
 // The manifest's short_name: the system's name reads the same in both languages (KEHOACH 9.21.6).
 const APP_NAME = "Nhân Lực";
 
-// The payload carries a kind and references, so the wording is built here and
-// a salary figure never reaches a lock screen (KEHOACH 9.21.4).
-const SAYS = {
-  vi: {
-    REQUEST_DECIDED_true: "Đơn của bạn đã được duyệt",
-    REQUEST_DECIDED_false: "Đơn của bạn bị từ chối",
-    REQUEST_WAITING: "Có đơn chờ bạn duyệt",
-    REQUEST_WAITING_pay: "Có khoản tạm ứng đã duyệt chờ chi",
-    REQUEST_STALLED: "Đơn của bạn chưa ai quyết",
-    PAYSLIP_ISSUED: "Phiếu lương kỳ này đã có",
-    CONTRACT_ENDING: "Hợp đồng của bạn sắp hết hạn",
-    DISPUTE_ANSWERED: "Khiếu nại phiếu lương của bạn đã có trả lời",
-    ADVANCE_PAID: "Khoản tạm ứng của bạn đã được chi",
-    other: "Có tin mới cho bạn",
-  },
-  en: {
-    REQUEST_DECIDED_true: "Your request was approved",
-    REQUEST_DECIDED_false: "Your request was turned down",
-    REQUEST_WAITING: "A request is waiting on you",
-    REQUEST_WAITING_pay: "An approved advance is waiting to be paid",
-    REQUEST_STALLED: "Your request has no decision yet",
-    PAYSLIP_ISSUED: "This period's payslip is ready",
-    CONTRACT_ENDING: "Your contract ends soon",
-    DISPUTE_ANSWERED: "Your payslip dispute has an answer",
-    ADVANCE_PAID: "Your salary advance has been paid out",
-    other: "There is news for you",
-  },
-};
-
-// The same routing as the bell's notice list: the reference names the queue or the record.
-function waitingAt(body) {
-  if (body.requestId) {
-    return `/leave/${body.requestId}`;
-  }
-  const [tab, id] = body.certificateId
-    ? ["certificates", body.certificateId]
-    : body.profileChangeId
-      ? ["profileChanges", body.profileChangeId]
-      : body.dependentId
-        ? ["dependents", body.dependentId]
-        : body.advanceId
-          ? [body.approved ? "advancesToPay" : "advancesToDecide", body.advanceId]
-          : ["disputes", body.payslipId || ""];
-  return `/approvals?tab=${tab}&open=${id}`;
-}
-
-// An empty path opens the app's own home: some notices have no page that says more.
-function pathOf(body) {
-  switch (body.kind) {
-    case "REQUEST_WAITING":
-      return waitingAt(body);
-    case "REQUEST_DECIDED":
-    case "REQUEST_STALLED":
-      if (body.certificateId) {
-        return "/me/letters";
-      }
-      if (body.profileChangeId || body.dependentId) {
-        return "/me/profile";
-      }
-      if (body.advanceId) {
-        return "/me/requests?tab=advances";
-      }
-      return body.requestId ? `/me/requests?open=${body.requestId}` : "/me/requests";
-    case "ADVANCE_PAID":
-      return "/me/requests?tab=advances";
-    case "PAYSLIP_ISSUED":
-    case "DISPUTE_ANSWERED":
-      return body.payslipId ? `/me/payslips?slip=${body.payslipId}` : "/me/payslips";
-    default:
-      return "";
-  }
-}
-
-// The worker's scope is "/", so it cannot read a locale off the url; the
-// payload carries it, the same way the payslip mail does.
-function tableFor(body) {
-  return SAYS[body.locale] || SAYS.vi;
-}
-
 function wording(body) {
-  const table = tableFor(body);
-  if (body.kind === "REQUEST_DECIDED") {
-    return table[`REQUEST_DECIDED_${body.approved === true}`];
+  const words = self.SW_WORDS[body.locale] || self.SW_WORDS.vi;
+  if (body.count > 1) {
+    return words.gathered.replace("{count}", String(body.count));
   }
-  if (body.kind === "REQUEST_WAITING" && body.advanceId && body.approved === true) {
-    return table.REQUEST_WAITING_pay;
-  }
-  return table[body.kind] || table.other;
+  return words[body.kind] || words.other;
 }
 
 self.addEventListener("push", (event) => {
@@ -204,13 +123,15 @@ self.addEventListener("push", (event) => {
   } catch (fell) {
     body = {};
   }
+  const tag = body.tag || body.kind || "notice";
   event.waitUntil(
     self.registration.showNotification(APP_NAME, {
       body: wording(body),
       icon: "/icon-192.png",
       badge: "/badge.png",
-      tag: body.kind,
-      data: { path: pathOf(body), locale: body.locale || "vi" },
+      tag,
+      renotify: body.renotify === true,
+      data: { id: body.id || null, locale: body.locale === "en" ? "en" : "vi" },
     }),
   );
 });
@@ -230,6 +151,6 @@ async function reopen(target) {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const held = event.notification.data || {};
-  const target = new URL(`/${held.locale || "vi"}${held.path ?? "/me"}`, self.location.origin).href;
-  event.waitUntil(reopen(target));
+  const path = held.id ? `/notifications/open/${held.id}` : "";
+  event.waitUntil(reopen(new URL(`/${held.locale || "vi"}${path}`, self.location.origin).href));
 });

@@ -148,6 +148,13 @@ function noticeKeys(body: Record<string, unknown>): string[] {
   return REFRESH.notice;
 }
 
+// Work that closed needs no push left on this device's lock screen; its tag is the item's key (KEHOACH 9.21.4).
+function dropShown(tag: string): void {
+  void navigator.serviceWorker?.ready
+    .then((registration) => registration.getNotifications({ tag }))
+    .then((shown) => shown.forEach((one) => one.close()));
+}
+
 function gatherer(cache: QueryClient): { add: (keys: string[]) => void; stop: () => void } {
   const due = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -225,6 +232,9 @@ export function useFeedConnection(): void {
         if (feed !== "notice") {
           stale.add(staleKeys(feed, body));
           return;
+        }
+        if (body.op === "item" && body.state !== "OPEN" && typeof body.key === "string") {
+          dropShown(body.key);
         }
         const timer = setTimeout(() => {
           spreading.delete(timer);
