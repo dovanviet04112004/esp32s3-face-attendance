@@ -10,10 +10,12 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-api.interceptors.request.use((config) => {
-  const { accessToken } = useSession.getState();
-  if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+api.interceptors.request.use(async (config) => {
+  const { accessToken, renewAt } = useSession.getState();
+  // A dead token costs one 401 per request in flight, so every one waits for the same renewal.
+  const token = accessToken && renewAt !== null && Date.now() >= renewAt ? await reopenSession() : accessToken;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });

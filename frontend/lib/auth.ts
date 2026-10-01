@@ -13,6 +13,8 @@ export interface Claims {
 
 interface Session {
   accessToken: string | null;
+  /** When to renew, on this device's clock; null when the token carries no lifetime. */
+  renewAt: number | null;
   role: Role | null;
   employeeId: number | null;
   /** The signed-in address, as sign-in and every refresh return it. */
@@ -30,13 +32,42 @@ export function whenSignedOut(forget: () => void): () => void {
   return () => forgetters.delete(forget);
 }
 
-const kSignedOut = { accessToken: null, role: null, employeeId: null, email: null };
+const kSignedOut = { accessToken: null, renewAt: null, role: null, employeeId: null, email: null };
+
+const kRenewEarlyMs = 60_000;
+
+function payloadOf(accessToken: string): Record<string, unknown> | null {
+  const body = accessToken.split(".")[1];
+  if (!body) {
+    return null;
+  }
+  try {
+    return JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
+// Only exp - iat is trusted: the device clock may be minutes off the server's.
+function renewAtOf(accessToken: string): number | null {
+  const claims = payloadOf(accessToken);
+  if (typeof claims?.exp !== "number" || typeof claims?.iat !== "number") {
+    return null;
+  }
+  return Date.now() + (claims.exp - claims.iat) * 1000 - kRenewEarlyMs;
+}
 
 /** The access token lives in memory only (KEHOACH 4.6). */
 export const useSession = create<Session>((set) => ({
   ...kSignedOut,
   setSession: (accessToken, claims, email) =>
-    set((held) => ({ accessToken, role: claims.role, employeeId: claims.employeeId, email: email ?? held.email })),
+    set((held) => ({
+      accessToken,
+      renewAt: renewAtOf(accessToken),
+      role: claims.role,
+      employeeId: claims.employeeId,
+      email: email ?? held.email,
+    })),
   clear: () => {
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
@@ -52,17 +83,9 @@ export const useSession = create<Session>((set) => ({
 
 /** Unverified: the api decides what is allowed, this only draws the menu. */
 export function claimsOf(accessToken: string): Claims {
-  const body = accessToken.split(".")[1];
-  if (!body) {
-    return { role: null, employeeId: null };
-  }
-  try {
-    const claims = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    return {
-      role: (claims.role as Role) ?? null,
-      employeeId: typeof claims.employeeId === "number" ? claims.employeeId : null,
-    };
-  } catch {
-    return { role: null, employeeId: null };
-  }
+  const claims = payloadOf(accessToken);
+  return {
+    role: (claims?.role as Role | undefined) ?? null,
+    employeeId: typeof claims?.employeeId === "number" ? claims.employeeId : null,
+  };
 }
