@@ -34,6 +34,7 @@ import { MailerService } from "../notifications/mailer.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import { profileNoticeMail } from "../payroll/mail-text.js";
 import { localDay } from "../timesheet/local-day.js";
 import {
@@ -58,6 +59,8 @@ type Listed = Prisma.ProfileChangeGetPayload<{ include: { employee: typeof PERSO
 export interface ProfileChangeRow extends Listed {
   waitedDays: number;
 }
+
+export type ProfileChangeDetail = ProfileChangeRow & { decidedByName: string | null };
 
 @Injectable()
 export class ProfileService {
@@ -158,6 +161,17 @@ export class ProfileService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
+  async one(viewer: Viewer, id: string): Promise<ProfileChangeDetail> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const held = await this.db.profileChange.findUnique({ where: { id }, include: { employee: PERSON_VIEW, decidedBy: NAMED } });
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
+    }
+    const { decidedBy, ...row } = held;
+    return { ...row, waitedDays: waitedDays(row.createdAt, new Date()), decidedByName: nameOf(decidedBy) };
   }
 
   /** Write the change into the record. The period already locked keeps the

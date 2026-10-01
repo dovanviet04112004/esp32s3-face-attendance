@@ -26,6 +26,7 @@ import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -50,6 +51,8 @@ import {
 export type PayRecord = CompensationRecord & { allowances: CompensationAllowance[] };
 
 export type QueuedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+export type DependentDetail = QueuedDependent & { decidedByName: string | null };
 
 /** A first pay record an import line asks for; no `from` takes the hire date, then the fallback day. */
 export interface FirstPay {
@@ -484,6 +487,17 @@ export class CompensationService {
       this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     return { rows, ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
+  }
+
+  /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
+  async oneDependent(viewer: Viewer, id: string): Promise<DependentDetail> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const held = await this.db.dependent.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("DEPENDENT_NOT_FOUND");
+    }
+    const decider = held.decidedById ? await this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null;
+    return { ...held, decidedByName: nameOf(decider) };
   }
 
   async addDependent(viewer: Viewer, body: CreateDependentDto): Promise<Dependent> {

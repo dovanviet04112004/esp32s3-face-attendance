@@ -23,6 +23,7 @@ import {
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import { localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
@@ -42,6 +43,8 @@ type Listed = Prisma.CertificateGetPayload<{ include: { employee: typeof PERSON_
 export interface CertificateRow extends Listed {
   waitedDays: number;
 }
+
+export type CertificateDetail = CertificateRow & { decidedByName: string | null };
 
 @Injectable()
 export class CertificatesService {
@@ -117,6 +120,17 @@ export class CertificatesService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
+  async one(viewer: Viewer, id: string): Promise<CertificateDetail> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const held = await this.db.certificate.findUnique({ where: { id }, include: { employee: PERSON_VIEW, issuedBy: NAMED } });
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("CERTIFICATE_NOT_FOUND");
+    }
+    const { issuedBy, ...row } = held;
+    return { ...row, waitedDays: waitedDays(row.createdAt, new Date()), decidedByName: nameOf(issuedBy) };
   }
 
   /**

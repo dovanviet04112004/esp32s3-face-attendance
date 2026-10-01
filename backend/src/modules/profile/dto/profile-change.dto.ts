@@ -233,6 +233,11 @@ export class ProfileChangeRowView extends ProfileChangeView {
   waitedDays!: number;
 }
 
+export class ProfileChangeDetailView extends ProfileChangeRowView {
+  @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who approved or turned it down; null otherwise" })
+  decidedByName!: string | null;
+}
+
 export class ProfileChangePageView extends PageMeta {
   @ApiProperty({
     type: [ProfileChangeRowView],

@@ -37,6 +37,7 @@ import { THROTTLE } from "../auth/auth.types.js";
 import {
   CompensationService,
   type PayRecord,
+  type DependentDetail,
   type QueuedDependent,
   type RaisePreview,
 } from "./compensation.service.js";
@@ -47,6 +48,7 @@ import {
   CreateCompensationDto,
   CreateDependentDto,
   DecideDependentDto,
+  DependentDetailView,
   DependentPageView,
   DependentView,
   ListAllowanceTypesDto,
@@ -169,6 +171,19 @@ export class CompensationController {
     @Query() query: ListDependentsDto,
   ): Promise<Page<QueuedDependent>> {
     return this.pay.dependentQueue(viewer, query);
+  }
+
+  @Get("dependents/:id")
+  @ApiOperation({ summary: "One registration, the desk's or its owner's, with who decided it" })
+  @ApiOkResponse({ type: DependentDetailView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "DEPENDENT_NOT_FOUND, also outside the viewer's scope" })
+  @ApiParam({
+    name: "id",
+    description: "Dependant registration id (UUID)",
+    example: "e71fa2d2-7ccc-4591-b9df-5b734e951e94",
+  })
+  oneDependent(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<DependentDetail> {
+    return this.pay.oneDependent(viewer, id);
   }
 
   @Post("dependents")

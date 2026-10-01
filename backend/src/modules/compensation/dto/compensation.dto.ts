@@ -530,6 +530,11 @@ export class QueuedDependentView extends DependentView {
   @ApiProperty({ type: PersonView, description: "Employee who claims the deduction" }) employee!: PersonView;
 }
 
+export class DependentDetailView extends QueuedDependentView {
+  @ApiProperty({ type: String, nullable: true, example: "Phạm Văn D", description: "Who accepted or turned it down; null while it waits" })
+  decidedByName!: string | null;
+}
+
 export class DependentPageView extends PageMeta {
   @ApiProperty({
     type: [QueuedDependentView],

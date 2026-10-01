@@ -152,6 +152,11 @@ export class AdvanceRowView extends AdvanceView {
   outstanding!: string | null;
 }
 
+export class AdvanceDetailView extends AdvanceRowView {
+  @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who approved or turned it down; null while it waits" })
+  decidedByName!: string | null;
+}
+
 export class AdvancePageView extends PageMeta {
   @ApiProperty({
     type: [AdvanceRowView],

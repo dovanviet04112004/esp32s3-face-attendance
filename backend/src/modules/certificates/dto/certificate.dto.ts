@@ -141,6 +141,11 @@ export class CertificateRowView extends CertificateView {
   waitedDays!: number;
 }
 
+export class CertificateDetailView extends CertificateRowView {
+  @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who issued or turned it down; null while it waits" })
+  decidedByName!: string | null;
+}
+
 export class CertificatePageView extends PageMeta {
   @ApiProperty({
     type: [CertificateRowView],

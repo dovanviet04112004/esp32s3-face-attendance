@@ -24,10 +24,11 @@ import {
   AskProfileChangeDto,
   DecideProfileChangeDto,
   ListProfileChangesDto,
+  ProfileChangeDetailView,
   ProfileChangePageView,
   ProfileChangeView,
 } from "./dto/profile-change.dto.js";
-import { ProfileService, type ProfileChangeRow } from "./profile.service.js";
+import { ProfileService, type ProfileChangeDetail, type ProfileChangeRow } from "./profile.service.js";
 
 const CHANGE_ID = { name: "id", description: "Change request id", example: "0f1a2b3c-4d5e-4f6a-9b7c-8d9e0f1a2b3c" };
 
@@ -59,6 +60,15 @@ export class ProfileController {
     @CurrentViewer() viewer: Viewer,
   ): Promise<Page<ProfileChangeRow>> {
     return this.profile.list(viewer, query);
+  }
+
+  @Get(":id")
+  @ApiOperation({ summary: "One change request, in the same scope as the list, with who answered it" })
+  @ApiParam(CHANGE_ID)
+  @ApiOkResponse({ type: ProfileChangeDetailView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "PROFILE_CHANGE_NOT_FOUND, also outside the viewer's scope" })
+  one(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<ProfileChangeDetail> {
+    return this.profile.one(viewer, id);
   }
 
   @Post(":id/approve")

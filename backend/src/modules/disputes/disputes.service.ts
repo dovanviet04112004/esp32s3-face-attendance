@@ -23,6 +23,7 @@ import {
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import type { AnswerDisputeDto, ListDisputesDto, RaiseDisputeDto } from "./dto/dispute.dto.js";
 
 const ANSWERERS = QUEUE_DESKS.disputes;
@@ -37,6 +38,8 @@ type Listed = Prisma.PayslipDisputeGetPayload<{ include: typeof DISPUTE_VIEW }>;
 export interface DisputeRow extends Listed {
   waitedDays: number;
 }
+
+export type DisputeDetail = DisputeRow & { decidedByName: string | null };
 const HOURS_PER_DAY = 24;
 const MS_PER_HOUR = 3_600_000;
 const RETRO_CODE = "DISPUTE";
@@ -135,6 +138,17 @@ export class DisputesService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
+  async one(viewer: Viewer, id: string): Promise<DisputeDetail> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const held = await this.db.payslipDispute.findUnique({ where: { id }, include: { ...DISPUTE_VIEW, answeredBy: NAMED } });
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("DISPUTE_NOT_FOUND");
+    }
+    const { answeredBy, ...row } = held;
+    return { ...row, waitedDays: waitedDays(row.createdAt, new Date()), decidedByName: nameOf(answeredBy) };
   }
 
   /**

@@ -238,6 +238,11 @@ export class DisputeRowView extends DisputeView {
   waitedDays!: number;
 }
 
+export class DisputeDetailView extends DisputeRowView {
+  @ApiProperty({ type: String, nullable: true, example: "Phạm Văn D", description: "Who answered it; null while it is open" })
+  decidedByName!: string | null;
+}
+
 export class DisputePageView extends PageMeta {
   @ApiProperty({
     type: [DisputeRowView],

@@ -20,8 +20,9 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
-import { AdvanceService, type AdvanceRow } from "./advance.service.js";
+import { AdvanceService, type AdvanceDetail, type AdvanceRow } from "./advance.service.js";
 import {
+  AdvanceDetailView,
   AdvancePageView,
   AdvanceView,
   DecideAdvanceDto,
@@ -46,6 +47,15 @@ export class AdvanceController {
     @Query() query: ListAdvancesDto,
   ): Promise<Page<AdvanceRow>> {
     return this.advances.list(viewer, query);
+  }
+
+  @Get(":id")
+  @ApiOperation({ summary: "One advance, in the same scope as the list, with who decided it" })
+  @ApiParam({ name: "id", description: "Advance id (UUID)", example: "ee5e4c9f-9f5c-4ebd-8759-9b7ac5ed3696" })
+  @ApiOkResponse({ type: AdvanceDetailView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "ADVANCE_NOT_FOUND, also outside the viewer's scope" })
+  one(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<AdvanceDetail> {
+    return this.advances.one(viewer, id);
   }
 
   @Post()

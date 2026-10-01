@@ -23,6 +23,7 @@ import {
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const SORT_FIELD = "requestedAt";
@@ -30,6 +31,8 @@ const SORT_FIELD = "requestedAt";
 const OWED: SalaryAdvance["state"][] = ["APPROVED", "PAID"];
 
 type Listed = Prisma.SalaryAdvanceGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+export type AdvanceDetail = AdvanceRow & { decidedByName: string | null };
 
 export interface AdvanceRow extends Listed {
   waitedDays: number;
@@ -117,6 +120,20 @@ export class AdvanceService {
             .toFixed(0)
         : null,
     }));
+  }
+
+  /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
+  async one(viewer: Viewer, id: string): Promise<AdvanceDetail> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const held = await this.db.salaryAdvance.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
+    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+      throw new NotFoundException("ADVANCE_NOT_FOUND");
+    }
+    const [[row], decider] = await Promise.all([
+      this.withContext([held], visible === null),
+      held.decidedById ? this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null,
+    ]);
+    return { ...row, decidedByName: nameOf(decider) };
   }
 
   async submit(viewer: Viewer, body: RequestAdvanceDto): Promise<SalaryAdvance> {
