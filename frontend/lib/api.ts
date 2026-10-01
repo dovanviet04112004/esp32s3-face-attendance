@@ -46,11 +46,15 @@ export function reopenSession(): Promise<string | null> {
   return renewing;
 }
 
+// A door's answer about the password or code given; renewing and sending it again would count one guess twice.
+const ANSWERED = new Set(["CREDENTIALS_REJECTED", "MFA_CODE_REJECTED", "MFA_CHALLENGE_SPENT", "SETUP_LINK_SPENT"]);
+
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const failed = error.config as AxiosRequestConfig & { retried?: boolean };
-    if (error.response?.status !== 401 || failed.retried) {
+    const code = (error.response?.data as { message?: unknown } | undefined)?.message;
+    if (error.response?.status !== 401 || failed.retried || ANSWERED.has(String(code))) {
       throw error;
     }
     failed.retried = true;

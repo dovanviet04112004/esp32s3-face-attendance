@@ -7,7 +7,7 @@ import type viMessages from "../messages/vi.json";
 
 type ErrorCode = keyof (typeof viMessages)["errors"];
 
-function codeOf(fell: unknown): string {
+export function faultCode(fell: unknown): string {
   if (!isAxiosError(fell)) {
     return "";
   }
@@ -25,7 +25,7 @@ export function useFault(): (fell: unknown) => string {
   const t = useTranslations("errors");
   const common = useTranslations("common");
   return (fell) => {
-    const code = codeOf(fell);
+    const code = faultCode(fell);
     return t.has(code as ErrorCode) ? t(code as ErrorCode) : common("failed");
   };
 }
