@@ -241,7 +241,7 @@ describe("who a piece of work waits on (e2e)", () => {
     assert.ok(row, "a muted notice left no row behind");
     assert.notEqual(row.archivedAt, null, "a muted notice was not put away");
     const bell = await request(http).get("/notifications").set("Authorization", `Bearer ${clerk.token}`);
-    assert.ok(!(bell.body as { id: string }[]).some((one) => one.id === row.id), "the bell showed a muted notice");
+    assert.ok(!(bell.body.rows as { id: string }[]).some((one) => one.id === row.id), "the bell showed a muted notice");
     const unread = await request(http).get("/notifications/unread").set("Authorization", `Bearer ${clerk.token}`);
     assert.equal(unread.body.total, 0);
   });

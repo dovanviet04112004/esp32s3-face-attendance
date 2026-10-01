@@ -1,11 +1,23 @@
-import { Injectable, Logger } from "@nestjs/common";
-import type { NoticeItem, NoticeItemState, NoticeOutcome, NoticeSubject } from "@prisma/client";
+import { ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type {
+  NoticeItem,
+  NoticeItemState,
+  NoticeLevel,
+  NoticeOutcome,
+  NoticeQueue,
+  NoticeSubject,
+  Prisma,
+} from "@prisma/client";
 
+import type { Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { AudienceService, type InboxQueue } from "./audience.service.js";
 import { kebab, type ItemKind } from "./notice-kinds.js";
-import { NotificationsService, type NoticeFacts } from "./notifications.service.js";
+import { NAMED, nameOf, NotificationsService, type NoticeFacts } from "./notifications.service.js";
+import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
 export const QUEUE_SUBJECT: Record<InboxQueue, NoticeSubject> = {
   REQUESTS: "REQUEST",
@@ -46,6 +58,37 @@ interface Seated {
   daysWaited: number | null;
 }
 
+// Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
+export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES"]);
+
+/** An item as its group reads it: its state and result, who is on it, whom it reached and who has read it. */
+export interface ItemDetail {
+  key: string;
+  queue: NoticeQueue;
+  level: NoticeLevel;
+  state: NoticeItemState;
+  outcome: NoticeOutcome | null;
+  actorName: string | null;
+  openedAt: Date;
+  closedAt: Date | null;
+  dueAt: Date | null;
+  claimable: boolean;
+  claimedByName: string | null;
+  claimedAt: Date | null;
+  subject: SubjectView | null;
+  holders: { name: string | null; readAt: Date | null; leftAt: Date | null }[] | null;
+}
+
+const ITEM_READ = {
+  actor: NAMED,
+  claimedBy: NAMED,
+  rows: { select: { userId: true, readAt: true, leftAt: true, user: NAMED }, orderBy: { createdAt: "asc" } },
+} satisfies Prisma.NoticeItemInclude;
+
+type ItemRead = Prisma.NoticeItemGetPayload<{ include: typeof ITEM_READ }>;
+
+const kHourMs = 3_600_000;
+
 /** The key of the one item a subject has in a queue (KEHOACH 9.21.4). */
 export function itemKey(queue: InboxQueue, subjectId: string): string {
   return `${kebab(queue)}:${subjectId}`;
@@ -76,8 +119,105 @@ export class NoticeItemsService {
     private readonly db: PrismaService,
     private readonly audience: AudienceService,
     private readonly notices: NotificationsService,
+    private readonly subjects: SubjectsService,
     private readonly feed: RealtimeGateway,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** An item for a reader who holds a row of it, the person it is about, or an ADMIN; only the group and ADMIN see whom it reached.
+   *  @ctx any | NOTICE_NOT_FOUND for anybody else
+   */
+  async detail(viewer: Viewer, key: string): Promise<ItemDetail> {
+    const { item, member } = await this.reachable(viewer, key);
+    const [subject] = await this.subjects.describe(viewer, [
+      { subjectType: item.subjectType, subjectId: item.subjectId, subjectEmployeeId: item.employeeId },
+    ]);
+    const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
+    const claimLive = item.claimedAt !== null && item.claimedAt.getTime() > lapsed;
+    return {
+      key: item.key,
+      queue: item.queue,
+      level: item.level,
+      state: item.state,
+      outcome: item.outcome,
+      actorName: nameOf(item.actor),
+      openedAt: item.openedAt,
+      closedAt: item.closedAt,
+      dueAt: item.dueAt,
+      claimable: CLAIMABLE.has(item.queue),
+      claimedByName: claimLive ? nameOf(item.claimedBy) : null,
+      claimedAt: claimLive ? item.claimedAt : null,
+      subject,
+      holders:
+        member || viewer.role === "ADMIN"
+          ? item.rows.map((row) => ({ name: nameOf(row.user), readAt: row.readAt, leftAt: row.leftAt }))
+          : null,
+    };
+  }
+
+  /** Say "I am on it" for the whole group to see; it lapses after NOTICE_CLAIM_HOURS.
+   *  @ctx any | group members only, on queues that take a claim
+   */
+  async claim(viewer: Viewer, key: string): Promise<ItemDetail> {
+    const { item, member } = await this.reachable(viewer, key);
+    if (!member || !CLAIMABLE.has(item.queue)) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    const held = await this.db.noticeItem.updateMany({
+      where: { id: item.id, state: "OPEN" },
+      data: { claimedById: viewer.userId, claimedAt: new Date() },
+    });
+    if (held.count !== 1) {
+      throw new ConflictException("NOTICE_ITEM_CLOSED");
+    }
+    this.tellHolders(item);
+    return this.detail(viewer, key);
+  }
+
+  /** Let go of one's own claim; somebody else's stays. */
+  async unclaim(viewer: Viewer, key: string): Promise<ItemDetail> {
+    const { item, member } = await this.reachable(viewer, key);
+    if (!member || !CLAIMABLE.has(item.queue)) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    const freed = await this.db.noticeItem.updateMany({
+      where: { id: item.id, claimedById: viewer.userId },
+      data: { claimedById: null, claimedAt: null },
+    });
+    if (freed.count > 0) {
+      this.tellHolders(item);
+    }
+    return this.detail(viewer, key);
+  }
+
+  /** Close an item by hand, kept for kinds no business path decides; every inbox queue has one (KEHOACH 9.21.4).
+   *  @ctx any | NOTICE_NOT_FOUND outside the group, NOTICE_ITEM_NOT_RESOLVABLE for an inbox queue
+   */
+  async resolve(viewer: Viewer, key: string): Promise<ItemDetail> {
+    const { member } = await this.reachable(viewer, key);
+    if (!member) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    throw new ConflictException("NOTICE_ITEM_NOT_RESOLVABLE");
+  }
+
+  private async reachable(viewer: Viewer, key: string): Promise<{ item: ItemRead; member: boolean }> {
+    const item = await this.db.noticeItem.findUnique({ where: { key }, include: ITEM_READ });
+    const mine = item?.rows.find((row) => row.userId === viewer.userId);
+    const about = item !== null && viewer.employeeId !== null && item.employeeId === viewer.employeeId;
+    if (!item || (!mine && !about && viewer.role !== "ADMIN")) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    return { item, member: mine !== undefined && mine.leftAt === null };
+  }
+
+  private tellHolders(item: ItemRead): void {
+    for (const row of item.rows) {
+      if (row.leftAt === null) {
+        this.feed.tell(row.userId, FEED.notice, { op: "item", key: item.key, state: item.state });
+      }
+    }
+  }
 
   /** Open the item a waiting row casts and seat its group; a subject never has two in one queue.
    *  @ctx any | after the business commit; logs its own failures, which reconcile repairs

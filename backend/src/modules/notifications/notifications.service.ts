@@ -7,6 +7,7 @@ import {
   type NoticeChannel,
   type NoticeItemState,
   type NoticeKind,
+  type NoticeLevel,
   type NoticeOutcome,
   type NoticeSubject,
   type Notification,
@@ -15,12 +16,25 @@ import {
 } from "@prisma/client";
 import webpush from "web-push";
 
+import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { filedBetween, personWhere, resumeAfter, sortedBy } from "../leave/queue-filter.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
-import { factsFit, kebab, mutable, NOTICE_KINDS, receives, type NewsKind, type OfferedChannel } from "./notice-kinds.js";
+import {
+  factsFit,
+  kebab,
+  mutable,
+  NOTICE_KINDS,
+  receives,
+  type NewsKind,
+  type NoticeCategory,
+  type OfferedChannel,
+} from "./notice-kinds.js";
+import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
 /** What a notice may carry: references and counts, never words or money. */
 export interface NoticeFacts {
@@ -72,28 +86,102 @@ function storedFacts(kind: NoticeKind, facts: NoticeFacts): Record<string, unkno
 
 export type SubscriptionView = Omit<PushSubscription, "p256dh" | "auth">;
 
-/** The shared state a row of work shows, so every holder reads who handled it (KEHOACH 9.21.4). */
+/** The shared state a row of work shows, so every holder reads who handled it and who is on it (KEHOACH 9.21.4). */
 export interface ItemSummary {
   key: string;
+  level: NoticeLevel;
   state: NoticeItemState;
   outcome: NoticeOutcome | null;
   actorName: string | null;
   closedAt: Date | null;
+  claimedByName: string | null;
+  dueAt: Date | null;
 }
 
-export type NoticeRow = Notification & { item: ItemSummary | null };
+type RawSubject = "subjectType" | "subjectId" | "subjectEmployeeId" | "dedupKey";
 
-const ITEM_SUMMARY = {
-  key: true,
-  state: true,
-  outcome: true,
-  closedAt: true,
-  actor: { select: { email: true, employee: { select: { fullName: true } } } },
-} satisfies Prisma.NoticeItemSelect;
+export type NoticeRow = Omit<Notification, RawSubject> & {
+  category: NoticeCategory;
+  item: ItemSummary | null;
+  subject: SubjectView | null;
+};
+
+// A hidden subject must not leave a way in through the references the bell still reads (KEHOACH 9.21.4).
+const REFERENCES = [
+  "requestId",
+  "advanceId",
+  "periodId",
+  "payslipId",
+  "contractId",
+  "certificateId",
+  "profileChangeId",
+  "dependentId",
+] as const satisfies readonly (keyof Notification)[];
+
+export type NoticeStatus = "unread" | "action" | "all" | "archived";
+
+/** The view a reader filters the bell by; every field narrows, none widens. */
+export interface NoticeFilter {
+  status?: NoticeStatus;
+  category?: NoticeCategory;
+  from?: string;
+  to?: string;
+  search?: string;
+}
+
+export interface NoticeCounts {
+  unread: number;
+  action: number;
+  critical: number;
+}
+
+export type MarkAction = "read" | "unread" | "archive" | "unarchive";
+
+/** One of three ways to name rows: their ids, every row of a filter, or every row about one record. */
+export interface MarkSelection extends NoticeFilter {
+  ids?: string[];
+  all?: boolean;
+  subject?: { type: NoticeSubject; id: string };
+}
 
 export interface Unread {
   total: number;
 }
+
+export const NAMED = { select: { email: true, employee: { select: { fullName: true } } } } satisfies Prisma.UserDefaultArgs;
+
+export function nameOf(login: { email: string; employee: { fullName: string } | null } | null): string | null {
+  return login ? (login.employee?.fullName ?? login.email) : null;
+}
+
+const ITEM_SUMMARY = {
+  key: true,
+  level: true,
+  state: true,
+  outcome: true,
+  closedAt: true,
+  claimedAt: true,
+  dueAt: true,
+  actor: NAMED,
+  claimedBy: NAMED,
+} satisfies Prisma.NoticeItemSelect;
+
+// Left rows still list, to read as moved; they count nowhere (KEHOACH 9.21.4).
+const STATUS_WHERE: Record<NoticeStatus, Prisma.NotificationWhereInput> = {
+  unread: { readAt: null, archivedAt: null, leftAt: null },
+  action: { leftAt: null, item: { is: { state: "OPEN" } } },
+  all: { archivedAt: null },
+  archived: { archivedAt: { not: null } },
+};
+
+const MARKS: Record<MarkAction, { only: Prisma.NotificationWhereInput; data: (now: Date) => Prisma.NotificationUpdateManyMutationInput }> = {
+  read: { only: { readAt: null }, data: (now) => ({ readAt: now }) },
+  unread: { only: { readAt: { not: null } }, data: () => ({ readAt: null }) },
+  archive: { only: { archivedAt: null }, data: (now) => ({ archivedAt: now }) },
+  unarchive: { only: { archivedAt: { not: null } }, data: () => ({ archivedAt: null }) },
+};
+
+const kHourMs = 3_600_000;
 
 export interface PreferenceRow {
   kind: NoticeKind;
@@ -106,11 +194,7 @@ export interface PreferenceRow {
 // letters ride their own errand (KEHOACH 9.21.4).
 const OFFERED: readonly OfferedChannel[] = ["IN_APP", "PUSH"];
 
-// A row the bell shows: neither put away nor left behind by a regrouped item.
-const SHOWN = { archivedAt: null, leftAt: null } satisfies Prisma.NotificationWhereInput;
-
 const kDeadSubscription = [404, 410];
-const kPageSize = 50;
 
 @Injectable()
 export class NotificationsService {
@@ -121,6 +205,7 @@ export class NotificationsService {
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
     private readonly feed: RealtimeGateway,
+    private readonly subjects: SubjectsService,
   ) {
     const publicKey = this.config.get("VAPID_PUBLIC_KEY", { infer: true });
     const privateKey = this.config.get("VAPID_PRIVATE_KEY", { infer: true });
@@ -136,35 +221,117 @@ export class NotificationsService {
     }
   }
 
-  async list(userId: string, unreadOnly: boolean): Promise<NoticeRow[]> {
-    const rows = await this.db.notification.findMany({
-      where: { userId, ...SHOWN, ...(unreadOnly ? { readAt: null } : {}) },
-      orderBy: { createdAt: "desc" },
-      take: kPageSize,
+  /** The viewer's own rows under a filter, newest first, each with its item and its subject as the viewer may see it.
+   *  @ctx any | resumes after a cursor; counts up to the ceiling
+   */
+  async list(viewer: Viewer, query: NoticeFilter & { cursor?: string; take: number }): Promise<Page<NoticeRow>> {
+    const where = await this.filterWhere(viewer, query);
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter("createdAt", "desc", query.cursor) as Prisma.NotificationWhereInput] }
+      : where;
+    const [rows, found] = await Promise.all([
+      this.db.notification.findMany({
+        where: resumed,
+        orderBy: sortedBy("createdAt", "desc") as Prisma.NotificationOrderByWithRelationInput[],
+        take: query.take,
+        include: { item: { select: ITEM_SUMMARY } },
+      }),
+      this.db.notification.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    return {
+      rows: await this.shape(viewer, rows),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.createdAt),
+    };
+  }
+
+  /** One of the viewer's own rows; anybody else's answers as missing. */
+  async one(viewer: Viewer, id: string): Promise<NoticeRow> {
+    const row = await this.db.notification.findFirst({
+      where: { id, userId: viewer.userId },
       include: { item: { select: ITEM_SUMMARY } },
     });
-    return rows.map(({ item, ...row }) => ({
-      ...row,
-      item: item && {
-        key: item.key,
-        state: item.state,
-        outcome: item.outcome,
-        closedAt: item.closedAt,
-        actorName: item.actor ? (item.actor.employee?.fullName ?? item.actor.email) : null,
-      },
-    }));
+    if (!row) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    return (await this.shape(viewer, [row]))[0];
+  }
+
+  /** The bell's three numbers: unread rows, open work held, open critical work held (KEHOACH 9.21.4). */
+  async counts(userId: string): Promise<NoticeCounts> {
+    const [unread, action, critical] = await Promise.all([
+      this.db.notification.count({ where: { userId, ...STATUS_WHERE.unread } }),
+      this.db.notification.count({ where: { userId, ...STATUS_WHERE.action } }),
+      this.db.notification.count({ where: { userId, leftAt: null, item: { is: { state: "OPEN", level: "CRITICAL" } } } }),
+    ]);
+    return { unread, action, critical };
   }
 
   async unread(userId: string): Promise<Unread> {
-    return { total: await this.db.notification.count({ where: { userId, readAt: null, ...SHOWN } }) };
+    return { total: (await this.counts(userId)).unread };
   }
 
-  async markRead(userId: string, id?: string): Promise<Unread> {
-    await this.db.notification.updateMany({
-      where: { userId, readAt: null, ...(id ? { id } : {}) },
-      data: { readAt: new Date() },
+  /** Read, unread, put away or bring back the viewer's own rows, named exactly one way.
+   *  @ctx any | one UPDATE; rows of other accounts are never touched
+   */
+  async mark(viewer: Viewer, action: MarkAction, chosen: MarkSelection): Promise<NoticeCounts & { changed: number }> {
+    const forms = [chosen.ids !== undefined, chosen.all === true, chosen.subject !== undefined].filter(Boolean).length;
+    if (forms !== 1) {
+      throw new BadRequestException("SELECTION_INVALID");
+    }
+    const which: Prisma.NotificationWhereInput = chosen.ids
+      ? { userId: viewer.userId, id: { in: chosen.ids } }
+      : chosen.subject
+        ? { userId: viewer.userId, subjectType: chosen.subject.type, subjectId: chosen.subject.id }
+        : await this.filterWhere(viewer, chosen);
+    const changed = await this.db.notification.updateMany({
+      where: { AND: [which, MARKS[action].only] },
+      data: MARKS[action].data(new Date()),
     });
-    return this.unread(userId);
+    if (changed.count > 0) {
+      this.feed.tell(viewer.userId, FEED.notice, { op: "read", ...(chosen.ids ? { ids: chosen.ids } : { all: true }) });
+    }
+    return { changed: changed.count, ...(await this.counts(viewer.userId)) };
+  }
+
+  private async filterWhere(viewer: Viewer, filter: NoticeFilter): Promise<Prisma.NotificationWhereInput> {
+    const parts: Prisma.NotificationWhereInput[] = [{ userId: viewer.userId }, STATUS_WHERE[filter.status ?? "all"]];
+    if (filter.category) {
+      parts.push({ kind: { in: (Object.keys(NOTICE_KINDS) as NoticeKind[]).filter((kind) => NOTICE_KINDS[kind].category === filter.category) } });
+    }
+    const filed = filedBetween("createdAt", filter, this.config.get("APP_TIMEZONE", { infer: true }));
+    if (Object.keys(filed).length > 0) {
+      parts.push(filed as Prisma.NotificationWhereInput);
+    }
+    const person = await personWhere(this.db, { search: filter.search });
+    if (person) {
+      parts.push(this.subjects.searchable(await this.subjects.reach(viewer), person));
+    }
+    return { AND: parts };
+  }
+
+  private async shape(
+    viewer: Viewer,
+    rows: (Notification & { item: Prisma.NoticeItemGetPayload<{ select: typeof ITEM_SUMMARY }> | null })[],
+  ): Promise<NoticeRow[]> {
+    const subjects = await this.subjects.describe(viewer, rows);
+    const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
+    return rows.map(({ item, subjectType: _type, subjectId: _id, subjectEmployeeId: _person, dedupKey: _key, ...row }, at) => ({
+      ...row,
+      ...(subjects[at]?.hidden ? Object.fromEntries(REFERENCES.map((ref) => [ref, null])) : {}),
+      category: NOTICE_KINDS[row.kind].category,
+      item: item && {
+        key: item.key,
+        level: item.level,
+        state: item.state,
+        outcome: item.outcome,
+        closedAt: item.closedAt,
+        dueAt: item.dueAt,
+        actorName: nameOf(item.actor),
+        claimedByName: item.claimedAt && item.claimedAt.getTime() > lapsed ? nameOf(item.claimedBy) : null,
+      },
+      subject: subjects[at],
+    }));
   }
 
   /** Only the kinds this account can receive, each switch saying whether it may turn (KEHOACH 9.21.4). */
@@ -239,6 +406,20 @@ export class NotificationsService {
         allowed.startsWith(".") ? host.endsWith(allowed) : host === allowed,
       )
     );
+  }
+
+  /** The devices this account receives push on, newest first, without their keys. */
+  async subscriptions(userId: string): Promise<SubscriptionView[]> {
+    const rows = await this.db.pushSubscription.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+    return rows.map(({ p256dh: _key, auth: _secret, ...shown }) => shown);
+  }
+
+  /** Drop one of the viewer's own devices by its id; another account's answers as missing. */
+  async dropSubscription(userId: string, id: string): Promise<void> {
+    const gone = await this.db.pushSubscription.deleteMany({ where: { id, userId } });
+    if (gone.count === 0) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
   }
 
   /** Only the owner drops a device: the endpoint alone is a guessable name for

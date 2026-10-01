@@ -114,7 +114,7 @@ describe("notices and push devices (e2e)", () => {
   it("sweeps contracts at a mark without falling over, and tells each mark once", async () => {
     for (let run = 0; run < 2; run += 1) {
       const res = await request(app.getHttpServer())
-        .post("/notifications/sweep-contracts")
+        .post("/notifications/sweeps/contracts")
         .set("Authorization", `Bearer ${admin}`);
       assert.equal(res.status, 201, JSON.stringify(res.body));
     }
@@ -157,10 +157,10 @@ describe("notices and push devices (e2e)", () => {
 
   it("filters the bell to unread notices when asked", async () => {
     const res = await request(app.getHttpServer())
-      .get("/notifications?unread=true")
+      .get("/notifications?status=unread")
       .set("Authorization", `Bearer ${mine}`);
     assert.equal(res.status, 200);
-    assert.ok((res.body as { readAt: string | null }[]).every((one) => one.readAt === null));
+    assert.ok((res.body.rows as { readAt: string | null }[]).every((one) => one.readAt === null));
   });
 
   it("drops the device a person signs out on, and keeps their other one", async () => {

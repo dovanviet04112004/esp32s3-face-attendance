@@ -137,7 +137,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     await closedFor(item, "boss", "DONE", "APPROVED");
 
     const bell = await request(http).get("/notifications").set("Authorization", `Bearer ${tokenOf.get("boss")}`);
-    const row = (bell.body as Bell[]).find((one) => one.item?.key === item.key);
+    const row = (bell.body.rows as Bell[]).find((one) => one.item?.key === item.key);
     assert.equal(row?.item?.state, "DONE", "the bell does not show the work as done");
     assert.equal(row?.item?.actorName, nameOf("boss"), "the bell does not say who decided");
 

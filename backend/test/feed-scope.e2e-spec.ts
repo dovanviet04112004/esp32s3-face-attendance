@@ -264,7 +264,8 @@ describe("who the feed talks to (e2e)", () => {
 
     const read = await request(app.getHttpServer())
       .post("/notifications/read")
-      .set("Authorization", `Bearer ${underToken}`);
+      .set("Authorization", `Bearer ${underToken}`)
+      .send({ all: true });
     assert.equal(read.status, 201);
     await settle();
 

@@ -1551,7 +1551,9 @@
     "RELEASE_NOT_MODELS_IMAGE": "Tệp gửi lên không phải ảnh models: thiếu header MDLS hoặc không có model nhận diện.",
     "DEVICE_OFFLINE": "Máy đang offline nên sẽ không nhận được lời mời. Chờ máy online lại rồi hãy cập nhật.",
     "NOTICE_NOT_FOUND": "Không tìm thấy thông báo này",
-    "NOTICE_CHANNEL_LOCKED": "Việc đang chờ bạn luôn hiện trong chuông; chỉ tắt được thông báo đẩy"
+    "NOTICE_CHANNEL_LOCKED": "Việc đang chờ bạn luôn hiện trong chuông; chỉ tắt được thông báo đẩy",
+    "NOTICE_ITEM_CLOSED": "Việc này đã xong, không nhận được nữa",
+    "NOTICE_ITEM_NOT_RESOLVABLE": "Việc này đóng khi được quyết ở chính hàng đợi của nó, không đóng tay được"
   },
   "search": {
     "placeholder": "Tìm người, đơn, phiếu lương, trang…",

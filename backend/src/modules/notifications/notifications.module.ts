@@ -10,6 +10,7 @@ import { NoticeItemsService } from "./notice-items.service.js";
 import { NotificationsController } from "./notifications.controller.js";
 import { NotificationsService } from "./notifications.service.js";
 import { StaleRequestsService } from "./stale-requests.service.js";
+import { SubjectsService } from "./subjects.service.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 
 @Global()
@@ -20,6 +21,7 @@ import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
     AudienceService,
     NotificationsService,
     NoticeItemsService,
+    SubjectsService,
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,
@@ -30,6 +32,7 @@ import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
     AudienceService,
     NotificationsService,
     NoticeItemsService,
+    SubjectsService,
     ContractAlertsService,
     StaleRequestsService,
     BackupWatchService,

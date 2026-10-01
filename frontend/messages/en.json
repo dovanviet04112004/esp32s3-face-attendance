@@ -1551,7 +1551,9 @@
     "RELEASE_NOT_MODELS_IMAGE": "The file is not a models image: it has no MDLS header or no recognition model.",
     "DEVICE_OFFLINE": "The kiosk is offline and would never receive the offer. Wait until it is back online, then update it.",
     "NOTICE_NOT_FOUND": "This notice was not found",
-    "NOTICE_CHANNEL_LOCKED": "Work waiting on you always shows in the bell; only its push can be turned off"
+    "NOTICE_CHANNEL_LOCKED": "Work waiting on you always shows in the bell; only its push can be turned off",
+    "NOTICE_ITEM_CLOSED": "This work is already done and can no longer be claimed",
+    "NOTICE_ITEM_NOT_RESOLVABLE": "This work closes when it is decided in its own queue, not by hand"
   },
   "search": {
     "placeholder": "Search people, requests, payslips, pages…",
