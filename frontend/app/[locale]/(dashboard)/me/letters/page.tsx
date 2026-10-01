@@ -60,14 +60,25 @@ function MyLetters() {
   const [purpose, setPurpose] = useState("");
   const [months, setMonths] = useState(DEFAULT_MONTHS);
   const [refused, setRefused] = useState<string | null>(null);
-  const [opened, setOpened] = useState<Letter | null>(null);
+  const [picked, setPicked] = useState<Letter | null>(null);
   const linked = search.get("new") !== null;
+  const named = search.get("open");
 
   const letters = useQuery({
     queryKey: ["certificates", "mine", employeeId],
     enabled: employeeId !== null,
     queryFn: async () => (await api.get<{ rows: Letter[] }>(`/certificates?employeeId=${employeeId}`)).data.rows,
   });
+
+  // A search hit names one letter; it opens until the dialog closes.
+  const opened = picked ?? letters.data?.find((one) => one.id === named) ?? null;
+
+  function setOpened(next: Letter | null): void {
+    setPicked(next);
+    if (next === null && named !== null) {
+      router.replace(kHere, { scroll: false });
+    }
+  }
 
   const text = useQuery({
     queryKey: ["certificates", opened?.id, "letter"],

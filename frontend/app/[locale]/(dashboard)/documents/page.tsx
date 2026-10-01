@@ -189,7 +189,7 @@ function Documents() {
   const notify = useNotify();
   const optional = useOptional();
 
-  const [url, setUrl] = useUrlState({ tab: "publish", q: "", kind: "", retired: "" });
+  const [url, setUrl] = useUrlState({ tab: "publish", q: "", kind: "", retired: "", open: "" });
   const tab: Tab = (TABS as readonly string[]).includes(url.tab) ? (url.tab as Tab) : "publish";
   const [typed, setTyped] = useState(url.q);
   const settled = useSettled(typed.trim());
@@ -433,6 +433,28 @@ function Documents() {
     saveType.mutate(held);
   }
 
+  function openRow(row: Doc): void {
+    if (row.versions.length > 0) {
+      openReaders(row);
+    } else if (row.active) {
+      openPublish(row);
+    } else {
+      openDoc(row);
+    }
+  }
+
+  // A search hit names one document and arrives with the list filtered to its code.
+  useEffect(() => {
+    if (url.open === "" || !docs.data) {
+      return;
+    }
+    const linked = docs.data.find((doc) => doc.id === url.open);
+    if (linked) {
+      openRow(linked);
+    }
+    setUrl({ open: "" });
+  }, [url.open, docs.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const day = (iso: string) => format.dateTime(new Date(iso), "day");
   const needle = fold(url.q);
   const departmentName = new Map((departments.data ?? []).map((one) => [one.id, one.name]));
@@ -672,7 +694,7 @@ function Documents() {
               </Button>
             )
           }
-          onRowClick={(row) => (row.versions.length > 0 ? openReaders(row) : row.active ? openPublish(row) : openDoc(row))}
+          onRowClick={openRow}
           rowActions={docActions}
         />
       </>

@@ -5,14 +5,23 @@ import type { Icon as IconType } from "@phosphor-icons/react";
 import {
   ArrowRightIcon,
   CalendarBlankIcon,
+  CertificateIcon,
+  ChatCircleTextIcon,
+  CpuIcon,
+  FilesIcon,
+  HandCoinsIcon,
+  IdentificationCardIcon,
   MagnifyingGlassIcon,
+  PackageIcon,
   ReceiptIcon,
   TreeStructureIcon,
   UserIcon,
+  UsersThreeIcon,
+  WalletIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { RequestKind } from "@/components/requests/request-card";
 import { useRouter } from "@/i18n/navigation";
@@ -20,7 +29,23 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { entriesFor } from "@/lib/nav";
 
-type HitKind = "employee" | "department" | "request" | "payslip";
+const KINDS = [
+  "employee",
+  "department",
+  "request",
+  "certificate",
+  "profileChange",
+  "dispute",
+  "dependent",
+  "advance",
+  "payslip",
+  "payrollPeriod",
+  "kiosk",
+  "asset",
+  "document",
+] as const;
+
+type HitKind = (typeof KINDS)[number];
 
 interface Hit {
   kind: HitKind;
@@ -29,6 +54,14 @@ interface Hit {
   detail: string;
   href: string;
   requestKind?: RequestKind;
+  certificateKind?: "EMPLOYMENT" | "INCOME";
+  profileField?: "PERSONAL_EMAIL" | "PHONE" | "BANK" | "NATIONAL_ID" | "TAX_CODE" | "SOCIAL_INSURANCE_NO";
+  documentKind?: "POLICY" | "HANDBOOK" | "NOTICE";
+}
+
+interface Reply {
+  hits: Hit[];
+  more: { kind: HitKind; href: string }[];
 }
 
 interface Found {
@@ -37,6 +70,7 @@ interface Found {
   detail: string | null;
   href: string;
   icon: IconType;
+  more?: boolean;
 }
 
 interface Pile {
@@ -49,17 +83,34 @@ const FACE: Record<HitKind, IconType> = {
   employee: UserIcon,
   department: TreeStructureIcon,
   request: CalendarBlankIcon,
+  certificate: CertificateIcon,
+  profileChange: IdentificationCardIcon,
+  dispute: ChatCircleTextIcon,
+  dependent: UsersThreeIcon,
+  advance: HandCoinsIcon,
   payslip: ReceiptIcon,
+  payrollPeriod: WalletIcon,
+  kiosk: CpuIcon,
+  asset: PackageIcon,
+  document: FilesIcon,
 };
 
+// Literal keys, not a built string: a missing translation has to break the build (CLAUDE.md 3.1).
 const KIND_KEY = {
   employee: "kindEmployee",
   department: "kindDepartment",
   request: "kindRequest",
+  certificate: "kindCertificate",
+  profileChange: "kindProfileChange",
+  dispute: "kindDispute",
+  dependent: "kindDependent",
+  advance: "kindAdvance",
   payslip: "kindPayslip",
+  payrollPeriod: "kindPayrollPeriod",
+  kiosk: "kindKiosk",
+  asset: "kindAsset",
+  document: "kindDocument",
 } as const;
-
-const KINDS: HitKind[] = ["employee", "department", "request", "payslip"];
 
 // A slash belongs to whatever is being typed into, not to the search box.
 const TYPED_IN = new Set(["INPUT", "TEXTAREA", "SELECT"]);
@@ -74,9 +125,6 @@ function folded(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/đ/g, "d");
 }
 
-/** Cloudflare's quick search: pages this role can open, then people,
- *  departments, requests and payslips from the api (KEHOACH 9.20).
- */
 /** The field-shaped button the top bar shows; with no `onOpen` it is the inert copy of the opening frame. */
 export function SearchTrigger({ onOpen }: { onOpen?: () => void }) {
   const t = useTranslations("search");
@@ -93,10 +141,36 @@ export function SearchTrigger({ onOpen }: { onOpen?: () => void }) {
   );
 }
 
+/** What a hit is, ahead of its codes and dates: the kind of request, letter, change or document. */
+function useHitDetail(): (hit: Hit) => string {
+  const requests = useTranslations("requests");
+  const letters = useTranslations("certificates");
+  const profile = useTranslations("profile");
+  const documents = useTranslations("documents");
+  const payroll = useTranslations("payroll");
+  return useCallback(
+    (hit: Hit) => {
+      const what = hit.requestKind
+        ? requests(`kind${hit.requestKind}`)
+        : hit.certificateKind
+          ? letters(hit.certificateKind)
+          : hit.profileField
+            ? profile(`field${hit.profileField}`)
+            : hit.documentKind
+              ? documents(`kind_${hit.documentKind}`)
+              : null;
+      const detail = hit.kind === "payrollPeriod" && hit.detail === "" ? payroll("wholeCompany") : hit.detail;
+      return what ? `${what} · ${detail}` : detail;
+    },
+    [requests, letters, profile, documents, payroll],
+  );
+}
+
+/** Cloudflare's quick search: pages this role can open, then every kind of KEHOACH 9.20 the api finds. */
 export function GlobalSearch() {
   const t = useTranslations("search");
   const nav = useTranslations("nav");
-  const requests = useTranslations("requests");
+  const detailOf = useHitDetail();
   const router = useRouter();
   const { role, employeeId } = useSession();
   const [open, setOpen] = useState(false);
@@ -124,11 +198,13 @@ export function GlobalSearch() {
 
   const wanted = typed.trim().slice(0, kMaxLength);
 
-  const hits = useQuery({
+  const found = useQuery({
     queryKey: ["search", term],
     enabled: open && term.length >= kMinLength,
-    queryFn: async () => (await api.get<Hit[]>(`/search?q=${encodeURIComponent(term)}`)).data,
+    queryFn: async () => (await api.get<Reply>(`/search?q=${encodeURIComponent(term)}`)).data,
   });
+
+  const loading = wanted.length >= kMinLength && (wanted !== term || found.isFetching);
 
   const piles = useMemo<Pile[]>(() => {
     const needle = folded(typed.trim());
@@ -142,24 +218,32 @@ export function GlobalSearch() {
         href: item.href,
         icon: item.icon,
       }));
-    const found = term.length >= kMinLength ? (hits.data ?? []) : [];
+    const reply = term.length >= kMinLength ? found.data : undefined;
     return [
       { id: "pages", label: t("pages"), items: pages },
-      ...KINDS.map((kind) => ({
-        id: kind,
-        label: t(KIND_KEY[kind]),
-        items: found
-          .filter((hit) => hit.kind === kind)
-          .map((hit) => ({
-            id: `${kind}:${hit.id}`,
-            title: hit.title,
-            detail: hit.requestKind ? `${requests(`kind${hit.requestKind}`)} · ${hit.detail}` : hit.detail,
-            href: hit.href,
-            icon: FACE[kind],
-          })),
-      })),
+      ...KINDS.map((kind) => {
+        const more = reply?.more.find((one) => one.kind === kind);
+        return {
+          id: kind,
+          label: t(KIND_KEY[kind]),
+          items: [
+            ...(reply?.hits ?? [])
+              .filter((hit) => hit.kind === kind)
+              .map((hit) => ({
+                id: `${kind}:${hit.id}`,
+                title: hit.title,
+                detail: detailOf(hit),
+                href: hit.href,
+                icon: FACE[kind],
+              })),
+            ...(more
+              ? [{ id: `more:${kind}`, title: t("seeAll"), detail: null, href: more.href, icon: MagnifyingGlassIcon, more: true }]
+              : []),
+          ],
+        };
+      }),
     ].filter((pile) => pile.items.length > 0);
-  }, [typed, term, hits.data, role, employeeId, nav, t, requests]);
+  }, [typed, term, found.data, role, employeeId, nav, t, detailOf]);
 
   function go(item: Found): void {
     setOpen(false);
@@ -195,41 +279,33 @@ export function GlobalSearch() {
           onChange={(event) => setTyped(event.currentTarget.value)}
         />
         <CommandPalette.List>
-          {wanted.length >= kMinLength && (wanted !== term || hits.isFetching) && piles.length === 0 ? (
-            <CommandPalette.Loading />
-          ) : (
-            <>
-              <CommandPalette.Results>
-                {(pile: Pile) => (
-                  <CommandPalette.Group key={pile.id} items={pile.items}>
-                    <CommandPalette.GroupLabel>{pile.label}</CommandPalette.GroupLabel>
-                    <CommandPalette.Items>
-                      {(item: Found) => {
-                        const Icon = item.icon;
-                        return (
-                          <CommandPalette.Item key={item.id} value={item} onClick={() => go(item)}>
-                            <span className="flex min-w-0 items-center gap-3">
-                              <Icon size={16} className="shrink-0 text-kumo-subtle" aria-hidden />
-                              <span className="min-w-0">
-                                <span className="block truncate">{item.title}</span>
-                                {item.detail ? (
-                                  <span className="block truncate text-sm text-kumo-subtle">{item.detail}</span>
-                                ) : null}
-                              </span>
-                              {item.detail === null ? (
-                                <ArrowRightIcon size={14} className="ms-auto shrink-0 text-kumo-subtle" aria-hidden />
-                              ) : null}
-                            </span>
-                          </CommandPalette.Item>
-                        );
-                      }}
-                    </CommandPalette.Items>
-                  </CommandPalette.Group>
-                )}
-              </CommandPalette.Results>
-              <CommandPalette.Empty>{t("nothing")}</CommandPalette.Empty>
-            </>
-          )}
+          <CommandPalette.Results>
+            {(pile: Pile) => (
+              <CommandPalette.Group key={pile.id} items={pile.items}>
+                <CommandPalette.GroupLabel>{pile.label}</CommandPalette.GroupLabel>
+                <CommandPalette.Items>
+                  {(item: Found) => {
+                    const Icon = item.icon;
+                    return (
+                      <CommandPalette.Item key={item.id} value={item} onClick={() => go(item)}>
+                        <span className="flex min-w-0 flex-1 items-center gap-3">
+                          <Icon size={16} className="shrink-0 text-kumo-subtle" aria-hidden />
+                          <span className="min-w-0">
+                            <span className={item.more ? "block truncate text-kumo-subtle" : "block truncate"}>{item.title}</span>
+                            {item.detail ? <span className="block truncate text-sm text-kumo-subtle">{item.detail}</span> : null}
+                          </span>
+                          {item.detail === null ? (
+                            <ArrowRightIcon size={14} className="ms-auto shrink-0 text-kumo-subtle" aria-hidden />
+                          ) : null}
+                        </span>
+                      </CommandPalette.Item>
+                    );
+                  }}
+                </CommandPalette.Items>
+              </CommandPalette.Group>
+            )}
+          </CommandPalette.Results>
+          {loading ? <CommandPalette.Loading /> : <CommandPalette.Empty>{t("nothing")}</CommandPalette.Empty>}
         </CommandPalette.List>
         <CommandPalette.Footer>
           <span className="flex items-center gap-2">

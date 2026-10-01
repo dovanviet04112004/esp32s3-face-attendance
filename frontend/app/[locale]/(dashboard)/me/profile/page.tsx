@@ -156,7 +156,7 @@ function Dependents({ employeeId }: { employeeId: number }) {
 
   return (
     <>
-      <LayerCard className="mt-6">
+      <LayerCard id="dependants" className="mt-6 scroll-mt-24">
         <LayerCard.Secondary className="justify-between">
           <span>{t("dependentsTitle")}</span>
           {rows.length > 0 ? (

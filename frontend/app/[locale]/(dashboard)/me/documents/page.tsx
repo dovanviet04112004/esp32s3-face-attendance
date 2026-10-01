@@ -12,7 +12,7 @@ function MyDocuments() {
   const t = useTranslations("documents");
   const common = useTranslations("common");
   const mine = useMyDocuments();
-  const [url, setUrl] = useUrlState({ only: "" });
+  const [url, setUrl] = useUrlState({ only: "", doc: "" });
   const only: ReadFilter = url.only === "unread" || url.only === "signed" ? url.only : "";
 
   const all = mine.data ?? [];
@@ -34,7 +34,7 @@ function MyDocuments() {
             },
           ]}
         />
-        <DocumentReader only={only} />
+        <DocumentReader only={only} linked={url.doc} onUnlink={() => setUrl({ doc: "" })} />
       </PageLayout>
     </>
   );

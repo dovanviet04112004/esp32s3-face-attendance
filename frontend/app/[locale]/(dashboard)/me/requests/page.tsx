@@ -48,7 +48,7 @@ interface Balance {
 
 const kAdvanceForm = "advance-form";
 const kPage = 20;
-const DEFAULTS = { tab: "", open: "", new: "", date: "" };
+const DEFAULTS = { tab: "", open: "", new: "", date: "", advance: "" };
 
 interface RequestPage {
   rows: RequestRow[];
@@ -227,6 +227,7 @@ function MyRequests() {
   const formOpen = filing || linked !== null;
   const rows = mine.data?.pages.flatMap((one) => one.rows);
   const first = mine.data?.pages[0];
+  const shownAdvance = advances.data?.find((one) => one.id === url.advance) ?? null;
 
   const requestColumns: Column<RequestRow>[] = [
     {
@@ -368,6 +369,7 @@ function MyRequests() {
                 {pay("advanceNew")}
               </Button>
             }
+            onRowClick={(row) => setUrl({ advance: row.id })}
             rowActions={(row) =>
               row.state === "PENDING"
                 ? [{ key: "drop", label: t("cancel"), icon: XCircleIcon, danger: true, onSelect: () => setDroppingAdvance(row) }]
@@ -396,6 +398,29 @@ function MyRequests() {
                 busy={cancel.isPending}
                 onCancel={opened.data.employee?.id === employeeId ? () => opened.data && setDropping(opened.data) : undefined}
               />
+            ) : null}
+          </LayerDialog.Body>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Root open={shownAdvance !== null} onOpenChange={(next) => !next && setUrl({ advance: "" })}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{pay("advances")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {shownAdvance ? format.dateTime(new Date(shownAdvance.requestedAt), "day") : ""}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            {shownAdvance ? (
+              <div className="flex flex-col gap-3">
+                <Facts
+                  rows={[
+                    [pay("advanceAmount"), money(Number(shownAdvance.amount), locale)],
+                    [t("state"), <StatePill key="state" tone={ADVANCE_TONE[shownAdvance.state]}>{pay(`advance${shownAdvance.state}`)}</StatePill>],
+                  ]}
+                />
+                <p className="break-words">{shownAdvance.reason}</p>
+                {shownAdvance.decisionNote ? <p className="break-words text-kumo-subtle">{shownAdvance.decisionNote}</p> : null}
+              </div>
             ) : null}
           </LayerDialog.Body>
         </LayerDialog.Content>

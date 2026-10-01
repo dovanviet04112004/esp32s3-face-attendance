@@ -1541,12 +1541,22 @@
     "DEVICE_OFFLINE": "Máy đang offline nên sẽ không nhận được lời mời. Chờ máy online lại rồi hãy cập nhật."
   },
   "search": {
-    "placeholder": "Tìm người, phòng ban, đơn, trang…",
+    "placeholder": "Tìm người, đơn, phiếu lương, trang…",
     "nothing": "Không có kết quả nào",
     "kindEmployee": "Nhân viên",
     "kindDepartment": "Phòng ban",
     "kindRequest": "Đơn",
+    "kindCertificate": "Giấy xác nhận",
+    "kindProfileChange": "Đổi hồ sơ",
+    "kindDispute": "Khiếu nại lương",
+    "kindDependent": "Người phụ thuộc",
+    "kindAdvance": "Tạm ứng lương",
     "kindPayslip": "Phiếu lương",
+    "kindPayrollPeriod": "Kỳ lương",
+    "kindKiosk": "Thiết bị",
+    "kindAsset": "Tài sản",
+    "kindDocument": "Tài liệu",
+    "seeAll": "Xem tất cả",
     "pages": "Trang",
     "walk": "Chọn",
     "open": "Mở"

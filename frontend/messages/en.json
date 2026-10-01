@@ -1541,12 +1541,22 @@
     "DEVICE_OFFLINE": "The kiosk is offline and would never receive the offer. Wait until it is back online, then update it."
   },
   "search": {
-    "placeholder": "Search people, departments, requests, pages…",
+    "placeholder": "Search people, requests, payslips, pages…",
     "nothing": "Nothing matched",
     "kindEmployee": "Employee",
     "kindDepartment": "Department",
     "kindRequest": "Request",
+    "kindCertificate": "Letter",
+    "kindProfileChange": "Record change",
+    "kindDispute": "Pay dispute",
+    "kindDependent": "Dependant",
+    "kindAdvance": "Salary advance",
     "kindPayslip": "Payslip",
+    "kindPayrollPeriod": "Pay period",
+    "kindKiosk": "Device",
+    "kindAsset": "Asset",
+    "kindDocument": "Document",
+    "seeAll": "See all",
     "pages": "Pages",
     "walk": "Move",
     "open": "Open"

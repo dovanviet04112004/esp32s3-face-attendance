@@ -34,14 +34,23 @@ export function useMyDocuments() {
   });
 }
 
-export function DocumentReader({ only = "" }: { only?: ReadFilter }) {
+/** `linked` is a document a link names, opened until its dialog closes and `onUnlink` drops it. */
+export function DocumentReader({ only = "", linked = "", onUnlink }: { only?: ReadFilter; linked?: string; onUnlink?: () => void }) {
   const t = useTranslations("documents");
   const common = useTranslations("common");
   const format = useFormatter();
   const cache = useQueryClient();
   const notify = useNotify();
   const mine = useMyDocuments();
-  const [open, setOpen] = useState<ToRead | null>(null);
+  const [picked, setPicked] = useState<ToRead | null>(null);
+  const open = picked ?? mine.data?.find((row) => row.documentId === linked) ?? null;
+
+  function setOpen(next: ToRead | null): void {
+    setPicked(next);
+    if (next === null && linked !== "") {
+      onUnlink?.();
+    }
+  }
 
   const sign = useMutation({
     mutationFn: (versionId: string) => api.post(`/me/documents/${versionId}/ack`),

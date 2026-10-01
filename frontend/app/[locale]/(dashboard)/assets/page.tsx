@@ -92,7 +92,7 @@ function Assets() {
   const notify = useNotify();
   const optional = useOptional();
 
-  const [url, setUrl] = useUrlState({ q: "", state: "", kind: "" });
+  const [url, setUrl] = useUrlState({ q: "", state: "", kind: "", open: "" });
   const [typed, setTyped] = useState(url.q);
   const settled = useSettled(typed.trim());
   useEffect(() => {
@@ -123,6 +123,18 @@ function Assets() {
     queryKey: ["assets", "counts", url.q, url.kind],
     queryFn: async () => (await api.get<Counts>(`/assets/counts${query({ search: url.q, kind: url.kind })}`)).data,
   });
+
+  // A search hit names one asset and arrives with the register filtered to its code.
+  useEffect(() => {
+    if (url.open === "" || !register.data) {
+      return;
+    }
+    const linked = register.data.pages.flatMap((page) => page.rows).find((row) => row.id === url.open);
+    if (linked) {
+      setShowing(linked);
+    }
+    setUrl({ open: "" });
+  }, [url.open, register.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const add = useMutation({
     mutationFn: async (held: Draft) => {

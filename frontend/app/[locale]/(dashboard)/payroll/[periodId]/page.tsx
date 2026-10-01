@@ -206,7 +206,7 @@ function PayrollPeriod() {
   const faultOf = useFault();
   const optional = useOptional();
 
-  const [url, setUrl] = useUrlState({ q: "", run: "" });
+  const [url, setUrl] = useUrlState({ q: "", run: "", open: "" });
   const [typed, setTyped] = useState(url.q);
   const settled = useSettled(typed.trim());
   useEffect(() => {
@@ -304,6 +304,18 @@ function PayrollPeriod() {
     enabled: slipOpen !== null,
     queryFn: async () => (await api.get<Payslip>(`/payslips/${slipOpen?.id}`)).data,
   });
+
+  // A search hit names one payslip and arrives with the list filtered to its owner.
+  useEffect(() => {
+    if (url.open === "" || !slips.data) {
+      return;
+    }
+    const linked = slips.data.pages.flatMap((page) => page.rows).find((row) => row.id === url.open);
+    if (linked) {
+      setSlipOpen(linked);
+    }
+    setUrl({ open: "" });
+  }, [url.open, slips.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function refresh(): void {
     void cache.invalidateQueries({ queryKey: ["payroll-periods"] });

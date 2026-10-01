@@ -288,7 +288,8 @@ function Org() {
 
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
   const [focusId, setFocusId] = useState<string | null>(null);
-  const [sheet, setSheet] = useState(false);
+  // A link that names a department opens its sheet on a phone, as a tap on it does.
+  const [sheet, setSheet] = useState(() => url.dept !== "");
   const keyed = useRef(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
