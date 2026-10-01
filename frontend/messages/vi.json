@@ -1549,7 +1549,9 @@
     "IMPORT_TOO_MANY_ROWS": "File có nhiều dòng hơn một lần nhập nhận. Chia thành nhiều file nhỏ hơn.",
     "RELEASE_CHANGES_RECOGNITION": "Bản này đổi model nhận diện nên chỉ phát được cho cả đội cùng lúc, sau khi xác nhận mọi người sẽ lấy mặt lại. Dùng Cập nhật cả đội ở trang Thiết bị.",
     "RELEASE_NOT_MODELS_IMAGE": "Tệp gửi lên không phải ảnh models: thiếu header MDLS hoặc không có model nhận diện.",
-    "DEVICE_OFFLINE": "Máy đang offline nên sẽ không nhận được lời mời. Chờ máy online lại rồi hãy cập nhật."
+    "DEVICE_OFFLINE": "Máy đang offline nên sẽ không nhận được lời mời. Chờ máy online lại rồi hãy cập nhật.",
+    "NOTICE_NOT_FOUND": "Không tìm thấy thông báo này",
+    "NOTICE_CHANNEL_LOCKED": "Việc đang chờ bạn luôn hiện trong chuông; chỉ tắt được thông báo đẩy"
   },
   "search": {
     "placeholder": "Tìm người, đơn, phiếu lương, trang…",

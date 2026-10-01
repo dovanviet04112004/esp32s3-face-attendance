@@ -1549,7 +1549,9 @@
     "IMPORT_TOO_MANY_ROWS": "The file holds more lines than one import takes. Split it into smaller files.",
     "RELEASE_CHANGES_RECOGNITION": "This release changes the recognition model, so it goes to the whole fleet at once, after confirming everyone is captured again. Use Update all on the Devices page.",
     "RELEASE_NOT_MODELS_IMAGE": "The file is not a models image: it has no MDLS header or no recognition model.",
-    "DEVICE_OFFLINE": "The kiosk is offline and would never receive the offer. Wait until it is back online, then update it."
+    "DEVICE_OFFLINE": "The kiosk is offline and would never receive the offer. Wait until it is back online, then update it.",
+    "NOTICE_NOT_FOUND": "This notice was not found",
+    "NOTICE_CHANNEL_LOCKED": "Work waiting on you always shows in the bell; only its push can be turned off"
   },
   "search": {
     "placeholder": "Search people, requests, payslips, pages…",

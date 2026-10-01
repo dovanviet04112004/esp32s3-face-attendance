@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type {
   NoticeChannel,
@@ -16,6 +16,7 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
+import { mutable, NOTICE_KINDS, receives, type OfferedChannel } from "./notice-kinds.js";
 
 /** What a notice may carry: references and counts, never words or money. */
 export interface NoticeFacts {
@@ -38,26 +39,19 @@ export interface Unread {
   total: number;
 }
 
-const KINDS: NoticeKind[] = [
-  "REQUEST_DECIDED",
-  "REQUEST_WAITING",
-  "REQUEST_STALLED",
-  "PAYSLIP_ISSUED",
-  "CONTRACT_ENDING",
-  "DISPUTE_ANSWERED",
-  "ADVANCE_PAID",
-];
+export interface PreferenceRow {
+  kind: NoticeKind;
+  channel: NoticeChannel;
+  on: boolean;
+  mutable: boolean;
+}
 
 // Email stays in the enum for rows already written, but it is not a switch:
 // letters ride their own errand (KEHOACH 9.21.4).
-const OFFERED = ["IN_APP", "PUSH"] as const;
+const OFFERED: readonly OfferedChannel[] = ["IN_APP", "PUSH"];
 
-type OfferedChannel = (typeof OFFERED)[number];
-
-const DEFAULT_ON: Record<OfferedChannel, boolean> = {
-  IN_APP: true,
-  PUSH: true,
-};
+// A row the bell shows: neither put away nor left behind by a regrouped item.
+const SHOWN = { archivedAt: null, leftAt: null } satisfies Prisma.NotificationWhereInput;
 
 const kDeadSubscription = [404, 410];
 const kPageSize = 50;
@@ -88,14 +82,14 @@ export class NotificationsService {
 
   list(userId: string, unreadOnly: boolean): Promise<Notification[]> {
     return this.db.notification.findMany({
-      where: { userId, ...(unreadOnly ? { readAt: null } : {}) },
+      where: { userId, ...SHOWN, ...(unreadOnly ? { readAt: null } : {}) },
       orderBy: { createdAt: "desc" },
       take: kPageSize,
     });
   }
 
   async unread(userId: string): Promise<Unread> {
-    return { total: await this.db.notification.count({ where: { userId, readAt: null } }) };
+    return { total: await this.db.notification.count({ where: { userId, readAt: null, ...SHOWN } }) };
   }
 
   async markRead(userId: string, id?: string): Promise<Unread> {
@@ -106,25 +100,35 @@ export class NotificationsService {
     return this.unread(userId);
   }
 
-  async preferences(userId: string): Promise<{ kind: NoticeKind; channel: NoticeChannel; on: boolean }[]> {
-    const held = await this.db.notificationPreference.findMany({ where: { userId } });
+  /** Only the kinds this account can receive, each switch saying whether it may turn (KEHOACH 9.21.4). */
+  async preferences(viewer: Viewer): Promise<PreferenceRow[]> {
+    const held = await this.db.notificationPreference.findMany({ where: { userId: viewer.userId } });
     const known = new Map(held.map((row) => [`${row.kind}:${row.channel}`, row.on]));
-    return KINDS.flatMap((kind) =>
-      OFFERED.map((channel) => ({
-        kind,
-        channel,
-        on: known.get(`${kind}:${channel}`) ?? DEFAULT_ON[channel],
-      })),
-    );
+    return (Object.keys(NOTICE_KINDS) as NoticeKind[])
+      .filter((kind) => receives(kind, viewer.role, viewer.employeeId !== null))
+      .flatMap((kind) =>
+        OFFERED.map((channel) => ({
+          kind,
+          channel,
+          on: mutable(kind, channel) ? (known.get(`${kind}:${channel}`) ?? NOTICE_KINDS[kind].defaults[channel]) : true,
+          mutable: mutable(kind, channel),
+        })),
+      );
   }
 
-  setPreference(userId: string, body: SetPreferenceDto): Promise<NotificationPreference> {
+  async setPreference(viewer: Viewer, body: SetPreferenceDto): Promise<NotificationPreference> {
+    if (!receives(body.kind, viewer.role, viewer.employeeId !== null)) {
+      throw new NotFoundException("NOTICE_NOT_FOUND");
+    }
+    if (!mutable(body.kind, body.channel as OfferedChannel)) {
+      throw new ConflictException("NOTICE_CHANNEL_LOCKED");
+    }
     return this.db.notificationPreference.upsert({
       where: {
-        userId_kind_channel: { userId, kind: body.kind, channel: body.channel },
+        userId_kind_channel: { userId: viewer.userId, kind: body.kind, channel: body.channel },
       },
       update: { on: body.on },
-      create: { userId, kind: body.kind, channel: body.channel, on: body.on },
+      create: { userId: viewer.userId, kind: body.kind, channel: body.channel, on: body.on },
     });
   }
 
@@ -249,18 +253,7 @@ export class NotificationsService {
    * the same bargain AuditService makes (KEHOACH 9.21.4).
    */
   async raise(userId: string, kind: NoticeKind, facts: NoticeFacts): Promise<void> {
-    try {
-      const wanted = await this.wants(userId, kind);
-      if (wanted.IN_APP) {
-        await this.db.notification.create({ data: { userId, kind, ...facts } });
-      }
-      this.feed.tell(userId, FEED.notice, { kind, ...facts });
-      if (wanted.PUSH) {
-        await this.push(userId, kind, facts);
-      }
-    } catch (fell) {
-      this.log.error(`notice ${kind} for ${userId} was not raised: ${String(fell)}`);
-    }
+    await this.raiseEach(kind, [{ userId, facts }]);
   }
 
   /** One notice each, for a list of people, without a query per person. */
@@ -282,10 +275,15 @@ export class NotificationsService {
       });
       const set = new Map(held.map((row) => [`${row.userId}:${row.channel}`, row.on]));
       const wants = (id: string, channel: OfferedChannel): boolean =>
-        set.get(`${id}:${channel}`) ?? DEFAULT_ON[channel];
-      const rows: Prisma.NotificationCreateManyInput[] = sends
-        .filter((one) => wants(one.userId, "IN_APP"))
-        .map((one) => ({ userId: one.userId, kind, ...one.facts }));
+        !mutable(kind, channel) || (set.get(`${id}:${channel}`) ?? NOTICE_KINDS[kind].defaults[channel]);
+      const now = new Date();
+      // Muted in the app, the row still lands, put away: it is the dedup and the record of whom it reached.
+      const rows: Prisma.NotificationCreateManyInput[] = sends.map((one) => ({
+        userId: one.userId,
+        kind,
+        ...one.facts,
+        ...(wants(one.userId, "IN_APP") ? {} : { archivedAt: now }),
+      }));
       if (rows.length > 0) {
         // One batch, then one at a time if it falls: an account closed between
         // reading the list and writing it must not silence everybody else.
@@ -295,27 +293,16 @@ export class NotificationsService {
           }
         });
       }
-      for (const one of sends) {
+      const shown = sends.filter((one) => wants(one.userId, "IN_APP"));
+      for (const one of shown) {
         this.feed.tell(one.userId, FEED.notice, { kind, ...one.facts });
       }
       await Promise.all(
-        sends.filter((one) => wants(one.userId, "PUSH")).map((one) => this.push(one.userId, kind, one.facts)),
+        shown.filter((one) => wants(one.userId, "PUSH")).map((one) => this.push(one.userId, kind, one.facts)),
       );
     } catch (fell) {
       this.log.error(`notices ${kind} were not raised: ${String(fell)}`);
     }
-  }
-
-  private async wants(
-    userId: string,
-    kind: NoticeKind,
-  ): Promise<Record<OfferedChannel, boolean>> {
-    const held = await this.db.notificationPreference.findMany({ where: { userId, kind } });
-    const known = new Map(held.map((row) => [row.channel, row.on]));
-    return {
-      IN_APP: known.get("IN_APP") ?? DEFAULT_ON.IN_APP,
-      PUSH: known.get("PUSH") ?? DEFAULT_ON.PUSH,
-    };
   }
 
   private async push(userId: string, kind: NoticeKind, facts: NoticeFacts): Promise<void> {

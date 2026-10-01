@@ -201,6 +201,11 @@ export class PreferenceView {
   on!: boolean;
 }
 
+export class OfferedPreferenceView extends PreferenceView {
+  @ApiProperty({ example: true, description: "False for a work item's in-app switch, which stays on" })
+  mutable!: boolean;
+}
+
 export class SavedPreferenceView extends PreferenceView {
   @ApiProperty({ example: "ab35f74f-dd47-4ad6-8e4c-fb243e7ac176", description: "Account the switch belongs to" })
   userId!: string;

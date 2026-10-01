@@ -9,7 +9,7 @@ import {
   ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
-import type { NoticeChannel, NoticeKind, Notification, NotificationPreference } from "@prisma/client";
+import type { Notification, NotificationPreference } from "@prisma/client";
 
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
@@ -22,7 +22,7 @@ import {
   DoneView,
   ListNoticesDto,
   NoticeView,
-  PreferenceView,
+  OfferedPreferenceView,
   SavedPreferenceView,
   SetPreferenceDto,
   SubscribeDto,
@@ -33,7 +33,12 @@ import {
 } from "./dto/notifications.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
-import { NotificationsService, type SubscriptionView as KeptSubscription, type Unread } from "./notifications.service.js";
+import {
+  NotificationsService,
+  type PreferenceRow,
+  type SubscriptionView as KeptSubscription,
+  type Unread,
+} from "./notifications.service.js";
 
 @ApiTags("notifications")
 @ApiBearerAuth(API_AUTH.user)
@@ -85,22 +90,21 @@ export class NotificationsController {
   }
 
   @Get("preferences")
-  @ApiOperation({ summary: "Every kind across the two channels somebody delivers, defaults filled in" })
-  @ApiOkResponse({ type: [PreferenceView] })
-  preferences(
-    @CurrentViewer() viewer: Viewer,
-  ): Promise<{ kind: NoticeKind; channel: NoticeChannel; on: boolean }[]> {
-    return this.notices.preferences(viewer.userId);
+  @ApiOperation({ summary: "The kinds this account receives, on the two channels somebody delivers, defaults filled in" })
+  @ApiOkResponse({ type: [OfferedPreferenceView] })
+  preferences(@CurrentViewer() viewer: Viewer): Promise<PreferenceRow[]> {
+    return this.notices.preferences(viewer);
   }
 
   @Post("preferences")
-  @ApiOperation({ summary: "Turn one kind on one channel on or off" })
+  @ApiOperation({ summary: "Turn one kind on one channel on or off; a work item's in-app switch stays on" })
   @ApiCreatedResponse({ type: SavedPreferenceView })
+  @ApiErrors(HttpStatus.NOT_FOUND, HttpStatus.CONFLICT)
   setPreference(
     @CurrentViewer() viewer: Viewer,
     @Body() body: SetPreferenceDto,
   ): Promise<NotificationPreference> {
-    return this.notices.setPreference(viewer.userId, body);
+    return this.notices.setPreference(viewer, body);
   }
 
   @Post("subscribe")
