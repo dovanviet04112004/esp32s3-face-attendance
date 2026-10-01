@@ -6223,7 +6223,8 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 |---|---|
 | Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ mở `kiosk/{chính nó}/#` (§7.4) |
 | Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
-| Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke |
+| Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke. Đăng xuất một máy cắt luôn vé access và ổ cắm realtime của đúng phiên ấy, không chờ vé hết hạn (§9.23). Mọi vé ký bằng HS256 và mọi chỗ kiểm vé chỉ nhận HS256, ghim ở `JWT_ALGORITHM` |
+| Mật khẩu | scrypt N=2^14, r=8, p=5: 16 MiB mỗi lần băm, mức OWASP xếp ngang N=2^17, p=1 mà không đòi 128 MiB RAM cho mỗi lượt đăng nhập đang chạy. Tham số ghi ngay trong chuỗi băm, nên băm cũ vẫn kiểm được và được băm lại ở lần đăng nhập đúng kế tiếp. Đặt hay đổi mật khẩu gửi thư báo cho chủ tài khoản (§9.4) |
 | Tài liệu API (Swagger) | `API_DOCS` chọn ai đọc `/docs` và JSON của nó ở `/docs/json`: `open` cho mọi người, mặc định ngoài production; `admin`, mặc định ở production; `off` tắt hẳn. Ở `admin`, ai không có phiên tài liệu nhận **404 `ROUTE_NOT_FOUND`** như một đường không tồn tại, cho cả trang lẫn JSON: tài liệu công khai là bản đồ dâng sẵn cho kẻ dò (OWASP API9). ADMIN bấm *Mở tài liệu API* ở trang Cài đặt: `POST /auth/docs-pass` (ghi audit) cấp một vé ngẫu nhiên dùng **một lần**, sống 60 giây; tab mới mở `/docs?pass=…`, vé đổi lấy cookie `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/docs`, sống 15 phút, rồi chuyển về `/docs` cho vé rời khỏi thanh địa chỉ. Mỗi request kiểm lại tài khoản còn mở, vẫn là ADMIN và chưa bị cắt phiên. Production tắt *Try it out* (`supportedSubmitMethods: []`): tài liệu ở đó chỉ để đọc, gọi thử thì làm ở máy dev. Mỗi thao tác mở đầu bằng vai được gọi, đọc từ chính metadata `RolesGuard` dùng |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu. `api` gọi REST của nó trong mạng compose để đá phiên máy bị thu hồi (§7.4) |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
@@ -7276,15 +7277,28 @@ lần** gửi qua thư. Bốn điều đi theo, mỗi điều bịt một chỗ:
   thư mất thì phát lại liên kết. `PROVISION_BATCH` vẫn còn nhưng đổi nghĩa: nó giới hạn **cỡ
   câu lệnh**, không còn giới hạn thời gian, vì không còn phép băm nào trong đường đi.
 
-Liên kết có hạn `PASSWORD_SETUP_TTL_HOURS` và **dùng một lần**. Hết hạn, đã dùng, hay quên mất
-mật khẩu — cả ba đi qua **đúng liên kết ấy**, và có ba cửa mở nó: lượt mở tài khoản đầu tiên,
-quản trị viên phát lại, và chính người ấy tự xin từ màn đăng nhập. Một luồng khôi phục thứ hai
-là một chỗ nữa để quên vá.
+Liên kết **dùng một lần**, và mỗi tài khoản chỉ có **một liên kết sống**: phát liên kết mới, dùng
+một liên kết, hay đổi mật khẩu đều đóng mọi liên kết còn lại của tài khoản ấy. Không có luật này
+thì một liên kết cũ nằm trong hộp thư bị lộ vẫn đổi được mật khẩu sau khi chủ đã tự đổi. Hạn của
+liên kết theo cửa phát nó: lượt mở tài khoản và quản trị viên phát lại sống
+`PASSWORD_SETUP_TTL_HOURS` (72), vì người nhận có thể chưa đọc thư ngay; liên kết tự xin từ màn
+đăng nhập sống `PASSWORD_RESET_TTL_MINUTES` (60), vì người xin đang đứng trước màn hình, và một
+liên kết khôi phục nằm lâu trong hộp thư là một cửa sau. Hết hạn, đã dùng, hay quên mất mật khẩu
+— cả ba đi qua **đúng liên kết ấy**, và có ba cửa mở nó: lượt mở tài khoản đầu tiên, quản trị
+viên phát lại, và chính người ấy tự xin từ màn đăng nhập. Một luồng khôi phục thứ hai là một chỗ
+nữa để quên vá.
+
+**Mật khẩu đổi thì chủ nhận thư báo.** Đặt qua liên kết hay đổi tại chỗ đều gửi một thư "mật
+khẩu vừa đổi" tới địa chỉ của tài khoản: người bị chiếm tài khoản biết ngay để xin lại, thay vì
+phát hiện khi không đăng nhập được nữa.
 
 **Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không.** Một câu trả lời
 khác đi biến nó thành chỗ dò danh sách nhân sự của công ty: gõ vào một tệp email và đọc xem cái
-nào được nhận. Nó cũng có nhịp riêng, `FORGOT_ATTEMPTS_PER_HOUR` tính theo **giờ** chứ không
-theo phút như cửa đăng nhập, vì mỗi lượt ở đây gửi đi một lá thư chứ không chỉ tốn một phép so.
+nào được nhận. Nó có hai nhịp tính theo **giờ** chứ không theo phút như cửa đăng nhập, vì mỗi
+lượt ở đây gửi đi một lá thư chứ không chỉ tốn một phép so: `FORGOT_ATTEMPTS_PER_HOUR` theo IP,
+và `FORGOT_PER_EMAIL_PER_HOUR` (3) theo **địa chỉ nhận**, đếm cả địa chỉ không có tài khoản.
+Nhịp thứ hai là thứ chặn kẻ xoay IP để dội thư vào một hộp và đốt hết hạn ngạch SMTP mà phiếu
+lương cũng dùng. Quá nhịp thì câu trả lời vẫn y như cũ, chỉ không có thư nào đi.
 
 **Đổi mật khẩu thì phải nhập mật khẩu đang dùng.** Một phiên bị chiếm vốn đã đọc được mọi thứ;
 cho nó đổi luôn mật khẩu là cho nó **khoá chủ tài khoản ra ngoài**, và người mất tài khoản hết
@@ -8682,7 +8696,11 @@ gặp ở bảng chấm công). Năm luật đi kèm:
 
 1. **Danh bạ đi bằng `.xlsx` thật, và vẫn nhận `.csv`.** Server đọc và ghi bằng `exceljs`; hai
    định dạng cho cùng một kết quả. Một file quá 16 MB hay quá 30.000 dòng (`IMPORT_MAX_ROWS`) bị
-   từ chối trước khi mở. `.xlsx` là một file nén, và cỡ ghi trong file nén là thứ người gửi tự
+   từ chối trước khi mở. Việc đọc thân request đi trước mọi guard, nên trần 16 MB chỉ mở cho một
+   `POST` mang vé access ký đúng của vai được nhập (ADMIN, HR), còn hạn hoặc hết hạn chưa quá một
+   đời vé: vé vừa hết hạn vẫn phải tới được guard để nhận 401 và đổi vé, thay vì nhận một câu
+   "file quá lớn" sai. Vé của vai khác hay vé đã chết lâu gặp trần mặc định, nên không bắt được
+   máy chủ đọc 16 MB. `.xlsx` là một file nén, và cỡ ghi trong file nén là thứ người gửi tự
    khai, nên server giải nén thật từng phần dưới trần 128 MB trước khi trao file cho bộ đọc: đo
    ngày 25/09, ba mươi nghìn dòng điền đủ mọi cột nén còn 4 MB và bung ra 36 MB. File xuất là
    file nhập: xuất ra rồi nhập lại **không đổi gì**. Lượt chạy thử đếm riêng những dòng không đổi,
@@ -9680,7 +9698,9 @@ trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là
 — lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
 gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: hồ sơ nghỉ việc đóng (§9.14), đổi mật khẩu,
 tài khoản bị tắt, và đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
-là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. `iat`
+là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. Đăng
+xuất một máy đóng đúng dòng của nó và ghi một mốc theo `sid` (`GUARD.sessionCut`): vé access
+của phiên ấy chết ngay và ổ cắm của nó đóng lại, các máy khác giữ nguyên. `iat`
 tính bằng giây, nên vé cấp **đúng giây của mốc** thì hỏi dòng phiên theo `sid`: phiên đã đóng là vé
 chết, phiên mở sau mốc là vé sống. Coi cả giây ấy là chết thì người vừa đặt mật khẩu mà đăng nhập
 ngay trong giây đó nhận về một vé 401. Thiếu mốc ấy thì người vừa bị hạ quyền vẫn dùng quyền cũ
