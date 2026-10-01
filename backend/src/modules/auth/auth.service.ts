@@ -7,7 +7,7 @@ import { JwtService } from "@nestjs/jwt";
 import { ThrottlerException } from "@nestjs/throttler";
 import type { User } from "@prisma/client";
 
-import { GUARD } from "../../common/cache/cache-keys.js";
+import { DOCS, GUARD } from "../../common/cache/cache-keys.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
@@ -268,6 +268,45 @@ export class AuthService {
     return session === null || session.revokedAt !== null;
   }
 
+  /** A one-use pass that a browser trades for a session on the API reference (KEHOACH 7.2). */
+  async issueDocsPass(userId: string): Promise<{ pass: string; expiresInSeconds: number }> {
+    const pass = randomBytes(LINK_BYTES).toString("base64url");
+    const entry = DOCS.pass(pass);
+    await this.redis.client.set(entry.key, userId, "EX", entry.ttlSeconds);
+    return { pass, expiresInSeconds: entry.ttlSeconds };
+  }
+
+  /** Spend a pass on a session id; null when the pass is unknown or spent, or its holder does not qualify now. */
+  async openDocs(pass: string): Promise<string | null> {
+    try {
+      const userId = await this.redis.client.getdel(DOCS.pass(pass).key);
+      const now = Math.floor(Date.now() / 1000);
+      if (userId === null || !(await this.mayReadDocs(userId, now))) {
+        return null;
+      }
+      const session = randomBytes(LINK_BYTES).toString("base64url");
+      const entry = DOCS.session(session);
+      await this.redis.client.set(entry.key, `${userId} ${now}`, "EX", entry.ttlSeconds);
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Whether a reference session still stands: live, and its account still an open ADMIN not cut since. */
+  async docsSessionStands(session: string): Promise<boolean> {
+    try {
+      const held = await this.redis.client.get(DOCS.session(session).key);
+      if (held === null) {
+        return false;
+      }
+      const [userId, at] = held.split(" ");
+      return await this.mayReadDocs(userId, Number(at));
+    } catch {
+      return false;
+    }
+  }
+
   /** Sign a kiosk token; a jti keeps two issued within one second apart (KEHOACH 7.3). */
   signDevice(claims: DeviceClaims): string {
     const days = this.config.get("DEVICE_TOKEN_TTL_DAYS", { infer: true });
@@ -317,6 +356,16 @@ export class AuthService {
   /** Drop what a login would otherwise pile up: spent rows, then the oldest
    *  device once this account holds as many as it is allowed (KEHOACH 9.23).
    */
+  // A cut in the same second as the session's start still ends it, as accessCut settles that second the safe way.
+  private async mayReadDocs(userId: string, since: number): Promise<boolean> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { active: true, role: true } });
+    if (!user?.active || user.role !== "ADMIN") {
+      return false;
+    }
+    const cut = await this.redis.client.get(GUARD.accessCutoff(userId));
+    return cut === null || since > Number(cut);
+  }
+
   private async makeRoom(userId: string): Promise<void> {
     const now = new Date();
     await this.db.session.deleteMany({

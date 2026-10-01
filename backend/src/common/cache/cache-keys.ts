@@ -23,6 +23,12 @@ export const GUARD = {
   accessCutoff: (userId: string) => `auth:cutoff:${userId}`,
 } as const;
 
+/** Passes and sessions for the API reference: losing one closes it early, never opens it (KEHOACH 7.2). */
+export const DOCS = {
+  pass: (pass: string) => ({ key: `docs:pass:${pass}`, ttlSeconds: 60 }),
+  session: (id: string) => ({ key: `docs:session:${id}`, ttlSeconds: 900 }),
+} as const;
+
 /** Reminders already sent: losing one sends the mail again, never skips it (KEHOACH 4.8). */
 export const ALARM = {
   backup: (problem: string) => `ops:backup-alarm:${problem}`,

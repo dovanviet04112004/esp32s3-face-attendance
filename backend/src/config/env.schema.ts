@@ -78,10 +78,10 @@ export const envSchema = z
       .transform((held) => (held ? held : undefined)),
 
     CORS_ORIGIN: z.string().min(1),
-    API_DOCS_ENABLED: z
-      .enum(["true", "false", ""])
+    API_DOCS: z
+      .enum(["open", "admin", "off", ""])
       .optional()
-      .transform((held) => (held ? held === "true" : undefined)),
+      .transform((held) => (held ? held : undefined)),
 
     // No host is how a deployment turns payslip mail off (KEHOACH 9.11).
     MAIL_HOST: z
@@ -158,7 +158,7 @@ export const envSchema = z
   })
   .transform((env) => ({
     ...env,
-    API_DOCS_ENABLED: env.API_DOCS_ENABLED ?? env.NODE_ENV !== "production",
+    API_DOCS: env.API_DOCS ?? (env.NODE_ENV === "production" ? "admin" : "open"),
     // Parallel e2e suites share one broker, and one shared id would pass the session between them.
     MQTT_CLIENT_ID: env.MQTT_CLIENT_ID ?? (env.NODE_ENV === "test" ? undefined : DEFAULT_MQTT_CLIENT_ID),
   }));

@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Post,
   Req,
   Res,
@@ -13,6 +14,7 @@ import { ConfigService } from "@nestjs/config";
 import {
   ApiBearerAuth,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
@@ -23,14 +25,16 @@ import type { CookieOptions, Request, Response } from "express";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { NotAudited } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
+import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
+import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { actedAs } from "../../common/interceptors/audit.interceptor.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
 import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
-import { ClaimsView, LoginDto, SessionView } from "./dto/login.dto.js";
+import { ClaimsView, DocsPassView, LoginDto, SessionView } from "./dto/login.dto.js";
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -133,6 +137,23 @@ export class AuthController {
   @ApiOkResponse({ type: ClaimsView })
   me(@Req() req: Request): AccessClaims {
     return req.user as AccessClaims;
+  }
+
+  @Post("docs-pass")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiOperation({
+    summary: "A one-use pass that opens this reference in a browser tab",
+    description: "Where API_DOCS is admin, /docs and /docs/json answer 404 to anyone without the session this pass starts (KEHOACH 7.2).",
+  })
+  @ApiBearerAuth(API_AUTH.user)
+  @ApiCreatedResponse({ type: DocsPassView })
+  @ApiErrors(HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND)
+  async docsPass(@CurrentViewer() viewer: Viewer): Promise<DocsPassView> {
+    if (this.config.get("API_DOCS", { infer: true }) === "off") {
+      throw new NotFoundException("ROUTE_NOT_FOUND");
+    }
+    return this.auth.issueDocsPass(viewer.userId);
   }
 
   private handOver(tokens: IssuedTokens, res: Response): SessionView {

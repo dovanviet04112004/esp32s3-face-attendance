@@ -79,17 +79,18 @@ describe("environment (e2e)", () => {
     );
   });
 
-  it("serves the api document outside production unless told otherwise", () => {
-    assert.equal(validateEnv(BASE).API_DOCS_ENABLED, true);
-    assert.equal(validateEnv({ ...BASE, API_DOCS_ENABLED: "" }).API_DOCS_ENABLED, true);
-    assert.equal(validateEnv({ ...BASE, API_DOCS_ENABLED: "false" }).API_DOCS_ENABLED, false);
+  it("opens the api reference outside production unless told otherwise", () => {
+    assert.equal(validateEnv(BASE).API_DOCS, "open");
+    assert.equal(validateEnv({ ...BASE, API_DOCS: "" }).API_DOCS, "open");
+    assert.equal(validateEnv({ ...BASE, API_DOCS: "off" }).API_DOCS, "off");
   });
 
-  it("keeps the api document private in production unless it is turned on", () => {
+  it("keeps the api reference behind an admin pass in production unless told otherwise", () => {
     const shipped = { ...BASE, ...BROKER_API, NODE_ENV: "production", MAIL_HOST: "smtp.example.com" };
-    assert.equal(validateEnv(shipped).API_DOCS_ENABLED, false);
-    assert.equal(validateEnv({ ...shipped, API_DOCS_ENABLED: "true" }).API_DOCS_ENABLED, true);
-    assert.throws(() => validateEnv({ ...shipped, API_DOCS_ENABLED: "yes" }), /API_DOCS_ENABLED/);
+    assert.equal(validateEnv(shipped).API_DOCS, "admin");
+    assert.equal(validateEnv({ ...shipped, API_DOCS: "off" }).API_DOCS, "off");
+    assert.equal(validateEnv({ ...shipped, API_DOCS: "open" }).API_DOCS, "open");
+    assert.throws(() => validateEnv({ ...shipped, API_DOCS: "yes" }), /API_DOCS/);
   });
 
   it("keeps the broker session under svc-api, gives each test run its own, and refuses a name a kiosk logs in with", () => {

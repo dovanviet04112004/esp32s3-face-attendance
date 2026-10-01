@@ -213,7 +213,7 @@ describe("crud (e2e)", () => {
   });
 
   it("serves the swagger document with every tag", async () => {
-    const res = await request(http).get("/docs-json");
+    const res = await request(http).get("/docs/json");
     assert.equal(res.status, 200);
     const tags = Object.values(res.body.paths as Record<string, Record<string, { tags: string[] }>>)
       .flatMap((methods) => Object.values(methods))
