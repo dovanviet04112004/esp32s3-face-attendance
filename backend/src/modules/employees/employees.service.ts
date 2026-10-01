@@ -1470,6 +1470,7 @@ export class EmployeesService implements OnModuleInit {
         where: { user: { employeeId: id }, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      await tx.pushSubscription.deleteMany({ where: { user: { employeeId: id } } });
       return { person, flips: await this.users.syncManagerRoles([person.managerId], tx) };
     });
     if (!shut) {

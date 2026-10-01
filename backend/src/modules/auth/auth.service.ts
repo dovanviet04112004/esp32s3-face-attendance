@@ -223,6 +223,14 @@ export class AuthService {
     });
   }
 
+  /** Sign this device out and drop the push subscription its browser names, so it stops showing the account's notices (KEHOACH 9.21.4). */
+  async signOutDevice(sessionId: string, userId: string, pushEndpoint?: string): Promise<void> {
+    await this.close(sessionId);
+    if (pushEndpoint) {
+      await this.db.pushSubscription.deleteMany({ where: { userId, endpoint: pushEndpoint } });
+    }
+  }
+
   /** Sign every device out at once: leaving, a new role, or a password nobody else knows. */
   async closeAll(userId: string): Promise<void> {
     await this.db.session.updateMany({

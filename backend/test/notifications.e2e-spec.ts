@@ -15,11 +15,15 @@ import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 
 const OPEN = "E2ENT01";
 const CLOSED = "E2ENT02";
-const CODES = [OPEN, CLOSED];
+const LOCKED = "E2ENT03";
+const LEAVER = "E2ENT04";
+const CODES = [OPEN, CLOSED, LOCKED, LEAVER];
 const MAIL = (code: string) => `${code.toLowerCase()}@kiosk.local`;
 const PASSWORD = "kiosk-e2e-password";
 const DAY_MS = 86_400_000;
 const ENDPOINT = "https://fcm.googleapis.com/fcm/send/e2e-notifications";
+const DEVICE = (code: string, device: string) => `${ENDPOINT}-${code}-${device}`;
+const DEVICES = ["phone", "laptop"];
 
 describe("notices and push devices (e2e)", () => {
   let app: INestApplication;
@@ -30,9 +34,23 @@ describe("notices and push devices (e2e)", () => {
   let closedContract = "";
 
   async function sweep(): Promise<void> {
-    await db.pushSubscription.deleteMany({ where: { endpoint: ENDPOINT } });
+    await db.pushSubscription.deleteMany({ where: { endpoint: { startsWith: ENDPOINT } } });
     await db.user.deleteMany({ where: { email: { in: CODES.map(MAIL) } } });
     await db.employee.deleteMany({ where: { code: { in: CODES } } });
+  }
+
+  async function devicesOf(code: string): Promise<string[]> {
+    const login = await db.user.findUniqueOrThrow({ where: { email: MAIL(code) } });
+    for (const device of DEVICES) {
+      await db.pushSubscription.upsert({
+        where: { endpoint: DEVICE(code, device) },
+        update: {},
+        create: { userId: login.id, endpoint: DEVICE(code, device), p256dh: "k", auth: "a" },
+      });
+    }
+    return (await db.pushSubscription.findMany({ where: { userId: login.id }, select: { endpoint: true } }))
+      .map((one) => one.endpoint)
+      .sort();
   }
 
   function endingIn(days: number): Date {
@@ -49,7 +67,17 @@ describe("notices and push devices (e2e)", () => {
     await sweep();
 
     const hash = await hashPassword(PASSWORD);
-    for (const code of CODES) {
+    for (const code of [LOCKED, LEAVER]) {
+      await db.employee.create({
+        data: {
+          code,
+          fullName: `Người ${code}`,
+          active: true,
+          login: { create: { email: MAIL(code), passwordHash: hash, role: "EMPLOYEE" } },
+        },
+      });
+    }
+    for (const code of [OPEN, CLOSED]) {
       const person = await db.employee.create({
         data: {
           code,
@@ -133,5 +161,41 @@ describe("notices and push devices (e2e)", () => {
       .set("Authorization", `Bearer ${mine}`);
     assert.equal(res.status, 200);
     assert.ok((res.body as { readAt: string | null }[]).every((one) => one.readAt === null));
+  });
+
+  it("drops the device a person signs out on, and keeps their other one", async () => {
+    assert.deepEqual(await devicesOf(LOCKED), DEVICES.map((one) => DEVICE(LOCKED, one)).sort());
+    const session = await app.get(AuthService).signIn(MAIL(LOCKED), PASSWORD, {});
+    const res = await request(app.getHttpServer())
+      .post("/auth/logout")
+      .set("Authorization", `Bearer ${session.accessToken}`)
+      .send({ pushEndpoint: DEVICE(LOCKED, "phone") });
+    assert.equal(res.status, 204, JSON.stringify(res.body));
+    const left = await db.pushSubscription.findMany({ where: { endpoint: { startsWith: DEVICE(LOCKED, "") } } });
+    assert.deepEqual(left.map((one) => one.endpoint), [DEVICE(LOCKED, "laptop")], "sign-out dropped the wrong devices");
+  });
+
+  it("drops every device of an account when it is locked", async () => {
+    await devicesOf(LOCKED);
+    const login = await db.user.findUniqueOrThrow({ where: { email: MAIL(LOCKED) } });
+    const res = await request(app.getHttpServer())
+      .patch(`/users/${login.id}`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ active: false });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(await db.pushSubscription.count({ where: { userId: login.id } }), 0, "a locked account still gets pushes");
+  });
+
+  it("drops every device of somebody whose record closes", async () => {
+    await devicesOf(LEAVER);
+    const person = await db.employee.findUniqueOrThrow({ where: { code: LEAVER } });
+    const res = await request(app.getHttpServer())
+      .post(`/employees/${person.id}/offboard`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ leaveDate: localDay(new Date(), validateEnv().APP_TIMEZONE) });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const login = await db.user.findUniqueOrThrow({ where: { email: MAIL(LEAVER) } });
+    assert.equal(login.active, false, "the record closed and left the login open");
+    assert.equal(await db.pushSubscription.count({ where: { userId: login.id } }), 0, "somebody who left still gets pushes");
   });
 });

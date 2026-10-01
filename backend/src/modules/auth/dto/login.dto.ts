@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
-import { IsEmail, IsString, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class LoginDto {
   @ApiProperty({ description: "The account's sign-in address; compared without case", example: "admin@kiosk.local" })
@@ -11,6 +11,18 @@ export class LoginDto {
   @IsString()
   @MinLength(8)
   password!: string;
+}
+
+export class LogoutDto {
+  @ApiPropertyOptional({
+    description: "This device's push endpoint, dropped with the session so a shared device stops showing the account's notices; other devices keep theirs",
+    example: "https://fcm.googleapis.com/fcm/send/dXJsOmV4YW1wbGU6c3Vic2NyaXB0aW9u",
+    maxLength: 512,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  pushEndpoint?: string;
 }
 
 /** What a sign-in or a renewal answers; the refresh token rides in the cookie, never here. */

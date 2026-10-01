@@ -612,6 +612,7 @@ export class UsersService {
     }
     const role = body.role !== undefined || relinks ? settledRole(body.role ?? held.role, person) : held.role;
     const active = body.active ?? held.active;
+    const locking = held.active && !active;
     const losesAdmin = held.role === "ADMIN" && held.active && (role !== "ADMIN" || !active);
 
     let saved: AccountRow;
@@ -626,6 +627,9 @@ export class UsersService {
             throw new ConflictException("LAST_ADMIN");
           }
         }
+        if (locking) {
+          await tx.pushSubscription.deleteMany({ where: { userId: id } });
+        }
         return tx.user.update({
           where: { id },
           data: { ...(body.email ? { email: body.email } : {}), role, active, employeeId },
@@ -637,7 +641,7 @@ export class UsersService {
     }
 
     // The token carries the role and the employee, so either one moving ends every session (KEHOACH 9.23).
-    if (saved.role !== held.role || relinks || (held.active && !saved.active)) {
+    if (saved.role !== held.role || relinks || locking) {
       await this.auth.closeAll(id);
     }
     await this.recordUpdate(actorId, held, saved);

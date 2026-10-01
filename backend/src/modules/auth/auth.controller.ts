@@ -34,7 +34,7 @@ import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
 import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
-import { ClaimsView, DocsPassView, LoginDto, SessionView } from "./dto/login.dto.js";
+import { ClaimsView, DocsPassView, LoginDto, LogoutDto, SessionView } from "./dto/login.dto.js";
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -122,11 +122,16 @@ export class AuthController {
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "End the session this request presents" })
+  @ApiOperation({ summary: "End the session this request presents, and this device's push subscription when named" })
   @ApiBearerAuth(API_AUTH.user)
-  @ApiNoContentResponse()
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<void> {
-    await this.auth.close((req.user as AccessClaims).sid);
+  @ApiNoContentResponse({ description: "Signed out on this device; the refresh cookie is cleared and other devices stay signed in" })
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() body: LogoutDto,
+  ): Promise<void> {
+    const claims = req.user as AccessClaims;
+    await this.auth.signOutDevice(claims.sid, claims.sub, body.pushEndpoint);
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
   }
 
