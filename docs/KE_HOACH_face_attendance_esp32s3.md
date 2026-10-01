@@ -4428,6 +4428,7 @@ backend/
     │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
+    │   │                             #   throttler.storage.ts: bộ đếm hạn mức nằm ở Redis (§7.2)
     │   ├── users/    ├── devices/    ├── enrollment/
     │   ├── employees/                # import.ts đọc dòng và lập việc của từng dòng · workbook.ts đọc và ghi .xlsx (§9.20)
     │   │                             #   bulk.service.ts: thao tác trên một nhóm người đã chọn
@@ -4529,14 +4530,20 @@ module chỉ đọc, **không sở hữu bảng nào**, và mọi truy vấn c�
 các module khác — tìm kiếm là đường rò rỉ dữ liệu dễ quên nhất, vì nó trả về mẩu thông tin chứ
 không trả về bản ghi đầy đủ.
 
-**Redis giữ hai vai, một kết nối** — `database/redis.service.ts` sở hữu client, `cache/` và
-`queue/` cùng dùng. Hai vai này không được lẫn: hàng đợi mất job là mất việc, cache mất key
-chỉ là chậm đi một nhịp.
+**Redis giữ ba vai, một kết nối** — `database/redis.service.ts` sở hữu client; `cache/`, `queue/`
+và lớp chặn của `auth/` cùng dùng. Ba vai này không được lẫn: hàng đợi mất job là mất việc, cache
+mất key chỉ là chậm đi một nhịp, lớp chặn mất bộ đếm thì chỉ yếu đi.
 
 | Vai | Ai dùng | Mất Redis thì sao |
 |---|---|---|
 | **Cache** đọc nhiều ghi ít | `common/cache/` | API vẫn chạy, rơi thẳng xuống Postgres |
-| **Hàng đợi** BullMQ | `queue/` | Job dừng, API vẫn nhận request |
+| **Hàng đợi** BullMQ | `queue/` | Job dừng, API vẫn nhận request; request nào đẩy job thì chờ tới khi Redis về, vì đẩy hỏng là mất việc |
+| **Lớp chặn**: bộ đếm hạn mức, khoá đăng nhập, mốc cắt phiên | `auth/` | API vẫn chạy: hạn mức và khoá tạm mở, vé đã bị cắt sống tới hạn 15 phút của nó; Traefik vẫn chặn lũ theo IP (§7.2) |
+
+Cache và lớp chặn **không chờ Redis**: `RedisService.quick` bỏ qua lệnh khi client chưa sẵn sàng
+và thôi chờ sau 250 ms, coi như không có gì. Client dùng chung đặt `maxRetriesPerRequest: null`
+vì BullMQ đòi thế, nên lệnh gửi lúc Redis vắng nằm chờ tới khi Redis về — đo: một `GET` vẫn chờ
+sau 3 s. Lớp chặn hỏi Redis trên **mọi** request, nên chờ nó là treo cả API.
 
 **Bảng cache — mỗi khoá một TTL, khai ở `cache-keys.ts`**
 
@@ -6222,7 +6229,7 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
-| Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng, và hạn mức riêng cho đăng nhập, quên mật khẩu, đăng ký kiosk; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP |
+| Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng và cho ô tìm, và hạn mức riêng cho cửa nhận mật khẩu, quên mật khẩu, đăng ký kiosk, đếm ở Redis; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP, và khoá IP đã sai quá nhiều lần |
 | Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
 | File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR là chữ, không phải công thức: `.csv` thêm `'` đằng trước, `.xlsx` ghi mọi ô thành ô chuỗi. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
 | File nhập từ Excel | `.xlsx` là file nén: server giải nén thật từng phần dưới một trần cỡ và đếm dòng **trước** khi trao cho bộ đọc, vì cỡ ghi trong file là thứ người gửi tự khai (§9.20 luật 1). Thiếu nó thì một file 16 MB bung ra vài GB trong bộ nhớ `api` |
@@ -6237,23 +6244,38 @@ cả lock contract lẫn mặc định `AI_RUNTIME`.
    socket (`rate-direct`), sau Cloudflare thì là `CF-Connecting-IP` (`rate-cloudflare`), vì lúc
    ấy socket nào cũng là của Cloudflare và cả công ty sẽ chung một hạn mức.
 2. **`api`, theo tài khoản, trên mọi route.** Một `ThrottlerGuard` toàn cục đếm theo `sub` của
-   access token **đã kiểm chữ ký**, chưa đăng nhập thì theo IP. Kiểm chữ ký là bắt buộc: đếm theo
-   `sub` tự khai thì kẻ tấn công đổi `sub` mỗi lần là không bao giờ chạm hạn mức. Hạn mức chung
-   `API_REQUESTS_PER_MINUTE` (600, tức 10 request/giây kéo dài, dư cho người thật kể cả khi
-   dashboard tải lại theo feed). Việc nặng mang thêm hạn mức `HEAVY_REQUESTS_PER_MINUTE` (20):
-   xuất Excel, import nhân viên, bảng công tháng, tạo và chạy kỳ lương, gửi phiếu lương. Báo cáo
-   đọc thường không nằm trong đó, vì chúng đi qua cache (§4.9). Ba hạn mức riêng giữ nguyên và
-   **chỉ** áp ở route khai nó: đăng nhập 5/phút/IP, quên mật khẩu 5/giờ/IP, đăng ký kiosk
-   60/phút/IP. `POST /mqtt/auth` và `GET /health` không đếm: người gọi là broker và script deploy
-   trong mạng nội bộ. Vượt hạn mức trả **429** `RATE_LIMITED`.
-3. **Khoá tài khoản, bất kể IP.** Hạn mức đăng nhập đếm theo IP, nên một cuộc dò mật khẩu rải qua
-   nhiều IP nhắm vào một tài khoản lọt qua nó. Sai `LOGIN_LOCK_AFTER` (10) lần liên tiếp cho cùng
-   một email thì email ấy khoá `LOGIN_LOCK_MINUTES` (15) phút: trả **429** `AUTH_LOCKED`, và
-   không chạy scrypt. Bộ đếm nằm ở Redis theo **băm của email đã chuẩn hoá**, đếm cả email không
-   tồn tại, nên việc có bị khoá hay không không tiết lộ tài khoản nào có thật. Đăng nhập đúng
-   hoặc đặt lại mật khẩu thì xoá đếm. Khoá một tài khoản có thật để lại một dòng audit. Redis
-   mất khoá thì khoá được gỡ sớm, không bao giờ khoá nhầm ai: đúng vai "mất khoá thì chỉ yếu
-   đi" của §4.3.
+   access token **đã kiểm chữ ký**, chưa đăng nhập thì theo IP; IPv6 gộp theo khối /64, vì một máy
+   IPv6 tự đổi địa chỉ trong khối của nó. Kiểm chữ ký là bắt buộc: đếm theo `sub` tự khai thì kẻ
+   tấn công đổi `sub` mỗi lần là không bao giờ chạm hạn mức. Mỗi hạn mức là **một bộ đếm cho mỗi
+   người gọi, chung mọi route khai nó**: đếm riêng từng route thì hạn mức thật bằng con số khai
+   nhân với số route. Bộ đếm nằm ở Redis (`RATE` trong `cache-keys.ts`), cửa sổ cố định: đếm trong
+   bộ nhớ tiến trình thì mỗi lần deploy trả lại nguyên hạn mức, và hai bản `api` là hai hạn mức.
+   Redis vắng thì hạn mức tạm mở (§4.6); lớp 1 vẫn đứng. Vượt hạn mức trả **429** `RATE_LIMITED`.
+
+   | Hạn mức | Mặc định | Đếm theo | Áp ở |
+   |---|---|---|---|
+   | `API_REQUESTS_PER_MINUTE` | 600 | tài khoản, chưa đăng nhập thì IP | mọi route; 10 request/giây kéo dài, dư cho người thật kể cả khi dashboard tải lại theo feed |
+   | `HEAVY_REQUESTS_PER_MINUTE` | 20 | tài khoản | việc lớn lên theo cỡ công ty: xuất và nhập file; thao tác trên một nhóm người (xếp phòng, mở đăng nhập, đăng ký mặt, cho nghỉ, xếp ca, tăng lương, cả lúc xem trước); duyệt nhiều đơn một lượt; dựng bảng công; tạo, chạy, chốt kỳ lương và gửi phiếu; cấp và mời tài khoản; sắp lại tổ chức; đồng bộ lại danh sách xuống một kiosk; quét theo lệnh. Báo cáo đọc thường không nằm trong đó, vì chúng đi qua cache (§4.9) |
+   | `SEARCH_REQUESTS_PER_MINUTE` | 120 | tài khoản | `GET /search`: mỗi lần gõ đọc tới mười bảng (§9.20) |
+   | `LOGIN_ATTEMPTS_PER_MINUTE` | 30 | IP | đăng nhập, đặt và đổi mật khẩu: chặn lũ và giá scrypt; rộng đủ cho cả văn phòng sau một NAT, vì lượt sai có bộ đếm riêng ở lớp 3 |
+   | `FORGOT_ATTEMPTS_PER_HOUR` | 5 | IP | quên mật khẩu |
+   | `DEVICE_REGISTER_ATTEMPTS_PER_MINUTE` | 60 | IP | đăng ký kiosk |
+
+   `POST /mqtt/auth` và `GET /health` không đếm: người gọi là broker và script deploy trong mạng
+   nội bộ.
+3. **Khoá theo tài khoản và theo IP, ở cửa nhận mật khẩu.** Hạn mức đăng nhập đếm theo IP, nên
+   một cuộc dò mật khẩu rải qua nhiều IP nhắm vào một tài khoản lọt qua nó. Sai `LOGIN_LOCK_AFTER`
+   (10) lần liên tiếp cho cùng một email thì email ấy khoá `LOGIN_LOCK_MINUTES` (15) phút: trả
+   **429** `AUTH_LOCKED`, và không chạy scrypt. Bộ đếm nằm ở Redis theo **băm của email đã chuẩn
+   hoá**, đếm cả email không tồn tại, nên việc có bị khoá hay không không tiết lộ tài khoản nào có
+   thật. Đăng nhập đúng hoặc đặt lại mật khẩu thì xoá đếm. Khoá một tài khoản có thật để lại một
+   dòng audit. Chiều ngược lại — một IP rải một mật khẩu qua nhiều tài khoản — lọt qua khoá theo
+   email, nên lượt **sai** còn được đếm theo IP: `LOGIN_IP_MISSES` (50) lượt sai trong
+   `LOGIN_LOCK_MINUTES` thì IP ấy nhận **429** `RATE_LIMITED` ở cửa đăng nhập và đổi mật khẩu tới
+   hết cửa sổ, cũng không chạy scrypt. Lượt đúng không đếm và không xoá đếm của IP: cả văn phòng
+   sau một NAT đăng nhập đúng thì không bao giờ bị chặn, còn một tài khoản thật không rửa được đếm
+   cho kẻ dò đứng cùng IP. Redis mất khoá thì khoá được gỡ sớm, không bao giờ khoá nhầm ai: đúng
+   vai "lớp chặn mất bộ đếm thì chỉ yếu đi" của §4.6.
 
 **Cloudflare che web, không che broker.** Gói miễn phí chỉ proxy HTTP và HTTPS. `api` đi qua
 proxy (đám mây cam), còn `mqtt` phải để "DNS only" vì cổng 8883 không qua được, nên **IP thật
