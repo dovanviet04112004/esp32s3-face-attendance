@@ -17,7 +17,8 @@ const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-list-password";
 const PEOPLE = ["reader", "other", "plain", "crowd", "needle"] as const;
 type Who = (typeof PEOPLE)[number];
-const ROLE: Record<Who, Role> = { reader: "HR", other: "HR", plain: "EMPLOYEE", crowd: "EMPLOYEE", needle: "EMPLOYEE" };
+// The reader manages the people the rows are about: in reach, and out of the desk work other suites raise meanwhile.
+const ROLE: Record<Who, Role> = { reader: "MANAGER", other: "HR", plain: "EMPLOYEE", crowd: "EMPLOYEE", needle: "EMPLOYEE" };
 const codeOf = (who: Who) => `E2ENL${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-notice-list-${who}-${RUN}@kiosk.local`;
 const CROWD = 5_000;
@@ -93,6 +94,10 @@ describe("the bell's list, counts and marks (e2e)", () => {
       });
       loginOf.set(who, login.id);
     }
+    await db.employee.updateMany({
+      where: { id: { in: [idOf.get("crowd") as number, idOf.get("needle") as number] } },
+      data: { managerId: idOf.get("reader") },
+    });
     for (const who of PEOPLE) {
       const res = await request(http).post("/auth/login").send({ email: mailOf(who), password: PASSWORD });
       assert.equal(res.status, 200, `${who} could not sign in`);

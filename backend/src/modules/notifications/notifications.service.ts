@@ -508,6 +508,7 @@ export class NotificationsService {
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
       const landed: Announced[] = [];
       // Twenty parameters a row: a thousand rows stay far under the 65,535 one statement takes.
+      // A login deleted after the lookup is skipped, not fatal to the batch.
       for (let at = 0; at < sends.length; at += kBatch) {
         const rows = sends.slice(at, at + kBatch).map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
         landed.push(
@@ -516,7 +517,12 @@ export class NotificationsService {
                                         "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
                                         "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId",
                                         "daysLeft", "daysWaited", "approved")
-            VALUES ${Prisma.join(rows)}
+            SELECT v.*
+              FROM (VALUES ${Prisma.join(rows)}) AS v("id", "userId", "kind", "subjectType", "subjectId",
+                   "subjectEmployeeId", "dedupKey", "facts", "archivedAt", "requestId", "advanceId", "periodId",
+                   "payslipId", "contractId", "certificateId", "profileChangeId", "dependentId", "daysLeft",
+                   "daysWaited", "approved")
+             WHERE EXISTS (SELECT 1 FROM "User" u WHERE u."id" = v."userId")
             ON CONFLICT ("userId", "dedupKey") DO UPDATE
                SET "facts" = EXCLUDED."facts", "daysLeft" = EXCLUDED."daysLeft", "daysWaited" = EXCLUDED."daysWaited",
                    "readAt" = NULL, "remindCount" = "Notification"."remindCount" + 1, "remindedAt" = now(),

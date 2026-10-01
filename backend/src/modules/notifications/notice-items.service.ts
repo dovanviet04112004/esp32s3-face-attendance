@@ -355,6 +355,7 @@ export class NoticeItemsService {
                    CASE WHEN i."queue" = 'ADVANCES_TO_PAY' THEN true END
               FROM "NoticeItem" i
              CROSS JOIN unnest(${audience}::text[]) AS seat("userId")
+              JOIN "User" u ON u."id" = seat."userId"
              WHERE i."id" = ${item.id} AND i."state" = 'OPEN'
             ON CONFLICT ("userId", "dedupKey") DO UPDATE
                SET "leftAt" = NULL,
