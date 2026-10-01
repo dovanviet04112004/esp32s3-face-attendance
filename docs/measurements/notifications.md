@@ -91,3 +91,29 @@ cũ có chủ đích đụng khoá:
 
 Đơn thử còn 2 dòng, mỗi tài khoản một, chưa đọc, `remindCount` cộng lại là 4. Chạy lại migration lần
 hai: mọi con số giữ nguyên.
+
+## 3. Chốt kỳ không chờ đẩy (E27-T7)
+
+Chốt một kỳ ghi một dòng `PAYSLIP_ISSUED` cho mỗi người có phiếu rồi đẩy tới máy của họ. Đo bằng một
+bộ e2e tạm, không commit, chạy như CI (`run_e2e.sh`, Postgres 16 và Redis 7 trong Docker trên máy
+dev): mỗi người một đăng nhập và một máy nhận đẩy, `webpush.sendNotification` thay bằng một hàm chờ
+**20 ms** rồi trả `201`, đứng thay cho nhà cung cấp đẩy. `lockMs` là thời gian của chính
+`PayrollService.lock`, tức thời gian người bấm chốt phải chờ; `allPushedMs` tính từ lúc bấm tới khi
+lần đẩy cuối cùng xong. Ngày đo 01/10/2026.
+
+| Mã | Phiếu | `lockMs` | Dòng ghi | Đẩy trong request | Đẩy xong sau |
+|---|---|---|---|---|---|
+| E27-T6 (`96cc414a`) | 3.000 | 2.585 ms | 3.000 | 3.000 | 2,6 s |
+| E27-T6 (`96cc414a`) | 5.000 | 775 ms | **0** | 0 | — |
+| E27-T7 | 3.000 | 1.594 ms | 3.000 | 0 | 10,6 s |
+| E27-T7 | 5.000 | 3.446 ms | 5.000 | 0 | 9,1 s |
+
+- **Trước, 5.000 phiếu không báo được ai.** Mã từ E27-T4 ghi mọi dòng bằng một câu `INSERT`, hai mươi
+  tham số mỗi dòng: 5.000 dòng là 100.000 tham số, quá trần 65.535 của một câu lệnh, Postgres trả
+  `bind message has 34464 parameter formats but 0 parameters` và lỗi bị nuốt như mọi lỗi thông báo.
+  E27-T7 ghi theo lô 1.000 dòng.
+- **Trước, đẩy chạy trong request**, mọi máy cùng lúc, không giới hạn: 3.000 lần gọi song song xong
+  trong 2,6 s với nhà cung cấp giả trả lời sau 20 ms, nhưng với nhà cung cấp thật là 3.000 kết nối HTTPS
+  mở cùng lúc từ một request đang giữ người bấm chốt.
+- **Sau, request chỉ ghi dòng và xếp job** `notice-fanout`, mỗi job 1.000 dòng, mỗi lượt 50 lần gửi
+  song song. Đẩy xong trong khoảng 10 s ở nền.
