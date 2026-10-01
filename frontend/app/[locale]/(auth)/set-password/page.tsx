@@ -4,7 +4,7 @@ import { Banner, Button, Link, LinkButton } from "@cloudflare/kumo";
 import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/ui/password-field";
 import { api } from "@/lib/api";
@@ -15,7 +15,8 @@ const SHORTEST = 12;
 function SetPasswordForm() {
   const t = useTranslations("setPassword");
   const faultOf = useFault();
-  const token = useSearchParams().get("token") ?? "";
+  const inAddress = useSearchParams().get("token") ?? "";
+  const [token] = useState(inAddress);
   const [password, setPassword] = useState("");
   const [again, setAgain] = useState("");
   const [shown, setShown] = useState(false);
@@ -24,6 +25,13 @@ function SetPasswordForm() {
   const [done, setDone] = useState(false);
 
   const mismatch = again !== "" && password !== again;
+
+  // Read once, then gone from the address bar, so history and bookmarks never keep it (KEHOACH 7.2).
+  useEffect(() => {
+    if (inAddress) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [inAddress]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();

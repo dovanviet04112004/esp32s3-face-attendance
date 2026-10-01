@@ -1,8 +1,8 @@
 // Bumping these is what evicts an older worker's store: activate keeps only
 // the names listed here, so a name that never changes can never be evicted.
-const SHELL = "shell-v2";
+const SHELL = "shell-v3";
 // One drawer per account, named READS:<sub>, since Cache Storage keys by URL alone (KEHOACH 4.7).
-const READS = "reads-v3";
+const READS = "reads-v4";
 const KEEP = [SHELL];
 const LOCAL = ["localhost", "127.0.0.1"];
 
@@ -45,16 +45,22 @@ async function cacheFirst(request) {
   return fresh;
 }
 
-async function networkFirst(request, bucket) {
+// The drawer holds what a page reads, JSON; a download never lands in it (KEHOACH 7.2).
+// Content-Type is one of the few headers a cross-origin answer shows to a worker.
+function keepable(response) {
+  return response.ok && /^application\/json/i.test(response.headers.get("Content-Type") || "");
+}
+
+async function networkFirst(request, bucket, key = request) {
   const store = await caches.open(bucket);
   try {
     const fresh = await fetch(request);
-    if (fresh.ok) {
-      store.put(request, fresh.clone());
+    if (keepable(fresh)) {
+      store.put(key, fresh.clone());
     }
     return fresh;
   } catch (fell) {
-    const held = await store.match(request);
+    const held = await store.match(key);
     if (held) {
       return held;
     }
@@ -76,8 +82,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(request));
     return;
   }
+  // Keyed without the query, so a setup ticket in the address never reaches Cache Storage.
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request, SHELL));
+    event.respondWith(networkFirst(request, SHELL, `${url.origin}${url.pathname}`));
     return;
   }
   if (url.origin !== self.location.origin) {
