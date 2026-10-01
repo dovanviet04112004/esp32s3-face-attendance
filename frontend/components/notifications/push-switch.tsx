@@ -12,6 +12,15 @@ import { env } from "@/lib/env";
 
 type Standing = "unsupported" | "install" | "blocked" | "off" | "on";
 
+/** This browser's push subscription, if it holds one; never waits on a worker that is not registered. */
+export async function pushHere(): Promise<PushSubscription | null> {
+  if (!("serviceWorker" in navigator)) {
+    return null;
+  }
+  const worker = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+  return (await worker?.pushManager?.getSubscription().catch(() => null)) ?? null;
+}
+
 /** iOS pushes only to an app added to the home screen, and Safari there has no PushManager (KEHOACH 9.21.6). */
 function iosOutsideTheApp(): boolean {
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);

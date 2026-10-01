@@ -14,6 +14,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { pushHere } from "@/components/notifications/push-switch";
 import { Link, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -33,7 +34,19 @@ export function useSignOut() {
     router.replace("/login");
   };
   // An unreachable server still signs this browser out; its session ends on its own clock.
-  return useMutation({ mutationFn: () => api.post("/auth/logout"), onSuccess: leave, onError: leave });
+  return useMutation({
+    mutationFn: async () => {
+      const device = await pushHere();
+      try {
+        await api.post("/auth/logout", device ? { pushEndpoint: device.endpoint } : {});
+      } finally {
+        // A shared device must not keep showing this account's notices (KEHOACH 9.21.4).
+        await device?.unsubscribe().catch(() => false);
+      }
+    },
+    onSuccess: leave,
+    onError: leave,
+  });
 }
 
 /** Account actions sit two deliberate clicks away, never beside the daily ones (KEHOACH 9.12). */
