@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
+import { tokensOf } from "./fixtures.js";
 
 const LONE = "E2EUR01";
 const UNSIGNED_BOSS = "E2EUR02";
@@ -84,9 +85,9 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
     await person(LOCKED_REPORT, await person(LOCKED_BOSS, null, "locked"), "open");
     const auth = app.get(AuthService);
     for (const code of [LONE, UNSIGNED_REPORT, LOCKED_REPORT]) {
-      token.set(code, (await auth.signIn(MAIL(code), PASSWORD, {})).accessToken);
+      token.set(code, tokensOf(await auth.signIn(MAIL(code), PASSWORD, {})).accessToken);
     }
-    desk = (await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
+    desk = tokensOf(await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
   });
 
   after(async () => {

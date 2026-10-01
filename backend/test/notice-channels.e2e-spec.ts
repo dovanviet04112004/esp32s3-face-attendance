@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
+import { tokensOf } from "./fixtures.js";
 
 const BOTH_ON = "E2ENC01";
 const IN_APP_OFF = "E2ENC02";
@@ -74,7 +75,7 @@ describe("notice channels answer for themselves (e2e)", () => {
     await db.notificationPreference.create({
       data: { userId: loginOf.get(PUSH_OFF) as string, kind: KIND, channel: "PUSH", on: false },
     });
-    mine = (
+    mine = tokensOf(
       await app.get(AuthService).signIn(`${BOTH_ON.toLowerCase()}@kiosk.local`, PASSWORD, {})
     ).accessToken;
   });
@@ -110,7 +111,7 @@ describe("notice channels answer for themselves (e2e)", () => {
   });
 
   it("serves a login that is not an employee, which is where unclaimed work lands", async () => {
-    const admin = (
+    const admin = tokensOf(
       await app.get(AuthService).signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})
     ).accessToken;
     const set = await request(app.getHttpServer())

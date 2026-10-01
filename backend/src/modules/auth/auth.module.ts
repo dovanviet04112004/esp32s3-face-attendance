@@ -12,6 +12,7 @@ import { AuthController } from "./auth.controller.js";
 import { JWT_ALGORITHM, THROTTLE, type AccessClaims } from "./auth.types.js";
 import { AuthService } from "./auth.service.js";
 import { LoginLockout } from "./login-lockout.service.js";
+import { MfaService } from "./mfa.service.js";
 import { DeviceStrategy } from "./strategies/device.strategy.js";
 import { JwtRefreshStrategy } from "./strategies/jwt-refresh.strategy.js";
 import { JwtStrategy } from "./strategies/jwt.strategy.js";
@@ -100,6 +101,12 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
               ttl: MINUTE_MS * 60,
               skipIf: unless(THROTTLE.forgot),
             },
+            {
+              name: THROTTLE.mfa,
+              limit: config.get("MFA_ATTEMPTS_PER_MINUTE", { infer: true }),
+              ttl: MINUTE_MS,
+              skipIf: unless(THROTTLE.mfa),
+            },
           ],
         };
       },
@@ -109,6 +116,7 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
   providers: [
     AuthService,
     LoginLockout,
+    MfaService,
     JwtStrategy,
     JwtRefreshStrategy,
     DeviceStrategy,
@@ -116,6 +124,6 @@ function byAccount(secret: string): (req: Record<string, any>) => string {
   ],
   // Re-exported so a module with a guarded controller gets the one
   // registration rather than starting its own.
-  exports: [AuthService, PassportModule],
+  exports: [AuthService, MfaService, PassportModule],
 })
 export class AuthModule {}

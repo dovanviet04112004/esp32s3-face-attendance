@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 import { hashPassword, UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
+import { tokensOf } from "./fixtures.js";
 
 const PREFIX = "E2EACC";
 const DOMAIN = "@e2e-accounts.local";
@@ -191,7 +192,7 @@ describe("accounts and roles (e2e)", () => {
   it("locks an account: every session closes, renewal and sign-in fail; unlocking gives the role back", async () => {
     const id = account.BOSS;
     await withPassword(id);
-    const held = await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" });
+    const held = tokensOf(await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" }));
 
     const locked = await asAdmin("patch", `/users/${id}`).send({ active: false });
     assert.equal(locked.status, 200, JSON.stringify(locked.body));
@@ -274,7 +275,7 @@ describe("accounts and roles (e2e)", () => {
   });
 
   it("tells the signed-in account its own email", async () => {
-    const held = await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" });
+    const held = tokensOf(await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" }));
     const res = await request(http).get("/users/me").set("Authorization", `Bearer ${held.accessToken}`);
     assert.equal(res.status, 200);
     assert.equal(res.body.email, mail("BOSS"));
@@ -301,7 +302,7 @@ describe("accounts and roles (e2e)", () => {
         reason: "e2e",
       },
     });
-    const held = await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" });
+    const held = tokensOf(await auth.signIn(mail("BOSS"), PASSWORD, { userAgent: "e2e-accounts/1.0" }));
     // A token from the cutoff's own second is judged by its open session (KEHOACH 9.23), so move on a second.
     await new Promise((settle) => setTimeout(settle, SECOND_MS));
 

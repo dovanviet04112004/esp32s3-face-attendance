@@ -17,6 +17,7 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { HIT_KINDS, type HitKind } from "../src/modules/search/dto/search.dto.js";
 import { localDay } from "../src/modules/timesheet/local-day.js";
 import { clearDeskNotices } from "./teardown.js";
+import { tokensOf } from "./fixtures.js";
 
 const PASSWORD = "kiosk-e2e-password";
 const PAY_YEAR = 1995;
@@ -326,7 +327,7 @@ describe("the global search box (e2e)", () => {
 
     const auth = app.get(AuthService);
     for (const who of WHO) {
-      token[who] = (await auth.signIn(MAIL(who), PASSWORD, {})).accessToken;
+      token[who] = tokensOf(await auth.signIn(MAIL(who), PASSWORD, {})).accessToken;
     }
   });
 

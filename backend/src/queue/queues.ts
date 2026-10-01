@@ -30,6 +30,7 @@ export const JOB = {
   teamAttendance: "team-attendance",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
+  mfaChanged: "mfa-changed",
   profileNotice: "profile-notice",
   deliver: "deliver",
   run: "run",
@@ -133,6 +134,16 @@ export interface PasswordChangedJob {
   userId: string;
 }
 
+/** What happened to an account's second factor; the letter names the fact, never a code (KEHOACH 9.4). */
+export type MfaChange = "on" | "reset" | "backup" | "locked";
+
+export interface MfaChangedJob {
+  type: typeof JOB.mfaChanged;
+  userId: string;
+  change: MfaChange;
+  backupCodesLeft?: number;
+}
+
 /** Only the row id rides here; the address is on the row (KEHOACH 9.17.6). */
 export interface ProfileNoticeJob {
   type: typeof JOB.profileNotice;
@@ -157,6 +168,7 @@ export type NotifyJob =
   | TeamAttendanceJob
   | PasswordSetupJob
   | PasswordChangedJob
+  | MfaChangedJob
   | ProfileNoticeJob;
 
 export interface DeliverJob {

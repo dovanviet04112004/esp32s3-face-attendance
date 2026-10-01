@@ -17,6 +17,7 @@ import { QUEUE_DESKS } from "../src/modules/leave/queue-filter.js";
 import { AudienceService, type InboxQueue } from "../src/modules/notifications/audience.service.js";
 import { INBOX_ROLES } from "../src/modules/notifications/notice-kinds.js";
 import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
+import { tokensOf } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-audience-password";
@@ -152,11 +153,11 @@ describe("who a piece of work waits on (e2e)", () => {
     for (const name of SEEDED) {
       const email = `${name}@kiosk.local`;
       const user = await db.user.findUniqueOrThrow({ where: { email } });
-      accounts.push({ name, userId: user.id, role: user.role, token: (await auth.signIn(email, seeded, {})).accessToken });
+      accounts.push({ name, userId: user.id, role: user.role, token: tokensOf(await auth.signIn(email, seeded, {})).accessToken });
     }
     for (const [name, email] of Object.entries(MAIL)) {
       const user = await db.user.findUniqueOrThrow({ where: { email } });
-      accounts.push({ name, userId: user.id, role: user.role, token: (await auth.signIn(email, PASSWORD, {})).accessToken });
+      accounts.push({ name, userId: user.id, role: user.role, token: tokensOf(await auth.signIn(email, PASSWORD, {})).accessToken });
     }
   });
 

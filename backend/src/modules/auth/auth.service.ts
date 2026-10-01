@@ -23,6 +23,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PasswordChangedJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
+import { MfaService, type PendingCode } from "./mfa.service.js";
 import { hashPassword, LINK_BYTES, needsRehash, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -55,6 +56,9 @@ export interface IssuedTokens {
   email: string;
 }
 
+/** A right password: a session, or the ticket the code step takes for a role that gives one (KEHOACH 9.4). */
+export type SignedIn = ({ step: "session" } & IssuedTokens) | (PendingCode & { userId: string; email: string });
+
 /** What the session row records about the device it belongs to. */
 export interface SignedInFrom {
   userAgent?: string;
@@ -73,9 +77,10 @@ export class AuthService {
     private readonly lockout: LoginLockout,
     private readonly redis: RedisService,
     private readonly bus: EventEmitter2,
+    private readonly mfa: MfaService,
   ) {}
 
-  async signIn(email: string, password: string, from: SignedInFrom): Promise<IssuedTokens> {
+  async signIn(email: string, password: string, from: SignedInFrom): Promise<SignedIn> {
     // A spent address or a locked email costs no scrypt, known or not (KEHOACH 7.2).
     if (await this.lockout.addressSpent(from.ip)) {
       throw new ThrottlerException("RATE_LIMITED");
@@ -98,8 +103,21 @@ export class AuthService {
     if (needsRehash(user.passwordHash)) {
       await this.db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(password) } });
     }
+    if (this.mfa.required(user.role)) {
+      return { ...(await this.mfa.challenge(user.id)), userId: user.id, email: user.email };
+    }
     await this.makeRoom(user.id);
-    return this.issue(user, from);
+    return { step: "session", ...(await this.issue(user, from, null)) };
+  }
+
+  /** Open a session for an account whose second factor just checked (KEHOACH 9.4). */
+  async openSession(userId: string, from: SignedInFrom): Promise<IssuedTokens> {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user?.active) {
+      throw new UnauthorizedException("CREDENTIALS_REJECTED");
+    }
+    await this.makeRoom(user.id);
+    return this.issue(user, from, new Date());
   }
 
   /** Trade a refresh token for a new pair. A jti that misses the hash its own
@@ -129,6 +147,11 @@ export class AuthService {
       await this.closeAll(session.userId);
       throw new UnauthorizedException("ACCOUNT_CLOSED");
     }
+    // A session opened on the password alone, while its role asked for no code (KEHOACH 9.4 rule 1).
+    if (this.mfa.required(session.user.role) && session.mfaAt === null) {
+      await this.close(session.id);
+      throw new UnauthorizedException("MFA_REQUIRED");
+    }
     const jti = randomUUID();
     const renewed = await this.db.session.updateMany({
       where: { id: session.id, tokenHash: session.tokenHash, revokedAt: null },
@@ -139,7 +162,7 @@ export class AuthService {
       await this.close(session.id);
       throw new UnauthorizedException("REFRESH_REPLAYED");
     }
-    return this.sign(session.user, session.id, jti);
+    return this.sign(session.user, session.id, jti, session.mfaAt !== null);
   }
 
   /** Redeem a one-time link; spending it closes it (KEHOACH 9.4). */
@@ -454,7 +477,7 @@ export class AuthService {
     return new Date(Date.now() + ttlToMs(this.config.get("JWT_REFRESH_TTL", { infer: true })));
   }
 
-  private async issue(user: User, from: SignedInFrom): Promise<IssuedTokens> {
+  private async issue(user: User, from: SignedInFrom, mfaAt: Date | null): Promise<IssuedTokens> {
     const jti = randomUUID();
     const session = await this.db.session.create({
       data: {
@@ -463,18 +486,20 @@ export class AuthService {
         expiresAt: this.refreshExpiry(),
         userAgent: from.userAgent ?? null,
         ip: from.ip ?? null,
+        mfaAt,
       },
       select: { id: true },
     });
-    return this.sign(user, session.id, jti);
+    return this.sign(user, session.id, jti, mfaAt !== null);
   }
 
-  private sign(user: User, sessionId: string, jti: string): IssuedTokens {
+  private sign(user: User, sessionId: string, jti: string, mfa: boolean): IssuedTokens {
     const access: AccessClaims = {
       sub: user.id,
       role: user.role,
       sid: sessionId,
       ...(user.employeeId !== null ? { employeeId: user.employeeId } : {}),
+      ...(mfa ? { mfa: true as const } : {}),
     };
     const refresh: RefreshClaims = { sub: user.id, sid: sessionId, jti };
     const accessToken = this.jwt.sign(access, {

@@ -1,7 +1,17 @@
+import { Role } from "@prisma/client";
 import { z } from "zod";
 
 const JWT_SECRETS = ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_DEVICE_SECRET"] as const;
 const DEFAULT_MQTT_CLIENT_ID = "svc-api";
+const DEFAULT_MFA_ROLES = "ADMIN,HR,PAYROLL";
+const NO_MFA_ROLES = "none";
+const MFA_KEY_BYTES = 32;
+
+// The e2e suites sign the seeded accounts in hundreds of times a minute; the two-step suite opts in (KEHOACH 9.4).
+function mfaRolesOf(held: string | undefined, nodeEnv: string): Role[] {
+  const named = held ?? (nodeEnv === "test" ? NO_MFA_ROLES : DEFAULT_MFA_ROLES);
+  return named === NO_MFA_ROLES ? [] : (named.split(",") as Role[]);
+}
 
 export const envSchema = z
   .object({
@@ -33,6 +43,27 @@ export const envSchema = z
     LOGIN_LOCK_AFTER: z.coerce.number().int().min(3).max(100).default(10),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().max(1440).default(15),
     LOGIN_IP_MISSES: z.coerce.number().int().min(3).default(50),
+    MFA_KEY: z
+      .string()
+      .optional()
+      .transform((held) => (held ? held : undefined))
+      .refine(
+        (held) => held === undefined || Buffer.from(held, "base64").length === MFA_KEY_BYTES,
+        "MFA_KEY must be 32 bytes in base64 (openssl rand -base64 32)",
+      ),
+    // Empty reads as unset, so a compose file passing an unset variable keeps the default.
+    MFA_ROLES: z
+      .string()
+      .optional()
+      .transform((held) => (held ? held.replace(/\s/g, "") : undefined))
+      .refine(
+        (held) => held === undefined || held === NO_MFA_ROLES || held.split(",").every((one) => one in Role),
+        `MFA_ROLES must be "${NO_MFA_ROLES}" or a comma list of roles`,
+      ),
+    MFA_ATTEMPTS_PER_MINUTE: z.coerce.number().int().positive().default(20),
+    MFA_LOCK_AFTER: z.coerce.number().int().min(3).max(20).default(5),
+    MFA_LOCK_MINUTES: z.coerce.number().int().positive().max(1440).default(15),
+    MFA_CHALLENGE_MINUTES: z.coerce.number().int().min(1).max(30).default(10),
     // Proxies between the client and api; 0 trusts no X-Forwarded-For (KEHOACH 4.8).
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(0),
     PROVISION_BATCH: z.coerce.number().int().positive().max(10000).default(2000),
@@ -168,9 +199,17 @@ export const envSchema = z
         ctx.addIssue({ code: "custom", path: [key], message: `${key} must differ from the other JWT secrets` });
       }
     }
+    if (mfaRolesOf(env.MFA_ROLES, env.NODE_ENV).length > 0 && env.MFA_KEY === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MFA_KEY"],
+        message: `MFA_KEY is required while MFA_ROLES names a role; set MFA_ROLES=${NO_MFA_ROLES} to turn two-step sign-in off`,
+      });
+    }
   })
   .transform((env) => ({
     ...env,
+    MFA_ROLES: mfaRolesOf(env.MFA_ROLES, env.NODE_ENV),
     API_DOCS: env.API_DOCS ?? (env.NODE_ENV === "production" ? "admin" : "open"),
     // Parallel e2e suites share one broker, and one shared id would pass the session between them.
     MQTT_CLIENT_ID: env.MQTT_CLIENT_ID ?? (env.NODE_ENV === "test" ? undefined : DEFAULT_MQTT_CLIENT_ID),

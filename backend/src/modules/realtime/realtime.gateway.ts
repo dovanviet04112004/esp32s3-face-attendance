@@ -16,6 +16,7 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService } from "../auth/auth.service.js";
 import { JWT_ALGORITHM, SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
+import { MfaService } from "../auth/mfa.service.js";
 
 /** What the dashboard can be told about; KEHOACH 9.4 names who hears each. */
 export const FEED = {
@@ -81,12 +82,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly jwt: JwtService,
     private readonly scope: ScopeService,
     private readonly auth: AuthService,
+    private readonly mfa: MfaService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     const ticket = this.readTicket(client);
     // The same cutoff REST checks, so a locked or demoted login opens no socket (KEHOACH 9.23).
-    if (!ticket || (await this.auth.accessCut(ticket.claims, ticket.claims.iat ?? 0))) {
+    if (!ticket || this.mfa.missing(ticket.claims) || (await this.auth.accessCut(ticket.claims, ticket.claims.iat ?? 0))) {
       client.disconnect(true);
       return;
     }

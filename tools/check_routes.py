@@ -17,6 +17,9 @@ CONTROLLERS = Path("backend/src/modules")
 # Routes that answer the same to everybody, and why nothing narrows them.
 OPEN: dict[str, str] = {
     "POST /auth/login": "there is no viewer yet",
+    "POST /auth/mfa/verify": "the ticket a right password earned is the caller (KEHOACH 9.4)",
+    "POST /auth/mfa/setup": "the ticket a right password earned is the caller (KEHOACH 9.4)",
+    "POST /auth/mfa/confirm": "the ticket a right password earned is the caller (KEHOACH 9.4)",
     "POST /auth/set-password": "a link, not a session",
     "POST /auth/forgot-password": "an address is all it is offered (KEHOACH 9.4)",
     "POST /auth/refresh": "the cookie is the caller",

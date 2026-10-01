@@ -1,4 +1,4 @@
-import type { SetupReason } from "../../queue/queues.js";
+import type { MfaChange, SetupReason } from "../../queue/queues.js";
 
 export type MailLocale = "vi" | "en";
 
@@ -165,6 +165,118 @@ const CHANGED_PASSWORD: Record<MailLocale, (fullName: string) => MailBody> = {
 
 export function passwordChangedMail(locale: string, fullName: string): MailBody {
   return CHANGED_PASSWORD[readsAs(locale)](fullName);
+}
+
+export interface MfaMailFacts {
+  fullName: string;
+  change: MfaChange;
+  backupCodesLeft: number;
+  lockMinutes: number;
+}
+
+/** Names what happened to the second factor, never a code or a secret (KEHOACH 9.4). */
+const MFA: Record<MailLocale, Record<MfaChange, (facts: MfaMailFacts) => MailBody>> = {
+  vi: {
+    on: (facts) => ({
+      subject: "Đã bật xác minh hai bước cho tài khoản chấm công của bạn",
+      text: [
+        `Chào ${facts.fullName},`,
+        "",
+        "Tài khoản này vừa được gắn với một ứng dụng xác thực. Từ nay, mỗi lần đăng nhập cần thêm",
+        "mã sáu số trong ứng dụng ấy.",
+        "",
+        "Nếu là bạn thì không cần làm gì thêm.",
+        "Nếu không phải bạn, ai đó đã có mật khẩu của bạn: báo ngay cho quản trị viên để đặt lại",
+        "xác minh hai bước, rồi xin mật khẩu mới ở trang đăng nhập.",
+      ].join("\n"),
+    }),
+    reset: (facts) => ({
+      subject: "Xác minh hai bước của bạn vừa được đặt lại",
+      text: [
+        `Chào ${facts.fullName},`,
+        "",
+        "Một quản trị viên vừa đặt lại xác minh hai bước của tài khoản này, và mọi thiết bị đang",
+        "đăng nhập đã bị đăng xuất. Lần đăng nhập tới, bạn sẽ gắn lại ứng dụng xác thực.",
+        "",
+        "Nếu bạn không nhờ việc này, báo ngay cho quản trị viên.",
+      ].join("\n"),
+    }),
+    backup: (facts) => ({
+      subject: "Một mã dự phòng của bạn vừa được dùng",
+      text: [
+        `Chào ${facts.fullName},`,
+        "",
+        `Tài khoản này vừa đăng nhập bằng một mã dự phòng. Bạn còn ${facts.backupCodesLeft} mã.`,
+        "",
+        "Nếu là bạn, tạo bộ mã mới ở trang Cài đặt trước khi dùng hết.",
+        "Nếu không phải bạn, xin mật khẩu mới ở trang đăng nhập ngay và báo cho quản trị viên.",
+      ].join("\n"),
+    }),
+    locked: (facts) => ({
+      subject: "Có người nhập sai mã xác minh của bạn nhiều lần",
+      text: [
+        `Chào ${facts.fullName},`,
+        "",
+        "Có người đã nhập đúng mật khẩu của tài khoản này nhưng sai mã xác minh nhiều lần liên tiếp,",
+        `nên bước nhập mã tạm khoá ${facts.lockMinutes} phút.`,
+        "",
+        "Mật khẩu của bạn có thể đã lộ. Xin mật khẩu mới ở trang đăng nhập ngay và báo cho quản trị viên.",
+      ].join("\n"),
+    }),
+  },
+  en: {
+    on: (facts) => ({
+      subject: "Two-step sign-in is on for your attendance account",
+      text: [
+        `Hello ${facts.fullName},`,
+        "",
+        "This account has just been linked to an authenticator app. From now on, every sign-in",
+        "also asks for the six-digit code in that app.",
+        "",
+        "If that was you, there is nothing more to do.",
+        "If it was not, somebody has your password: ask an administrator to reset two-step",
+        "sign-in now, then ask for a new password from the sign-in page.",
+      ].join("\n"),
+    }),
+    reset: (facts) => ({
+      subject: "Your two-step sign-in was reset",
+      text: [
+        `Hello ${facts.fullName},`,
+        "",
+        "An administrator has just reset two-step sign-in for this account, and every device",
+        "signed in to it is signed out. Your next sign-in links an authenticator app again.",
+        "",
+        "If you did not ask for this, tell an administrator now.",
+      ].join("\n"),
+    }),
+    backup: (facts) => ({
+      subject: "One of your backup codes was just used",
+      text: [
+        `Hello ${facts.fullName},`,
+        "",
+        `This account has just signed in with a backup code. You have ${facts.backupCodesLeft} left.`,
+        "",
+        "If that was you, make a new set on the Settings page before they run out.",
+        "If it was not, ask for a new password from the sign-in page now and tell an administrator.",
+      ].join("\n"),
+    }),
+    locked: (facts) => ({
+      subject: "Somebody entered wrong codes for your account",
+      text: [
+        `Hello ${facts.fullName},`,
+        "",
+        "Somebody gave this account's right password but a wrong code several times in a row,",
+        `so the code step is closed for ${facts.lockMinutes} minutes.`,
+        "",
+        "Your password may be known to someone else. Ask for a new one from the sign-in page now",
+        "and tell an administrator.",
+      ].join("\n"),
+    }),
+  },
+};
+
+export function mfaMail(locale: string, facts: MfaMailFacts): MailBody {
+  return MFA[readsAs(locale)][facts.change](facts);
 }
 
 export type NoticedChange = "BANK" | "PERSONAL_EMAIL";

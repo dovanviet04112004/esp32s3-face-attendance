@@ -14,6 +14,7 @@ import type { AttendanceRecord } from "../src/common/generated/attendance_record
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AttendanceService } from "../src/modules/attendance/attendance.service.js";
 import { AuthService, deviceFingerprint } from "../src/modules/auth/auth.service.js";
+import { tokensOf } from "./fixtures.js";
 
 const KIOSK = "e2e-ba-door";
 const OTHER = "e2e-ba-side";
@@ -86,7 +87,7 @@ describe("broker login and device tickets (e2e)", () => {
 
     ticket = await issued(KIOSK, "APPROVED");
     await issued(OTHER, "APPROVED");
-    admin = (await auth.signIn("admin@kiosk.local", env.SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
+    admin = tokensOf(await auth.signIn("admin@kiosk.local", env.SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
   });
 
   after(async () => {

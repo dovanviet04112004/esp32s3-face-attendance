@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
+import { tokensOf } from "./fixtures.js";
 
 const BOSS = "E2EAD01";
 const BOSS_MAIL = "e2ead-boss@kiosk.local";
@@ -45,7 +46,7 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
   }
 
   async function login(email: string, password: string): Promise<string> {
-    return (await app.get(AuthService).signIn(email, password, {})).accessToken;
+    return tokensOf(await app.get(AuthService).signIn(email, password, {})).accessToken;
   }
 
   before(async () => {

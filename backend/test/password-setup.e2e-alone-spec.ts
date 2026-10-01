@@ -14,6 +14,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { UNUSABLE_PASSWORD, verifyPassword } from "../src/modules/auth/password.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
+import { tokensOf } from "./fixtures.js";
 
 const CODE = "E2EPS01";
 const EMAIL = "e2eps@kiosk.local";
@@ -215,7 +216,7 @@ describe("first password (e2e)", () => {
   it("changes a password only for somebody who holds the current one", async () => {
     // Signing in goes through the service: the login door is counted by the
     // minute and this suite would spend the whole allowance on setup.
-    const access = (await auth.signIn(EMAIL, NEXT_ONE, {})).accessToken;
+    const access = tokensOf(await auth.signIn(EMAIL, NEXT_ONE, {})).accessToken;
 
     const wrong = await request(http)
       .post("/auth/change-password")
@@ -234,7 +235,7 @@ describe("first password (e2e)", () => {
   });
 
   it("closes every device when a password changes under it", async () => {
-    const access = (await auth.signIn(EMAIL, CHANGED, {})).accessToken;
+    const access = tokensOf(await auth.signIn(EMAIL, CHANGED, {})).accessToken;
     await auth.signIn(EMAIL, CHANGED, {});
     assert.ok((await live()) >= 2, "the account does not hold the devices this needs");
 
@@ -288,7 +289,7 @@ describe("first password (e2e)", () => {
     const salt = randomBytes(16);
     const stale = `scrypt$${salt.toString("base64")}$${scryptSync(OLD_COST, salt, 64).toString("base64")}`;
     await db.user.update({ where: { id: userId }, data: { passwordHash: stale } });
-    assert.equal(typeof (await auth.signIn(EMAIL, OLD_COST, {})).accessToken, "string", "an old-cost hash no longer opens");
+    assert.equal(typeof tokensOf(await auth.signIn(EMAIL, OLD_COST, {})).accessToken, "string", "an old-cost hash no longer opens");
     const held = await db.user.findUniqueOrThrow({ where: { id: userId } });
     assert.match(held.passwordHash, /^scrypt\$N=16384,r=8,p=5\$/, "the hash kept its old cost");
     assert.ok(await opensWith(OLD_COST), "the hash made again does not open with the same password");
@@ -299,7 +300,7 @@ describe("first password (e2e)", () => {
     await db.passwordSetup.create({
       data: { userId, tokenHash: createHash("sha256").update(spare).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) },
     });
-    const access = (await auth.signIn(EMAIL, OLD_COST, {})).accessToken;
+    const access = tokensOf(await auth.signIn(EMAIL, OLD_COST, {})).accessToken;
     const changed = await request(http)
       .post("/auth/change-password")
       .set("Authorization", `Bearer ${access}`)

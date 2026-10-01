@@ -15,7 +15,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { RedisService } from "../src/database/redis.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
-import { publishAsKiosk } from "./fixtures.js";
+import { publishAsKiosk, tokensOf } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-feed";
 const STRANGER_ID = "kiosk-e2e-stranger";
@@ -61,7 +61,7 @@ describe("realtime and reports (e2e)", () => {
     const made = await db.user.create({
       data: { email, passwordHash: await hashPassword(PASSWORD), role: "HR" },
     });
-    const signed = await app.get(AuthService).signIn(email, PASSWORD, {});
+    const signed = tokensOf(await app.get(AuthService).signIn(email, PASSWORD, {}));
     return { id: made.id, token: signed.accessToken };
   }
 

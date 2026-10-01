@@ -95,6 +95,7 @@ model User {
   pushDevices    PushSubscription[]
   noticeItemsDone    NoticeItem[] @relation("NoticeItemActor")
   noticeItemsClaimed NoticeItem[] @relation("NoticeItemClaim")
+  mfa            UserMfa?
 }
 
 /**
@@ -111,10 +112,28 @@ model Session {
   lastSeenAt DateTime  @default(now())
   expiresAt  DateTime
   revokedAt  DateTime?
+  mfaAt      DateTime? // when this device gave the second factor (KEHOACH 9.4)
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
+}
+
+/**
+ * An account's authenticator, kept apart from User so no account read pulls a
+ * secret along (KEHOACH 9.4).
+ */
+model UserMfa {
+  userId        String    @id
+  secret        Bytes?    // AES-256-GCM under MFA_KEY; null until enrolled
+  pendingSecret Bytes?    // offered at enrolment, kept once a code confirms it
+  pendingAt     DateTime?
+  enabledAt     DateTime?
+  lastStep      Int?      // 30 s step of the last accepted code
+  backupCodes   String[]  @default([]) // HMAC of each unused backup code
+  misses        Int       @default(0)
+  lockedUntil   DateTime?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /**

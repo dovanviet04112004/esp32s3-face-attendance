@@ -6,7 +6,7 @@ import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
-import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
+import { mfaMail, passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { AttendanceSweep } from "../../modules/notifications/sweeps/attendance.sweep.js";
 import { BackupSweep } from "../../modules/notifications/sweeps/backup.sweep.js";
@@ -20,7 +20,7 @@ import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.j
 import { TasksSweep } from "../../modules/notifications/sweeps/tasks.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
-import { QUEUE, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
+import { QUEUE, type MfaChangedJob, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
 
@@ -117,6 +117,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
           await this.mailChanged(body);
           return;
         }
+        if (body.type === "mfa-changed") {
+          await this.mailMfa(body);
+          return;
+        }
         if (body.type === "profile-notice") {
           await this.profile.mailNotice(body.changeId);
           return;
@@ -174,6 +178,23 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     }
     const locale = account.employee?.locale ?? DEFAULT_MAIL_LOCALE;
     await this.mailer.send(account.email, passwordChangedMail(locale, account.employee?.fullName ?? account.email));
+  }
+
+  private async mailMfa(job: MfaChangedJob): Promise<void> {
+    const account = await this.db.user.findUnique({
+      where: { id: job.userId },
+      select: { email: true, employee: { select: { fullName: true, locale: true } } },
+    });
+    if (!account) {
+      return;
+    }
+    const body = mfaMail(account.employee?.locale ?? DEFAULT_MAIL_LOCALE, {
+      fullName: account.employee?.fullName ?? account.email,
+      change: job.change,
+      backupCodesLeft: job.backupCodesLeft ?? 0,
+      lockMinutes: this.config.get("MFA_LOCK_MINUTES", { infer: true }),
+    });
+    await this.mailer.send(account.email, body);
   }
 
   async onModuleDestroy(): Promise<void> {

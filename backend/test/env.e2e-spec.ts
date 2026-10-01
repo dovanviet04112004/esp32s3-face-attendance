@@ -19,6 +19,7 @@ const BASE: NodeJS.ProcessEnv = {
   MQTT_URL: "mqtts://localhost:8883",
   MQTT_USERNAME: "api",
   MQTT_PASSWORD: "api",
+  MFA_KEY: Buffer.alloc(32, 1).toString("base64"),
 };
 
 const BROKER_API: NodeJS.ProcessEnv = {
@@ -77,6 +78,22 @@ describe("environment (e2e)", () => {
     const env = validateEnv(BASE);
     assert.equal(env.EMQX_API_URL, undefined);
     assert.equal(env.EMQX_API_USERNAME, "admin");
+  });
+
+  it("asks ADMIN, HR and PAYROLL for a code unless told otherwise, and nobody under test", () => {
+    const shipped = { ...BASE, ...BROKER_API, NODE_ENV: "production", MAIL_HOST: "smtp.example.com" };
+    assert.deepEqual(validateEnv(shipped).MFA_ROLES, ["ADMIN", "HR", "PAYROLL"]);
+    assert.deepEqual(validateEnv({ ...shipped, MFA_ROLES: "" }).MFA_ROLES, ["ADMIN", "HR", "PAYROLL"]);
+    assert.deepEqual(validateEnv({ ...shipped, MFA_ROLES: "ADMIN, MANAGER" }).MFA_ROLES, ["ADMIN", "MANAGER"]);
+    assert.deepEqual(validateEnv(BASE).MFA_ROLES, []);
+    assert.throws(() => validateEnv({ ...shipped, MFA_ROLES: "OWNER" }), /MFA_ROLES/);
+  });
+
+  it("refuses to boot with roles that ask for a code and no key to seal their secrets", () => {
+    const shipped = { ...BASE, ...BROKER_API, NODE_ENV: "production", MAIL_HOST: "smtp.example.com", MFA_KEY: "" };
+    assert.throws(() => validateEnv(shipped), /MFA_KEY is required/);
+    assert.deepEqual(validateEnv({ ...shipped, MFA_ROLES: "none" }).MFA_ROLES, []);
+    assert.throws(() => validateEnv({ ...BASE, MFA_KEY: "change-me-openssl-rand-base64-32" }), /MFA_KEY must be 32 bytes/);
   });
 
   it("refuses to boot when two kinds of token share one secret", () => {

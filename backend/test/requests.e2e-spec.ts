@@ -10,7 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
-import { paidLeaveType } from "./fixtures.js";
+import { paidLeaveType, tokensOf } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const PASSWORD = "kiosk-e2e-password";
@@ -131,7 +131,7 @@ describe("the requests inbox and ledger (e2e)", () => {
           employeeId: id.get(code),
         },
       });
-      token.set(code, (await auth.signIn(MAIL(code), PASSWORD, {})).accessToken);
+      token.set(code, tokensOf(await auth.signIn(MAIL(code), PASSWORD, {})).accessToken);
     }
 
     aliceLeave = await file(ALICE, {

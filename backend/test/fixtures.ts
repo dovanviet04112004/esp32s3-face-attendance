@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { LeaveType } from "@prisma/client";
 
 import type { PrismaService } from "../src/database/prisma.service.js";
+import type { IssuedTokens, SignedIn } from "../src/modules/auth/auth.service.js";
 
 const LEAVE_CODE = "E2E-ANNUAL";
 const LEAVE_DAYS = 12;
@@ -53,4 +54,10 @@ export async function publishAsKiosk(
     }),
   });
   assert.ok(sent.ok, `broker refused the test publish: ${sent.status}`);
+}
+
+/** The tokens of a sign-in; the suites run with MFA_ROLES=none, so stopping at the code step is a broken setup. */
+export function tokensOf(signed: SignedIn): IssuedTokens {
+  assert.ok(signed.step === "session", "a sign-in stopped at the code step");
+  return signed;
 }

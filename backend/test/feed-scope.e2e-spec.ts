@@ -14,7 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { FEED, RealtimeGateway, type FeedName } from "../src/modules/realtime/realtime.gateway.js";
-import { paidLeaveType } from "./fixtures.js";
+import { paidLeaveType, tokensOf } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const BOSS = "E2EFS01";
@@ -125,11 +125,11 @@ describe("who the feed talks to (e2e)", () => {
     // Through the service: the login door is counted by the minute and this
     // suite would spend the allowance on setup.
     const auth = app.get(AuthService);
-    bossToken = (await auth.signIn(BOSS_MAIL, PASSWORD, {})).accessToken;
-    underToken = (await auth.signIn(UNDER_MAIL, PASSWORD, {})).accessToken;
-    strangerToken = (await auth.signIn(STRANGER_MAIL, PASSWORD, {})).accessToken;
+    bossToken = tokensOf(await auth.signIn(BOSS_MAIL, PASSWORD, {})).accessToken;
+    underToken = tokensOf(await auth.signIn(UNDER_MAIL, PASSWORD, {})).accessToken;
+    strangerToken = tokensOf(await auth.signIn(STRANGER_MAIL, PASSWORD, {})).accessToken;
     const seeded = validateEnv().SEED_ADMIN_PASSWORD ?? "";
-    adminToken = (await auth.signIn("admin@kiosk.local", seeded, {})).accessToken;
+    adminToken = tokensOf(await auth.signIn("admin@kiosk.local", seeded, {})).accessToken;
   });
 
   after(async () => {

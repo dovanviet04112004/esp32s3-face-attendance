@@ -17,6 +17,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { UsersService } from "../src/modules/users/users.service.js";
+import { tokensOf } from "./fixtures.js";
 
 const EMAIL = "e2esession@kiosk.local";
 const FIRST_PASSWORD = "kiosk-e2e-password";
@@ -170,7 +171,7 @@ describe("sessions across devices (e2e)", () => {
     const made = await db.user.create({
       data: { email, passwordHash: await hashPassword(FIRST_PASSWORD), role: "HR" },
     });
-    const held = await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" });
+    const held = tokensOf(await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" }));
     const me = (token: string) => request(http).get("/auth/me").set("Authorization", `Bearer ${token}`);
     assert.equal((await me(held.accessToken)).status, 200);
 
@@ -178,13 +179,13 @@ describe("sessions across devices (e2e)", () => {
     assert.equal((await me(held.accessToken)).status, 401, "a demoted account kept using its old token");
     assert.equal(await db.session.count({ where: { userId: made.id, revokedAt: null } }), 0);
 
-    const fresh = await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" });
+    const fresh = tokensOf(await auth.signIn(email, FIRST_PASSWORD, { userAgent: "e2e-demoted/1.0" }));
     assert.equal((await me(fresh.accessToken)).status, 200, "the account could not sign in again");
     await db.user.deleteMany({ where: { email } });
   });
 
   it("settles a token from the cutoff's own second by whether its session is open", async () => {
-    const held = await auth.signIn(EMAIL, NEXT_PASSWORD, { userAgent: "e2e-same-second/1.0" });
+    const held = tokensOf(await auth.signIn(EMAIL, NEXT_PASSWORD, { userAgent: "e2e-same-second/1.0" }));
     const claims = jwt.decode(held.accessToken) as { iat: number; sid: string };
     const me = () => request(http).get("/auth/me").set("Authorization", `Bearer ${held.accessToken}`);
     await redis.client.set(GUARD.accessCutoff(userId), String(claims.iat), "EX", 60);

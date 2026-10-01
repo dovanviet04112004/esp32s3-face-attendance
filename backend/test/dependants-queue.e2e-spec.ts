@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
+import { tokensOf } from "./fixtures.js";
 
 const HOLDER = "E2EDQ01";
 const HOLDER_MAIL = "e2edq-holder@kiosk.local";
@@ -63,8 +64,8 @@ describe("the dependants queue says how much is waiting (e2e)", () => {
       data: { email: HOLDER_MAIL, passwordHash: await hashPassword(PASSWORD), role: "EMPLOYEE", employeeId: holderId },
     });
     const auth = app.get(AuthService);
-    token = (await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
-    holderToken = (await auth.signIn(HOLDER_MAIL, PASSWORD, {})).accessToken;
+    token = tokensOf(await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
+    holderToken = tokensOf(await auth.signIn(HOLDER_MAIL, PASSWORD, {})).accessToken;
   });
 
   after(async () => {

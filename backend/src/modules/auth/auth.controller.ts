@@ -23,7 +23,7 @@ import {
 import type { CookieOptions, Request, Response } from "express";
 
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
-import { NotAudited } from "../../common/decorators/audited.decorator.js";
+import { AuditedInService, NotAudited } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -32,16 +32,30 @@ import { actedAs } from "../../common/interceptors/audit.interceptor.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { JwtRefreshGuard } from "../../common/guards/jwt-refresh.guard.js";
 import type { Env } from "../../config/env.schema.js";
-import { AuthService, ttlToMs, type IssuedTokens } from "./auth.service.js";
+import { AuthService, ttlToMs, type IssuedTokens, type SignedInFrom } from "./auth.service.js";
 import { REFRESH_COOKIE, THROTTLE, type AccessClaims, type RefreshClaims } from "./auth.types.js";
-import { ClaimsView, DocsPassView, LoginDto, LogoutDto, SessionView } from "./dto/login.dto.js";
+import { ClaimsView, DocsPassView, LoginDto, LoginView, LogoutDto, SessionView } from "./dto/login.dto.js";
+import {
+  BackupCodesView,
+  ChallengeCodeDto,
+  ChallengeDto,
+  CodeDto,
+  EnrolledView,
+  MfaSetupView,
+  MfaStatusView,
+} from "./dto/mfa.dto.js";
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
   SetPasswordDto,
 } from "./dto/set-password.dto.js";
+import { MfaService } from "./mfa.service.js";
 
 const REFRESH_PATH = "/auth";
+
+function fromOf(req: Request): SignedInFrom {
+  return { userAgent: req.get("user-agent"), ip: req.ip };
+}
 
 @ApiTags("auth")
 @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.TOO_MANY_REQUESTS)
@@ -49,25 +63,100 @@ const REFRESH_PATH = "/auth";
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly mfa: MfaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @RateBucket(THROTTLE.login)
-  @ApiOperation({ summary: "Exchange an email and password for an access token" })
-  @ApiOkResponse({ type: SessionView, description: "Also sets the httpOnly refresh cookie" })
+  @ApiOperation({
+    summary: "Exchange an email and password for an access token, or for the code step's ticket",
+    description: "A role in MFA_ROLES gets no token here: step code or enroll carries a ticket for /auth/mfa (KEHOACH 9.4).",
+  })
+  @ApiOkResponse({ type: LoginView, description: "On step session, also sets the httpOnly refresh cookie" })
   async login(
     @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginView> {
+    const signed = await this.auth.signIn(body.email, body.password, fromOf(req));
+    actedAs(req, signed.userId);
+    if (signed.step === "session") {
+      return { step: "session", ...this.handOver(signed, res) };
+    }
+    return { step: signed.step, email: signed.email, challenge: signed.challenge, expiresInSeconds: signed.expiresInSeconds };
+  }
+
+  @Post("mfa/verify")
+  @HttpCode(HttpStatus.OK)
+  @RateBucket(THROTTLE.mfa)
+  @ApiOperation({ summary: "Give the six-digit code, or one backup code, for the ticket a right password earned" })
+  @ApiOkResponse({ type: SessionView, description: "Also sets the httpOnly refresh cookie" })
+  async verifyCode(
+    @Body() body: ChallengeCodeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<SessionView> {
-    const tokens = await this.auth.signIn(body.email, body.password, {
-      userAgent: req.get("user-agent"),
-      ip: req.ip,
-    });
-    actedAs(req, tokens.userId);
-    return this.handOver(tokens, res);
+    const userId = await this.mfa.verify(body.challenge, body.code);
+    actedAs(req, userId);
+    return this.handOver(await this.auth.openSession(userId, fromOf(req)), res);
+  }
+
+  @Post("mfa/setup")
+  @HttpCode(HttpStatus.OK)
+  @RateBucket(THROTTLE.mfa)
+  @NotAudited()
+  @ApiOperation({
+    summary: "Offer a new authenticator secret to an account that has none",
+    description: "Each call replaces the secret on offer; nothing is kept until /auth/mfa/confirm checks a code from it.",
+  })
+  @ApiOkResponse({ type: MfaSetupView })
+  @ApiErrors(HttpStatus.CONFLICT)
+  setup(@Body() body: ChallengeDto): Promise<MfaSetupView> {
+    return this.mfa.setup(body.challenge);
+  }
+
+  @Post("mfa/confirm")
+  @HttpCode(HttpStatus.OK)
+  @RateBucket(THROTTLE.mfa)
+  @AuditedInService()
+  @ApiOperation({ summary: "Keep the secret on offer with its first code, and sign in" })
+  @ApiOkResponse({ type: EnrolledView, description: "Also sets the httpOnly refresh cookie; the backup codes appear only here" })
+  @ApiErrors(HttpStatus.CONFLICT)
+  async confirm(
+    @Body() body: ChallengeCodeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<EnrolledView> {
+    const enrolled = await this.mfa.confirm(body.challenge, body.code);
+    const session = this.handOver(await this.auth.openSession(enrolled.userId, fromOf(req)), res);
+    return { ...session, backupCodes: enrolled.backupCodes };
+  }
+
+  @Get("mfa")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth(API_AUTH.user)
+  @ApiOperation({ summary: "Whether the caller signs in with a code, since when, and how many backup codes are left" })
+  @ApiOkResponse({ type: MfaStatusView })
+  mfaStatus(@CurrentViewer() viewer: Viewer): Promise<MfaStatusView> {
+    return this.mfa.status(viewer.userId, viewer.role);
+  }
+
+  @Post("mfa/backup-codes")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @RateBucket(THROTTLE.mfa)
+  @AuditedInService()
+  @ApiBearerAuth(API_AUTH.user)
+  @ApiOperation({
+    summary: "Trade a working code for a new set of backup codes",
+    description: "The old set stops working. A backup code counts as a working code and is spent by this call.",
+  })
+  @ApiOkResponse({ type: BackupCodesView })
+  @ApiErrors(HttpStatus.CONFLICT)
+  async renewCodes(@Body() body: CodeDto, @CurrentViewer() viewer: Viewer): Promise<BackupCodesView> {
+    return { backupCodes: await this.mfa.renewCodes(viewer.userId, body.code) };
   }
 
   @Post("set-password")

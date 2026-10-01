@@ -1,11 +1,12 @@
 import type { Role } from "@prisma/client";
 
-/** What a guarded handler sees; employeeId saves row scope a lookup (KEHOACH 9.4). */
+/** What a guarded handler sees; employeeId saves row scope a lookup, mfa marks a session that gave its code (KEHOACH 9.4). */
 export interface AccessClaims {
   sub: string;
   role: Role;
   sid: string;
   employeeId?: number;
+  mfa?: true;
 }
 
 /** What a refresh token carries; sid names the row, jti the token it accepts. */
@@ -42,4 +43,5 @@ export const THROTTLE = {
   login: "login",
   deviceRegister: "deviceRegister",
   forgot: "forgot",
+  mfa: "mfa",
 } as const;

@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
+import { tokensOf } from "./fixtures.js";
 
 const OPEN = "E2ENT01";
 const CLOSED = "E2ENT02";
@@ -102,8 +103,8 @@ describe("notices and push devices (e2e)", () => {
       }
     }
     const auth = app.get(AuthService);
-    admin = (await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
-    mine = (await auth.signIn(MAIL(OPEN), PASSWORD, {})).accessToken;
+    admin = tokensOf(await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
+    mine = tokensOf(await auth.signIn(MAIL(OPEN), PASSWORD, {})).accessToken;
   });
 
   after(async () => {
@@ -165,7 +166,7 @@ describe("notices and push devices (e2e)", () => {
 
   it("drops the device a person signs out on, and keeps their other one", async () => {
     assert.deepEqual(await devicesOf(LOCKED), DEVICES.map((one) => DEVICE(LOCKED, one)).sort());
-    const session = await app.get(AuthService).signIn(MAIL(LOCKED), PASSWORD, {});
+    const session = tokensOf(await app.get(AuthService).signIn(MAIL(LOCKED), PASSWORD, {}));
     const res = await request(app.getHttpServer())
       .post("/auth/logout")
       .set("Authorization", `Bearer ${session.accessToken}`)
