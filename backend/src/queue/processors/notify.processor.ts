@@ -11,6 +11,7 @@ import { ProfileService } from "../../modules/profile/profile.service.js";
 import { BackupSweep } from "../../modules/notifications/sweeps/backup.sweep.js";
 import { CleanupSweep } from "../../modules/notifications/sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "../../modules/notifications/sweeps/contracts.sweep.js";
+import { DocumentsSweep } from "../../modules/notifications/sweeps/documents.sweep.js";
 import { KioskSweep } from "../../modules/notifications/sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
@@ -39,6 +40,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
     private readonly tasks: TasksSweep,
+    private readonly documents: DocumentsSweep,
     private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -79,6 +81,14 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "tasks-due") {
           await this.tasks.sweep();
+          return;
+        }
+        if (body.type === "documents-due") {
+          await this.documents.sweep();
+          return;
+        }
+        if (body.type === "notice-documents") {
+          await this.documents.fanOut(body.versionId);
           return;
         }
         if (body.type === "notice-fanout") {

@@ -53,6 +53,7 @@ import {
 import { BackupSweep } from "./sweeps/backup.sweep.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
+import { DocumentsSweep } from "./sweeps/documents.sweep.js";
 import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
@@ -83,6 +84,7 @@ export class NotificationsController {
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
     private readonly tasks: TasksSweep,
+    private readonly documents: DocumentsSweep,
   ) {}
 
   @Get()
@@ -170,6 +172,7 @@ export class NotificationsController {
       cleanup: () => this.cleanup.sweep(),
       kiosk: () => this.kiosk.sweep(),
       tasks: () => this.tasks.sweep(),
+      documents: () => this.documents.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

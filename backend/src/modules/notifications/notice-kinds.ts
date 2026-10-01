@@ -8,7 +8,14 @@ export type FactType = "number" | "boolean" | "string" | "day";
 export type OfferedChannel = "IN_APP" | "PUSH";
 
 /** Kinds that are work a group shares; every other kind is news for one person (KEHOACH 9.21.4). */
-export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE" | "BACKUP_ALERT" | "KIOSK_ALERT" | "TASK_ASSIGNED";
+export type ItemKind =
+  | "REQUEST_WAITING"
+  | "CONTRACT_DUE"
+  | "PROBATION_DUE"
+  | "BACKUP_ALERT"
+  | "KIOSK_ALERT"
+  | "TASK_ASSIGNED"
+  | "DOCUMENT_TO_SIGN";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -16,7 +23,7 @@ export function kebab(name: string): string {
   return name.toLowerCase().replaceAll("_", "-");
 }
 
-/** The whole days of waiting at which an inbox queue's work speaks again (KEHOACH 9.17 item 12). */
+/** The whole days of waiting at which a queue's work speaks again (KEHOACH 9.17 item 12, 9.21.4). */
 export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
   REQUESTS: [3, 7, 14],
   ADVANCES_TO_DECIDE: [3, 7],
@@ -24,6 +31,7 @@ export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
   CERTIFICATES: [3, 7],
   PROFILE_CHANGES: [3, 7],
   DEPENDENTS: [3, 7],
+  DOCUMENTS: [3, 7],
 };
 
 export const DUE_SOON_DAYS = 1;
@@ -154,6 +162,14 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { owner: "string", daysLeft: "number" },
+  },
+  DOCUMENT_TO_SIGN: {
+    category: "PEOPLE",
+    level: "ACTION",
+    receivers: "self",
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { daysWaited: "number" },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

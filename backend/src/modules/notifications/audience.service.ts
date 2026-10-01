@@ -124,8 +124,9 @@ export class AudienceService {
 
   /** Every open login a subject waits on, found by asking waitingOn of each login that could hold it.
    *  @ctx any | one count per candidate login
+   *  @param employeeId the reader that work of one person is about, as a document to sign
    */
-  async audienceOf(queue: NoticeQueue, subjectId: string): Promise<string[]> {
+  async audienceOf(queue: NoticeQueue, subjectId: string, employeeId: number | null = null): Promise<string[]> {
     if (queue === "CONTRACTS_DUE" || queue === "PROBATION_DUE") {
       return this.dueAudience(queue, subjectId);
     }
@@ -134,6 +135,9 @@ export class AudienceService {
     }
     if (queue === "TASKS") {
       return this.taskAudience(subjectId);
+    }
+    if (queue === "DOCUMENTS") {
+      return this.ownLogins(employeeId);
     }
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
@@ -176,8 +180,7 @@ export class AudienceService {
     }
     const about = task.run.employeeId;
     if (task.ownerRole === "SELF") {
-      const own = await this.db.user.findMany({ where: { employeeId: about, active: true }, select: { id: true } });
-      return own.map((one) => one.id);
+      return this.ownLogins(about);
     }
     const boss = task.ownerRole === "MANAGER" && task.ownerId !== null ? await this.managerLogin(task.ownerId) : null;
     return boss ? [boss] : this.hrDesk(about);
@@ -194,6 +197,14 @@ export class AudienceService {
       select: { id: true, role: true, employeeId: true },
     });
     return desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId })).map((one) => one.id);
+  }
+
+  private async ownLogins(employeeId: number | null): Promise<string[]> {
+    if (employeeId === null) {
+      return [];
+    }
+    const own = await this.db.user.findMany({ where: { employeeId, active: true }, select: { id: true } });
+    return own.map((one) => one.id);
   }
 
   private async managerLogin(employeeId: number): Promise<string | null> {

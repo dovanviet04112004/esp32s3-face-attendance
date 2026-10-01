@@ -35,6 +35,7 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   BACKUP: "BACKUP",
   KIOSK: "DEVICE",
   TASKS: "TASK",
+  DOCUMENTS: "DOCUMENT",
 };
 
 /** The kind a queue's work is told as. */
@@ -51,6 +52,7 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   BACKUP: "BACKUP_ALERT",
   KIOSK: "KIOSK_ALERT",
   TASKS: "TASK_ASSIGNED",
+  DOCUMENTS: "DOCUMENT_TO_SIGN",
 };
 
 // Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
@@ -465,7 +467,7 @@ export class NoticeItemsService {
   }
 
   private async reseat(item: NoticeItem, joining: Joining): Promise<{ seated: Seated[]; left: string[] }> {
-    const audience = await this.audience.audienceOf(item.queue, item.subjectId);
+    const audience = await this.audience.audienceOf(item.queue, item.subjectId, item.employeeId);
     const left = await this.db.$queryRaw<{ userId: string }[]>`
       UPDATE "Notification" SET "leftAt" = now()
        WHERE "itemId" = ${item.id} AND "leftAt" IS NULL AND NOT ("userId" = ANY(${audience}::text[]))

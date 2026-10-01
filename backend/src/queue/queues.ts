@@ -24,6 +24,8 @@ export const JOB = {
   noticeCleanup: "notice-cleanup",
   kioskAlerts: "kiosk-alerts",
   tasksDue: "tasks-due",
+  documentsDue: "documents-due",
+  noticeDocuments: "notice-documents",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -89,6 +91,16 @@ export interface TasksDueJob {
   type: typeof JOB.tasksDue;
 }
 
+export interface DocumentsDueJob {
+  type: typeof JOB.documentsDue;
+}
+
+/** Opens the version's signing work for its readers, a thousand at a time (KEHOACH 9.21.4). */
+export interface NoticeDocumentsJob {
+  type: typeof JOB.noticeDocuments;
+  versionId: string;
+}
+
 export interface NoticeGatherJob {
   type: typeof JOB.noticeGather;
   userId: string;
@@ -129,6 +141,8 @@ export type NotifyJob =
   | NoticeCleanupJob
   | KioskAlertsJob
   | TasksDueJob
+  | DocumentsDueJob
+  | NoticeDocumentsJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

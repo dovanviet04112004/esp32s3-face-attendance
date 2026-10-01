@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Document, DocumentVersion, PersonnelFileType } from "@prisma/client";
 import { Prisma } from "@prisma/client";
@@ -14,8 +14,12 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { JOB, QUEUE, type NoticeDocumentsJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
+import { DocumentsSweep } from "../notifications/sweeps/documents.sweep.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { localDay } from "../timesheet/local-day.js";
 import type {
@@ -90,11 +94,16 @@ function isCode(error: unknown, code: string): boolean {
 
 @Injectable()
 export class DocumentsService {
+  private readonly log = new Logger(DocumentsService.name);
+
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly items: NoticeItemsService,
+    private readonly signing: DocumentsSweep,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
   list(all = false): Promise<Document[]> {
@@ -156,7 +165,23 @@ export class DocumentsService {
       subjectId: id,
       meta: { code: held.code, fields: Object.keys(body) },
     });
+    if ("active" in body || "departmentId" in body || "jobTitleId" in body) {
+      await this.askSignatures(id);
+    }
     return saved;
+  }
+
+  // Signing work follows the newest version and its audience; the daily sweep repairs a failed queue (KEHOACH 9.21.4).
+  private async askSignatures(documentId: string): Promise<void> {
+    try {
+      await this.signing.closeVanished(documentId);
+      const newest = await this.db.documentVersion.findFirst({ where: { documentId }, orderBy: { version: "desc" }, select: { id: true } });
+      if (newest) {
+        await this.queues[QUEUE.notify].add(JOB.noticeDocuments, { type: JOB.noticeDocuments, versionId: newest.id } satisfies NoticeDocumentsJob);
+      }
+    } catch (fell) {
+      this.log.error(`signing work of document ${documentId} was not refreshed: ${String(fell)}`);
+    }
   }
 
   /**
@@ -200,6 +225,7 @@ export class DocumentsService {
       subjectId: documentId,
       meta: { code: held.code, version: made.version },
     });
+    await this.askSignatures(documentId);
     return made;
   }
 
@@ -257,6 +283,11 @@ export class DocumentsService {
       subjectId: wanted.documentId,
       meta: { code: wanted.code, version: wanted.version },
     });
+    await this.items.close(
+      "DOCUMENTS",
+      { id: versionId, part: String(viewer.employeeId) },
+      { state: "DONE", outcome: "SIGNED", actorId: viewer.userId },
+    );
     return { ackAt: saved.ackAt };
   }
 

@@ -11,6 +11,7 @@ import { SubjectsService } from "./subjects.service.js";
 import { BackupSweep } from "./sweeps/backup.sweep.js";
 import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
+import { DocumentsSweep } from "./sweeps/documents.sweep.js";
 import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
@@ -34,6 +35,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     CleanupSweep,
     KioskSweep,
     TasksSweep,
+    DocumentsSweep,
     MailerService,
   ],
   exports: [
@@ -49,6 +51,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     CleanupSweep,
     KioskSweep,
     TasksSweep,
+    DocumentsSweep,
     MailerService,
   ],
 })

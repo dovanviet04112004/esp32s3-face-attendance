@@ -1391,6 +1391,7 @@ enum NoticeKind {
   BACKUP_ALERT
   KIOSK_ALERT
   TASK_ASSIGNED
+  DOCUMENT_TO_SIGN
 }
 
 enum NoticeChannel {
@@ -1413,6 +1414,7 @@ enum NoticeQueue {
   BACKUP
   KIOSK
   TASKS
+  DOCUMENTS
 }
 
 enum NoticeSubject {
@@ -1428,6 +1430,7 @@ enum NoticeSubject {
   BACKUP
   DEVICE
   TASK
+  DOCUMENT
 }
 
 enum NoticeOutcome {
@@ -1439,6 +1442,7 @@ enum NoticeOutcome {
   RENEWED
   RESOLVED
   COMPLETED
+  SIGNED
 }
 
 enum NoticeLevel {
