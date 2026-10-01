@@ -48,6 +48,8 @@ describe("work a group shares, closed once for all (e2e)", () => {
   const tokenOf = new Map<Who, string>();
   let periodId = "";
   let day = 0;
+  // The record behind each queue's work, and the holder who must be able to open it.
+  const records: { path: string; holder: Who; decidedBy: Who }[] = [];
 
   const post = (who: Who, path: string, body: object = {}) =>
     request(http).post(path).set("Authorization", `Bearer ${tokenOf.get(who)}`).send(body);
@@ -228,6 +230,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.equal(paid.status, 201, JSON.stringify(paid.body));
     await closedFor(paying, "pay", "DONE", "PAID");
     assert.equal((await post("pay", `/advances/${id}/paid`)).status, 409);
+    records.push({ path: `/advances/${id}`, holder: "deskA", decidedBy: answers[0].status === 201 ? "deskA" : "deskB" });
   });
 
   it("closes a letter when it is issued, and as withdrawn when its asker takes it back", async () => {
@@ -237,6 +240,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.ok(await seatOf(issuing, "pay"), "a desk that issues letters was not told");
     assert.equal((await post("deskA", `/certificates/${asked.body.id}/issue`)).status, 201);
     await closedFor(issuing, "deskA", "DONE", "ISSUED");
+    records.push({ path: `/certificates/${asked.body.id}`, holder: "pay", decidedBy: "deskA" });
 
     const again = await post("asker", "/certificates", { kind: "INCOME", purpose: "e2e", months: 3 });
     const withdrawing = await itemOf("CERTIFICATES", again.body.id as string);
@@ -251,6 +255,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.ok(await seatOf(item, "deskB"));
     assert.equal((await post("deskB", `/profile-changes/${asked.body.id}/approve`)).status, 201);
     await closedFor(item, "deskB", "DONE", "APPROVED");
+    records.push({ path: `/profile-changes/${asked.body.id}`, holder: "deskA", decidedBy: "deskB" });
   });
 
   it("closes a dependant's registration when the pay desk decides it", async () => {
@@ -261,6 +266,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.equal(await seatOf(item, "deskA"), null, "the HR desk was told of a pay-desk queue");
     assert.equal((await post("pay", `/dependents/${filed.body.id}/decide`, { approve: true })).status, 201);
     await closedFor(item, "pay", "DONE", "APPROVED");
+    records.push({ path: `/dependents/${filed.body.id}`, holder: "pay", decidedBy: "pay" });
   });
 
   it("keys a dispute by its own id and closes it with the answer's outcome", async () => {
@@ -293,5 +299,67 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.equal(news.subjectType, "DISPUTE");
     assert.equal(news.subjectId, id);
     assert.deepEqual(news.facts, { outcome: "REJECTED" });
+    records.push({ path: `/payslip-disputes/${id}`, holder: "pay", decidedBy: "pay" });
+  });
+
+  it("opens the record behind each queue's work for its holders and says who handled it, and for nobody outside", async () => {
+    assert.equal(records.length, 5, "a queue's walk above did not finish");
+    for (const one of records) {
+      const held = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get(one.holder)}`);
+      assert.equal(held.status, 200, `${one.holder} could not open ${one.path}`);
+      assert.equal(held.body.decidedByName, nameOf(one.decidedBy), `${one.path} does not say who handled it`);
+      const outside = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get("orphan")}`);
+      assert.equal(outside.status, 404, `somebody outside opened ${one.path}`);
+      const own = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get("asker")}`);
+      assert.equal(own.status, 200, `the asker could not open their own ${one.path}`);
+    }
+  });
+
+  it("shows an item to its group with whom it reached, to its asker without, and to nobody else", async () => {
+    const asked = await post("asker", "/certificates", { kind: "EMPLOYMENT", purpose: "e2e" });
+    const key = itemKey("CERTIFICATES", asked.body.id as string);
+    const path = `/notifications/items/${encodeURIComponent(key)}`;
+    const desk = await request(http).get(path).set("Authorization", `Bearer ${tokenOf.get("deskA")}`);
+    assert.equal(desk.status, 200, JSON.stringify(desk.body));
+    assert.equal(desk.body.state, "OPEN");
+    assert.equal(desk.body.claimable, true);
+    assert.ok((desk.body.holders as { name: string }[]).some((one) => one.name === nameOf("deskA")));
+    const own = await request(http).get(path).set("Authorization", `Bearer ${tokenOf.get("asker")}`);
+    assert.equal(own.status, 200);
+    assert.equal(own.body.holders, null, "the asker saw who in the desk was told");
+    for (const who of ["orphan", "boss"] as const) {
+      const res = await request(http).get(path).set("Authorization", `Bearer ${tokenOf.get(who)}`);
+      assert.equal(res.status, 404, `${who} read an item outside their reach`);
+    }
+    await post("asker", `/certificates/${asked.body.id}/cancel`);
+  });
+
+  it("lets a member say they are on a letter, lets each let go of only their own, and refuses once it is done", async () => {
+    const asked = await post("asker", "/certificates", { kind: "EMPLOYMENT", purpose: "e2e" });
+    const claim = `/notifications/items/${encodeURIComponent(itemKey("CERTIFICATES", asked.body.id as string))}/claim`;
+    const taken = await post("deskA", claim);
+    assert.equal(taken.status, 201, JSON.stringify(taken.body));
+    assert.equal(taken.body.claimedByName, nameOf("deskA"));
+    const notTheirs = await request(http).delete(claim).set("Authorization", `Bearer ${tokenOf.get("deskB")}`);
+    assert.equal(notTheirs.body.claimedByName, nameOf("deskA"), "a member let go of somebody else's claim");
+    const freed = await request(http).delete(claim).set("Authorization", `Bearer ${tokenOf.get("deskA")}`);
+    assert.equal(freed.body.claimedByName, null);
+    assert.equal((await post("boss", claim)).status, 404, "somebody outside the group claimed the work");
+    assert.equal((await post("deskA", `/certificates/${asked.body.id}/issue`)).status, 201);
+    const late = await post("deskB", claim);
+    assert.equal(late.status, 409);
+    assert.equal(late.body.message, "NOTICE_ITEM_CLOSED");
+  });
+
+  it("offers no claim on a request and closes no inbox work by hand", async () => {
+    const id = await fileRequest("asker");
+    const key = encodeURIComponent(itemKey("REQUESTS", id));
+    assert.equal((await post("boss", `/notifications/items/${key}/claim`)).status, 404, "a one-click request took a claim");
+    const resolved = await post("boss", `/notifications/items/${key}/resolve`, { note: "e2e" });
+    assert.equal(resolved.status, 409);
+    assert.equal(resolved.body.message, "NOTICE_ITEM_NOT_RESOLVABLE");
+    assert.equal((await post("boss", `/notifications/items/${key}/resolve`, {})).status, 400, "a close with no note was taken");
+    assert.equal((await post("orphan", `/notifications/items/${key}/resolve`, { note: "e2e" })).status, 404);
+    await post("asker", `/requests/${id}/cancel`);
   });
 });

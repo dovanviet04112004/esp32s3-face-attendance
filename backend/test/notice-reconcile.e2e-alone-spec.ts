@@ -9,6 +9,7 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { itemKey } from "../src/modules/notifications/notice-items.service.js";
@@ -65,7 +66,14 @@ describe("the hourly reconcile, run after every other suite (e2e)", () => {
   });
 
   it("finds no item a write path forgot to open or close in what the other suites left", async () => {
-    const tally = await reconcile.sweep();
+    const admin = await request(http)
+      .post("/auth/login")
+      .send({ email: "admin@kiosk.local", password: validateEnv().SEED_ADMIN_PASSWORD ?? "" });
+    const res = await request(http)
+      .post("/notifications/sweeps/reconcile")
+      .set("Authorization", `Bearer ${admin.body.accessToken}`);
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const tally = res.body.result as Record<string, { closed: number; opened: number }>;
     for (const [queue, one] of Object.entries(tally)) {
       assert.equal(one.closed, 0, `${queue}: an item stayed open after its business row was done`);
       assert.equal(one.opened, 0, `${queue}: a waiting row had no item`);
