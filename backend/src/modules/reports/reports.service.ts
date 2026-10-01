@@ -25,7 +25,7 @@ import { PolicyService } from "../policy/policy.service.js";
 import { TallyRangeDto, type D02QueryDto } from "./dto/report.dto.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { dayAsDate, dayWindow, localDay, minutesIntoDay } from "../timesheet/local-day.js";
+import { dayAsDate, dayWindow, localDay, localMinutesSql, minutesIntoDay } from "../timesheet/local-day.js";
 import { branchOf } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
@@ -238,13 +238,7 @@ function lateInRange(query: TallyRangeDto, zone: string): Prisma.Sql {
        AND NOT r."questionableTime"
        AND EXTRACT(ISODOW FROM ${local}) < 6
      GROUP BY r."employeeId", ${local}::date, h."startTime", h."graceMinutes"
-    HAVING min(${localMinutes(Prisma.sql`r."ts"`, zone)}) > ${dueMinutes(Prisma.sql`h`)}`;
-}
-
-/** Minutes past local midnight of a stored instant; the column holds UTC without a zone. */
-function localMinutes(column: Prisma.Sql, zone: string): Prisma.Sql {
-  const local = Prisma.sql`((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${zone})`;
-  return Prisma.sql`(EXTRACT(HOUR FROM ${local}) * 60 + EXTRACT(MINUTE FROM ${local}))::int`;
+    HAVING min(${localMinutesSql(Prisma.sql`r."ts"`, zone)}) > ${dueMinutes(Prisma.sql`h`)}`;
 }
 
 /** Where a shift stops counting as on time, in minutes past local midnight. */
@@ -447,7 +441,7 @@ export class ReportsService {
                  WHEN k."marks" = 1 THEN 'STILL_IN'
                  ELSE 'LATE'
                END AS "reason",
-               COALESCE(GREATEST(0, ${localMinutes(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
+               COALESCE(GREATEST(0, ${localMinutesSql(Prisma.sql`k."firstAt"`, zone)} - ${dueMinutes(Prisma.sql`x`)}), 0)::int
                  AS "minutes"
           FROM expected x
           JOIN people p ON p."id" = x."employeeId"
@@ -458,7 +452,7 @@ export class ReportsService {
            AND (
              k."employeeId" IS NULL
              OR k."marks" = 1
-             OR ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
+             OR ${localMinutesSql(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)}
            )
       ),
       listed AS (
@@ -535,7 +529,7 @@ export class ReportsService {
              (SELECT count(*) FROM seen)::int AS "present",
              (SELECT count(*)
                 FROM expected x JOIN seen k ON k."employeeId" = x."employeeId"
-               WHERE ${localMinutes(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)})::int AS "late",
+               WHERE ${localMinutesSql(Prisma.sql`k."firstAt"`, zone)} > ${dueMinutes(Prisma.sql`x`)})::int AS "late",
              (SELECT count(*)
                 FROM expected x
                WHERE NOT EXISTS (SELECT 1 FROM seen k WHERE k."employeeId" = x."employeeId")

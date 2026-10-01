@@ -39,6 +39,12 @@ export function localDateSql(column: Prisma.Sql, zone: string): Prisma.Sql {
   return Prisma.sql`((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${zone})::date`;
 }
 
+/** Minutes past local midnight of a stored instant, in SQL; the column holds UTC without a zone. */
+export function localMinutesSql(column: Prisma.Sql, zone: string): Prisma.Sql {
+  const local = Prisma.sql`((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${zone})`;
+  return Prisma.sql`(EXTRACT(HOUR FROM ${local}) * 60 + EXTRACT(MINUTE FROM ${local}))::int`;
+}
+
 export function dayAsDate(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`);
 }
