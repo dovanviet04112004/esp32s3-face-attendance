@@ -1,8 +1,8 @@
 import { Global, Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module.js";
-import { LeaveModule } from "../leave/leave.module.js";
 import { RealtimeModule } from "../realtime/realtime.module.js";
+import { AudienceService } from "./audience.service.js";
 import { BackupWatchService } from "./backup-watch.service.js";
 import { ContractAlertsService } from "./contract-alerts.service.js";
 import { MailerService } from "./mailer.service.js";
@@ -12,9 +12,10 @@ import { StaleRequestsService } from "./stale-requests.service.js";
 
 @Global()
 @Module({
-  imports: [AuthModule, LeaveModule, RealtimeModule],
+  imports: [AuthModule, RealtimeModule],
   controllers: [NotificationsController],
   providers: [
+    AudienceService,
     NotificationsService,
     ContractAlertsService,
     StaleRequestsService,
@@ -22,6 +23,7 @@ import { StaleRequestsService } from "./stale-requests.service.js";
     MailerService,
   ],
   exports: [
+    AudienceService,
     NotificationsService,
     ContractAlertsService,
     StaleRequestsService,

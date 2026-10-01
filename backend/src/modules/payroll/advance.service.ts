@@ -10,12 +10,10 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { LeaveService } from "../leave/leave.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
   filedBetween,
-  notOwnWaiting,
   personWhere,
   resumeAfter,
   sortedBy,
@@ -23,6 +21,7 @@ import {
   whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const SORT_FIELD = "requestedAt";
@@ -42,9 +41,9 @@ export class AdvanceService {
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
-    private readonly leave: LeaveService,
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
+    private readonly audience: AudienceService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -53,8 +52,8 @@ export class AdvanceService {
     const person = await personWhere(this.db, query);
     const own =
       query.state === "PENDING"
-        ? notOwnWaiting(viewer, QUEUE_DESKS.advancesToDecide, true, query.employeeId)
-        : notOwnWaiting(viewer, QUEUE_DESKS.advancesToPay, query.state === "APPROVED", query.employeeId);
+        ? await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_DECIDE", true, query.employeeId)
+        : await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_PAY", query.state === "APPROVED", query.employeeId);
     const where = {
       AND: [
         whoseRows(visible, query.employeeId),
@@ -129,11 +128,9 @@ export class AdvanceService {
         reason: body.reason,
       },
     });
-    await this.notices.raiseMany(
-      await this.leave.deskIds(viewer.employeeId),
-      "REQUEST_WAITING",
-      { advanceId: filed.id },
-    );
+    await this.notices.raiseMany(await this.audience.audienceOf("ADVANCES_TO_DECIDE", filed.id), "REQUEST_WAITING", {
+      advanceId: filed.id,
+    });
     return filed;
   }
 
@@ -168,8 +165,9 @@ export class AdvanceService {
       approved: body.approve,
     });
     if (body.approve) {
-      await this.notices.raiseToDesk(QUEUE_DESKS.advancesToPay, "REQUEST_WAITING", { advanceId: id, approved: true }, {
-        employeeIds: [found.employeeId],
+      await this.notices.raiseMany(await this.audience.audienceOf("ADVANCES_TO_PAY", id), "REQUEST_WAITING", {
+        advanceId: id,
+        approved: true,
       });
     }
     return decided;

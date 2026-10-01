@@ -27,6 +27,7 @@ import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import { dayAsDate } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
@@ -42,7 +43,6 @@ import type {
 import { LeaveYearService } from "./leave-year.service.js";
 import {
   PERSON_VIEW,
-  QUEUE_DESKS,
   THE_DESK,
   filedBetween,
   personWhere,
@@ -62,7 +62,6 @@ const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
 const TIMED: RequestKind[] = ["OVERTIME", "ATTENDANCE_FIX"];
 const OFF_WORK: RequestState[] = ["PENDING", "APPROVED"];
 // Judged at read time: a login locked after filing still sends the request to the desk (KEHOACH 9.15).
-const UNREACHABLE = { NOT: { login: { is: { active: true } } } } satisfies Prisma.EmployeeWhereInput;
 const OVERLAP_SHOWN = 20;
 // Past this an export stops; a filter narrows it (KEHOACH 9.9 rule 6).
 const EXPORT_MAX = 50_000;
@@ -190,6 +189,7 @@ export class LeaveService {
     private readonly db: PrismaService,
     private readonly scope: ScopeService,
     private readonly notices: NotificationsService,
+    private readonly audience: AudienceService,
     private readonly timesheet: TimesheetService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
@@ -352,7 +352,7 @@ export class LeaveService {
     const { days, nextYearDays } = type
       ? await this.charge(viewer.employeeId, from, to, body.halfDay ?? false, type.calendarDays)
       : { days: body.halfDay ? HALF : Math.round((to.getTime() - from.getTime()) / MS_PER_DAY) + 1, nextYearDays: 0 };
-    const approverId = await this.approverFor(viewer.employeeId, from);
+    const approverId = await this.approverFor(viewer.employeeId);
 
     const file = (): Promise<LeaveRequest> => this.db.$transaction(async (tx) => {
       if (type) {
@@ -406,11 +406,9 @@ export class LeaveService {
       }
       return raced;
     }
-    await this.notices.raiseMany(
-      await this.waitersFor(viewer.employeeId, approverId),
-      "REQUEST_WAITING",
-      { requestId: filed.id },
-    );
+    await this.notices.raiseMany(await this.audience.audienceOf("REQUESTS", filed.id), "REQUEST_WAITING", {
+      requestId: filed.id,
+    });
     return filed;
   }
 
@@ -613,33 +611,33 @@ export class LeaveService {
 
   /** What is waiting on this viewer to answer, oldest first unless asked otherwise. */
   async inbox(viewer: Viewer, query: ListRequestsDto): Promise<Page<InboxRow>> {
-    const mine = await this.waitingOnViewer(viewer);
-    if (mine.length === 0) {
+    const mine = await this.audience.waitingOn(viewer, "REQUESTS");
+    if (mine === null) {
       return { rows: [], total: 0, totalIsExact: true, next: null };
     }
-    const where: Prisma.RequestWhereInput = {
-      AND: [{ state: "PENDING", OR: mine }, ...(await this.filters(query))],
-    };
+    const where: Prisma.RequestWhereInput = { AND: [mine, ...(await this.filters(query))] };
     const page = await this.page(where, "createdAt", query.order ?? "asc", query);
     return { ...page, rows: await this.withContext(page.rows) };
   }
 
   /** The numbers on the inbox tabs and the sidebar badge, from the same rules as each list. */
   async counts(viewer: Viewer): Promise<InboxCounts> {
-    const mine = await this.waitingOnViewer(viewer);
-    const own = viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } };
-    const decides = (queue: keyof typeof QUEUE_DESKS): boolean => QUEUE_DESKS[queue].includes(viewer.role);
     const take = COUNT_CEILING;
-    const none = Promise.resolve(0);
     const [requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay] =
       await Promise.all([
-        mine.length === 0 ? none : this.db.request.count({ where: { state: "PENDING", OR: mine }, take }),
-        decides("disputes") ? this.db.payslipDispute.count({ where: { state: "OPEN", ...own }, take }) : none,
-        decides("certificates") ? this.db.certificate.count({ where: { state: "REQUESTED", ...own }, take }) : none,
-        decides("profileChanges") ? this.db.profileChange.count({ where: { state: "PENDING", ...own }, take }) : none,
-        decides("dependents") ? this.db.dependent.count({ where: { state: "PENDING", ...own }, take }) : none,
-        decides("advancesToDecide") ? this.db.salaryAdvance.count({ where: { state: "PENDING", ...own }, take }) : none,
-        decides("advancesToPay") ? this.db.salaryAdvance.count({ where: { state: "APPROVED", ...own }, take }) : none,
+        this.audience.waitingOn(viewer, "REQUESTS").then((where) => (where ? this.db.request.count({ where, take }) : 0)),
+        this.audience.waitingOn(viewer, "DISPUTES").then((where) => (where ? this.db.payslipDispute.count({ where, take }) : 0)),
+        this.audience.waitingOn(viewer, "CERTIFICATES").then((where) => (where ? this.db.certificate.count({ where, take }) : 0)),
+        this.audience
+          .waitingOn(viewer, "PROFILE_CHANGES")
+          .then((where) => (where ? this.db.profileChange.count({ where, take }) : 0)),
+        this.audience.waitingOn(viewer, "DEPENDENTS").then((where) => (where ? this.db.dependent.count({ where, take }) : 0)),
+        this.audience
+          .waitingOn(viewer, "ADVANCES_TO_DECIDE")
+          .then((where) => (where ? this.db.salaryAdvance.count({ where, take }) : 0)),
+        this.audience
+          .waitingOn(viewer, "ADVANCES_TO_PAY")
+          .then((where) => (where ? this.db.salaryAdvance.count({ where, take }) : 0)),
       ]);
     return { requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay };
   }
@@ -864,22 +862,6 @@ export class LeaveService {
     });
   }
 
-  /** Who a pending request waits on for this viewer; the inbox and the decision read the same rule. */
-  private async waitingOnViewer(viewer: Viewer): Promise<Prisma.RequestWhereInput[]> {
-    const mine: Prisma.RequestWhereInput[] = [];
-    if (viewer.employeeId !== null) {
-      const standIn = await this.standingInFor(viewer.employeeId);
-      mine.push({ approverId: { in: [viewer.employeeId, ...standIn] } });
-    }
-    // Nobody above who can sign in to answer, so it waits on the desk that holds
-    // leave anyway rather than on nobody (KEHOACH 9.15).
-    if (THE_DESK.includes(viewer.role)) {
-      const notOwn = viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } };
-      mine.push({ approverId: null, ...notOwn }, { approver: { is: UNREACHABLE }, ...notOwn });
-    }
-    return mine;
-  }
-
   /** Why this viewer may not decide a pending request, or null when they may. */
   private async refusal(
     viewer: Viewer,
@@ -907,40 +889,13 @@ export class LeaveService {
     return visible !== null && visible.includes(held.employeeId) ? null : "NOT_YOUR_REQUEST";
   }
 
-  /** The logins a pending request waits on: its approver's, or the desk's when no approver can sign in (KEHOACH 9.15). */
-  async waitersFor(asker: number, approverId: number | null): Promise<string[]> {
-    const login =
-      approverId === null
-        ? null
-        : await this.db.user.findFirst({ where: { employeeId: approverId, active: true }, select: { id: true } });
-    return login ? [login.id] : this.deskIds(asker);
-  }
-
-  /** The desk an unclaimed request waits on, minus whoever asked: rule 2 holds
-   *  even when the queue is a role rather than a person (KEHOACH 9.15).
-   */
-  async deskIds(asker: number): Promise<string[]> {
-    const rows = await this.db.user.findMany({
-      where: { active: true, role: { in: THE_DESK } },
-      select: { id: true, employeeId: true },
-    });
-    return rows.filter((row) => row.employeeId !== asker).map((row) => row.id);
-  }
-
-  /** Who decides for this person on a date, honouring a delegation. */
-  async approverFor(employeeId: number, on: Date): Promise<number | null> {
+  /** The approver a request names: the direct manager, never a stand-in, who is read for today (KEHOACH 9.21.4). */
+  async approverFor(employeeId: number): Promise<number | null> {
     const person = await this.db.employee.findUnique({
       where: { id: employeeId },
       select: { managerId: true },
     });
-    if (!person?.managerId) {
-      return null;
-    }
-    const away = await this.db.approvalDelegation.findFirst({
-      where: { fromId: person.managerId, fromDate: { lte: on }, toDate: { gte: on } },
-      select: { toId: true },
-    });
-    return away?.toId ?? person.managerId;
+    return person?.managerId ?? null;
   }
 
   private async standingInFor(employeeId: number): Promise<number[]> {

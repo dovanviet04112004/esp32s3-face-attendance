@@ -14,7 +14,6 @@ import {
   PERSON_VIEW,
   QUEUE_DESKS,
   filedBetween,
-  notOwnWaiting,
   personWhere,
   resumeAfter,
   sortedBy,
@@ -22,6 +21,7 @@ import {
   whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import { localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
@@ -51,6 +51,7 @@ export class CertificatesService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
+    private readonly audience: AudienceService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -74,8 +75,8 @@ export class CertificatesService {
       subjectId: String(viewer.employeeId),
       meta: { kind: body.kind, purpose: body.purpose },
     });
-    await this.notices.raiseToDesk(DESK, "REQUEST_WAITING", { certificateId: made.id }, {
-      employeeIds: [viewer.employeeId],
+    await this.notices.raiseMany(await this.audience.audienceOf("CERTIFICATES", made.id), "REQUEST_WAITING", {
+      certificateId: made.id,
     });
     return made;
   }
@@ -89,7 +90,7 @@ export class CertificatesService {
     const where = {
       AND: [
         whoseRows(visible, query.employeeId),
-        notOwnWaiting(viewer, DESK, waiting, query.employeeId),
+        await this.audience.inboxNarrowing(viewer, "CERTIFICATES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.kind ? { kind: query.kind } : {},
         person ? { employee: person } : {},

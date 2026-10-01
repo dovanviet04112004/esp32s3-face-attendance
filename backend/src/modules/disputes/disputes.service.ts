@@ -14,7 +14,6 @@ import {
   PERSON_VIEW,
   QUEUE_DESKS,
   filedBetween,
-  notOwnWaiting,
   personWhere,
   resumeAfter,
   sortedBy,
@@ -22,6 +21,7 @@ import {
   whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import type { AnswerDisputeDto, ListDisputesDto, RaiseDisputeDto } from "./dto/dispute.dto.js";
 
 const ANSWERERS = QUEUE_DESKS.disputes;
@@ -49,6 +49,7 @@ export class DisputesService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly notices: NotificationsService,
+    private readonly audience: AudienceService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -91,8 +92,8 @@ export class DisputesService {
       subjectId: slip.id,
       meta: { lineCode, dueAt: made.dueAt.toISOString() },
     });
-    await this.notices.raiseToDesk(ANSWERERS, "REQUEST_WAITING", { payslipId: slip.id }, {
-      employeeIds: [viewer.employeeId],
+    await this.notices.raiseMany(await this.audience.audienceOf("DISPUTES", made.id), "REQUEST_WAITING", {
+      payslipId: slip.id,
     });
     return made;
   }
@@ -107,7 +108,7 @@ export class DisputesService {
     const where = {
       AND: [
         whoseRows(visible, query.employeeId),
-        notOwnWaiting(viewer, ANSWERERS, waiting, query.employeeId),
+        await this.audience.inboxNarrowing(viewer, "DISPUTES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.overdue ? { state: "OPEN", dueAt: { lt: new Date() } } : {},
         person ? { employee: person } : {},

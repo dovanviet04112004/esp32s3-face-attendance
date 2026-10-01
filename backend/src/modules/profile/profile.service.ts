@@ -24,7 +24,6 @@ import {
   PERSON_VIEW,
   QUEUE_DESKS,
   filedBetween,
-  notOwnWaiting,
   personWhere,
   resumeAfter,
   sortedBy,
@@ -33,6 +32,7 @@ import {
 } from "../leave/queue-filter.js";
 import { MailerService } from "../notifications/mailer.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import { profileNoticeMail } from "../payroll/mail-text.js";
 import { localDay } from "../timesheet/local-day.js";
 import {
@@ -68,6 +68,7 @@ export class ProfileService {
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
     private readonly notices: NotificationsService,
+    private readonly audience: AudienceService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -116,9 +117,8 @@ export class ProfileService {
       subjectId: String(employeeId),
       meta: { field: body.field },
     });
-    await this.notices.raiseToDesk(DESK, "REQUEST_WAITING", { profileChangeId: made.id }, {
-      employeeIds: [employeeId],
-      userIds: [viewer.userId],
+    await this.notices.raiseMany(await this.audience.audienceOf("PROFILE_CHANGES", made.id), "REQUEST_WAITING", {
+      profileChangeId: made.id,
     });
     return made;
   }
@@ -131,7 +131,7 @@ export class ProfileService {
     const where = {
       AND: [
         whoseRows(visible, query.employeeId),
-        notOwnWaiting(viewer, DESK, waiting, query.employeeId),
+        await this.audience.inboxNarrowing(viewer, "PROFILE_CHANGES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.field ? { field: query.field } : {},
         person ? { employee: person } : {},

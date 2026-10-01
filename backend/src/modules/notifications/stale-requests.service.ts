@@ -6,8 +6,8 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../queue/queues.js";
-import { LeaveService } from "../leave/leave.service.js";
 import { localDateSql, localDay } from "../timesheet/local-day.js";
+import { AudienceService } from "./audience.service.js";
 import { NotificationsService } from "./notifications.service.js";
 
 interface Waiting {
@@ -29,7 +29,7 @@ export class StaleRequestsService implements OnModuleInit {
   constructor(
     private readonly db: PrismaService,
     private readonly notices: NotificationsService,
-    private readonly leave: LeaveService,
+    private readonly audience: AudienceService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -76,11 +76,7 @@ export class StaleRequestsService implements OnModuleInit {
       }
       const facts = { requestId: row.requestId, daysWaited: row.daysWaited };
       await this.notices.raiseFor(row.employeeId, "REQUEST_STALLED", facts);
-      await this.notices.raiseMany(
-        await this.leave.waitersFor(row.employeeId, row.approverId),
-        "REQUEST_WAITING",
-        facts,
-      );
+      await this.notices.raiseMany(await this.audience.audienceOf("REQUESTS", row.requestId), "REQUEST_WAITING", facts);
       told += 1;
     }
     this.log.log(`stale requests swept, ${told} told of ${rows.length} at a mark`);
