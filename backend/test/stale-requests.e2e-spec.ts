@@ -8,7 +8,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
-import { StaleRequestsService } from "../src/modules/notifications/stale-requests.service.js";
+import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
 
 const FILER = "NV9801";
 const APPROVER = "NV9802";
@@ -22,7 +22,7 @@ function daysAgo(count: number): Date {
 describe("stale requests (e2e)", () => {
   let app: INestApplication;
   let db: PrismaService;
-  let stale: StaleRequestsService;
+  let stale: StalledSweep;
   let items: NoticeItemsService;
   let filerId = 0;
   let approverId = 0;
@@ -62,7 +62,7 @@ describe("stale requests (e2e)", () => {
     configure(app);
     await app.init();
     db = app.get(PrismaService);
-    stale = app.get(StaleRequestsService);
+    stale = app.get(StalledSweep);
     items = app.get(NoticeItemsService);
     await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });

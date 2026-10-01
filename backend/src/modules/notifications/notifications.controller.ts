@@ -52,8 +52,8 @@ import {
   type SubscriptionView as KeptSubscription,
   type Unread,
 } from "./notifications.service.js";
-import { StaleRequestsService } from "./stale-requests.service.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
+import { StalledSweep } from "./sweeps/stalled.sweep.js";
 
 const NOTICE_ID = { name: "id", description: "Notice id (UUID)", example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e" };
 const ITEM_KEY = {
@@ -72,7 +72,7 @@ export class NotificationsController {
     private readonly notices: NotificationsService,
     private readonly items: NoticeItemsService,
     private readonly alerts: ContractAlertsService,
-    private readonly stale: StaleRequestsService,
+    private readonly stale: StalledSweep,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
   ) {}

@@ -6,13 +6,12 @@ import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
-import { INBOX_QUEUES, WAITING_STATE, type InboxQueue } from "../audience.service.js";
+import { INBOX_QUEUES, QUEUE_LEDGER, WAITING_STATE, type InboxQueue } from "../audience.service.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 import { kebab } from "../notice-kinds.js";
 
 /** How a queue's finished business row reads as a closed item; `s` is that row, as the backfill read it. */
 interface Ledger {
-  table: string;
   state: string;
   outcome: string;
   actor: string;
@@ -23,14 +22,12 @@ const ASKER = `(SELECT u."id" FROM "User" u WHERE u."employeeId" = s."employeeId
 
 const LEDGERS: Record<InboxQueue, Ledger> = {
   REQUESTS: {
-    table: "Request",
     state: `CASE s."state" WHEN 'CANCELLED' THEN 'WITHDRAWN' ELSE 'DONE' END`,
     outcome: `CASE s."state" WHEN 'APPROVED' THEN 'APPROVED' WHEN 'REJECTED' THEN 'REJECTED' END`,
     actor: `CASE s."state" WHEN 'CANCELLED' THEN ${ASKER} ELSE s."decidedById" END`,
     closedAt: `COALESCE(s."decidedAt", s."updatedAt")`,
   },
   ADVANCES_TO_DECIDE: {
-    table: "SalaryAdvance",
     state: `CASE s."state" WHEN 'CANCELLED' THEN 'WITHDRAWN' ELSE 'DONE' END`,
     outcome: `CASE WHEN s."state" = 'REJECTED' THEN 'REJECTED' WHEN s."state" IN ('APPROVED', 'PAID', 'SETTLED') THEN 'APPROVED' END`,
     actor: `CASE s."state" WHEN 'CANCELLED' THEN ${ASKER} ELSE s."decidedById" END`,
@@ -38,7 +35,6 @@ const LEDGERS: Record<InboxQueue, Ledger> = {
   },
   // The advance does not record who paid it; the audit trail does (KEHOACH 9.24).
   ADVANCES_TO_PAY: {
-    table: "SalaryAdvance",
     state: `CASE WHEN s."state" IN ('PAID', 'SETTLED') THEN 'DONE' ELSE 'EXPIRED' END`,
     outcome: `CASE WHEN s."state" IN ('PAID', 'SETTLED') THEN 'PAID' END`,
     actor: `(SELECT l."actorId" FROM "AuditLog" l WHERE l."subjectType" = 'advance' AND l."subjectId" = s."id"
@@ -46,28 +42,24 @@ const LEDGERS: Record<InboxQueue, Ledger> = {
     closedAt: `COALESCE(s."paidAt", now()::timestamp(3))`,
   },
   CERTIFICATES: {
-    table: "Certificate",
     state: `CASE s."state" WHEN 'CANCELLED' THEN 'WITHDRAWN' ELSE 'DONE' END`,
     outcome: `CASE s."state" WHEN 'ISSUED' THEN 'ISSUED' WHEN 'REJECTED' THEN 'REJECTED' END`,
     actor: `CASE s."state" WHEN 'CANCELLED' THEN ${ASKER} ELSE s."issuedById" END`,
     closedAt: `COALESCE(s."issuedAt", s."updatedAt")`,
   },
   PROFILE_CHANGES: {
-    table: "ProfileChange",
     state: `CASE s."state" WHEN 'CANCELLED' THEN 'WITHDRAWN' ELSE 'DONE' END`,
     outcome: `CASE s."state" WHEN 'APPROVED' THEN 'APPROVED' WHEN 'REJECTED' THEN 'REJECTED' END`,
     actor: `CASE s."state" WHEN 'CANCELLED' THEN COALESCE(s."askedById", ${ASKER}) ELSE s."decidedById" END`,
     closedAt: `COALESCE(s."decidedAt", s."updatedAt")`,
   },
   DISPUTES: {
-    table: "PayslipDispute",
     state: `CASE s."state" WHEN 'WITHDRAWN' THEN 'WITHDRAWN' ELSE 'DONE' END`,
     outcome: `CASE WHEN s."state" = 'ANSWERED' THEN s."outcome"::text END`,
     actor: `CASE s."state" WHEN 'WITHDRAWN' THEN ${ASKER} ELSE s."answeredById" END`,
     closedAt: `COALESCE(s."answeredAt", s."updatedAt")`,
   },
   DEPENDENTS: {
-    table: "Dependent",
     state: `'DONE'`,
     outcome: `CASE WHEN s."state" = 'REJECTED' THEN 'REJECTED' WHEN s."state" IN ('ACTIVE', 'ENDED') THEN 'APPROVED' END`,
     actor: `s."decidedById"`,
@@ -168,7 +160,7 @@ export class ReconcileSweep implements OnModuleInit {
                  CASE WHEN s."id" IS NULL THEN NULL ELSE ${Prisma.raw(ledger.actor)} END AS "actorId",
                  CASE WHEN s."id" IS NULL THEN now()::timestamp(3) ELSE ${Prisma.raw(ledger.closedAt)} END AS "closedAt"
             FROM "NoticeItem" n
-            LEFT JOIN ${Prisma.raw(`"${ledger.table}"`)} s ON s."id" = n."subjectId"
+            LEFT JOIN ${Prisma.raw(`"${QUEUE_LEDGER[queue].table}"`)} s ON s."id" = n."subjectId"
            WHERE n."queue" = ${queue}::"NoticeQueue" AND n."state" = 'OPEN'
              AND (s."id" IS NULL OR s."state"::text <> ${WAITING_STATE[queue]})
         ) x
@@ -181,7 +173,7 @@ export class ReconcileSweep implements OnModuleInit {
   private async openMissing(queue: InboxQueue): Promise<number> {
     const waiting = await this.db.$queryRaw<{ id: string; employeeId: number }[]>`
       SELECT s."id", s."employeeId"
-        FROM ${Prisma.raw(`"${LEDGERS[queue].table}"`)} s
+        FROM ${Prisma.raw(`"${QUEUE_LEDGER[queue].table}"`)} s
        WHERE s."state"::text = ${WAITING_STATE[queue]}
          AND NOT EXISTS (SELECT 1 FROM "NoticeItem" i WHERE i."key" = ${`${kebab(queue)}:`} || s."id")
     `;

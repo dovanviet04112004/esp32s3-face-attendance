@@ -1,4 +1,4 @@
-import type { NoticeKind, NoticeLevel, Role } from "@prisma/client";
+import type { NoticeKind, NoticeLevel, NoticeQueue, Role } from "@prisma/client";
 
 /** The group a kind shows under in the bell and in Settings; read off this table, never stored (KEHOACH 9.21.4). */
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
@@ -16,6 +16,18 @@ export function kebab(name: string): string {
   return name.toLowerCase().replaceAll("_", "-");
 }
 
+/** The whole days of waiting at which an inbox queue's work speaks again (KEHOACH 9.17 item 12). */
+export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
+  REQUESTS: [3, 7, 14],
+  ADVANCES_TO_DECIDE: [3, 7],
+  ADVANCES_TO_PAY: [3, 7],
+  CERTIFICATES: [3, 7],
+  PROFILE_CHANGES: [3, 7],
+  DEPENDENTS: [3, 7],
+};
+
+export const DUE_SOON_DAYS = 1;
+
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
 
@@ -26,8 +38,6 @@ export interface KindRule {
   receivers: "self" | readonly Role[];
   /** Work a group shares, with a state of its own; otherwise news for one person. */
   item: boolean;
-  /** Whole days after which an open item, or a waiting subject, speaks again. */
-  marks: readonly number[];
   defaults: Record<OfferedChannel, boolean>;
   facts: Readonly<Record<string, FactType>>;
 }
@@ -39,7 +49,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "ACTION",
     receivers: INBOX_ROLES,
     item: true,
-    marks: [3, 7, 14],
     defaults: { IN_APP: true, PUSH: true },
     facts: { daysWaited: "number" },
   },
@@ -48,7 +57,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [],
     defaults: { IN_APP: true, PUSH: true },
     facts: { outcome: "string" },
   },
@@ -57,7 +65,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [3, 7, 14],
     defaults: { IN_APP: true, PUSH: true },
     facts: { daysWaited: "number" },
   },
@@ -66,7 +73,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [],
     defaults: { IN_APP: true, PUSH: true },
     facts: {},
   },
@@ -75,7 +81,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [],
     defaults: { IN_APP: true, PUSH: true },
     facts: { outcome: "string" },
   },
@@ -84,7 +89,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [],
     defaults: { IN_APP: true, PUSH: true },
     facts: {},
   },
@@ -94,7 +98,6 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     level: "INFO",
     receivers: "self",
     item: false,
-    marks: [30, 15, 7],
     defaults: { IN_APP: false, PUSH: false },
     facts: { daysLeft: "number" },
   },

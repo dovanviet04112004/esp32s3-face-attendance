@@ -33,6 +33,17 @@ export const WAITING_STATE = {
   DEPENDENTS: "PENDING",
 } as const satisfies Record<InboxQueue, string>;
 
+/** Where a queue's business rows live, and the column a wait in that queue counts from (KEHOACH 9.17 item 12). */
+export const QUEUE_LEDGER: Record<InboxQueue, { table: string; since: string }> = {
+  REQUESTS: { table: "Request", since: "createdAt" },
+  ADVANCES_TO_DECIDE: { table: "SalaryAdvance", since: "requestedAt" },
+  ADVANCES_TO_PAY: { table: "SalaryAdvance", since: "decidedAt" },
+  CERTIFICATES: { table: "Certificate", since: "createdAt" },
+  PROFILE_CHANGES: { table: "ProfileChange", since: "createdAt" },
+  DISPUTES: { table: "PayslipDispute", since: "createdAt" },
+  DEPENDENTS: { table: "Dependent", since: "createdAt" },
+};
+
 const DESK_OF: Record<Exclude<InboxQueue, "REQUESTS">, keyof typeof QUEUE_DESKS> = {
   ADVANCES_TO_DECIDE: "advancesToDecide",
   ADVANCES_TO_PAY: "advancesToPay",

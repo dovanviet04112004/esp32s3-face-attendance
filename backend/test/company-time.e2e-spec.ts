@@ -17,7 +17,7 @@ import { EnrollmentListener } from "../src/modules/enrollment/enrollment.listene
 import type { KioskMessage } from "../src/modules/mqtt/mqtt.events.js";
 import { ContractAlertsService } from "../src/modules/notifications/contract-alerts.service.js";
 import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
-import { StaleRequestsService } from "../src/modules/notifications/stale-requests.service.js";
+import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
 import { ReportsService } from "../src/modules/reports/reports.service.js";
 import { dayWindow, localDateSql, localDay } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
@@ -235,7 +235,7 @@ describe("company time (e2e)", () => {
   });
 
   it("counts a waiting request's days from the company's midnight", async () => {
-    const stale = app.get(StaleRequestsService);
+    const stale = app.get(StalledSweep);
     const fileAt = async (createdAt: Date, on: string): Promise<string> => {
       const row = await db.request.create({
         data: {

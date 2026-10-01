@@ -10,8 +10,8 @@ import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
-import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
+import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
 import { QUEUE, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
@@ -28,7 +28,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly alerts: ContractAlertsService,
     private readonly mailer: MailerService,
     private readonly profile: ProfileService,
-    private readonly stale: StaleRequestsService,
+    private readonly stale: StalledSweep,
     private readonly backups: BackupWatchService,
     private readonly reconcile: ReconcileSweep,
     private readonly notices: NotificationsService,
