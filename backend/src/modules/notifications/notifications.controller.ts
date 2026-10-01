@@ -57,6 +57,7 @@ import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
+import { TasksSweep } from "./sweeps/tasks.sweep.js";
 
 const NOTICE_ID = { name: "id", description: "Notice id (UUID)", example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e" };
 const ITEM_KEY = {
@@ -81,6 +82,7 @@ export class NotificationsController {
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
+    private readonly tasks: TasksSweep,
   ) {}
 
   @Get()
@@ -167,6 +169,7 @@ export class NotificationsController {
       backup: () => this.backups.sweep(),
       cleanup: () => this.cleanup.sweep(),
       kiosk: () => this.kiosk.sweep(),
+      tasks: () => this.tasks.sweep(),
     } satisfies Record<SweepParamDto["name"], () => Promise<object>>;
     return { name: params.name, result: { ...(await run[params.name]()) } };
   }

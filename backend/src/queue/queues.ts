@@ -23,6 +23,7 @@ export const JOB = {
   noticeGather: "notice-gather",
   noticeCleanup: "notice-cleanup",
   kioskAlerts: "kiosk-alerts",
+  tasksDue: "tasks-due",
   passwordSetup: "password-setup",
   passwordChanged: "password-changed",
   profileNotice: "profile-notice",
@@ -84,6 +85,10 @@ export interface KioskAlertsJob {
   type: typeof JOB.kioskAlerts;
 }
 
+export interface TasksDueJob {
+  type: typeof JOB.tasksDue;
+}
+
 export interface NoticeGatherJob {
   type: typeof JOB.noticeGather;
   userId: string;
@@ -123,6 +128,7 @@ export type NotifyJob =
   | NoticeGatherJob
   | NoticeCleanupJob
   | KioskAlertsJob
+  | TasksDueJob
   | PasswordSetupJob
   | PasswordChangedJob
   | ProfileNoticeJob;

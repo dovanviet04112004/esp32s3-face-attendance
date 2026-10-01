@@ -15,6 +15,7 @@ import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
+import { TasksSweep } from "./sweeps/tasks.sweep.js";
 
 @Global()
 @Module({
@@ -32,6 +33,7 @@ import { StalledSweep } from "./sweeps/stalled.sweep.js";
     ReconcileSweep,
     CleanupSweep,
     KioskSweep,
+    TasksSweep,
     MailerService,
   ],
   exports: [
@@ -46,6 +48,7 @@ import { StalledSweep } from "./sweeps/stalled.sweep.js";
     ReconcileSweep,
     CleanupSweep,
     KioskSweep,
+    TasksSweep,
     MailerService,
   ],
 })

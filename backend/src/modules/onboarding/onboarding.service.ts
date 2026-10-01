@@ -16,6 +16,7 @@ import type { Env } from "../../config/env.schema.js";
 import { foldedHas, namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import type {
@@ -87,6 +88,7 @@ export class OnboardingService {
     private readonly scope: ScopeService,
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
+    private readonly items: NoticeItemsService,
   ) {}
 
   // Due dates are calendar days, so a task is late once its day is earlier than the company's today.
@@ -242,7 +244,7 @@ export class OnboardingService {
     }
     const template = await this.pickTemplate(body.kind, person.jobTitleId, person.departmentId);
     const anchor = new Date(body.anchorDate);
-    return this.db.checklistRun
+    const made = await this.db.checklistRun
       .create({
         data: {
           employeeId: person.id,
@@ -256,6 +258,24 @@ export class OnboardingService {
       .catch((error: unknown) => {
         throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("CHECKLIST_ALREADY_STARTED") : error;
       });
+    await this.openWork(made.id);
+    return made;
+  }
+
+  /** Open each unfinished task of a run as work for its owner (KEHOACH 9.21.4).
+   *  @ctx any | after the commit that planted the run; logs its own failures, which the tasks sweep repairs
+   */
+  async openWork(runId: string): Promise<void> {
+    const run = await this.db.checklistRun.findUnique({
+      where: { id: runId },
+      select: { employeeId: true, tasks: { where: { doneAt: null }, select: { id: true, ownerRole: true, dueOn: true } } },
+    });
+    if (!run) {
+      return;
+    }
+    for (const task of run.tasks) {
+      await this.items.open("TASKS", { id: task.id, employeeId: run.employeeId }, { dueAt: task.dueOn, facts: { owner: task.ownerRole } });
+    }
   }
 
   /** One person's run, or null while none has been started: an empty tab, not a fault. */
@@ -353,6 +373,7 @@ export class OnboardingService {
     if (claimed.count === 0) {
       throw new ConflictException("TASK_ALREADY_DONE");
     }
+    await this.items.close("TASKS", taskId, { state: "DONE", outcome: "COMPLETED", actorId: viewer.userId });
     const done = await this.db.checklistTask.findUniqueOrThrow({ where: { id: taskId } });
     return { ...done, employeeId: task.run.employeeId };
   }

@@ -34,6 +34,7 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   PROBATION_DUE: "CONTRACT",
   BACKUP: "BACKUP",
   KIOSK: "DEVICE",
+  TASKS: "TASK",
 };
 
 /** The kind a queue's work is told as. */
@@ -49,6 +50,7 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   PROBATION_DUE: "PROBATION_DUE",
   BACKUP: "BACKUP_ALERT",
   KIOSK: "KIOSK_ALERT",
+  TASKS: "TASK_ASSIGNED",
 };
 
 // Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
@@ -401,7 +403,7 @@ export class NoticeItemsService {
   /** Open work against a date and speak at the days-left mark it has passed; the first mark is the opening.
    *  @ctx any | the mark is claimed on the item, so each is said once, a missed day included (KEHOACH 9.18)
    */
-  async speakDue(queue: "CONTRACTS_DUE" | "PROBATION_DUE", subject: { id: string; employeeId: number }, daysLeft: number): Promise<boolean> {
+  async speakDue(queue: "CONTRACTS_DUE" | "PROBATION_DUE" | "TASKS", subject: { id: string; employeeId: number }, daysLeft: number): Promise<boolean> {
     const passed = (DUE_MARKS[queue] ?? []).filter((one) => daysLeft <= one).length;
     if (passed === 0) {
       return false;
@@ -420,7 +422,11 @@ export class NoticeItemsService {
     }
     // Work this sweep opened has just been told; a reminder on top would say one thing twice.
     if (fresh) {
-      await this.db.notification.updateMany({ where: { item: { key } }, data: { facts: { daysLeft }, daysLeft } });
+      await this.db.$executeRaw`
+        UPDATE "Notification" n SET "facts" = n."facts" || ${JSON.stringify({ daysLeft })}::jsonb, "daysLeft" = ${daysLeft}::int
+          FROM "NoticeItem" i
+         WHERE n."itemId" = i."id" AND i."key" = ${key}
+      `;
     } else {
       await this.remind(queue, subject.id, { daysLeft });
     }
@@ -441,7 +447,7 @@ export class NoticeItemsService {
       const fresh = seated.map((one) => one.userId);
       const surfaced = await this.db.$queryRaw<Seated[]>`
         UPDATE "Notification"
-           SET "facts" = ${JSON.stringify(count)}::jsonb,
+           SET "facts" = "facts" || ${JSON.stringify(count)}::jsonb,
                "daysWaited" = ${"daysWaited" in count ? count.daysWaited : null}::int,
                "daysLeft" = ${"daysLeft" in count ? count.daysLeft : null}::int,
                "readAt" = NULL, "archivedAt" = NULL, "remindedAt" = now(),

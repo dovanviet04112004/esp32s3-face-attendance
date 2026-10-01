@@ -55,7 +55,7 @@ const DESK_OF: Record<Exclude<InboxQueue, "REQUESTS">, keyof typeof QUEUE_DESKS>
 
 const ESCALATE_ON_DAY = 7;
 
-const DUE_DESK: Role[] = ["ADMIN", "HR"];
+const HR_DESK: Role[] = ["ADMIN", "HR"];
 
 // An approver counts only with an open login whose role opens the inbox (KEHOACH 9.21.4).
 const UNREACHABLE = {
@@ -132,6 +132,9 @@ export class AudienceService {
     if (queue === "BACKUP" || queue === "KIOSK") {
       return this.admins();
     }
+    if (queue === "TASKS") {
+      return this.taskAudience(subjectId);
+    }
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
     for (const one of candidates) {
@@ -157,23 +160,48 @@ export class AudienceService {
     if (!held) {
       return [];
     }
+    const seated = await this.hrDesk(held.employeeId);
+    const boss = queue === "PROBATION_DUE" && held.employee.managerId !== null ? await this.managerLogin(held.employee.managerId) : null;
+    return [...new Set([...seated, ...(boss ? [boss] : [])])];
+  }
+
+  // The owner of a task: the person, the manager it named, or the desk once that manager has no open login (KEHOACH 9.21.4).
+  private async taskAudience(taskId: string): Promise<string[]> {
+    const task = await this.db.checklistTask.findUnique({
+      where: { id: taskId },
+      select: { ownerRole: true, ownerId: true, run: { select: { employeeId: true } } },
+    });
+    if (!task) {
+      return [];
+    }
+    const about = task.run.employeeId;
+    if (task.ownerRole === "SELF") {
+      const own = await this.db.user.findMany({ where: { employeeId: about, active: true }, select: { id: true } });
+      return own.map((one) => one.id);
+    }
+    const boss = task.ownerRole === "MANAGER" && task.ownerId !== null ? await this.managerLogin(task.ownerId) : null;
+    return boss ? [boss] : this.hrDesk(about);
+  }
+
+  // ADMIN and HR, never the person the work is about, and only a desk with a record of its own (KEHOACH 9.4).
+  private async hrDesk(aboutEmployeeId: number): Promise<string[]> {
     const desk = await this.db.user.findMany({
       where: {
         active: true,
-        role: { in: DUE_DESK },
-        OR: [{ employeeId: null }, { employeeId: { not: held.employeeId } }],
+        role: { in: HR_DESK },
+        OR: [{ employeeId: null }, { employeeId: { not: aboutEmployeeId } }],
       },
       select: { id: true, role: true, employeeId: true },
     });
-    const seated = desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId }));
-    const boss =
-      queue === "PROBATION_DUE" && held.employee.managerId !== null
-        ? await this.db.user.findFirst({
-            where: { employeeId: held.employee.managerId, active: true, role: { in: [...INBOX_ROLES] } },
-            select: { id: true },
-          })
-        : null;
-    return [...new Set([...seated.map((one) => one.id), ...(boss ? [boss.id] : [])])];
+    return desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId })).map((one) => one.id);
+  }
+
+  private async managerLogin(employeeId: number): Promise<string | null> {
+    const boss = await this.db.user.findFirst({
+      where: { employeeId, active: true, role: { in: [...INBOX_ROLES] } },
+      select: { id: true },
+    });
+    return boss?.id ?? null;
   }
 
   /** The whole working day of the company a request reaches the desk on (KEHOACH 9.21.4). */

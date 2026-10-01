@@ -1218,6 +1218,9 @@ export class EmployeesService implements OnModuleInit {
         skipped.push(login.skipped);
       }
     }
+    if (written.checklist) {
+      await this.onboarding.openWork(written.checklist.runId);
+    }
 
     await this.audit.record({
       actorId: viewer.userId,

@@ -8,7 +8,7 @@ export type FactType = "number" | "boolean" | "string" | "day";
 export type OfferedChannel = "IN_APP" | "PUSH";
 
 /** Kinds that are work a group shares; every other kind is news for one person (KEHOACH 9.21.4). */
-export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE" | "BACKUP_ALERT" | "KIOSK_ALERT";
+export type ItemKind = "REQUEST_WAITING" | "CONTRACT_DUE" | "PROBATION_DUE" | "BACKUP_ALERT" | "KIOSK_ALERT" | "TASK_ASSIGNED";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -28,14 +28,16 @@ export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
 
 export const DUE_SOON_DAYS = 1;
 
-/** Days left at which work against a date opens and then speaks again, the first mark opening it (KEHOACH 9.18 items 1-2). */
+/** Days left at which work against a date speaks, opening it at the first mark if nothing has (KEHOACH 9.18, 9.21.4). */
 export const DUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
   CONTRACTS_DUE: [30, 15, 7],
   PROBATION_DUE: [7, 3, 1],
+  TASKS: [0, -1],
 };
 
 export const DUE_WARNING: Partial<Record<NoticeQueue, number>> = {
   CONTRACTS_DUE: 7,
+  TASKS: -1,
 };
 
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
@@ -143,6 +145,15 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { code: "string", errorCode: "number" },
+  },
+  // Whoever owns the task: the person it is about, their manager, or the desk (KEHOACH 9.21.4).
+  TASK_ASSIGNED: {
+    category: "PEOPLE",
+    level: "ACTION",
+    receivers: ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { owner: "string", daysLeft: "number" },
   },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {

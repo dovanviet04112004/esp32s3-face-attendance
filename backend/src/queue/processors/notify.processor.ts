@@ -15,6 +15,7 @@ import { KioskSweep } from "../../modules/notifications/sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
+import { TasksSweep } from "../../modules/notifications/sweeps/tasks.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
 import { QUEUE, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
@@ -37,6 +38,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
+    private readonly tasks: TasksSweep,
     private readonly notices: NotificationsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -73,6 +75,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "kiosk-alerts") {
           await this.kiosk.sweep();
+          return;
+        }
+        if (body.type === "tasks-due") {
+          await this.tasks.sweep();
           return;
         }
         if (body.type === "notice-fanout") {

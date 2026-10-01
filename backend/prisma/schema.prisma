@@ -1390,6 +1390,7 @@ enum NoticeKind {
   PAYROLL_RUN_DONE
   BACKUP_ALERT
   KIOSK_ALERT
+  TASK_ASSIGNED
 }
 
 enum NoticeChannel {
@@ -1411,6 +1412,7 @@ enum NoticeQueue {
   PROBATION_DUE
   BACKUP
   KIOSK
+  TASKS
 }
 
 enum NoticeSubject {
@@ -1425,6 +1427,7 @@ enum NoticeSubject {
   PAYROLL_RUN
   BACKUP
   DEVICE
+  TASK
 }
 
 enum NoticeOutcome {
@@ -1435,6 +1438,7 @@ enum NoticeOutcome {
   PAID
   RENEWED
   RESOLVED
+  COMPLETED
 }
 
 enum NoticeLevel {
