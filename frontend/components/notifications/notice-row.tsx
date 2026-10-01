@@ -13,7 +13,7 @@ import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { days } from "@/lib/format";
+import { dayOnly, days } from "@/lib/format";
 import { NOTICE_LOOK, type Notice } from "./kinds";
 
 export type NoticeStatus = "action" | "unread" | "all" | "archived";
@@ -42,6 +42,27 @@ export const NOTICES_KEY = ["notifications"] as const;
 const kTickMs = 60_000;
 const kDayMs = 86_400_000;
 
+type Fact = "lateMinutes" | "earlyMinutes" | "overtimeMinutes";
+type TeamCount = "late" | "notPunched" | "absent" | "onLeave";
+
+const MINUTE_FACTS: Record<Fact, "factLate" | "factEarly" | "factOvertime"> = {
+  lateMinutes: "factLate",
+  earlyMinutes: "factEarly",
+  overtimeMinutes: "factOvertime",
+};
+
+const TEAM_COUNTS: Record<TeamCount, "teamLate" | "teamNotPunched" | "teamAbsent" | "teamOnLeave"> = {
+  late: "teamLate",
+  notPunched: "teamNotPunched",
+  absent: "teamAbsent",
+  onLeave: "teamOnLeave",
+};
+
+function counted(facts: Notice["facts"], name: string): number {
+  const value = facts?.[name];
+  return typeof value === "number" ? value : 0;
+}
+
 /** The words of one notice: what happened, whom and what it is about, and where its work stands. */
 export function useNoticeWords() {
   const t = useTranslations("notices");
@@ -58,14 +79,53 @@ export function useNoticeWords() {
     return format.dateTime(at, today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
+  /** What is off on a day, in the order a person reads their day: absent or a punch missing first. */
+  function deviations(facts: Notice["facts"]): string[] {
+    const said: string[] = [];
+    if (facts?.absent === true) {
+      said.push(t("factAbsent"));
+    }
+    if (facts?.missing === "IN" || facts?.missing === "OUT") {
+      said.push(t(facts.missing === "IN" ? "factMissingIn" : "factMissingOut"));
+    }
+    for (const fact of Object.keys(MINUTE_FACTS) as Fact[]) {
+      const minutes = counted(facts, fact);
+      if (minutes > 0) {
+        said.push(t(MINUTE_FACTS[fact], { minutes }));
+      }
+    }
+    return said;
+  }
+
+  function team(facts: Notice["facts"]): string {
+    const said = (Object.keys(TEAM_COUNTS) as TeamCount[]).flatMap((count) =>
+      counted(facts, count) > 0 ? [t(TEAM_COUNTS[count], { count: counted(facts, count) })] : [],
+    );
+    return said.length > 0 ? said.join(" · ") : t("teamAllIn");
+  }
+
   return {
+    deviations,
+
     sentence(notice: Notice): string {
       const said = NOTICE_LOOK[notice.kind].sentence(notice);
+      if (said.day !== undefined) {
+        return t(said.key, { day: shortSpan({ fromDate: said.day, toDate: said.day }) });
+      }
+      if (said.month !== undefined) {
+        return t(said.key, { month: format.dateTime(dayOnly(`${said.month}-01`), { month: "numeric", year: "numeric" }) });
+      }
       return said.count === undefined ? t(said.key) : t(said.key, { count: said.count });
     },
 
-    /** The person and the request behind a notice, leaving out the reader themselves. */
+    /** The person and the request behind a notice, leaving out the reader themselves; a day's deviations or a team's counts. */
     about(notice: Notice): string | null {
+      if (notice.kind === "ATTENDANCE_EXCEPTION") {
+        return deviations(notice.facts).join(" · ") || null;
+      }
+      if (notice.kind === "TEAM_ATTENDANCE") {
+        return team(notice.facts);
+      }
       const subject = notice.subject;
       if (!subject || subject.hidden) {
         return null;

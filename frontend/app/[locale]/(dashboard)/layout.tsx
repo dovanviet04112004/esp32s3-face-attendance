@@ -1,7 +1,7 @@
 "use client";
 
 import { Sidebar as KumoSidebar } from "@cloudflare/kumo";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import {
   useCallback,
   useEffect,
@@ -19,14 +19,16 @@ import { Sidebar } from "@/components/nav/sidebar";
 import { TabBar, TabBarLoading } from "@/components/nav/tab-bar";
 import { TopBar, TopBarLoading } from "@/components/nav/top-bar";
 import { PageFoot } from "@/components/ui/bottom-bar";
+import { toasts } from "@/components/ui/notify";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { reopenSession } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { dayOf, todayIso } from "@/lib/format";
 import { allows, frameAt, homeFor, namesItself, ownerOf } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
 import { rememberHome, rememberSidebar } from "@/lib/theme";
-import { useFeedConnection } from "@/lib/ws";
+import { useFeedConnection, type PunchHeard } from "@/lib/ws";
 
 const kFrame = "bg-kumo-canvas [--sidebar-bg:var(--color-kumo-canvas)]";
 const kBlock = "mx-auto w-full max-w-(--width-shell) px-6 pt-6 pb-24 md:px-8 md:py-8 lg:px-10 lg:py-9";
@@ -151,6 +153,17 @@ function Opening({ rail, here }: { rail: Rail; here: string }) {
   );
 }
 
+/** The toast an open app shows for a punch of the reader's own (KEHOACH 9.21.4). */
+function usePunchToast(): (punch: PunchHeard) => void {
+  const t = useTranslations("notices");
+  const format = useFormatter();
+  return (punch) => {
+    const at = new Date(punch.ts);
+    const time = format.dateTime(at, dayOf(punch.ts) === todayIso() ? "clock" : "medium");
+    toasts.add({ title: t(punch.delayed ? "punchToastDelayed" : "punchToast", { time }), variant: "success" });
+  };
+}
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
   const app = useTranslations("app");
@@ -160,7 +173,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const hasRecord = employeeId !== null;
   const rail = useRail();
   const move = useMove(here);
-  useFeedConnection();
+  useFeedConnection(usePunchToast());
 
   useEffect(() => {
     startOutbox();

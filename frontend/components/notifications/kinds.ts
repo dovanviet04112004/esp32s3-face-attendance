@@ -2,21 +2,28 @@ import type { Icon as IconType } from "@phosphor-icons/react";
 import {
   CalculatorIcon,
   CalendarDotsIcon,
+  CalendarXIcon,
   ChatCircleTextIcon,
   CheckSquareIcon,
+  ClockClockwiseIcon,
   CoinsIcon,
   DatabaseIcon,
   DeviceMobileIcon,
   FileTextIcon,
   HourglassMediumIcon,
   ListChecksIcon,
+  LockSimpleIcon,
+  PencilSimpleLineIcon,
   ReceiptIcon,
+  ScanSmileyIcon,
   SignatureIcon,
   TimerIcon,
   TrayIcon,
+  UsersThreeIcon,
 } from "@phosphor-icons/react";
 
 import type { RequestKind } from "@/components/requests/request-card";
+import { todayIso } from "@/lib/format";
 
 export type NoticeKind =
   | "REQUEST_DECIDED"
@@ -32,7 +39,13 @@ export type NoticeKind =
   | "BACKUP_ALERT"
   | "KIOSK_ALERT"
   | "TASK_ASSIGNED"
-  | "DOCUMENT_TO_SIGN";
+  | "DOCUMENT_TO_SIGN"
+  | "ATTENDANCE_EXCEPTION"
+  | "TEAM_ATTENDANCE"
+  | "DAY_CORRECTED"
+  | "SHIFT_CHANGED"
+  | "TIMESHEET_MONTH_CLOSED"
+  | "PUNCH_RECORDED";
 
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
@@ -110,18 +123,39 @@ export type NoticeSentence =
   | "kindKIOSK_ALERT_pending"
   | "kindKIOSK_ALERT_fault"
   | "kindKIOSK_ALERT_update"
+  | "kindKIOSK_ALERT_spoof"
+  | "kindKIOSK_ALERT_unknown"
   | "kindTASK_ASSIGNED"
   | "kindTASK_ASSIGNED_due"
   | "kindTASK_ASSIGNED_late"
   | "kindDOCUMENT_TO_SIGN"
-  | "kindDOCUMENT_TO_SIGN_waiting";
+  | "kindDOCUMENT_TO_SIGN_waiting"
+  | "kindATTENDANCE_EXCEPTION"
+  | "kindATTENDANCE_EXCEPTION_day"
+  | "kindTEAM_ATTENDANCE"
+  | "kindTEAM_ATTENDANCE_day"
+  | "kindDAY_CORRECTED"
+  | "kindDAY_CORRECTED_day"
+  | "kindSHIFT_CHANGED"
+  | "kindSHIFT_CHANGED_day"
+  | "kindTIMESHEET_MONTH_CLOSED"
+  | "kindTIMESHEET_MONTH_CLOSED_month"
+  | "kindPUNCH_RECORDED";
+
+/** A sentence key and what fills it: a count, or a day or a month as the facts carry them (YYYY-MM-DD, YYYY-MM). */
+export interface Said {
+  key: NoticeSentence;
+  count?: number;
+  day?: string;
+  month?: string;
+}
 
 interface KindLook {
   icon: IconType;
   category: NoticeCategory;
   /** How Settings names the kind, with the count it shows there. */
   label: { key: NoticeSentence; count?: number };
-  sentence: (notice: Notice) => { key: NoticeSentence; count?: number };
+  sentence: (notice: Notice) => Said;
   /** The page the notice opens, or null when no page says more than the notice (KEHOACH 9.21.4). */
   path: (notice: Notice) => string | null;
 }
@@ -169,6 +203,8 @@ const KIOSK_SENTENCE: Readonly<Record<string, NoticeSentence>> = {
   PENDING: "kindKIOSK_ALERT_pending",
   OTA_FAILED: "kindKIOSK_ALERT_update",
   OTA_ROLLED_BACK: "kindKIOSK_ALERT_update",
+  SPOOF_BURST: "kindKIOSK_ALERT_spoof",
+  UNKNOWN_BURST: "kindKIOSK_ALERT_unknown",
 };
 
 function kioskSentence(notice: Notice): NoticeSentence {
@@ -179,6 +215,28 @@ function kioskSentence(notice: Notice): NoticeSentence {
 function personAt(notice: Notice, tab = ""): string | null {
   const person = notice.subject?.hidden ? null : notice.subject?.person;
   return person ? `/employees/${person.id}${tab}` : null;
+}
+
+function factText(notice: Notice, name: string): string | undefined {
+  const value = notice.facts?.[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The sentence that names the day the facts carry, or the one that names none. */
+function onDay(notice: Notice, bare: NoticeSentence, dated: NoticeSentence): Said {
+  const day = factText(notice, "day");
+  return day ? { key: dated, day } : { key: bare };
+}
+
+function myDayAt(notice: Notice): string {
+  const day = factText(notice, "day");
+  return day ? `/me/attendance?day=${day}` : "/me/attendance";
+}
+
+// Today's summary opens the reader's home, which draws today; a day gone opens its exceptions in the timesheet.
+function teamDayAt(notice: Notice): string {
+  const day = factText(notice, "day");
+  return !day || day === todayIso() ? "/" : `/timesheet?from=${day}&to=${day}&exceptions=1`;
 }
 
 const kContractDays = 30;
@@ -293,6 +351,54 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     category: "PEOPLE",
     label: { key: "kindCONTRACT_ENDING", count: kContractDays },
     sentence: (notice) => ({ key: "kindCONTRACT_ENDING", count: notice.daysLeft ?? 0 }),
+    path: () => null,
+  },
+  ATTENDANCE_EXCEPTION: {
+    icon: CalendarXIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindATTENDANCE_EXCEPTION" },
+    sentence: (notice) => onDay(notice, "kindATTENDANCE_EXCEPTION", "kindATTENDANCE_EXCEPTION_day"),
+    path: myDayAt,
+  },
+  TEAM_ATTENDANCE: {
+    icon: UsersThreeIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindTEAM_ATTENDANCE" },
+    sentence: (notice) => onDay(notice, "kindTEAM_ATTENDANCE", "kindTEAM_ATTENDANCE_day"),
+    path: teamDayAt,
+  },
+  DAY_CORRECTED: {
+    icon: PencilSimpleLineIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindDAY_CORRECTED" },
+    sentence: (notice) => onDay(notice, "kindDAY_CORRECTED", "kindDAY_CORRECTED_day"),
+    path: myDayAt,
+  },
+  SHIFT_CHANGED: {
+    icon: ClockClockwiseIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindSHIFT_CHANGED" },
+    sentence: (notice) => onDay(notice, "kindSHIFT_CHANGED", "kindSHIFT_CHANGED_day"),
+    path: () => "/me/shifts",
+  },
+  TIMESHEET_MONTH_CLOSED: {
+    icon: LockSimpleIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindTIMESHEET_MONTH_CLOSED" },
+    sentence: (notice) => {
+      const month = factText(notice, "month");
+      return month ? { key: "kindTIMESHEET_MONTH_CLOSED_month", month } : { key: "kindTIMESHEET_MONTH_CLOSED" };
+    },
+    path: (notice) => {
+      const month = factText(notice, "month");
+      return month ? `/me/attendance?month=${month}` : "/me/attendance";
+    },
+  },
+  PUNCH_RECORDED: {
+    icon: ScanSmileyIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindPUNCH_RECORDED" },
+    sentence: () => ({ key: "kindPUNCH_RECORDED" }),
     path: () => null,
   },
 };

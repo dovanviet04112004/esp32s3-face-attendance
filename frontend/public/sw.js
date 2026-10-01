@@ -131,7 +131,7 @@ self.addEventListener("push", (event) => {
       badge: "/badge.png",
       tag,
       renotify: body.renotify === true,
-      data: { id: body.id || null, locale: body.locale === "en" ? "en" : "vi" },
+      data: { id: body.id || null, kind: body.kind || null, locale: body.locale === "en" ? "en" : "vi" },
     }),
   );
 });
@@ -151,6 +151,10 @@ async function reopen(target) {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const held = event.notification.data || {};
-  const path = held.id ? `/notifications/open/${held.id}` : "";
+  const path = held.id
+    ? `/notifications/open/${held.id}`
+    : held.kind
+      ? `/notifications/open/none?kind=${encodeURIComponent(held.kind)}`
+      : "";
   event.waitUntil(reopen(new URL(`/${held.locale || "vi"}${path}`, self.location.origin).href));
 });

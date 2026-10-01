@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
 
@@ -15,6 +15,13 @@ export type ListedFeed = "attendance" | "event" | "device";
 export type FeedName = ListedFeed | "change" | "notice";
 
 export type FeedStatus = "live" | "reconnecting" | "dropped";
+
+/** A punch of the reader's own that just arrived, as the notice feed tells it (KEHOACH 9.21.4). */
+export interface PunchHeard {
+  ts: string;
+  deviceId: string;
+  delayed: boolean;
+}
 
 export interface FeedItem {
   id: number;
@@ -46,6 +53,7 @@ const QUEUE_LISTS: Record<string, string[]> = {
   "profile-changes": ["profile-changes"],
   disputes: ["payslip-disputes"],
   dependents: ["dependents"],
+  attendance: ["timesheet"],
 };
 
 // What a group's news makes stale beyond the bell itself.
@@ -53,6 +61,7 @@ const CATEGORY_LISTS: Record<string, string[]> = {
   REQUESTS: ["requests", "advances", "certificates", "profile-changes", "dependents", "payslip-disputes"],
   PAY: ["payslips", "payslip-disputes", "advances", "tax-year"],
   PEOPLE: ["contracts"],
+  ATTENDANCE: ["timesheet", "me"],
 };
 
 // One notice can reach five hundred browsers at once; each asks again after a random wait.
@@ -176,10 +185,15 @@ function gatherer(cache: QueryClient): { add: (keys: string[]) => void; stop: ()
 
 /** Hold the one socket a browser needs. The shell mounts it, so news drops the
  *  cache it contradicts wherever the reader happens to be standing.
+ *  @param onPunch how the shell says a punch of the reader's own arrived; the feed only sends it while they want it
  */
-export function useFeedConnection(): void {
+export function useFeedConnection(onPunch?: (punch: PunchHeard) => void): void {
   const cache = useQueryClient();
   const signedIn = useSession((s) => s.accessToken !== null);
+  const toldOf = useRef(onPunch);
+  useEffect(() => {
+    toldOf.current = onPunch;
+  });
 
   useEffect(() => {
     if (!signedIn) {
@@ -231,6 +245,10 @@ export function useFeedConnection(): void {
         }
         if (feed !== "notice") {
           stale.add(staleKeys(feed, body));
+          return;
+        }
+        if (body.op === "punch" && typeof body.ts === "string") {
+          toldOf.current?.({ ts: body.ts, deviceId: String(body.deviceId ?? ""), delayed: body.delayed === true });
           return;
         }
         if (body.op === "item" && body.state !== "OPEN" && typeof body.key === "string") {

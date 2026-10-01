@@ -5,27 +5,58 @@ import { BellSlashIcon } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useTranslations } from "next-intl";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-import { NOTICE_LOOK, type Notice } from "@/components/notifications/kinds";
+import { NOTICE_LOOK, type Notice, type NoticeKind } from "@/components/notifications/kinds";
 import { Failed } from "@/components/ui/failed";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 
+// A push of a kind that writes no row names the kind alone; the same table sends it on (KEHOACH 9.21.4).
+function rowless(kind: string | null): Notice | null {
+  if (kind === null || !(kind in NOTICE_LOOK)) {
+    return null;
+  }
+  return {
+    id: "",
+    kind: kind as NoticeKind,
+    requestId: null,
+    advanceId: null,
+    periodId: null,
+    contractId: null,
+    payslipId: null,
+    daysLeft: null,
+    daysWaited: null,
+    approved: null,
+    readAt: null,
+    leftAt: null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // Where a push lands: the notice is marked read, then the one table of pages in the app picks where to go (KEHOACH 9.21.4).
-export default function OpenNoticePage() {
+function OpenNotice() {
   const t = useTranslations("notices");
   const back = useTranslations("errorPage");
   const { id } = useParams<{ id: string }>();
+  const kind = useSearchParams().get("kind");
   const router = useRouter();
   const cache = useQueryClient();
   const [fault, setFault] = useState<"gone" | "failed" | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const unknown = id === "none" && rowless(kind) === null;
 
   useEffect(() => {
     let left = false;
+    if (id === "none") {
+      const bare = rowless(kind);
+      if (bare) {
+        router.replace(NOTICE_LOOK[bare.kind].path(bare) ?? "/");
+      }
+      return;
+    }
     void (async () => {
       try {
         const notice = (await api.get<Notice>(`/notifications/${id}`)).data;
@@ -43,7 +74,7 @@ export default function OpenNoticePage() {
     return () => {
       left = true;
     };
-  }, [id, attempt, router, cache]);
+  }, [id, kind, attempt, router, cache]);
 
   if (fault === "failed") {
     return (
@@ -58,7 +89,7 @@ export default function OpenNoticePage() {
       </>
     );
   }
-  if (fault === "gone") {
+  if (fault === "gone" || unknown) {
     return (
       <>
         <PageHeader title={t("title")} />
@@ -83,5 +114,14 @@ export default function OpenNoticePage() {
     <div className="grid place-items-center py-16">
       <Loader />
     </div>
+  );
+}
+
+// The kind of a rowless push rides on the query string, which the prerender does not have.
+export default function OpenNoticePage() {
+  return (
+    <Suspense>
+      <OpenNotice />
+    </Suspense>
   );
 }
