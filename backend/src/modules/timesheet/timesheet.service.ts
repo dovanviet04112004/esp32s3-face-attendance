@@ -19,6 +19,7 @@ import {
   encodeCursor,
 } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -175,11 +176,12 @@ export class TimesheetService implements OnModuleInit {
           ? [query.employeeId]
           : []
         : visible;
+    const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
     const rows = await this.db.attendanceDay.findMany({
       where: {
         date: { gte: dayAsDate(query.from), lte: dayAsDate(query.to) },
         ...(wanted === null ? {} : { employeeId: { in: wanted } }),
-        ...(query.departmentId ? { employee: { departmentId: query.departmentId } } : {}),
+        ...(branch ? { employee: { departmentId: { in: branch } } } : {}),
       },
       orderBy: [{ date: "asc" }, { employeeId: "asc" }],
       take: MAX_DAY_ROWS + 1,

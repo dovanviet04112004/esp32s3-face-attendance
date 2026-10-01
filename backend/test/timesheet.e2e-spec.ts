@@ -308,6 +308,8 @@ describe("timesheet leave (e2e)", () => {
 });
 
 const RANGE_DEPARTMENT = "E2ETR-D";
+const RANGE_CHILD = "E2ETR-DC";
+const CHILD_PERSON = "E2ETRC01";
 const RANGE_PEOPLE = Array.from({ length: 20 }, (unused, at) => `E2ETR${String(at + 1).padStart(2, "0")}`);
 // Exactly the cap across the department, so one more day for one person tips it over.
 const RANGE_DAYS = MAX_DAY_ROWS / RANGE_PEOPLE.length;
@@ -325,7 +327,8 @@ describe("timesheet day list (e2e)", () => {
   const ids: number[] = [];
 
   async function sweep(): Promise<void> {
-    await db.employee.deleteMany({ where: { code: { in: RANGE_PEOPLE } } });
+    await db.employee.deleteMany({ where: { code: { in: [...RANGE_PEOPLE, CHILD_PERSON] } } });
+    await db.department.deleteMany({ where: { code: RANGE_CHILD } });
     await db.department.deleteMany({ where: { code: RANGE_DEPARTMENT } });
   }
 
@@ -365,6 +368,14 @@ describe("timesheet day list (e2e)", () => {
       });
     }
     await db.attendanceDay.create({ data: { employeeId: ids[0] as number, date: new Date(rangeDay(RANGE_DAYS)) } });
+    // A day outside the capped range, so the branch filter is tested without moving the cap.
+    const child = await db.department.create({
+      data: { code: RANGE_CHILD, name: "Tổ con thử khoảng", parentId: departmentId, legalEntityId: template.legalEntityId as string },
+    });
+    const below = await db.employee.create({
+      data: { code: CHILD_PERSON, fullName: "Thử nhánh con", departmentId: child.id, active: false, leaveDate: new Date("2026-01-31") },
+    });
+    await db.attendanceDay.create({ data: { employeeId: below.id, date: new Date(rangeDay(RANGE_DAYS + 5)) } });
   });
 
   after(async () => {
@@ -386,6 +397,12 @@ describe("timesheet day list (e2e)", () => {
     const narrowed = await days(`from=${rangeDay(0)}&to=${rangeDay(RANGE_DAYS)}&employeeId=${ids[0] as number}`);
     assert.equal(narrowed.status, 200);
     assert.equal((narrowed.body as unknown[]).length, RANGE_DAYS + 1, "narrowing to one person lost some of their days");
+  });
+
+  it("reads a department filter as the whole branch under it", async () => {
+    const res = await days(`from=${rangeDay(RANGE_DAYS + 5)}&to=${rangeDay(RANGE_DAYS + 5)}&departmentId=${departmentId}`);
+    assert.equal(res.status, 200);
+    assert.equal((res.body as unknown[]).length, 1, "a day in a child department was left out of its parent's list");
   });
 
   it("refuses the paging it never applied", async () => {
