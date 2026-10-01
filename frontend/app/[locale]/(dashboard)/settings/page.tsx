@@ -4,7 +4,7 @@ import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContent
 import { BookOpenTextIcon, EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 
 import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
@@ -15,7 +15,6 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { env } from "@/lib/env";
 import { useSession, type Role } from "@/lib/auth";
 
@@ -27,8 +26,6 @@ interface OpenedAccount {
 
 // The top bar is 58 px and sticks, so a section scrolled to lands just under it.
 const kTopBarPx = 72;
-// The last cards cannot scroll up to the top bar, so a jump marks its card for a moment.
-const kFlashMs = 1200;
 const kUserScroll = ["wheel", "touchmove", "keydown"] as const;
 
 function onScroll(changed: () => void): () => void {
@@ -70,9 +67,9 @@ function useSectionSpy(ids: string[]) {
   };
 }
 
-function Section({ id, title, lead, lit, children }: { id: string; title: string; lead?: string; lit?: string | null; children: ReactNode }) {
+function Section({ id, title, lead, children }: { id: string; title: string; lead?: string; children: ReactNode }) {
   return (
-    <LayerCard id={id} className={cn("scroll-mt-20 transition-shadow duration-300", lit === id && "ring-2 ring-kumo-brand")}>
+    <LayerCard id={id} className="scroll-mt-20">
       <LayerCard.Secondary>{title}</LayerCard.Secondary>
       <LayerCard.Primary className="flex flex-col items-start gap-3">
         {lead ? <p className="text-kumo-subtle">{lead}</p> : null}
@@ -139,16 +136,6 @@ export default function SettingsPage() {
     { id: "account", title: t("accountTitle") },
   ];
   const { activeId, selectSection } = useSectionSpy(sections.map((one) => one.id));
-  const [lit, setLit] = useState<string | null>(null);
-  const unlight = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(unlight.current), []);
-
-  function jump(id: string): void {
-    selectSection(id);
-    setLit(id);
-    window.clearTimeout(unlight.current);
-    unlight.current = window.setTimeout(() => setLit(null), kFlashMs);
-  }
 
   function choose(next: string) {
     if (next === locale || !routing.locales.includes(next as Locale)) {
@@ -172,7 +159,7 @@ export default function SettingsPage() {
                       key={one.id}
                       href={`#${one.id}`}
                       active={(activeId ?? sections[0].id) === one.id}
-                      onClick={() => jump(one.id)}
+                      onClick={() => selectSection(one.id)}
                     >
                       {one.title}
                     </TableOfContents.Item>
@@ -184,7 +171,7 @@ export default function SettingsPage() {
         }
       >
         <div className="flex flex-col gap-6">
-          <Section lit={lit} id="language" title={t("languageTitle")} lead={t("languageLead")}>
+          <Section id="language" title={t("languageTitle")} lead={t("languageLead")}>
             <Tabs
               variant="segmented"
               value={locale}
@@ -200,22 +187,22 @@ export default function SettingsPage() {
             />
           </Section>
 
-          <Section lit={lit} id="theme" title={t("themeTitle")} lead={t("themeLead")}>
+          <Section id="theme" title={t("themeTitle")} lead={t("themeLead")}>
             <ThemeToggle />
           </Section>
 
-          <Section lit={lit} id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
+          <Section id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
             <PushSwitch />
           </Section>
 
-          <Section lit={lit} id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
+          <Section id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
             <div className="w-full">
               <NoticePreferences />
             </div>
           </Section>
 
           {role === "ADMIN" ? (
-            <Section lit={lit} id="provision" title={t("provisionTitle")} lead={t("provisionLead")}>
+            <Section id="provision" title={t("provisionTitle")} lead={t("provisionLead")}>
               <Button variant="secondary" icon={EnvelopeSimpleIcon} loading={provision.isPending} onClick={() => provision.mutate()}>
                 {t("provisionRun")}
               </Button>
@@ -241,14 +228,14 @@ export default function SettingsPage() {
           ) : null}
 
           {role === "ADMIN" ? (
-            <Section lit={lit} id="docs" title={t("docsTitle")} lead={t("docsLead")}>
+            <Section id="docs" title={t("docsTitle")} lead={t("docsLead")}>
               <Button variant="secondary" icon={BookOpenTextIcon} loading={reference.isPending} onClick={openReference}>
                 {t("docsOpen")}
               </Button>
             </Section>
           ) : null}
 
-          <Section lit={lit} id="account" title={t("accountTitle")}>
+          <Section id="account" title={t("accountTitle")}>
             <div className="w-full">
               <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
             </div>
