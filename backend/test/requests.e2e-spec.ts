@@ -126,7 +126,8 @@ describe("the requests inbox and ledger (e2e)", () => {
         data: {
           email: MAIL(code),
           passwordHash: hash,
-          role: code === BOSS ? "MANAGER" : "EMPLOYEE",
+          // A stand-in counts only with a role that opens the inbox (KEHOACH 9.21.4).
+          role: code === BOSS || code === STAND ? "MANAGER" : "EMPLOYEE",
           employeeId: id.get(code),
         },
       });

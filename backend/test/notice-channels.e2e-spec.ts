@@ -19,6 +19,8 @@ const PUSH_OFF = "E2ENC03";
 const CODES = [BOTH_ON, IN_APP_OFF, PUSH_OFF];
 const KIND = "PAYSLIP_ISSUED";
 const OTHER_KIND = "CONTRACT_ENDING";
+// Unclaimed work lands on an administrator, so that is the kind such a login receives.
+const DESK_KIND = "REQUEST_WAITING";
 const MAIL = "e2enc@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 
@@ -114,7 +116,7 @@ describe("notice channels answer for themselves (e2e)", () => {
     const set = await request(app.getHttpServer())
       .post("/notifications/preferences")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ kind: OTHER_KIND, channel: "PUSH", on: false });
+      .send({ kind: DESK_KIND, channel: "PUSH", on: false });
     assert.equal(set.status, 201, "an administrator could not switch their own channel");
 
     const seen = await request(app.getHttpServer())
@@ -128,8 +130,10 @@ describe("notice channels answer for themselves (e2e)", () => {
     assert.equal(await heldFor(BOTH_ON), 1, "somebody with both channels on was told nothing");
   });
 
-  it("writes none for somebody who turned the in-app channel off", async () => {
-    assert.equal(await heldFor(IN_APP_OFF), 0, "a channel somebody turned off still wrote a row");
+  it("writes the row put away for somebody who turned the in-app channel off", async () => {
+    assert.equal(await heldFor(IN_APP_OFF), 1, "a muted notice left no row to say who was told");
+    const shown = await db.notification.count({ where: { userId: loginOf.get(IN_APP_OFF), kind: KIND, archivedAt: null } });
+    assert.equal(shown, 0, "a channel somebody turned off still showed the notice in the bell");
   });
 
   it("does not let the push switch speak for the in-app one", async () => {

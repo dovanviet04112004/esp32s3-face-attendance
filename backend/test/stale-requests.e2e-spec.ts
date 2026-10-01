@@ -103,8 +103,12 @@ describe("stale requests (e2e)", () => {
   it("says a mark once, however often the sweep runs", async () => {
     const id = await fileAt(7);
     await stale.sweep();
+    const once = await noticesFor(id);
     await stale.sweep();
-    assert.equal((await noticesFor(id)).length, 2);
+    assert.equal((await noticesFor(id)).length, once.length, "a second sweep spoke again");
+    assert.equal(once.filter((row) => row.kind === "REQUEST_STALLED").length, 1, "the asker heard the mark other than once");
+    // From day seven the desk joins the manager's group (KEHOACH 9.21.4).
+    assert.ok(once.some((row) => row.kind === "REQUEST_WAITING" && row.userId === approverLogin), "the approver was not reminded");
   });
 
   it("stays quiet between marks", async () => {
