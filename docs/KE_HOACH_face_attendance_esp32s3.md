@@ -4454,10 +4454,11 @@ backend/
     │   │   ├── audience.service.ts   # ★ audienceOf: ai nhận một việc, cùng vị từ với hộp chờ duyệt
     │   │   ├── notice-items.service.ts   # ★ mở, đóng một lần, nổi lại ở mốc, nhận, đóng tay
     │   │   ├── subjects.service.ts   # ★ dựng người và ngày của chủ thể lúc đọc, qua phạm vi người xem
-    │   │   └── sweeps/{contracts, probation, tasks, documents, disputes, stalled, kiosk, backup,
-    │   │                attendance, reconcile, cleanup}.sweep.ts
-    │   │                             # ★ mỗi lượt quét một file; reconcile đóng việc mà bảng nghiệp
-    │   │                             #   vụ đã xong, cleanup dọn tin quá NOTICE_KEEP_DAYS
+    │   │   └── sweeps/{contracts, probation, tasks, documents, stalled, kiosk, backup, attendance,
+    │   │                reconcile, cleanup}.sweep.ts
+    │   │                             # ★ mỗi lượt quét một file; stalled nhắc mọi hàng đợi của hộp,
+    │   │                             #   khiếu nại theo hạn trả lời; reconcile đóng việc mà bảng
+    │   │                             #   nghiệp vụ đã xong, cleanup dọn tin quá NOTICE_KEEP_DAYS
     │   ├── assets/                   # ★ §9.16 mục 11 — cấp và thu là dòng, không phải ô
     │   ├── certificates/             # ★ §9.17 mục 5 — giấy xác nhận, số hiệu do CSDL cấp
     │   ├── profile/                  # ★ §9.17 mục 6 — đổi thông tin cá nhân qua duyệt
@@ -9083,7 +9084,18 @@ lại đúng cái quyền vừa bị thu.
 
 **Việc.** Mỗi việc khoá bằng `key` dạng `<hàng đợi>:<id chủ thể>[:<phần phụ>]`, nên một chủ thể không
 bao giờ có hai việc mở trong cùng một hàng đợi. Tên hàng đợi trong khoá viết thường, nối bằng gạch
-ngang: `requests:<id đơn>`, `advances-to-pay:<id tạm ứng>`, `disputes:<id khiếu nại>`.
+ngang: `requests:<id đơn>`, `advances-to-pay:<id tạm ứng>`, `disputes:<id khiếu nại>`. Phần phụ tách
+những việc độc lập của cùng một chủ thể. Mỗi người ký nhận một phiên bản tài liệu là một việc:
+`documents:<id phiên bản>:<id nhân viên>`. Mỗi điều một kiosk báo cũng là một việc:
+`kiosk:<id máy>:offline`, `:pending`, `:update`, một khoá cho từng mã lỗi viết thường nối gạch ngang
+như `:camera-fault`, và hai loạt `:spoof`, `:unknown`.
+
+**Việc của một tình trạng lặp lại mở lại được dưới đúng khoá cũ.** Kiosk tuần này mất kết nối, tuần
+sau mất lại; một lỗi phần cứng `ADMIN` đã đóng rồi tái phát; sao lưu hỏng hai lần trong một ngày. Lần
+mở sau thấy khoá đã đóng thì việc cũ cùng các dòng của nó chuyển sang khoá `<khoá>:<lúc đóng, mili
+giây>`, giữ nguyên ai đã xử lý và lúc nào, rồi việc mới mở dưới khoá cũ. Chỉ hai hàng đợi `KIOSK` và
+`BACKUP` làm vậy. Đơn từ, hợp đồng và mọi việc mà mỗi lần có một chủ thể riêng thì đã đóng là đóng hẳn,
+và một lượt quét chạy lại không mở lại được chúng.
 
 | `kind` · hàng đợi | Mở khi | Tới ai | Nhắc | Đóng khi | Mở trang |
 |---|---|---|---|---|---|
@@ -9096,15 +9108,24 @@ ngang: `requests:<id đơn>`, `advances-to-pay:<id tạm ứng>`, `disputes:<id 
 | `REQUEST_WAITING` · `DEPENDENTS` | đăng ký người phụ thuộc | `ADMIN`, `PAYROLL` | 3 · 7 | quyết | `/approvals?tab=dependents&open=<id>` |
 | `CONTRACT_DUE` · `CONTRACTS_DUE` | hợp đồng có hạn còn ≤ 30 ngày | `ADMIN`, `HR` | 15 · 7, `WARNING` ở 7 | có hợp đồng mới `ACTIVE`; hợp đồng thôi `ACTIVE`; đã ghi ngày nghỉ việc; HR đóng tay kèm ghi chú | `/employees/<id>?tab=contracts` |
 | `PROBATION_DUE` · `PROBATION_DUE` | thử việc còn ≤ 7 ngày | bàn nhân sự và quản lý trực tiếp | 3 · 1 | hợp đồng chính thức bắt đầu; người ấy nghỉ; đóng tay | hồ sơ người ấy; bản của quản lý không mở hợp đồng |
-| `TASK_ASSIGNED` · `TASKS` | lượt nhận việc hay nghỉ việc mở | việc `SELF` → chính người ấy; `MANAGER` → người phụ trách; `HR` → `ADMIN`, `HR` | đúng hạn và một ngày sau, quá hạn thì `WARNING` | việc xong | tab nhận việc của hồ sơ; việc `SELF` mở `/me` |
-| `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản | mỗi người có đăng nhập trong đối tượng của tài liệu, rải qua hàng đợi | 3 · 7 | ký nhận → `DONE`; có phiên bản mới hơn → `EXPIRED` | `/me/documents?open=<id>` |
-| `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN` | — | nối lại → `CLEARED`; duyệt hay thu hồi → `DONE`; loạt đã yên → `CLEARED`; `ADMIN` đóng tay | `/devices/<id>` |
-| `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau lành → `CLEARED` | chi tiết ngay trên trang thông báo |
+| `TASK_ASSIGNED` · `TASKS` | lượt nhận việc hay nghỉ việc mở: mọi việc của lượt cùng lúc | việc `SELF` → chính người ấy; `MANAGER` → người phụ trách, không còn ai phụ trách có đăng nhập đang dùng thì bàn nhân sự; `HR` → `ADMIN`, `HR`; ngoài việc `SELF`, không bao giờ chính người đang nhận hay nghỉ việc | ngày hạn và một ngày sau, quá hạn thì `WARNING` | việc xong → `DONE` (`COMPLETED`); lượt không còn → `EXPIRED` | tab nhận việc của hồ sơ; việc `SELF` mở `/me` |
+| `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản; người vào đối tượng sau đó, ở lượt quét hằng ngày | chính người ấy, mỗi người một việc, rải qua hàng đợi | 3 · 7 ngày từ lúc phát hành | ký nhận → `DONE` (`SIGNED`); có phiên bản mới hơn, tài liệu ngừng dùng, hay người ấy rời đối tượng → `EXPIRED` | `/me/documents?open=<id phiên bản>` |
+| `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng thì `ADMIN` đóng tay | `/devices/<id>` |
+| `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau không còn mã hỏng nào → `CLEARED` | chi tiết ngay trên trang thông báo |
 | `ATTENDANCE_EXCEPTION` · `ATTENDANCE` | lượt dựng ngày (§9.8) thấy một ngày lệch | chính người ấy | — | ngày được sửa; một đơn đã duyệt phủ ngày ấy; người ấy bấm *Không cần giải trình*; kỳ lương của ngày ấy chốt → `EXPIRED` | `/me/attendance?day=<ngày>` |
 | `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | ngoại lệ của ngày ấy, trong phạm vi người xem |
 
-Ba thứ trong bảng cần nói thêm:
+Sáu thứ trong bảng cần nói thêm:
 
+- **Việc nhận việc** (`tasks:<id việc>`) mở cho mọi việc của một lượt ngay khi lượt mở, dù lượt do bàn
+  nhân sự mở tay hay mở theo tuyển dụng và nghỉ việc (§9.14). Người phụ trách là người ghi trên việc lúc
+  lượt mở; quản lý đổi sau đó thì việc vẫn của người đã nhận nó.
+- **Tài liệu là một việc mỗi người**, vì mỗi người ký riêng: người này ký không làm xong việc của người
+  kia. Phát hành rải qua job `notice-documents` trên hàng đợi `notify`, lô 1.000 người. Lượt quét hằng
+  ngày nhắc ở mốc, mở việc cho người mới vào đối tượng, và đóng việc của phiên bản cũ hay của người đã
+  rời đối tượng.
+- **Sao lưu là một việc cho cả đợt hỏng**, khoá `backup:<ngày lượt canh đầu tiên thấy hỏng>`. `facts`
+  mang các mã đang hỏng và đổi theo từng lượt canh; lượt canh không còn mã nào thì việc `CLEARED`.
 - **Loạt giả mạo, loạt mặt lạ** là một kiosk ghi từ `KIOSK_SPOOF_BURST` lượt `SPOOF_DETECTED`, hay từ
   `KIOSK_UNKNOWN_BURST` lượt `UNKNOWN_FACE`, trong `KIOSK_BURST_WINDOW_MINUTES` phút. Mỗi kiosk mỗi
   loạt một việc mở, khoá `kiosk:<id máy>:<loạt>`; nó đóng khi kiosk yên một khoảng khai ở bảng tra,
@@ -9128,7 +9149,7 @@ Ba thứ trong bảng cần nói thêm:
 | `DISPUTE_ANSWERED` | khiếu nại của tôi đã có trả lời | người khiếu nại | `/me/payslips?slip=<id>` | bật cả hai kênh |
 | `PAYSLIP_ISSUED` | phiếu lương của tôi đã phát | người nhận | `/me/payslips?slip=<id>` | bật cả hai kênh |
 | `ADVANCE_PAID` | khoản tạm ứng của tôi đã chi | người xin | `/me/requests?tab=advances` | bật cả hai kênh |
-| `PAYROLL_RUN_DONE` | lượt chạy lương tôi bấm đã xong, hay hỏng (`WARNING`) | người bấm chạy | kỳ lương ấy | bật cả hai kênh |
+| `PAYROLL_RUN_DONE` | lượt chạy lương tôi bấm đã xong kèm số phiếu, hay hỏng (`WARNING`); `facts` mang lúc xong, nên chạy lại cùng một bản nháp là một lần nói nữa | người bấm chạy | kỳ lương ấy | bật cả hai kênh |
 | `CONTRACT_ENDING` | hợp đồng của tôi sắp hết hạn | người ký | — | **tắt** cả hai kênh, tới khi `/me` có thẻ hợp đồng: một tin mở ra trang không nói gì về hợp đồng là một ngõ cụt (§9.15 luật 1), còn bàn nhân sự đã có việc `CONTRACT_DUE` |
 | `PUNCH_RECORDED` | một lượt chấm của tôi vừa được nhận: giờ của chính lượt ấy, kiosk nào, có tới muộn vì đồng bộ trễ không | chính người ấy | — | **không ghi dòng nào**: bảng chấm công đã là bản ghi, và ba mươi nghìn người hai lượt một ngày thì chép đôi nó. Ứng dụng đang mở hiện một toast qua feed; đẩy phải tự bật |
 | `DAY_CORRECTED` | ngày công của tôi được người khác sửa: ai, lúc nào | chính người ấy | `/me/attendance?day=<ngày>` | bật cả hai kênh |
@@ -9206,12 +9227,13 @@ Notification  id · userId · kind · itemId · subjectType · subjectId · subj
   cùng `subjectEmployeeId` của `Notification`.
 - Giá trị của `queue`, `subjectType` và `outcome` vào lược đồ cùng migration với loại tin đầu tiên
   dùng nó, như chính `NoticeKind`: lược đồ không giữ tên của thứ chưa ai sinh ra.
-- `subjectId` mang đúng một trong bốn dạng — uuid, số nguyên, ngày, hay `<id nhân viên>:<ngày>` cho một
-  người–ngày — và một `CHECK` giữ bốn dạng ấy, để chủ thể không bao giờ là một câu. Một `CHECK` nữa giữ
-  `closedAt` của việc: có khi và chỉ khi việc không còn `OPEN`.
+- `subjectId` mang đúng một trong năm dạng — uuid, số nguyên, ngày, `<id nhân viên>:<ngày>` cho một
+  người–ngày, và mã kiosk đúng mẫu `deviceId` của hợp đồng nhịp tim, chỉ khi chủ thể là một kiosk — và
+  một `CHECK` giữ năm dạng ấy, để chủ thể không bao giờ là một câu. Một `CHECK` nữa giữ `closedAt` của
+  việc: có khi và chỉ khi việc không còn `OPEN`.
 - `level` là `INFO` · `ACTION` · `WARNING` · `CRITICAL`. `outcome` là động từ của kết quả — `APPROVED`,
-  `REJECTED`, `ISSUED`, `UPHELD`, `PAID`, `RENEWED`, `SIGNED`, `RESOLVED` … — đủ để dựng *Đã được X
-  ‹duyệt› lúc T*. Nhóm của một tin (đơn từ, lương, nhân sự, chấm công, hệ thống) suy từ loại qua bảng
+  `REJECTED`, `ISSUED`, `UPHELD`, `PAID`, `RENEWED`, `SIGNED`, `COMPLETED`, `RESOLVED` … — đủ để dựng
+  *Đã được X ‹duyệt› lúc T*. Nhóm của một tin (đơn từ, lương, nhân sự, chấm công, hệ thống) suy từ loại qua bảng
   tra, không lưu.
 - `dedupKey` của một dòng việc là chính `key` của việc; của một tin là `<loại>:<loại chủ thể>:<id chủ
   thể>` viết thường nối gạch ngang, như `request-decided:request:<id đơn>`.
