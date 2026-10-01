@@ -3,7 +3,7 @@ import type { NoticeKind, NoticeLevel, NoticeQueue, Role } from "@prisma/client"
 /** The group a kind shows under in the bell and in Settings; read off this table, never stored (KEHOACH 9.21.4). */
 export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
-export type FactType = "number" | "boolean" | "string" | "day";
+export type FactType = "number" | "boolean" | "string" | "day" | "month";
 
 export type OfferedChannel = "IN_APP" | "PUSH";
 
@@ -232,6 +232,14 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     defaults: { IN_APP: true, PUSH: true },
     facts: { day: "day" },
   },
+  TIMESHEET_MONTH_CLOSED: {
+    category: "ATTENDANCE",
+    level: "INFO",
+    receivers: "self",
+    item: false,
+    defaults: { IN_APP: true, PUSH: false },
+    facts: { month: "month" },
+  },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {
     category: "PEOPLE",
@@ -264,6 +272,9 @@ export function factsFit(kind: NoticeKind, facts: Record<string, unknown>): bool
     }
     if (type === "day") {
       return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    }
+    if (type === "month") {
+      return typeof value === "string" && /^\d{4}-\d{2}$/.test(value);
     }
     return typeof value === type;
   });

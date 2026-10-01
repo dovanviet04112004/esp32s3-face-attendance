@@ -1396,6 +1396,7 @@ enum NoticeKind {
   TEAM_ATTENDANCE
   DAY_CORRECTED
   SHIFT_CHANGED
+  TIMESHEET_MONTH_CLOSED
 }
 
 enum NoticeChannel {
@@ -1439,6 +1440,7 @@ enum NoticeSubject {
   DOCUMENT
   PERSON_DAY
   LOGIN
+  PAYROLL_PERIOD
 }
 
 enum NoticeOutcome {

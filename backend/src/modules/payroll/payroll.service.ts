@@ -472,6 +472,11 @@ export class PayrollService {
       "PAYSLIP_ISSUED",
       told.map((row) => ({ employeeId: row.employeeId, facts: { periodId, payslipId: row.id } })),
     );
+    const month = `${period.year}-${String(period.month).padStart(2, "0")}`;
+    await this.notices.raiseEachFor(
+      "TIMESHEET_MONTH_CLOSED",
+      told.map((row) => ({ employeeId: row.employeeId, facts: { periodId, month } })),
+    );
     await this.attendance.closeVanished();
     return locked;
   }
