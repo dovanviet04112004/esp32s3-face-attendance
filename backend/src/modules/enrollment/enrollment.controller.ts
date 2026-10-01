@@ -1,10 +1,19 @@
 import { Body, Controller, Delete, Get, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from "@nestjs/swagger";
 import type { DeviceEnrollment } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
+import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { THROTTLE } from "../auth/auth.types.js";
@@ -42,6 +51,7 @@ export class EnrollmentController {
     summary: "Put a person on a kiosk: sent the face held on its model, or asked for; a held pair goes to RETAKE (KEHOACH 7.5)",
   })
   @ApiCreatedResponse({ type: EnrollmentView })
+  @ApiConflictResponse({ type: ErrorBody, description: "DEVICE_NOT_APPROVED: the kiosk is waiting or revoked" })
   assign(@Body() body: AssignDto): Promise<DeviceEnrollment> {
     return this.enrollment.assign(body.deviceId, body.employeeId);
   }
@@ -64,6 +74,7 @@ export class EnrollmentController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Send the kiosk the whole roster it should hold" })
   @ApiCreatedResponse({ type: RosterView })
+  @ApiConflictResponse({ type: ErrorBody, description: "DEVICE_NOT_APPROVED: the kiosk is waiting or revoked" })
   @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   async resync(@Param("deviceId") deviceId: string): Promise<{ rosterVersion: number }> {
     return { rosterVersion: await this.enrollment.resync(deviceId) };

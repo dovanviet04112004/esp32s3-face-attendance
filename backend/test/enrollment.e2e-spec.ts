@@ -16,7 +16,9 @@ import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import { publishAsKiosk } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-enroll";
+const OFF_FLEET = "kiosk-e2e-enroll-off";
 const CODE = "NV9100";
+const OUTSIDER = "NV9101";
 const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
 const SETTLE_MS = 15000;
@@ -39,10 +41,10 @@ describe("enrollment (e2e)", () => {
   const sample = embedding();
 
   async function sweep(): Promise<void> {
-    await db.deviceEnrollment.deleteMany({ where: { deviceId: DEVICE_ID } });
+    await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: [DEVICE_ID, OFF_FLEET] } } });
     await db.faceTemplate.deleteMany({ where: { employee: { code: CODE } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, ...RACERS] } } });
-    await db.device.deleteMany({ where: { id: DEVICE_ID } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, ...RACERS] } } });
+    await db.device.deleteMany({ where: { id: { in: [DEVICE_ID, OFF_FLEET] } } });
   }
 
   before(async () => {
@@ -89,6 +91,27 @@ describe("enrollment (e2e)", () => {
     assert.equal(res.status, 403);
     assert.equal(res.body.message, "BIOMETRIC_CONSENT_MISSING");
     await db.employee.delete({ where: { id: other.body.id } });
+  });
+
+  it("puts nobody on a kiosk outside the fleet and sends it no roster", async () => {
+    const outsider = await db.employee.create({ data: { code: OUTSIDER, fullName: "Ngoài đội", active: true } });
+    await db.biometricConsent.create({ data: { employeeId: outsider.id, noticeVersion: "e2e", method: "PAPER" } });
+    for (const status of ["REVOKED", "PENDING"] as const) {
+      await db.device.upsert({ where: { id: OFF_FLEET }, update: { status }, create: { id: OFF_FLEET, status } });
+      const held = await db.device.findUniqueOrThrow({ where: { id: OFF_FLEET } });
+      const assigned = await request(http)
+        .post("/enrollments")
+        .set("Authorization", `Bearer ${admin}`)
+        .send({ deviceId: OFF_FLEET, employeeId: outsider.id });
+      const resent = await request(http).post(`/enrollments/${OFF_FLEET}/resync`).set("Authorization", `Bearer ${admin}`);
+      for (const res of [assigned, resent]) {
+        assert.equal(res.status, 409, `${status}: ${JSON.stringify(res.body)}`);
+        assert.equal(res.body.message, "DEVICE_NOT_APPROVED");
+      }
+      const now = await db.device.findUniqueOrThrow({ where: { id: OFF_FLEET } });
+      assert.equal(now.rosterVersion, held.rosterVersion, `a ${status} kiosk was sent a roster`);
+      assert.equal(await db.deviceEnrollment.count({ where: { deviceId: OFF_FLEET } }), 0);
+    }
   });
 
   it("assigns a person to a kiosk and moves the roster on by one", async () => {

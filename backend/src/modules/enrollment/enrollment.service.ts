@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { BiometricConsent, Device, DeviceEnrollment, FaceTemplate, Prisma } from "@prisma/client";
 import pg from "pg";
@@ -101,7 +101,7 @@ export class EnrollmentService {
    */
   async assign(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.consent.require(employeeId);
-    const [, employee] = await Promise.all([this.device(deviceId), this.employee(employeeId)]);
+    const [, employee] = await Promise.all([this.inFleet(deviceId), this.employee(employeeId)]);
     const ask: Build = (version, to) => this.expect(employeeId, employee, version, to);
     return this.tell(deviceId, async (tx) => {
       const where = { deviceId_employeeId: { deviceId, employeeId } };
@@ -551,7 +551,7 @@ export class EnrollmentService {
    *  @ctx task | blocking | takes the kiosk's lock
    */
   async resync(deviceId: string, floor = 0): Promise<number> {
-    await this.device(deviceId);
+    await this.inFleet(deviceId);
     this.resyncing.set(deviceId, (this.resyncing.get(deviceId) ?? 0) + 1);
     try {
       return await this.atDoors([deviceId], () => this.replay(deviceId, floor));
@@ -626,8 +626,8 @@ export class EnrollmentService {
     if (reported === undefined || this.resyncing.has(deviceId)) {
       return;
     }
-    const device = await this.db.device.findUnique({ where: { id: deviceId }, select: { rosterVersion: true } });
-    if (!device) {
+    const device = await this.db.device.findUnique({ where: { id: deviceId }, select: { rosterVersion: true, status: true } });
+    if (device?.status !== "APPROVED") {
       return;
     }
     const last = this.runs.get(deviceId);
@@ -847,6 +847,15 @@ export class EnrollmentService {
     const found = await this.db.device.findUnique({ where: { id } });
     if (!found) {
       throw new NotFoundException("DEVICE_NOT_FOUND");
+    }
+    return found;
+  }
+
+  // Nothing goes down to a kiosk outside the fleet, whatever its broker session still holds (KEHOACH 7.3 step 6).
+  private async inFleet(id: string): Promise<Device> {
+    const found = await this.device(id);
+    if (found.status !== "APPROVED") {
+      throw new ConflictException("DEVICE_NOT_APPROVED");
     }
     return found;
   }
