@@ -2,17 +2,7 @@
 
 import { Button, Empty, Loader } from "@cloudflare/kumo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Icon as IconType } from "@phosphor-icons/react";
-import {
-  CalendarDotsIcon,
-  ChatCircleTextIcon,
-  BellSimpleIcon,
-  CheckSquareIcon,
-  CoinsIcon,
-  ReceiptIcon,
-  TimerIcon,
-  TrayIcon,
-} from "@phosphor-icons/react";
+import { BellSimpleIcon } from "@phosphor-icons/react";
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
@@ -20,91 +10,11 @@ import { useNotify } from "@/components/ui/notify";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-
-export type NoticeKind =
-  | "REQUEST_DECIDED"
-  | "REQUEST_WAITING"
-  | "REQUEST_STALLED"
-  | "PAYSLIP_ISSUED"
-  | "CONTRACT_ENDING"
-  | "DISPUTE_ANSWERED"
-  | "ADVANCE_PAID";
-
-export interface Notice {
-  id: string;
-  kind: NoticeKind;
-  requestId: string | null;
-  advanceId: string | null;
-  periodId: string | null;
-  contractId: string | null;
-  payslipId: string | null;
-  certificateId?: string | null;
-  profileChangeId?: string | null;
-  dependentId?: string | null;
-  daysLeft: number | null;
-  daysWaited: number | null;
-  approved: boolean | null;
-  readAt: string | null;
-  createdAt: string;
-}
-
-const FACE: Record<NoticeKind, IconType> = {
-  REQUEST_DECIDED: CheckSquareIcon,
-  REQUEST_WAITING: TrayIcon,
-  REQUEST_STALLED: TimerIcon,
-  PAYSLIP_ISSUED: ReceiptIcon,
-  CONTRACT_ENDING: CalendarDotsIcon,
-  DISPUTE_ANSWERED: ChatCircleTextIcon,
-  ADVANCE_PAID: CoinsIcon,
-};
+import { NOTICE_LOOK, type Notice } from "./kinds";
 
 // Relative times need an instant to count from, or the server and the browser
 // each pick their own and the two renders disagree.
 const kTickMs = 60_000;
-
-/** The queue and the item a waiting notice opens, read off the one reference it carries. */
-function waitingAt(notice: Notice): string {
-  if (notice.requestId) {
-    return `/leave/${notice.requestId}`;
-  }
-  const [tab, id] = notice.certificateId
-    ? ["certificates", notice.certificateId]
-    : notice.profileChangeId
-      ? ["profileChanges", notice.profileChangeId]
-      : notice.dependentId
-        ? ["dependents", notice.dependentId]
-        : notice.advanceId
-          ? [notice.approved ? "advancesToPay" : "advancesToDecide", notice.advanceId]
-          : ["disputes", notice.payslipId ?? ""];
-  return `/approvals?tab=${tab}&open=${id}`;
-}
-
-/** The page a notice opens, or null when no page says more than the notice itself (KEHOACH 9.21.4). */
-function whereOf(notice: Notice): string | null {
-  switch (notice.kind) {
-    case "REQUEST_WAITING":
-      return waitingAt(notice);
-    case "REQUEST_DECIDED":
-    case "REQUEST_STALLED":
-      if (notice.certificateId) {
-        return "/me/letters";
-      }
-      if (notice.profileChangeId || notice.dependentId) {
-        return "/me/profile";
-      }
-      if (notice.advanceId) {
-        return "/me/requests?tab=advances";
-      }
-      return notice.requestId ? `/me/requests?open=${notice.requestId}` : "/me/requests";
-    case "ADVANCE_PAID":
-      return "/me/requests?tab=advances";
-    case "PAYSLIP_ISSUED":
-    case "DISPUTE_ANSWERED":
-      return notice.payslipId ? `/me/payslips?slip=${notice.payslipId}` : "/me/payslips";
-    case "CONTRACT_ENDING":
-      return null;
-  }
-}
 
 /** A notice row: a link where a page says more, otherwise a button that only marks it read. */
 function Row({ notice, onRead, onGo, children }: { notice: Notice; onRead: () => void; onGo: () => void; children: ReactNode }) {
@@ -112,7 +22,7 @@ function Row({ notice, onRead, onGo, children }: { notice: Notice; onRead: () =>
     "flex min-h-11 w-full items-start gap-3 rounded-md px-2.5 py-2 text-start text-base hover:bg-kumo-tint",
     notice.readAt === null && "bg-kumo-elevated",
   );
-  const where = whereOf(notice);
+  const where = NOTICE_LOOK[notice.kind].path(notice);
   if (where === null) {
     return (
       <button type="button" className={look} onClick={() => notice.readAt === null && onRead()}>
@@ -147,22 +57,8 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
 
   // The row holds a kind and references; the sentence is built here.
   function say(notice: Notice): string {
-    switch (notice.kind) {
-      case "REQUEST_DECIDED":
-        return notice.approved ? t("kindREQUEST_DECIDED_true") : t("kindREQUEST_DECIDED_false");
-      case "REQUEST_WAITING":
-        return notice.advanceId && notice.approved ? t("kindREQUEST_WAITING_pay") : t("kindREQUEST_WAITING");
-      case "REQUEST_STALLED":
-        return t("kindREQUEST_STALLED", { count: notice.daysWaited ?? 0 });
-      case "CONTRACT_ENDING":
-        return t("kindCONTRACT_ENDING", { count: notice.daysLeft ?? 0 });
-      case "PAYSLIP_ISSUED":
-        return t("kindPAYSLIP_ISSUED");
-      case "DISPUTE_ANSWERED":
-        return t("kindDISPUTE_ANSWERED");
-      case "ADVANCE_PAID":
-        return t("kindADVANCE_PAID");
-    }
+    const said = NOTICE_LOOK[notice.kind].sentence(notice);
+    return said.count === undefined ? t(said.key) : t(said.key, { count: said.count });
   }
 
   const rows = notices.data ?? [];
@@ -178,7 +74,7 @@ export function NoticeList({ onGo }: { onGo: () => void }) {
       ) : (
         <ul className="flex max-h-[min(28rem,70dvh)] flex-col overflow-y-auto p-1.5">
           {rows.map((notice) => {
-            const Icon = FACE[notice.kind];
+            const Icon = NOTICE_LOOK[notice.kind].icon;
             return (
               <li key={notice.id}>
                 <Row

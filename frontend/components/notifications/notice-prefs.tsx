@@ -8,7 +8,7 @@ import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import type { NoticeKind } from "./notice-list";
+import { NOTICE_LOOK, type NoticeKind } from "./kinds";
 
 // Email is in the enum but nobody delivers it (KEHOACH 9.21.4).
 type Channel = "IN_APP" | "PUSH";
@@ -19,43 +19,18 @@ interface Preference {
   on: boolean;
 }
 
-const KIND_KEY: Record<
-  NoticeKind,
-  | "kindREQUEST_WAITING"
-  | "kindREQUEST_STALLED"
-  | "kindPAYSLIP_ISSUED"
-  | "kindCONTRACT_ENDING"
-  | "kindDISPUTE_ANSWERED"
-  | "kindREQUEST_DECIDED_true"
-  | "kindADVANCE_PAID"
-> = {
-  REQUEST_DECIDED: "kindREQUEST_DECIDED_true",
-  REQUEST_WAITING: "kindREQUEST_WAITING",
-  REQUEST_STALLED: "kindREQUEST_STALLED",
-  PAYSLIP_ISSUED: "kindPAYSLIP_ISSUED",
-  CONTRACT_ENDING: "kindCONTRACT_ENDING",
-  DISPUTE_ANSWERED: "kindDISPUTE_ANSWERED",
-  ADVANCE_PAID: "kindADVANCE_PAID",
-};
+interface Offered extends Preference {
+  /** False for a work item's in-app switch, which stays on. */
+  mutable: boolean;
+}
 
 const CHANNEL_KEY: Record<Channel, "channelIN_APP" | "channelPUSH"> = {
   IN_APP: "channelIN_APP",
   PUSH: "channelPUSH",
 };
 
-const KINDS: NoticeKind[] = [
-  "REQUEST_DECIDED",
-  "REQUEST_WAITING",
-  "REQUEST_STALLED",
-  "PAYSLIP_ISSUED",
-  "CONTRACT_ENDING",
-  "DISPUTE_ANSWERED",
-  "ADVANCE_PAID",
-];
 const CHANNELS: Channel[] = ["IN_APP", "PUSH"];
 const PREFS_KEY = ["notifications", "preferences"];
-const kContractDays = 30;
-const kStalledDays = 7;
 
 export function NoticePreferences() {
   const t = useTranslations("notices");
@@ -64,7 +39,7 @@ export function NoticePreferences() {
 
   const prefs = useQuery({
     queryKey: PREFS_KEY,
-    queryFn: async () => (await api.get<Preference[]>("/notifications/preferences")).data,
+    queryFn: async () => (await api.get<Offered[]>("/notifications/preferences")).data,
   });
 
   // The box flips at once and flips back if the api refuses, so a tap never looks ignored.
@@ -72,11 +47,10 @@ export function NoticePreferences() {
     mutationFn: (body: Preference) => api.post("/notifications/preferences", body),
     onMutate: async (body) => {
       await cache.cancelQueries({ queryKey: PREFS_KEY });
-      const was = cache.getQueryData<Preference[]>(PREFS_KEY);
-      cache.setQueryData<Preference[]>(PREFS_KEY, (held) => [
-        ...(held ?? []).filter((row) => row.kind !== body.kind || row.channel !== body.channel),
-        body,
-      ]);
+      const was = cache.getQueryData<Offered[]>(PREFS_KEY);
+      cache.setQueryData<Offered[]>(PREFS_KEY, (held) =>
+        (held ?? []).map((row) => (row.kind === body.kind && row.channel === body.channel ? { ...row, on: body.on } : row)),
+      );
       return { was };
     },
     onSuccess: () => notify.done(t("prefsSaved")),
@@ -87,16 +61,17 @@ export function NoticePreferences() {
     onSettled: () => void cache.invalidateQueries({ queryKey: PREFS_KEY }),
   });
 
-  function on(kind: NoticeKind, channel: Channel): boolean {
-    return prefs.data?.find((row) => row.kind === kind && row.channel === channel)?.on ?? false;
+  function cell(kind: NoticeKind, channel: Channel): Offered | undefined {
+    return prefs.data?.find((row) => row.kind === kind && row.channel === channel);
   }
 
   function name(kind: NoticeKind): string {
-    if (kind === "CONTRACT_ENDING") {
-      return t(KIND_KEY[kind], { count: kContractDays });
-    }
-    return kind === "REQUEST_STALLED" ? t(KIND_KEY[kind], { count: kStalledDays }) : t(KIND_KEY[kind]);
+    const label = NOTICE_LOOK[kind].label;
+    return label.count === undefined ? t(label.key) : t(label.key, { count: label.count });
   }
+
+  // Only the kinds this account receives come back, in the order the table declares them.
+  const kinds = (Object.keys(NOTICE_LOOK) as NoticeKind[]).filter((kind) => prefs.data?.some((row) => row.kind === kind));
 
   if (prefs.isError) {
     return <Failed onRetry={() => void prefs.refetch()} />;
@@ -112,7 +87,7 @@ export function NoticePreferences() {
           </span>
         ))}
       </div>
-      {KINDS.map((kind) => (
+      {(prefs.isPending ? (Object.keys(NOTICE_LOOK) as NoticeKind[]) : kinds).map((kind) => (
         <div
           key={kind}
           role="row"
@@ -128,7 +103,8 @@ export function NoticePreferences() {
               ) : (
                 <Checkbox
                   aria-label={`${name(kind)} · ${t(CHANNEL_KEY[channel])}`}
-                  checked={on(kind, channel)}
+                  checked={cell(kind, channel)?.on ?? false}
+                  disabled={cell(kind, channel)?.mutable === false}
                   onCheckedChange={(checked: boolean) => set.mutate({ kind, channel, on: checked })}
                 />
               )}
