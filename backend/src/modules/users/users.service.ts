@@ -361,12 +361,13 @@ export class UsersService {
    */
   private async sendSetup(userId: string, locale: string, why: SetupReason): Promise<void> {
     const link = randomBytes(LINK_BYTES).toString("base64url");
-    const expiresAt = new Date(
-      Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS,
-    );
-    await this.db.passwordSetup.create({
-      data: { userId, tokenHash: fingerprint(link), expiresAt },
-    });
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS);
+    // An account keeps one live link; the older ones close by running out (KEHOACH 9.4).
+    await this.db.$transaction([
+      this.db.passwordSetup.updateMany({ where: { userId, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } }),
+      this.db.passwordSetup.create({ data: { userId, tokenHash: fingerprint(link), expiresAt } }),
+    ]);
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
       type: "password-setup",
@@ -515,7 +516,12 @@ export class UsersService {
       locale: one.locale,
       link: randomBytes(LINK_BYTES).toString("base64url"),
     }));
-    const expiresAt = new Date(Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS);
+    await tx.passwordSetup.updateMany({
+      where: { userId: { in: resending.map((one) => one.userId) }, usedAt: null, expiresAt: { gt: now } },
+      data: { expiresAt: now },
+    });
     await tx.passwordSetup.createMany({
       data: links.map((one) => ({ userId: one.userId, tokenHash: fingerprint(one.link), expiresAt })),
     });

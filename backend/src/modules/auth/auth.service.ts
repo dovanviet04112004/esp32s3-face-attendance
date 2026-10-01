@@ -20,7 +20,7 @@ import {
   type SessionsCut,
 } from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type PasswordSetupJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type PasswordChangedJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
 import { hashPassword, LINK_BYTES, needsRehash, verifyPassword } from "./password.js";
@@ -155,6 +155,7 @@ export class AuthService {
     const passwordHash = await hashPassword(password);
     await this.db.$transaction([
       this.db.passwordSetup.update({ where: { id: setup.id }, data: { usedAt: now } }),
+      this.closeLinks(setup.user.id, now),
       this.db.user.update({ where: { id: setup.user.id }, data: { passwordHash } }),
       this.db.session.updateMany({
         where: { userId: setup.user.id, revokedAt: null },
@@ -163,6 +164,7 @@ export class AuthService {
     ]);
     await this.lockout.clear(setup.user.email);
     await this.cutAccess([setup.user.id]);
+    await this.tellOwner(setup.user.id);
     this.log.log(`account ${setup.user.id} set its own password`);
   }
 
@@ -190,12 +192,14 @@ export class AuthService {
     const now = new Date();
     await this.db.$transaction([
       this.db.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.closeLinks(userId, now),
       this.db.session.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now },
       }),
     ]);
     await this.cutAccess([userId]);
+    await this.tellOwner(userId);
     this.log.log(`account ${userId} changed its own password`);
   }
 
@@ -203,6 +207,10 @@ export class AuthService {
    *  door cannot be read as a list of who works here (KEHOACH 9.4).
    */
   async forgot(email: string): Promise<void> {
+    if (!(await this.lockout.mayMail(email))) {
+      this.log.log("a setup link was held back: its address had its hour's share");
+      return;
+    }
     const id = await this.accountIdOf(email);
     const user =
       id === null
@@ -216,12 +224,13 @@ export class AuthService {
       return;
     }
     const link = randomBytes(LINK_BYTES).toString("base64url");
-    const expiresAt = new Date(
-      Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * UNIT_MS.h,
-    );
-    await this.db.passwordSetup.create({
-      data: { userId: user.id, tokenHash: fingerprint(link), expiresAt },
-    });
+    const now = new Date();
+    const lifetimeMs = this.config.get("PASSWORD_RESET_TTL_MINUTES", { infer: true }) * UNIT_MS.m;
+    const expiresAt = new Date(now.getTime() + lifetimeMs);
+    await this.db.$transaction([
+      this.closeLinks(user.id, now),
+      this.db.passwordSetup.create({ data: { userId: user.id, tokenHash: fingerprint(link), expiresAt } }),
+    ]);
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
       type: JOB.passwordSetup,
@@ -229,6 +238,21 @@ export class AuthService {
       link: `${root}/${user.employee?.locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
       reason: "forgot",
     } satisfies PasswordSetupJob);
+  }
+
+  // An account keeps one live link; the others close by running out (KEHOACH 9.4).
+  private closeLinks(userId: string, now: Date) {
+    return this.db.passwordSetup.updateMany({
+      where: { userId, usedAt: null, expiresAt: { gt: now } },
+      data: { expiresAt: now },
+    });
+  }
+
+  private async tellOwner(userId: string): Promise<void> {
+    await this.queues[QUEUE.notify].add(JOB.passwordChanged, {
+      type: JOB.passwordChanged,
+      userId,
+    } satisfies PasswordChangedJob);
   }
 
   /** Sign one device out, leaving the rest of them signed in. */

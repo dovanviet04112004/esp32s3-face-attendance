@@ -66,6 +66,7 @@ export interface SetupMailFacts {
   fullName: string;
   url: string;
   hours: number;
+  minutes: number;
   reason: SetupReason;
 }
 
@@ -95,7 +96,7 @@ const SETUP: Record<MailLocale, Record<SetupReason, (facts: SetupMailFacts) => M
         "",
         facts.url,
         "",
-        `Đường dẫn dùng được một lần và hết hạn sau ${facts.hours} giờ.`,
+        `Đường dẫn dùng được một lần và hết hạn sau ${facts.minutes} phút.`,
         "Nếu không phải bạn thì bỏ qua thư này: mật khẩu đang dùng vẫn nguyên.",
       ].join("\n"),
     }),
@@ -125,7 +126,7 @@ const SETUP: Record<MailLocale, Record<SetupReason, (facts: SetupMailFacts) => M
         "",
         facts.url,
         "",
-        `The link works once and expires in ${facts.hours} hours.`,
+        `The link works once and expires in ${facts.minutes} minutes.`,
         "If it was not you, ignore this letter: the password you have still works.",
       ].join("\n"),
     }),
@@ -134,6 +135,36 @@ const SETUP: Record<MailLocale, Record<SetupReason, (facts: SetupMailFacts) => M
 
 export function setupMail(locale: string, facts: SetupMailFacts): MailBody {
   return SETUP[readsAs(locale)][facts.reason](facts);
+}
+
+/** Names no password and no link, only the fact (KEHOACH 9.4). */
+const CHANGED_PASSWORD: Record<MailLocale, (fullName: string) => MailBody> = {
+  vi: (fullName) => ({
+    subject: "Mật khẩu chấm công của bạn vừa được đổi",
+    text: [
+      `Chào ${fullName},`,
+      "",
+      "Mật khẩu của tài khoản này vừa được đổi, và mọi thiết bị đang đăng nhập đã bị đăng xuất.",
+      "",
+      "Nếu là bạn thì không cần làm gì thêm.",
+      "Nếu không phải bạn, xin lại mật khẩu ngay ở trang đăng nhập và báo cho bộ phận nhân sự.",
+    ].join("\n"),
+  }),
+  en: (fullName) => ({
+    subject: "Your attendance password was just changed",
+    text: [
+      `Hello ${fullName},`,
+      "",
+      "The password of this account has just changed, and every device signed in to it is signed out.",
+      "",
+      "If that was you, there is nothing more to do.",
+      "If it was not, ask for a new password from the sign-in page now and tell your HR team.",
+    ].join("\n"),
+  }),
+};
+
+export function passwordChangedMail(locale: string, fullName: string): MailBody {
+  return CHANGED_PASSWORD[readsAs(locale)](fullName);
 }
 
 export type NoticedChange = "BANK" | "PERSONAL_EMAIL";

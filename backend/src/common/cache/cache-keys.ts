@@ -21,6 +21,7 @@ export const GUARD = {
   loginMisses: (emailHash: string) => `auth:miss:${emailHash}`,
   loginLock: (emailHash: string) => `auth:lock:${emailHash}`,
   addressMisses: (address: string) => `auth:ipmiss:${address}`,
+  recipientLinks: (emailHash: string) => `auth:links:${emailHash}`,
   accessCutoff: (userId: string) => `auth:cutoff:${userId}`,
   sessionCut: (sessionId: string) => `auth:cutsid:${sessionId}`,
 } as const;

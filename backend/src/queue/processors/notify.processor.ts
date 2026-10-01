@@ -7,12 +7,12 @@ import { RedisService } from "../../database/redis.service.js";
 import { BackupWatchService } from "../../modules/notifications/backup-watch.service.js";
 import { ContractAlertsService } from "../../modules/notifications/contract-alerts.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
-import { setupMail } from "../../modules/payroll/mail-text.js";
+import { passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
 import { StaleRequestsService } from "../../modules/notifications/stale-requests.service.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
-import { QUEUE, type NotifyJob, type PasswordSetupJob } from "../queues.js";
+import { QUEUE, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
 
@@ -51,6 +51,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === "password-setup") {
           await this.mailSetup(body);
+          return;
+        }
+        if (body.type === "password-changed") {
+          await this.mailChanged(body);
           return;
         }
         if (body.type === "profile-notice") {
@@ -94,9 +98,22 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       fullName: account.employee?.fullName ?? account.email,
       url: job.link,
       hours: this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }),
+      minutes: this.config.get("PASSWORD_RESET_TTL_MINUTES", { infer: true }),
       reason: job.reason,
     });
     await this.mailer.send(account.email, body);
+  }
+
+  private async mailChanged(job: PasswordChangedJob): Promise<void> {
+    const account = await this.db.user.findUnique({
+      where: { id: job.userId },
+      select: { email: true, employee: { select: { fullName: true, locale: true } } },
+    });
+    if (!account) {
+      return;
+    }
+    const locale = account.employee?.locale ?? DEFAULT_MAIL_LOCALE;
+    await this.mailer.send(account.email, passwordChangedMail(locale, account.employee?.fullName ?? account.email));
   }
 
   async onModuleDestroy(): Promise<void> {

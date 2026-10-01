@@ -12,6 +12,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 
 const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
 
 /** The one spelling of an address that sign-in looks up and the lock counts (KEHOACH 7.2). */
 export function normalEmail(email: string): string {
@@ -27,7 +28,6 @@ function addressKey(address: string | undefined): string {
   return GUARD.addressMisses(normalizeIp(address ?? "unknown"));
 }
 
-// The window starts at the first miss and does not stretch with later ones.
 async function count(client: Redis, key: string, windowSeconds: number): Promise<number> {
   const replies = await client.multi().incr(key).expire(key, windowSeconds, "NX").exec();
   return Number(replies?.[0]?.[1] ?? 0);
@@ -81,6 +81,13 @@ export class LoginLockout {
         meta: { minutes: window / SECONDS_PER_MINUTE },
       });
     }
+  }
+
+  /** Count one setup letter to this address, known or not; false once it has had its hour's share (KEHOACH 9.4). */
+  async mayMail(email: string): Promise<boolean> {
+    const key = GUARD.recipientLinks(hashOf(email));
+    const sent = await this.redis.quick((client) => count(client, key, SECONDS_PER_HOUR));
+    return sent === null || sent <= this.config.get("FORGOT_PER_EMAIL_PER_HOUR", { infer: true });
   }
 
   /** Forget the misses and any lock on this email, once the owner has proved who they are. */

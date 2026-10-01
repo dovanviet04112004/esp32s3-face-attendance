@@ -18,6 +18,7 @@ export const JOB = {
   requestsStale: "requests-stale",
   backupWatch: "backup-watch",
   passwordSetup: "password-setup",
+  passwordChanged: "password-changed",
   profileNotice: "profile-notice",
   deliver: "deliver",
   run: "run",
@@ -64,6 +65,11 @@ export interface PasswordSetupJob {
   reason: SetupReason;
 }
 
+export interface PasswordChangedJob {
+  type: typeof JOB.passwordChanged;
+  userId: string;
+}
+
 /** Only the row id rides here; the address is on the row (KEHOACH 9.17.6). */
 export interface ProfileNoticeJob {
   type: typeof JOB.profileNotice;
@@ -76,6 +82,7 @@ export type NotifyJob =
   | RequestsStaleJob
   | BackupWatchJob
   | PasswordSetupJob
+  | PasswordChangedJob
   | ProfileNoticeJob;
 
 export interface DeliverJob {
