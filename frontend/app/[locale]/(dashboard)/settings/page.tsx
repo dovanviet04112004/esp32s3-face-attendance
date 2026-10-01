@@ -4,7 +4,7 @@ import { Button, LayerCard, LinkButton, TableOfContents, Tabs, useTableOfContent
 import { BookOpenTextIcon, EnvelopeSimpleIcon, KeyIcon, SignOutIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 
 import { useSignOut } from "@/components/nav/account-menu";
 import { NoticePreferences } from "@/components/notifications/notice-prefs";
@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { env } from "@/lib/env";
 import { useSession, type Role } from "@/lib/auth";
 
@@ -26,8 +27,8 @@ interface OpenedAccount {
 
 // The top bar is 58 px and sticks, so a section scrolled to lands just under it.
 const kTopBarPx = 72;
-// Tall enough to scroll the last card under the top bar: 100svh less scroll-mt-20 and the page's bottom padding.
-const kLastCardRoom = "md:min-h-[calc(100svh-7rem)]";
+// The last cards cannot scroll up to the top bar, so a jump marks its card for a moment.
+const kFlashMs = 1200;
 const kUserScroll = ["wheel", "touchmove", "keydown"] as const;
 
 function onScroll(changed: () => void): () => void {
@@ -69,9 +70,9 @@ function useSectionSpy(ids: string[]) {
   };
 }
 
-function Section({ id, title, lead, children }: { id: string; title: string; lead?: string; children: ReactNode }) {
+function Section({ id, title, lead, lit, children }: { id: string; title: string; lead?: string; lit?: string | null; children: ReactNode }) {
   return (
-    <LayerCard id={id} className="scroll-mt-20">
+    <LayerCard id={id} className={cn("scroll-mt-20 transition-shadow duration-300", lit === id && "ring-2 ring-kumo-brand")}>
       <LayerCard.Secondary>{title}</LayerCard.Secondary>
       <LayerCard.Primary className="flex flex-col items-start gap-3">
         {lead ? <p className="text-kumo-subtle">{lead}</p> : null}
@@ -138,6 +139,16 @@ export default function SettingsPage() {
     { id: "account", title: t("accountTitle") },
   ];
   const { activeId, selectSection } = useSectionSpy(sections.map((one) => one.id));
+  const [lit, setLit] = useState<string | null>(null);
+  const unlight = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(unlight.current), []);
+
+  function jump(id: string): void {
+    selectSection(id);
+    setLit(id);
+    window.clearTimeout(unlight.current);
+    unlight.current = window.setTimeout(() => setLit(null), kFlashMs);
+  }
 
   function choose(next: string) {
     if (next === locale || !routing.locales.includes(next as Locale)) {
@@ -161,7 +172,7 @@ export default function SettingsPage() {
                       key={one.id}
                       href={`#${one.id}`}
                       active={(activeId ?? sections[0].id) === one.id}
-                      onClick={() => selectSection(one.id)}
+                      onClick={() => jump(one.id)}
                     >
                       {one.title}
                     </TableOfContents.Item>
@@ -173,7 +184,7 @@ export default function SettingsPage() {
         }
       >
         <div className="flex flex-col gap-6">
-          <Section id="language" title={t("languageTitle")} lead={t("languageLead")}>
+          <Section lit={lit} id="language" title={t("languageTitle")} lead={t("languageLead")}>
             <Tabs
               variant="segmented"
               value={locale}
@@ -189,22 +200,22 @@ export default function SettingsPage() {
             />
           </Section>
 
-          <Section id="theme" title={t("themeTitle")} lead={t("themeLead")}>
+          <Section lit={lit} id="theme" title={t("themeTitle")} lead={t("themeLead")}>
             <ThemeToggle />
           </Section>
 
-          <Section id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
+          <Section lit={lit} id="push" title={notices("pushTitle")} lead={notices("pushLead")}>
             <PushSwitch />
           </Section>
 
-          <Section id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
+          <Section lit={lit} id="notices" title={notices("prefsTitle")} lead={notices("prefsLead")}>
             <div className="w-full">
               <NoticePreferences />
             </div>
           </Section>
 
           {role === "ADMIN" ? (
-            <Section id="provision" title={t("provisionTitle")} lead={t("provisionLead")}>
+            <Section lit={lit} id="provision" title={t("provisionTitle")} lead={t("provisionLead")}>
               <Button variant="secondary" icon={EnvelopeSimpleIcon} loading={provision.isPending} onClick={() => provision.mutate()}>
                 {t("provisionRun")}
               </Button>
@@ -230,32 +241,30 @@ export default function SettingsPage() {
           ) : null}
 
           {role === "ADMIN" ? (
-            <Section id="docs" title={t("docsTitle")} lead={t("docsLead")}>
+            <Section lit={lit} id="docs" title={t("docsTitle")} lead={t("docsLead")}>
               <Button variant="secondary" icon={BookOpenTextIcon} loading={reference.isPending} onClick={openReference}>
                 {t("docsOpen")}
               </Button>
             </Section>
           ) : null}
 
-          <div className={kLastCardRoom}>
-            <Section id="account" title={t("accountTitle")}>
-              <div className="w-full">
-                <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
+          <Section lit={lit} id="account" title={t("accountTitle")}>
+            <div className="w-full">
+              <Facts rows={[[t("role"), role ? roleName(role) : nav("account")]]} />
+            </div>
+            <div className="flex w-full flex-col gap-3 border-t border-kumo-hairline pt-3">
+              <p className="font-medium">{t("passwordTitle")}</p>
+              <p className="text-kumo-subtle">{t("passwordLead")}</p>
+              <div className="flex flex-wrap gap-2">
+                <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
+                  {t("passwordGo")}
+                </LinkButton>
+                <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
+                  {nav("signOut")}
+                </Button>
               </div>
-              <div className="flex w-full flex-col gap-3 border-t border-kumo-hairline pt-3">
-                <p className="font-medium">{t("passwordTitle")}</p>
-                <p className="text-kumo-subtle">{t("passwordLead")}</p>
-                <div className="flex flex-wrap gap-2">
-                  <LinkButton href="/change-password" variant="secondary" icon={KeyIcon}>
-                    {t("passwordGo")}
-                  </LinkButton>
-                  <Button variant="secondary-destructive" icon={SignOutIcon} loading={leaving.isPending} onClick={() => leaving.mutate()}>
-                    {nav("signOut")}
-                  </Button>
-                </div>
-              </div>
-            </Section>
-          </div>
+            </div>
+          </Section>
         </div>
       </PageLayout>
     </>
