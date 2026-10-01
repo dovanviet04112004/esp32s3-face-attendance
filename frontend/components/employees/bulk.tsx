@@ -40,7 +40,8 @@ type SkipReason =
   | "CONSENT_MISSING"
   | "ALREADY_ON_KIOSK"
   | "ALREADY_ON_SHIFT"
-  | "SELF";
+  | "SELF"
+  | "ADMIN_ACCOUNT";
 
 interface Skip {
   employeeId: number;
