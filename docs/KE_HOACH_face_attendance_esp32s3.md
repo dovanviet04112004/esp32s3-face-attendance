@@ -8785,8 +8785,13 @@ gặp ở bảng chấm công). Năm luật đi kèm:
    tài khoản khác, và việc thêm — kể cả ghi đồng ý — cho người đã nghỉ cũng là cảnh báo: phần hồ sơ
    vẫn ghi, việc ấy thì bỏ qua.
 5. **Không ô nào thành công thức.** Ô bắt đầu bằng `=` `+` `-` `@`, tab hay CR được viết thành
-   chữ, ở mọi file xuất, kể cả file dựng ngay trong trình duyệt (§7.2): `.xlsx` ghi ô chuỗi, `.csv`
-   thêm `'` đằng trước.
+   chữ, ở mọi file xuất, kể cả file dựng ngay trong trình duyệt (§7.2) và file trả ngân hàng:
+   `.xlsx` ghi ô chuỗi, `.csv` thêm `'` đằng trước. Ba ô đi thẳng vào file ngân hàng còn bị chặn
+   từ cửa vào, ở mọi đường ghi chúng — tạo hồ sơ, đơn đổi hồ sơ, nhập file: số tài khoản chỉ gồm
+   chữ và số, dài 4 tới 34 ký tự (34 là độ dài của IBAN dài nhất); tên ngân hàng và họ tên không
+   mở đầu bằng `=` `+` `-` `@` và không chứa xuống dòng. Lượt nhập chỉ xét giá trị nó sẽ ghi, nên
+   một hồ sơ cũ mang giá trị trái luật vẫn xuất ra rồi nhập lại không lỗi. Chặn ở cửa vào vì file
+   ngân hàng còn đi tiếp sang phần mềm của ngân hàng, nơi dấu `'` không còn che chở được.
 
 **Thao tác trên nhiều người.** Danh bạ chọn được nhiều dòng, hoặc chọn **cả N người khớp bộ lọc**
 khi bảng mới tải một phần; lúc ấy trình duyệt gửi bộ lọc, không gửi N mã, và server tự giải bộ
