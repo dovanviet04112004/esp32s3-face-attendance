@@ -454,15 +454,16 @@ export class PayrollService {
       subjectId: periodId,
       meta: { openItems: open.map((item) => item.code) },
     });
+    // Bonus and final runs stand on the regular slip (KEHOACH 9.18), so the oldest is the one to open.
     const told = await this.db.payslip.findMany({
       where: { periodId, state: "ISSUED" },
-      select: { employeeId: true },
+      select: { id: true, employeeId: true },
+      orderBy: [{ employeeId: "asc" }, { createdAt: "asc" }],
       distinct: ["employeeId"],
     });
-    await this.notices.raiseManyFor(
-      told.map((row) => row.employeeId),
+    await this.notices.raiseEachFor(
       "PAYSLIP_ISSUED",
-      { periodId },
+      told.map((row) => ({ employeeId: row.employeeId, facts: { periodId, payslipId: row.id } })),
     );
     return locked;
   }

@@ -227,6 +227,22 @@ export class NotificationsService {
     await this.raiseMany(logins.map((one) => one.id), kind, facts);
   }
 
+  /** Each person's open login, told with that person's own references, such as their own payslip. */
+  async raiseEachFor(kind: NoticeKind, sends: { employeeId: number; facts: NoticeFacts }[]): Promise<void> {
+    const factsOf = new Map(sends.map((one) => [one.employeeId, one.facts]));
+    const logins = await this.db.user.findMany({
+      where: { employeeId: { in: [...factsOf.keys()] }, active: true },
+      select: { id: true, employeeId: true },
+    });
+    await this.raiseEach(
+      kind,
+      logins.flatMap((one) => {
+        const facts = one.employeeId === null ? undefined : factsOf.get(one.employeeId);
+        return facts ? [{ userId: one.id, facts }] : [];
+      }),
+    );
+  }
+
   /**
    * Raise a notice. Failing here never undoes the thing it describes, which is
    * the same bargain AuditService makes (KEHOACH 9.21.4).
@@ -248,22 +264,27 @@ export class NotificationsService {
 
   /** One notice each, for a list of people, without a query per person. */
   async raiseMany(userIds: string[], kind: NoticeKind, facts: NoticeFacts): Promise<void> {
-    if (userIds.length === 0) {
+    await this.raiseEach(kind, userIds.map((userId) => ({ userId, facts })));
+  }
+
+  /** One notice per login, each with its own references, without a query per person. */
+  async raiseEach(kind: NoticeKind, sends: { userId: string; facts: NoticeFacts }[]): Promise<void> {
+    if (sends.length === 0) {
       return;
     }
     try {
       // Each channel answers for itself, as 9.21.4 asks: one switch must not
       // speak for the other in either direction.
       const held = await this.db.notificationPreference.findMany({
-        where: { userId: { in: userIds }, kind, channel: { in: ["IN_APP", "PUSH"] } },
+        where: { userId: { in: sends.map((one) => one.userId) }, kind, channel: { in: ["IN_APP", "PUSH"] } },
         select: { userId: true, channel: true, on: true },
       });
       const set = new Map(held.map((row) => [`${row.userId}:${row.channel}`, row.on]));
       const wants = (id: string, channel: OfferedChannel): boolean =>
         set.get(`${id}:${channel}`) ?? DEFAULT_ON[channel];
-      const rows: Prisma.NotificationCreateManyInput[] = userIds
-        .filter((id) => wants(id, "IN_APP"))
-        .map((one) => ({ userId: one, kind, ...facts }));
+      const rows: Prisma.NotificationCreateManyInput[] = sends
+        .filter((one) => wants(one.userId, "IN_APP"))
+        .map((one) => ({ userId: one.userId, kind, ...one.facts }));
       if (rows.length > 0) {
         // One batch, then one at a time if it falls: an account closed between
         // reading the list and writing it must not silence everybody else.
@@ -273,11 +294,11 @@ export class NotificationsService {
           }
         });
       }
-      for (const id of userIds) {
-        this.feed.tell(id, FEED.notice, { kind, ...facts });
+      for (const one of sends) {
+        this.feed.tell(one.userId, FEED.notice, { kind, ...one.facts });
       }
       await Promise.all(
-        userIds.filter((id) => wants(id, "PUSH")).map((id) => this.push(id, kind, facts)),
+        sends.filter((one) => wants(one.userId, "PUSH")).map((one) => this.push(one.userId, kind, one.facts)),
       );
     } catch (fell) {
       this.log.error(`notices ${kind} were not raised: ${String(fell)}`);
