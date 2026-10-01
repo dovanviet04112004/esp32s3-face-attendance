@@ -43,7 +43,7 @@ export class ConsentService {
   }
 
   async history(viewer: Viewer, employeeId: number): Promise<BiometricConsent[]> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (visible !== null && !visible.includes(employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }

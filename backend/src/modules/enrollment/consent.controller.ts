@@ -25,7 +25,7 @@ export class ConsentController {
   ) {}
 
   @Get(":employeeId")
-  @ApiOperation({ summary: "Every agreement and withdrawal for one person" })
+  @ApiOperation({ summary: "Every agreement and withdrawal for one person; outside the desk, only one's own" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: [ConsentView], description: "Newest first" })
   history(

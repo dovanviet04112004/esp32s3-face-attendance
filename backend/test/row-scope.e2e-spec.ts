@@ -260,6 +260,8 @@ describe("row scope (e2e)", () => {
     for (const path of [`/payslips?employeeId=${report}`, `/employees/${report}/compensation`, `/tax-year/${report}?year=${PAY_YEAR}`]) {
       assert.equal((await as("boss")(path)).status, 404, `${path} gave a manager their report's pay`);
     }
+    assert.equal((await as("boss")(`/biometric-consents/${report}`)).status, 404, "a manager read their report's face data consents");
+    assert.equal((await as("mine")(`/biometric-consents/${report}`)).status, 200, "an employee lost sight of their own consents");
   });
 
   it("refuses a manager loop rather than letting the walk find one", async () => {
