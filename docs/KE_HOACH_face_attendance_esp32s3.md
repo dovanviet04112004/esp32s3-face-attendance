@@ -8444,6 +8444,14 @@ thẳng rồi sửa sau là cách chắc chắn nhất để có dữ liệu rá
 năm nhưng bắt buộc. "Một phòng" là **cả nhánh** dưới nó, như mọi bộ lọc phòng ban (§9.4). Sinh ra **một loạt dòng `CompensationRecord` mới cùng ngày hiệu lực**
 (§9.6), xem trước được trước khi ghi.
 
+**Lương đóng bảo hiểm của mỗi người đi theo chính nó, không theo lương cơ bản.** Ở rất nhiều nơi
+hai con số ấy khác nhau (§9.6), nên dòng mới của một người **giữ nguyên lương đóng bảo hiểm** của
+dòng đang hiệu lực với người ấy vào ngày tăng, trừ khi người tăng bật `raiseInsuranceSalary`. Bật
+rồi thì mức đóng tăng **đúng bước của lương cơ bản**: cùng tỷ lệ, hoặc cùng số tiền cộng thêm,
+tính trên mức đóng của chính người ấy. Bản xem trước mang cả hai cặp số của từng người — lương cơ
+bản và lương đóng bảo hiểm, đang hưởng và sau khi tăng — nên thứ được xem trước là đúng thứ sẽ được
+ghi.
+
 **7. Tái cơ cấu tổ chức.** Chuyển cả một phòng sang cấp trên khác, gộp hai phòng, đổi người quản
 lý hàng loạt. Phải xem trước ai bị ảnh hưởng, vì đổi `managerId` là đổi luôn ai duyệt đơn của
 họ và ai nhìn thấy dữ liệu của họ (§9.4).
