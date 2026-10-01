@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Test } from "@nestjs/testing";
 import type { Role } from "@prisma/client";
 import request from "supertest";
@@ -11,6 +12,7 @@ import webpush from "web-push";
 import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { KIOSK_EVENT } from "../src/modules/mqtt/mqtt.events.js";
 import { pushBody } from "../src/modules/notifications/dto/push-body.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 
@@ -31,6 +33,12 @@ const mailOf = (who: Who) => `e2e-notice-push-${who}-${RUN}@kiosk.local`;
 const endpointOf = (who: Who) => `https://fcm.googleapis.com/fcm/send/e2e-${who}-${RUN}`;
 const WAIT_MS = 8000;
 const POLL_MS = 100;
+const DAY_MS = 86_400_000;
+const DEVICE = `e2e-np-${RUN}`;
+const SHIFT = `E2E NP ${RUN}`;
+// Days no other suite builds: two the asker missed, one they only came late on.
+const ABSENT_DAYS = ["2026-08-11", "2026-08-12"];
+const LATE_DAY = "2026-08-13";
 
 interface Sent {
   endpoint: string;
@@ -43,6 +51,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
   const sent: Sent[] = [];
   const gone = new Set<string>();
   const loginOf = new Map<Who, string>();
+  const idOf = new Map<Who, number>();
   const tokenOf = new Map<Who, string>();
   let day = 0;
   let original: typeof webpush.sendNotification;
@@ -69,9 +78,12 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     }
   }
 
+  // A device's punches go with it, and they hold on to the people they are of.
   async function sweep(): Promise<void> {
+    await db.device.deleteMany({ where: { id: DEVICE } });
     await db.user.deleteMany({ where: { email: { in: PEOPLE.map(mailOf) } } });
     await db.employee.deleteMany({ where: { code: { in: PEOPLE.map(codeOf) } } });
+    await db.shift.deleteMany({ where: { name: SHIFT } });
   }
 
   before(async () => {
@@ -90,17 +102,16 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     await app.init();
     db = app.get(PrismaService);
     await sweep();
-    const ids = new Map<Who, number>();
     for (const who of PEOPLE) {
       const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Đẩy ${who} ${RUN}`, active: true } });
-      ids.set(who, made.id);
+      idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },
       });
       loginOf.set(who, login.id);
       await db.pushSubscription.create({ data: { userId: login.id, endpoint: endpointOf(who), p256dh: "k", auth: "a" } });
     }
-    await db.employee.update({ where: { id: ids.get("asker") }, data: { managerId: ids.get("boss") } });
+    await db.employee.update({ where: { id: idOf.get("asker") }, data: { managerId: idOf.get("boss") } });
     for (const who of PEOPLE) {
       const res = await request(app.getHttpServer()).post("/auth/login").send({ email: mailOf(who), password: PASSWORD });
       tokenOf.set(who, res.body.accessToken as string);
@@ -184,5 +195,68 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
       await new Promise((done) => setTimeout(done, POLL_MS));
     }
     assert.equal(await db.pushSubscription.count({ where: { endpoint: endpointOf("boss") } }), 0, "a dead device stayed");
+  });
+
+  it("pushes a person's missing punches and absences once, together, at the morning sweep, and never their lateness", async () => {
+    const { AttendanceSweep } = await import("../src/modules/notifications/sweeps/attendance.sweep.js");
+    const attendance = app.get(AttendanceSweep);
+    const asker = idOf.get("asker") ?? 0;
+    await db.attendanceDay.createMany({
+      data: [
+        ...ABSENT_DAYS.map((day) => ({ employeeId: asker, date: new Date(day), state: "ABSENT" as const })),
+        { employeeId: asker, date: new Date(LATE_DAY), state: "WORKED" as const, punchCount: 2, workedMinutes: 460, lateMinutes: 20 },
+      ],
+    });
+    const at = sent.length;
+    for (const day of [...ABSENT_DAYS, LATE_DAY]) {
+      await attendance.afterBuild(day, asker);
+    }
+    await new Promise((done) => setTimeout(done, 1500));
+    assert.equal(sent.length, at, "an exception pushed the moment the build opened it");
+    await attendance.sweep();
+    await attendance.sweep();
+    const told = sent.slice(at).filter((one) => one.endpoint === endpointOf("asker") && one.body.kind === "ATTENDANCE_EXCEPTION");
+    assert.equal(told.length, 1, "a person's exceptions were not pushed as one, once");
+    assert.deepEqual([told[0].body.count, told[0].body.tag], [2, "gathered"], "lateness was pushed with the absences");
+  });
+
+  it("pushes a punch only once its person turns that on, with no row behind it", async () => {
+    const bus = app.get(EventEmitter2);
+    await db.device.create({ data: { id: DEVICE, status: "APPROVED" } });
+    let local = 0;
+    const arrive = async () => {
+      local += 1;
+      await bus.emitAsync(KIOSK_EVENT.attendance, {
+        topic: "attendance",
+        deviceId: DEVICE,
+        receivedAt: new Date(),
+        payload: { deviceId: DEVICE, localId: String(local), employeeId: idOf.get("asker"), ts: Date.now(), direction: "IN", matchScore: 0.9, livenessScore: 0.9, modelVersion: 1 },
+      });
+    };
+    const before = (await pushesTo("asker", 0)).length;
+    await arrive();
+    await new Promise((done) => setTimeout(done, 1500));
+    assert.equal((await pushesTo("asker", 0)).length, before, "a punch pushed before its person asked for it");
+    assert.equal((await post("asker", "/notifications/preferences", { kind: "PUNCH_RECORDED", channel: "PUSH", on: true })).status, 201);
+    await arrive();
+    const punched = (await pushesTo("asker", before + 1)).slice(before);
+    assert.equal(punched.length, 1, "the punch pushed nothing once its push was on");
+    assert.deepEqual([punched[0].body.kind, punched[0].body.id, punched[0].body.tag], ["PUNCH_RECORDED", "", "punch-recorded"]);
+    assert.equal(await db.notification.count({ where: { kind: "PUNCH_RECORDED" } }), 0, "a punch wrote a row");
+  });
+
+  it("gathers a person's shift changes into one push", async () => {
+    const shift = await post("desk", "/shifts", { name: SHIFT, startTime: "08:00", endTime: "17:00", graceMinutes: 5 });
+    assert.equal(shift.status, 201, JSON.stringify(shift.body));
+    const before = (await pushesTo("asker", 0)).length;
+    for (const days of [3, 4]) {
+      const validFrom = new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+      const res = await post("desk", `/shifts/${shift.body.id}/assignments`, { employeeId: idOf.get("asker"), validFrom });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+    }
+    await new Promise((done) => setTimeout(done, 1500));
+    const told = (await pushesTo("asker", before + 1)).slice(before);
+    assert.equal(told.length, 1, "each shift change buzzed the phone on its own");
+    assert.deepEqual([told[0].body.kind, told[0].body.count, told[0].body.tag], ["SHIFT_CHANGED", 2, "gathered"]);
   });
 });
