@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 
+import type { Viewer } from "../../../common/scope/viewer.js";
 import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
@@ -224,8 +225,6 @@ export class AttendanceSweep implements OnModuleInit {
    *  @ctx job | every fifteen minutes through the morning; one summary a reader a day, told once
    */
   async summarise(now: Date = new Date()): Promise<{ opened: number; expired: number }> {
-    const day = localDay(now, this.zone);
-    const minute = minutesIntoDay(now, this.zone);
     const expired = await this.closeSummaries(now);
     const readers = await this.db.user.findMany({
       where: { active: true, role: { in: [...TEAM_READERS] } },
@@ -233,21 +232,29 @@ export class AttendanceSweep implements OnModuleInit {
     });
     let opened = 0;
     for (const reader of readers) {
-      const ref = { id: reader.id, part: day };
-      if (await this.db.noticeItem.findUnique({ where: { key: itemKey("TEAM_ATTENDANCE", ref) }, select: { id: true } })) {
-        continue;
-      }
-      const tally = await this.reports.teamTally({ userId: reader.id, role: reader.role, employeeId: reader.employeeId }, now);
-      if (tally === null || minute < tally.firstStartMinutes + TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES) {
-        continue;
-      }
-      const { firstStartMinutes: _first, ...counts } = tally;
-      if (await this.items.open("TEAM_ATTENDANCE", { ...ref, employeeId: null }, { facts: { day, ...counts } })) {
+      if (await this.summariseFor({ userId: reader.id, role: reader.role, employeeId: reader.employeeId }, now)) {
         opened += 1;
       }
     }
     this.log.log(`team summaries: ${opened} opened, ${expired} expired`);
     return { opened, expired };
+  }
+
+  /** Open one reader's summary of the morning, once half an hour into the earliest shift they reach.
+   *  @ctx job | the morning sweep, for each reader; false while it is too early, nobody is expected, or it is open already
+   */
+  async summariseFor(reader: Viewer, now: Date = new Date()): Promise<boolean> {
+    const day = localDay(now, this.zone);
+    const ref = { id: reader.userId, part: day };
+    if (await this.db.noticeItem.findUnique({ where: { key: itemKey("TEAM_ATTENDANCE", ref) }, select: { id: true } })) {
+      return false;
+    }
+    const tally = await this.reports.teamTally(reader, now);
+    if (tally === null || minutesIntoDay(now, this.zone) < tally.firstStartMinutes + TEAM_SUMMARY_AFTER_FIRST_SHIFT_MINUTES) {
+      return false;
+    }
+    const { firstStartMinutes: _first, ...counts } = tally;
+    return this.items.open("TEAM_ATTENDANCE", { ...ref, employeeId: null }, { facts: { day, ...counts } });
   }
 
   /** Expire every summary of a day gone; a summary speaks of one morning.
