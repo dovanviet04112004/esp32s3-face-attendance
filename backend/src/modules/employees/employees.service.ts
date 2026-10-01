@@ -13,15 +13,16 @@ import { Prisma, type Employee } from "@prisma/client";
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
+import { isUnlinkedDesk, refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
 import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type LeavingsNowJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService } from "../audit/audit.service.js";
+import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { AuthService } from "../auth/auth.service.js";
+import { CompensationService, type FirstPay } from "../compensation/compensation.service.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ConsentService } from "../enrollment/consent.service.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
@@ -357,6 +358,10 @@ function updateHeld(tx: Prisma.TransactionClient, plans: RowPlan[]): Promise<num
   `;
 }
 
+function firstPayOf(row: ImportRow): FirstPay {
+  return { code: row.code as string, from: row.hireDate ?? null, base: row.baseSalary as string, insurance: row.insuranceSalary as string };
+}
+
 async function idsOf(tx: Prisma.TransactionClient, codes: string[]): Promise<Map<string, number>> {
   const rows = await tx.$queryRaw<{ id: number; code: string }[]>`
     SELECT "id", "code" FROM "Employee" WHERE "code" = ANY(${codes}::text[])
@@ -452,6 +457,7 @@ export class EmployeesService implements OnModuleInit {
     private readonly auth: AuthService,
     private readonly enrollment: EnrollmentService,
     private readonly consent: ConsentService,
+    private readonly compensation: CompensationService,
     private readonly config: ConfigService<Env, true>,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
@@ -495,6 +501,7 @@ export class EmployeesService implements OnModuleInit {
       managers,
       takenEmails: await this.loginEmailsAmong(asking),
       today: this.today(),
+      importer: { employeeId: viewer.employeeId, unlinkedDesk: isUnlinkedDesk(viewer) },
     });
     faults.push(...planned.faults);
     const { plans } = planned;
@@ -547,8 +554,9 @@ export class EmployeesService implements OnModuleInit {
           await updateHeld(tx, slice);
         }
         const flips = bossed.length > 0 ? await this.linkManagers(tx, bossed, bossed.map((one) => one.code as string), before) : [];
+        const paid: AuditEntry[] = [];
         for (const slice of chunks(rows.filter((row) => row.baseSalary && row.insuranceSalary))) {
-          await this.seedPay(tx, viewer, slice);
+          paid.push(...(await this.compensation.seedFirst(tx, viewer.userId, slice.map(firstPayOf), this.today())));
         }
         const ids = await idsOf(tx, codes);
         await writeShifts(tx, plans, ids);
@@ -558,7 +566,7 @@ export class EmployeesService implements OnModuleInit {
           plans.flatMap((one) => (one.consent ? [ids.get(one.row.code as string) ?? 0] : [])),
           "PAPER",
         );
-        return { flips, ids, consented: new Set(consented), ...(await this.stageLogins(tx, plans, ids)) };
+        return { flips, ids, paid, consented: new Set(consented), ...(await this.stageLogins(tx, plans, ids)) };
       },
       { timeout: kTransactionMs, maxWait: kTransactionMs },
     );
@@ -587,7 +595,8 @@ export class EmployeesService implements OnModuleInit {
         },
       ];
     });
-    for (const slice of chunks([...trail, ...this.consent.grantTrail(viewer.userId, [...written.consented], "PAPER")])) {
+    const consents = this.consent.grantTrail(viewer.userId, [...written.consented], "PAPER");
+    for (const slice of chunks([...trail, ...written.paid, ...consents])) {
       await this.audit.recordMany(slice);
     }
   }
@@ -722,26 +731,6 @@ export class EmployeesService implements OnModuleInit {
     await this.scope.assertNoManagerCycle(tx, movedIds);
     await repointPending(tx, movedIds);
     return this.users.syncManagerRoles([...moved.map(([id]) => before.get(id)), ...moved.map(([, boss]) => boss)], tx);
-  }
-
-  // Pay after the first record moves through /compensation, which writes down from and to (KEHOACH 9.24 rule 4).
-  private seedPay(tx: Prisma.TransactionClient, viewer: Viewer, rows: ImportRow[]): Promise<number> {
-    return tx.$executeRaw`
-      INSERT INTO "CompensationRecord" (
-        "id", "employeeId", "effectiveFrom", "baseSalary", "insuranceSalary",
-        "reason", "createdById", "createdAt")
-      SELECT gen_random_uuid(), e."id", COALESCE(v."from"::date, e."hireDate", ${this.today()}::date),
-             v."base"::numeric, v."insurance"::numeric,
-             'HIRE'::"PayReason", ${viewer.userId}, now()
-        FROM unnest(${rows.map((row) => row.code as string)}::text[],
-                    ${rows.map((row) => row.hireDate ?? null)}::text[],
-                    ${rows.map((row) => row.baseSalary as string)}::text[],
-                    ${rows.map((row) => row.insuranceSalary as string)}::text[])
-             AS v("code", "from", "base", "insurance")
-        JOIN "Employee" e ON e."code" = v."code"
-       WHERE NOT EXISTS (SELECT 1 FROM "CompensationRecord" c WHERE c."employeeId" = e."id")
-      ON CONFLICT ("employeeId", "effectiveFrom") DO NOTHING
-    `;
   }
 
   /**
@@ -1178,6 +1167,7 @@ export class EmployeesService implements OnModuleInit {
     if (!person) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
+    refuseOwn(viewer, person.id);
     if (person.leaveDate) {
       throw new ConflictException("EMPLOYEE_HAS_LEFT");
     }
@@ -1186,15 +1176,18 @@ export class EmployeesService implements OnModuleInit {
 
     const written = await this.db.$transaction(async (tx) => {
       const contractId = await this.writeContract(tx, person.id, body.contract, skipped);
-      const payId = await this.writePay(tx, person.id, start, body.pay, skipped);
+      const pay = await this.writePay(tx, viewer, person.id, start, body.pay, skipped);
       const leaveSeeded =
         body.seedLeave === false ? [] : await this.seedLeave(tx, person.id, start);
       const checklist =
         body.startChecklist === false
           ? null
           : await this.onboarding.plantIn(tx, person, "ONBOARDING", start);
-      return { contractId, payId, leaveSeeded, checklist };
+      return { contractId, pay, leaveSeeded, checklist };
     });
+    if (written.pay?.line) {
+      await this.audit.record(written.pay.line);
+    }
     if (body.startChecklist !== false && !written.checklist) {
       skipped.push("NO_CHECKLIST_TEMPLATE_OR_ALREADY_STARTED");
     }
@@ -1221,7 +1214,7 @@ export class EmployeesService implements OnModuleInit {
       code: person.code,
       startDate: body.contract.startDate,
       contractId: written.contractId,
-      payId: written.payId,
+      payId: written.pay?.id ?? null,
       leaveSeeded: written.leaveSeeded,
       checklist: written.checklist,
       userId: login?.userId ?? null,
@@ -1262,34 +1255,21 @@ export class EmployeesService implements OnModuleInit {
 
   private async writePay(
     tx: Prisma.TransactionClient,
+    viewer: Viewer,
     employeeId: number,
     effectiveFrom: Date,
     pay: OnboardDto["pay"],
     skipped: string[],
-  ): Promise<string | null> {
+  ): Promise<{ id: string; line: AuditEntry | null } | null> {
     if (!pay) {
       skipped.push("NO_PAY_GIVEN");
       return null;
     }
-    const held = await tx.compensationRecord.findUnique({
-      where: { employeeId_effectiveFrom: { employeeId, effectiveFrom } },
-      select: { id: true },
-    });
-    if (held) {
+    const staged = await this.compensation.stageFirst(tx, viewer, employeeId, effectiveFrom, pay);
+    if (!staged.line) {
       skipped.push("PAY_EXISTS");
-      return held.id;
     }
-    const made = await tx.compensationRecord.create({
-      data: {
-        employeeId,
-        effectiveFrom,
-        baseSalary: pay.baseSalary,
-        insuranceSalary: pay.insuranceSalary,
-        reason: "HIRE",
-      },
-      select: { id: true },
-    });
-    return made.id;
+    return staged;
   }
 
   private async seedLeave(

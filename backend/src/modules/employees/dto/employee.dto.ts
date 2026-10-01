@@ -705,7 +705,7 @@ export class OnboardDto {
 
   @ApiPropertyOptional({
     type: OnboardPayDto,
-    description: "First pay record, from the start date; left out, no pay is written",
+    description: "First pay record, from the start date; left out, or the person already paid, no pay is written",
     example: { baseSalary: 15_000_000, insuranceSalary: 15_000_000 },
   })
   @IsOptional()
@@ -769,7 +769,7 @@ export class OnboardingView {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: "The pay record written or already there; null when no pay was sent",
+    description: "The pay record written, or the newest one already there; null when no pay was sent",
     example: "4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d",
   })
   payId!: string | null;

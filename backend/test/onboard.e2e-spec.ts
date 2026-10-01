@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 import { paidLeaveType } from "./fixtures.js";
 
@@ -16,12 +17,18 @@ const HIRE = "E2EON01";
 const FROM_NEW_YEAR = "E2EON02";
 const BOSS = "E2EON03";
 const GONE = "E2EON04";
+const CLERK = "E2EON05";
+const PAID = "E2EON06";
 const EMAIL = "e2eon@kiosk.local";
 const SECOND_EMAIL = "e2eon2@kiosk.local";
+const CLERK_EMAIL = "e2eon-clerk@kiosk.local";
+const CLERK_PASSWORD = "kiosk-e2e-password";
 const TITLE = "E2EON-JT";
 const YEAR = 2039;
 const LATE_START = `${YEAR}-10-01`;
 const NEW_YEAR = `${YEAR}-01-01`;
+const FIRST_PAY = 15_000_000;
+const RAISED_PAY = 90_000_000;
 
 interface Seeded {
   code: string;
@@ -44,18 +51,21 @@ describe("onboarding (e2e)", () => {
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
   let token = "";
+  let clerkToken = "";
   let hireId = 0;
   let newYearId = 0;
   let bossId = 0;
   let goneId = 0;
+  let clerkId = 0;
+  let paidId = 0;
   let titleId = "";
   let fullYear = 0;
   let paidTypeId = "";
   let paidCode = "";
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL] } } });
-    await db.employee.deleteMany({ where: { code: { in: [HIRE, FROM_NEW_YEAR, GONE, BOSS] } } });
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL, CLERK_EMAIL] } } });
+    await db.employee.deleteMany({ where: { code: { in: [HIRE, FROM_NEW_YEAR, GONE, BOSS, CLERK, PAID] } } });
     await db.jobTitle.deleteMany({ where: { code: TITLE } });
   }
 
@@ -132,6 +142,35 @@ describe("onboarding (e2e)", () => {
     paidTypeId = paid.id;
     paidCode = paid.code;
     fullYear = Number(paid.daysPerYear);
+
+    const entity = await db.legalEntity.findUniqueOrThrow({ where: { code: "DEFAULT" } });
+    clerkId = (
+      await db.employee.create({
+        data: {
+          code: CLERK,
+          fullName: "Nhân sự tự nhận việc",
+          active: true,
+          legalEntityId: entity.id,
+          login: { create: { email: CLERK_EMAIL, passwordHash: await hashPassword(CLERK_PASSWORD), role: "HR" } },
+        },
+      })
+    ).id;
+    const clerk = await request(http).post("/auth/login").send({ email: CLERK_EMAIL, password: CLERK_PASSWORD });
+    assert.equal(clerk.status, 200, "the HR clerk could not sign in");
+    clerkToken = clerk.body.accessToken;
+    paidId = (
+      await db.employee.create({
+        data: {
+          code: PAID,
+          fullName: "Đã có lương",
+          active: true,
+          legalEntityId: entity.id,
+          compensation: {
+            create: { effectiveFrom: new Date(NEW_YEAR), baseSalary: FIRST_PAY, insuranceSalary: FIRST_PAY, reason: "HIRE" },
+          },
+        },
+      })
+    ).id;
   });
 
   after(async () => {
@@ -257,6 +296,61 @@ describe("onboarding (e2e)", () => {
     assert.ok(!listed.includes(over.id), "a probation over ten days ago is still listed");
     const mine = res.body.probationEnding.rows.find((row: { contractId: string }) => row.contractId === ahead.id);
     assert.equal(mine.daysLeft, 10);
+  });
+
+  it("writes the first pay through the pay door, with its from and to on the trail", async () => {
+    const line = await db.auditLog.findFirst({
+      where: { subjectType: "employee", subjectId: String(hireId), action: "pay.create" },
+    });
+    assert.ok(line, "the first pay of a hire left no pay line on the trail");
+    assert.deepEqual(
+      [(line.meta as { from?: unknown }).from, (line.meta as { to?: unknown }).to],
+      [null, String(FIRST_PAY)],
+    );
+  });
+
+  it("will not let anyone take themselves on, pay included", async () => {
+    const res = await request(http)
+      .post(`/employees/${clerkId}/onboard`)
+      .set("Authorization", `Bearer ${clerkToken}`)
+      .send({ contract: { kind: "INDEFINITE", startDate: LATE_START }, pay: { baseSalary: RAISED_PAY, insuranceSalary: RAISED_PAY } });
+    assert.equal(res.status, 403, JSON.stringify(res.body));
+    assert.equal(res.body.message, "SELF_DECISION");
+    assert.deepEqual(await counts(db, clerkId), [0, 0, 0, 0, 1], "a refused onboarding wrote something");
+  });
+
+  it("keeps the pay somebody already has, whatever start date the onboarding names", async () => {
+    const res = await request(http)
+      .post(`/employees/${paidId}/onboard`)
+      .set("Authorization", `Bearer ${clerkToken}`)
+      .send({
+        contract: { kind: "INDEFINITE", startDate: `${YEAR}-11-01` },
+        pay: { baseSalary: RAISED_PAY, insuranceSalary: RAISED_PAY },
+        startChecklist: false,
+        openLogin: false,
+      });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.ok((res.body as Report).skipped.includes("PAY_EXISTS"), "an onboarding wrote a second pay record");
+    const pay = await db.compensationRecord.findMany({ where: { employeeId: paidId } });
+    assert.deepEqual(
+      pay.map((one) => one.baseSalary.toFixed(0)),
+      [String(FIRST_PAY)],
+      "an onboarding raised the pay of somebody already paid",
+    );
+  });
+
+  it("refuses the first pay a file would give the person importing it", async () => {
+    const res = await request(http)
+      .post("/employees/import")
+      .set("Authorization", `Bearer ${clerkToken}`)
+      .send({ csv: ["code,fullName,baseSalary,insuranceSalary", `${CLERK},Nhân sự tự nhận việc,${RAISED_PAY},${RAISED_PAY}`].join("\r\n") });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const faults = (res.body as { faults: { column: string; code: string }[] }).faults;
+    assert.deepEqual(
+      faults.map((one) => [one.column, one.code]),
+      [["baseSalary", "SELF_DECISION"]],
+      "a file let its importer set their own pay",
+    );
   });
 });
 

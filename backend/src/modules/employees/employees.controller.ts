@@ -267,6 +267,7 @@ export class EmployeesController {
   @ApiOperation({ summary: "Take somebody on: contract, pay, leave, checklist and login (KEHOACH 9.14)" })
   @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: OnboardingView, description: "What was written, and beside it what was left alone" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMPLOYEE_HAS_LEFT" })
   onboard(

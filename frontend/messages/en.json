@@ -425,7 +425,7 @@
     "loginResent": "Setup link sent again",
     "skippedTitle": "{count, plural, one {Onboarded, with # step left undone} other {Onboarded, with # steps left undone}}",
     "skipped_NO_PAY_GIVEN": "No pay yet: add it on the Pay tab before the next payroll.",
-    "skipped_PAY_EXISTS": "A pay record from the start date already existed and was kept.",
+    "skipped_PAY_EXISTS": "This person already has pay on record, so it was kept. A raise goes through the Pay tab.",
     "skipped_CONTRACT_EXISTS": "A contract starting that day already existed and was kept.",
     "skipped_NO_CHECKLIST_TEMPLATE_OR_ALREADY_STARTED": "No onboarding checklist: no template matches the job title and department, or one was already open. Add a template on the Onboarding page.",
     "skipped_NO_EMAIL": "No account yet because the record has no personal email. Add one through a profile change, then use Open an account on the right.",
@@ -2335,7 +2335,9 @@
     "SHIFT_RETIRED": "This shift is retired. Download a fresh template for the current shifts.",
     "KIOSK_UNKNOWN": "No approved kiosk has this id.",
     "FLAG_INVALID": "YES or NO only.",
-    "CLEAR_NOT_ALLOWED": "This column cannot be cleared with -. Leave it empty to keep what is held."
+    "CLEAR_NOT_ALLOWED": "This column cannot be cleared with -. Leave it empty to keep what is held.",
+    "SELF_DECISION": "Nobody sets their own pay. Ask someone else to import this line.",
+    "DESK_NEEDS_EMPLOYEE": "Your account is not linked to your own record, so it cannot set pay for someone already here. Ask an administrator to link it."
   },
   "auditActions": {
     "employee_create": "Employee added",

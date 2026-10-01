@@ -394,6 +394,7 @@ export interface PlanInput {
   managers: ReadonlySet<string>;
   takenEmails: ReadonlySet<string>;
   today: string;
+  importer: { employeeId: number | null; unlinkedDesk: boolean };
 }
 
 export interface Planned {
@@ -659,6 +660,13 @@ export function planRows(input: PlanInput): Planned {
         }
       }
       payKept += row.baseSalary && held.hasPay ? 1 : 0;
+      if (row.baseSalary && !held.hasPay) {
+        const own = held.id === input.importer.employeeId;
+        // The importer never seeds their own pay, and an unlinked desk cannot tell which held line is theirs (KEHOACH 9.4).
+        if (own || input.importer.unlinkedDesk) {
+          fault("baseSalary", own ? "SELF_DECISION" : "DESK_NEEDS_EMPLOYEE");
+        }
+      }
     }
     const profile = held
       ? changesOf(row, place, held)

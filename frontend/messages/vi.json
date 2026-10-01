@@ -425,7 +425,7 @@
     "loginResent": "Đã gửi lại liên kết đặt mật khẩu",
     "skippedTitle": "{count, plural, other {Đã nhận việc, còn # bước chưa làm}}",
     "skipped_NO_PAY_GIVEN": "Chưa có mức lương: thêm ở tab Lương trước kỳ lương tới.",
-    "skipped_PAY_EXISTS": "Mức lương từ ngày vào làm đã có sẵn, giữ nguyên.",
+    "skipped_PAY_EXISTS": "Người này đã có mức lương nên giữ nguyên. Tăng lương thì làm ở tab Lương.",
     "skipped_CONTRACT_EXISTS": "Hợp đồng bắt đầu ngày ấy đã có sẵn, giữ nguyên.",
     "skipped_NO_CHECKLIST_TEMPLATE_OR_ALREADY_STARTED": "Chưa mở danh sách nhận việc: không có mẫu khớp chức danh và phòng ban, hoặc danh sách đã mở từ trước. Thêm mẫu ở trang Nhận việc.",
     "skipped_NO_EMAIL": "Chưa mở tài khoản vì hồ sơ chưa có email cá nhân. Thêm email qua đơn đổi thông tin rồi bấm Mở tài khoản ở cột phải.",
@@ -2335,7 +2335,9 @@
     "SHIFT_RETIRED": "Ca này đã ngừng dùng. Tải mẫu mới để có danh sách ca hiện tại.",
     "KIOSK_UNKNOWN": "Không có kiosk đã duyệt nào mang mã này.",
     "FLAG_INVALID": "Chỉ nhận YES hoặc NO.",
-    "CLEAR_NOT_ALLOWED": "Cột này không xoá được bằng -. Để trống nếu muốn giữ nguyên."
+    "CLEAR_NOT_ALLOWED": "Cột này không xoá được bằng -. Để trống nếu muốn giữ nguyên.",
+    "SELF_DECISION": "Không ai tự đặt mức lương cho chính mình. Nhờ một người khác nhập dòng này.",
+    "DESK_NEEDS_EMPLOYEE": "Tài khoản của bạn chưa gắn hồ sơ nên không đặt được mức lương cho người đã có hồ sơ. Nhờ quản trị viên gắn hồ sơ."
   },
   "auditActions": {
     "employee_create": "Thêm nhân viên",

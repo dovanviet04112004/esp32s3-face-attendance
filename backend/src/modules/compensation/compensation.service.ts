@@ -22,7 +22,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService } from "../audit/audit.service.js";
+import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import {
   PERSON_VIEW,
@@ -49,6 +49,14 @@ import {
 export type PayRecord = CompensationRecord & { allowances: CompensationAllowance[] };
 
 export type QueuedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+/** A first pay record an import line asks for; no `from` takes the hire date, then the fallback day. */
+export interface FirstPay {
+  code: string;
+  from: string | null;
+  base: string;
+  insurance: string;
+}
 
 export interface RaisePreview {
   employeeId: number;
@@ -87,6 +95,17 @@ function trail(before: object, patch: object): Prisma.InputJsonObject {
     }
   }
   return moved;
+}
+
+// A first record has no earlier one, so its from is null (KEHOACH 9.24 rule 4).
+function firstLine(actorId: string, employeeId: number, day: string, base: string): AuditEntry {
+  return {
+    actorId,
+    action: AUDIT_ACTIONS.PAY_CREATE,
+    subject: AUDIT_SUBJECTS.EMPLOYEE,
+    subjectId: String(employeeId),
+    meta: { effectiveFrom: day, from: null, to: base, reason: "HIRE", allowances: [] },
+  };
 }
 
 @Injectable()
@@ -256,6 +275,68 @@ export class CompensationService {
       },
     });
     return made;
+  }
+
+  /** Write a person's first pay record under the rules of create, or keep the one they have (KEHOACH 9.6).
+   *  @ctx inside the caller's transaction | record the line once it commits | PAY_WRITE_DENIED, SELF_DECISION
+   *  @ret the record written with its trail line, or the newest one held and no line
+   */
+  async stageFirst(
+    tx: Prisma.TransactionClient,
+    viewer: Viewer,
+    employeeId: number,
+    effectiveFrom: Date,
+    pay: { baseSalary: number; insuranceSalary: number },
+  ): Promise<{ id: string; line: AuditEntry | null }> {
+    this.mayWrite(viewer);
+    refuseOwn(viewer, employeeId);
+    // Held to the commit, so two passes at once cannot both find the person unpaid.
+    await tx.$queryRaw`SELECT "id" FROM "Employee" WHERE "id" = ${employeeId} FOR UPDATE`;
+    const held = await tx.compensationRecord.findFirst({
+      where: { employeeId },
+      orderBy: { effectiveFrom: "desc" },
+      select: { id: true },
+    });
+    if (held) {
+      return { id: held.id, line: null };
+    }
+    const made = await tx.compensationRecord.create({
+      data: {
+        employeeId,
+        effectiveFrom,
+        baseSalary: pay.baseSalary,
+        insuranceSalary: pay.insuranceSalary,
+        reason: "HIRE",
+        createdById: viewer.userId,
+      },
+    });
+    const day = made.effectiveFrom.toISOString().slice(0, 10);
+    return { id: made.id, line: firstLine(viewer.userId, employeeId, day, made.baseSalary.toFixed(0)) };
+  }
+
+  /** Write the first pay record of every listed person who has none, in one statement (KEHOACH 9.6).
+   *  @ctx inside the caller's transaction | the import's plan has refused the importer's own line
+   *  @ret the trail lines to record once the transaction commits
+   */
+  async seedFirst(tx: Prisma.TransactionClient, actorId: string, rows: readonly FirstPay[], fallbackDay: string): Promise<AuditEntry[]> {
+    const made = await tx.$queryRaw<{ employeeId: number; day: string; base: string }[]>`
+      INSERT INTO "CompensationRecord" (
+        "id", "employeeId", "effectiveFrom", "baseSalary", "insuranceSalary",
+        "reason", "createdById", "createdAt")
+      SELECT gen_random_uuid(), e."id", COALESCE(v."from"::date, e."hireDate", ${fallbackDay}::date),
+             v."base"::numeric, v."insurance"::numeric,
+             'HIRE'::"PayReason", ${actorId}, now()
+        FROM unnest(${rows.map((row) => row.code)}::text[],
+                    ${rows.map((row) => row.from)}::text[],
+                    ${rows.map((row) => row.base)}::text[],
+                    ${rows.map((row) => row.insurance)}::text[])
+             AS v("code", "from", "base", "insurance")
+        JOIN "Employee" e ON e."code" = v."code"
+       WHERE NOT EXISTS (SELECT 1 FROM "CompensationRecord" c WHERE c."employeeId" = e."id")
+      ON CONFLICT ("employeeId", "effectiveFrom") DO NOTHING
+      RETURNING "employeeId", "effectiveFrom"::text AS "day", "baseSalary"::text AS "base"
+    `;
+    return made.map((one) => firstLine(actorId, one.employeeId, one.day, one.base));
   }
 
   /** What a bulk raise would write, while it is still only a proposal. The
