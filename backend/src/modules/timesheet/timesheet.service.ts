@@ -26,6 +26,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { JOB, QUEUE, type RebuildJob, type TimesheetJob } from "../../queue/queues.js";
+import { NotificationsService } from "../notifications/notifications.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { MAX_DAY_ROWS, type CorrectDayDto, type ListDaysDto, type SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
@@ -147,6 +148,7 @@ export class TimesheetService implements OnModuleInit {
     private readonly config: ConfigService<Env, true>,
     private readonly audit: AuditService,
     private readonly attendance: AttendanceSweep,
+    private readonly notices: NotificationsService,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
@@ -373,6 +375,12 @@ export class TimesheetService implements OnModuleInit {
       },
     });
     await this.attendance.closeVanished(held.employeeId);
+    const day = held.date.toISOString().slice(0, 10);
+    await this.notices.raiseFor(held.employeeId, "DAY_CORRECTED", {
+      personDay: `${held.employeeId}:${day}`,
+      day,
+      correctedAt: (corrected.adjustedAt ?? new Date()).getTime(),
+    });
     return corrected;
   }
 

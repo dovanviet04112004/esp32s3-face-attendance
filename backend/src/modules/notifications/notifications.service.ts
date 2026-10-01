@@ -59,6 +59,9 @@ export interface NoticeFacts {
   failed?: boolean;
   payslips?: number;
   finishedAt?: number;
+  personDay?: string;
+  day?: string;
+  correctedAt?: number;
 }
 
 // The first reference present names the subject; an answered dispute carries its slip as well.
@@ -72,6 +75,7 @@ const SUBJECT_REFS: readonly (readonly [keyof NoticeFacts, NoticeSubject])[] = [
   ["payslipId", "PAYSLIP"],
   ["contractId", "CONTRACT"],
   ["runId", "PAYROLL_RUN"],
+  ["personDay", "PERSON_DAY"],
 ];
 
 /** The facts a kind declares, read off the references a caller passed (KEHOACH 9.21.4). */

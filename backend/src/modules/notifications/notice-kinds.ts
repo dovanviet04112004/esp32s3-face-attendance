@@ -216,6 +216,15 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     defaults: { IN_APP: true, PUSH: true },
     facts: { day: "day", late: "number", notPunched: "number", absent: "number", onLeave: "number" },
   },
+  // Only somebody else's hand on the day; an approved request of their own is told as its decision (KEHOACH 9.21.4).
+  DAY_CORRECTED: {
+    category: "ATTENDANCE",
+    level: "INFO",
+    receivers: "self",
+    item: false,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { day: "day", correctedAt: "number" },
+  },
   // Off until /me carries a contract card: a notice that opens nothing about it is a dead end (KEHOACH 9.15 rule 1).
   CONTRACT_ENDING: {
     category: "PEOPLE",

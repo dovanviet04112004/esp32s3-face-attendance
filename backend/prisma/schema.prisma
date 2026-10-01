@@ -1394,6 +1394,7 @@ enum NoticeKind {
   DOCUMENT_TO_SIGN
   ATTENDANCE_EXCEPTION
   TEAM_ATTENDANCE
+  DAY_CORRECTED
 }
 
 enum NoticeChannel {
