@@ -5,7 +5,7 @@ import type { PayslipDispute, Prisma } from "@prisma/client";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -146,9 +146,7 @@ export class DisputesService {
     }
     const held = await this.open(id);
     // Payroll answering its own claim would settle its own back pay (KEHOACH 9.4).
-    if (held.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, held.employeeId);
     const slip = await this.db.payslip.findUniqueOrThrow({
       where: { id: held.payslipId },
       select: { periodId: true },

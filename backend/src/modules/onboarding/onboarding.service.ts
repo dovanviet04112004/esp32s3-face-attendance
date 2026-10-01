@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type {
   ChecklistKind,
@@ -11,7 +11,7 @@ import type {
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -344,8 +344,8 @@ export class OnboardingService {
       throw new ConflictException("TASK_ALREADY_DONE");
     }
     // The person on the checklist ticks their own tasks, not the desk's or their manager's (KEHOACH 9.4).
-    if (task.run.employeeId === viewer.employeeId && task.ownerRole !== "SELF") {
-      throw new ForbiddenException("SELF_DECISION");
+    if (task.ownerRole !== "SELF") {
+      refuseOwn(viewer, task.run.employeeId);
     }
     // Claimed by the update itself, so two people ticking at once cannot both be recorded.
     const claimed = await this.db.checklistTask.updateMany({

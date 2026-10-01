@@ -16,7 +16,7 @@ import type {
 
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
@@ -217,9 +217,7 @@ export class CompensationService {
   async create(viewer: Viewer, body: CreateCompensationDto): Promise<PayRecord> {
     this.mayWrite(viewer);
     // Setting one's own pay is the check the desk split exists for (KEHOACH 9.4).
-    if (body.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, body.employeeId);
     const allowances = await this.allowanceRows(body);
     const held = await this.atDate(body.employeeId, new Date(body.effectiveFrom));
     const made = await this.db.compensationRecord
@@ -265,6 +263,7 @@ export class CompensationService {
    */
   async previewRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaisePreview[]> {
     this.mayWrite(viewer);
+    refuseOwn(viewer);
     const on = new Date(body.effectiveFrom);
     const chosen = body.employeeIds?.length ? body.employeeIds : null;
     const branch = body.departmentId ? await departmentSubtree(this.db, body.departmentId) : null;
@@ -443,9 +442,7 @@ export class CompensationService {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
     // A dependent lowers the claimant's own tax, so the claimant never approves it (KEHOACH 9.4).
-    if (held.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, held.employeeId);
     const claimed = await this.db.dependent.updateMany({
       where: { id, state: "PENDING" },
       data: {

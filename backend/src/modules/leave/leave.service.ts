@@ -21,7 +21,7 @@ import { toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -538,6 +538,9 @@ export class LeaveService {
     if (refusal === "SELF_DECISION") {
       throw new ForbiddenException("SELF_DECISION");
     }
+    if (refusal === "DESK_NEEDS_EMPLOYEE") {
+      throw new ForbiddenException("DESK_NEEDS_EMPLOYEE");
+    }
     if (refusal !== null) {
       throw new ForbiddenException("NOT_YOUR_REQUEST");
     }
@@ -874,10 +877,13 @@ export class LeaveService {
   private async refusal(
     viewer: Viewer,
     held: Pick<LeaveRequest, "employeeId" | "approverId">,
-  ): Promise<"SELF_DECISION" | "NOT_YOUR_REQUEST" | null> {
+  ): Promise<"SELF_DECISION" | "DESK_NEEDS_EMPLOYEE" | "NOT_YOUR_REQUEST" | null> {
     // No role decides its own request, the desk included (KEHOACH 9.4).
     if (held.employeeId === viewer.employeeId) {
       return "SELF_DECISION";
+    }
+    if (isUnlinkedDesk(viewer)) {
+      return "DESK_NEEDS_EMPLOYEE";
     }
     if (THE_DESK.includes(viewer.role)) {
       return null;

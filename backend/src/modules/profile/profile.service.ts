@@ -13,7 +13,7 @@ import type { Employee, Prisma, ProfileChange } from "@prisma/client";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
@@ -315,9 +315,10 @@ export class ProfileService {
     }
     const held = await this.waiting(id);
     // Neither the person whose record it is nor the one who asked decides it (KEHOACH 9.17 item 6 rule 2).
-    if (held.employeeId === viewer.employeeId || (held.askedById !== null && held.askedById === viewer.userId)) {
+    if (held.askedById !== null && held.askedById === viewer.userId) {
       throw new ForbiddenException("SELF_DECISION");
     }
+    refuseOwn(viewer, held.employeeId);
     return held;
   }
 }

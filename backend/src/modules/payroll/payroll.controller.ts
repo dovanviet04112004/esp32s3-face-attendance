@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -22,6 +23,7 @@ import {
 import type { PayrollPeriod, PayrollRun } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
@@ -212,6 +214,7 @@ export class PayrollController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Load the amounts a bonus run pays; nobody loads their own (SELF_DECISION)" })
   @ApiCreatedResponse({ type: ItemCount })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setBonus(
     @CurrentViewer() viewer: Viewer,
@@ -236,8 +239,9 @@ export class PayrollController {
   @Post("payroll-runs/:id/settlement")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
-  @ApiOperation({ summary: "Load the severance and offsets somebody signed for" })
+  @ApiOperation({ summary: "Load the severance and offsets somebody signed for; nobody loads their own (SELF_DECISION)" })
   @ApiCreatedResponse({ type: ItemCount })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setSettlement(
     @CurrentViewer() viewer: Viewer,

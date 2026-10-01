@@ -1513,6 +1513,7 @@
     "PAY_DATE_TAKEN": "This person already has a pay record from that date. Pick another date.",
     "TEMPLATE_NOT_FOUND": "This checklist template does not exist.",
     "ROLE_NEEDS_EMPLOYEE": "This role needs a linked employee record.",
+    "DESK_NEEDS_EMPLOYEE": "An HR or payroll account must be linked to its holder's own employee record. Ask an administrator to link it on the Accounts page.",
     "SELF_ACCOUNT": "You cannot demote, lock or delete your own account.",
     "EMPLOYEE_HAS_ACCOUNT": "This employee already has a login.",
     "ACCOUNT_LOCKED": "This account is locked. Unlock it on the Accounts page first.",

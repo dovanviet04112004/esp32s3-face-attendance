@@ -24,7 +24,7 @@ import { toCsv, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { namedFilter, PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
@@ -931,9 +931,7 @@ export class PayrollService {
   async setBonus(viewer: Viewer, runId: string, items: BonusItemDto[]): Promise<{ items: number }> {
     this.mayWrite(viewer);
     // Nobody sets their own pay (KEHOACH 9.4).
-    if (viewer.employeeId !== null && items.some((item) => item.employeeId === viewer.employeeId)) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, ...items.map((item) => item.employeeId));
     const run = await this.db.payrollRun.findUnique({ where: { id: runId } });
     if (!run) {
       throw new NotFoundException("RUN_NOT_FOUND");
@@ -1555,6 +1553,7 @@ export class PayrollService {
     items: SettlementItemDto[],
   ): Promise<{ items: number }> {
     this.mayWrite(viewer);
+    refuseOwn(viewer, ...items.map((item) => item.employeeId));
     const run = await this.db.payrollRun.findUnique({
       where: { id: runId },
       include: { period: true },

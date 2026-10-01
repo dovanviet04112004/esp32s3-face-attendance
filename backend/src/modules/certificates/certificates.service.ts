@@ -5,7 +5,7 @@ import type { Certificate, PayslipState, Prisma } from "@prisma/client";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -245,9 +245,7 @@ export class CertificatesService {
       throw new ForbiddenException("HR_ONLY");
     }
     const held = await this.waiting(id);
-    if (held.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, held.employeeId);
     return held;
   }
 

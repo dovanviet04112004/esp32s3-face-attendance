@@ -66,7 +66,7 @@ export class ProfileController {
   @ApiOperation({ summary: "Write it into the record; neither its owner nor its asker may be the one who does" })
   @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
   approve(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<ProfileChange> {
     return this.profile.approve(viewer, id);
@@ -77,7 +77,7 @@ export class ProfileController {
   @ApiOperation({ summary: "Turn one down, with a reason the asker can read" })
   @ApiParam(CHANGE_ID)
   @ApiCreatedResponse({ type: ProfileChangeView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "HR_ONLY, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "PROFILE_CHANGE_DECIDED" })
   reject(
     @Param("id") id: string,

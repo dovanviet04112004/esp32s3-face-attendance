@@ -62,9 +62,9 @@ describe("users and audit (e2e)", () => {
     const res = await request(http)
       .post("/users")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ email: MADE_EMAIL, role: "HR" });
+      .send({ email: MADE_EMAIL, role: "VIEWER" });
     assert.equal(res.status, 201);
-    assert.equal(res.body.role, "HR");
+    assert.equal(res.body.role, "VIEWER");
     assert.deepEqual(
       Object.keys(res.body).sort(),
       ["active", "createdAt", "email", "employee", "id", "lastSeenAt", "pending", "role"],
@@ -75,10 +75,10 @@ describe("users and audit (e2e)", () => {
   });
 
   it("lists the accounts of one role, and counts only those", async () => {
-    const res = await request(http).get("/users?role=HR&take=200").set("Authorization", `Bearer ${admin}`);
+    const res = await request(http).get("/users?role=VIEWER&take=200").set("Authorization", `Bearer ${admin}`);
     assert.equal(res.status, 200);
     const rows = res.body.rows as { email: string; role: string }[];
-    assert.ok(rows.length > 0 && rows.every((row) => row.role === "HR"), "another role came back");
+    assert.ok(rows.length > 0 && rows.every((row) => row.role === "VIEWER"), "another role came back");
     assert.ok(rows.some((row) => row.email === MADE_EMAIL), "the account just made is missing");
     assert.equal(res.body.total, rows.length);
     const wrong = await request(http).get("/users?role=OWNER").set("Authorization", `Bearer ${admin}`);

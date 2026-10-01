@@ -19,6 +19,7 @@ import { JOB, QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue
 import type { Env } from "../../config/env.schema.js";
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { LINKED_DESKS } from "../../common/scope/viewer.js";
 import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -43,8 +44,8 @@ import type {
 const UNIQUE_VIOLATION = "P2002";
 const HOUR_MS = 3_600_000;
 
-// Roles that read or decide as one particular person in the company (KEHOACH 9.4).
-const NEEDS_EMPLOYEE: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER", "PAYROLL"]);
+// Roles that read as one particular person in the company (KEHOACH 9.4).
+const NEEDS_EMPLOYEE: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER"]);
 const TREE_ROLES: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER"]);
 
 function fingerprint(token: string): string {
@@ -781,6 +782,9 @@ function assertLinkable(person: Linkable, accountId: string | null): void {
 
 /** The role an account ends up with: EMPLOYEE and MANAGER are read off the org tree (KEHOACH 9.4). */
 function settledRole(asked: Role, person: Linkable | null): Role {
+  if (LINKED_DESKS.has(asked) && !person) {
+    throw new BadRequestException("DESK_NEEDS_EMPLOYEE");
+  }
   if (NEEDS_EMPLOYEE.has(asked) && !person) {
     throw new BadRequestException("ROLE_NEEDS_EMPLOYEE");
   }

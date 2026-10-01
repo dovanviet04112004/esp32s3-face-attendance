@@ -15,7 +15,7 @@ import type {
 } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -324,8 +324,9 @@ export class OrgService {
    */
   async addContract(
     body: CreateContractDto,
-    actorId: string,
+    viewer: Viewer,
   ): Promise<EmploymentContract> {
+    refuseOwn(viewer, body.employeeId);
     const signer = await this.db.employee.count({ where: { id: body.employeeId } });
     if (signer === 0) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
@@ -342,7 +343,7 @@ export class OrgService {
       },
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.CONTRACT_CREATE,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(body.employeeId),
@@ -355,12 +356,13 @@ export class OrgService {
   async decideContract(
     id: string,
     body: DecideContractDto,
-    actorId: string,
+    viewer: Viewer,
   ): Promise<EmploymentContract> {
     const held = await this.db.employmentContract.findUnique({ where: { id } });
     if (!held) {
       throw new NotFoundException("CONTRACT_NOT_FOUND");
     }
+    refuseOwn(viewer, held.employeeId);
     const moved = await this.db.$transaction(async (tx) => {
       if (body.state === "ACTIVE") {
         await tx.employmentContract.updateMany({
@@ -378,7 +380,7 @@ export class OrgService {
       });
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.CONTRACT_DECIDE,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(held.employeeId),

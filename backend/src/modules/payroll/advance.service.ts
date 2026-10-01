@@ -5,7 +5,7 @@ import type { Prisma, SalaryAdvance } from "@prisma/client";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -142,9 +142,7 @@ export class AdvanceService {
       throw new ForbiddenException("ADVANCE_DECIDE_DENIED");
     }
     const found = await this.require(id);
-    if (found.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, found.employeeId);
     // Guarded on the state, so a withdrawal or a second desk landing first leaves this one refused.
     const claimed = await this.db.salaryAdvance.updateMany({
       where: { id, state: "PENDING" },
@@ -187,9 +185,7 @@ export class AdvanceService {
     }
     const found = await this.require(id);
     // Paying oneself is deciding one's own money a second time (KEHOACH 9.4).
-    if (found.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, found.employeeId);
     const claimed = await this.db.salaryAdvance.updateMany({
       where: { id, state: "APPROVED" },
       data: { state: "PAID", paidAt: new Date() },

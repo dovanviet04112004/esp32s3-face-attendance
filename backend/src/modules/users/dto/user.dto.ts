@@ -21,7 +21,7 @@ export class CreateUserDto {
   @ApiProperty({
     enum: Role,
     enumName: "Role",
-    description: "EMPLOYEE, MANAGER and PAYROLL need employeeId; EMPLOYEE and MANAGER settle on whichever the org tree says",
+    description: "Every role but ADMIN and VIEWER needs employeeId; EMPLOYEE and MANAGER settle on whichever the org tree says",
     example: Role.HR,
   })
   @IsEnum(Role)

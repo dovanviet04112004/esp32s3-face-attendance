@@ -15,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -135,12 +136,13 @@ export class OrgController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Re-signing is a new contract, never an edit" })
   @ApiCreatedResponse({ type: ContractView, description: "Starts as DRAFT" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   addContract(
     @CurrentViewer() viewer: Viewer,
     @Body() body: CreateContractDto,
   ): Promise<EmploymentContract> {
-    return this.org.addContract(body, viewer.userId);
+    return this.org.addContract(body, viewer);
   }
 
   @Patch("contracts/:id")
@@ -149,13 +151,14 @@ export class OrgController {
   @ApiOperation({ summary: "Move a contract on; activating one ends the rest" })
   @ApiParam({ name: "id", description: "Contract id", example: "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f" })
   @ApiOkResponse({ type: ContractView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "CONTRACT_NOT_FOUND" })
   decideContract(
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
     @Body() body: DecideContractDto,
   ): Promise<EmploymentContract> {
-    return this.org.decideContract(id, body, viewer.userId);
+    return this.org.decideContract(id, body, viewer);
   }
 
   @Get("legal-entities")

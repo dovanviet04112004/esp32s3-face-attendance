@@ -23,6 +23,7 @@ import {
   ApiConflictResponse,
   ApiConsumes,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -196,6 +197,7 @@ export class EmployeesController {
   })
   @ApiCreatedResponse({ type: LeavingPlanView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "DESK_NEEDS_EMPLOYEE" })
   @ApiConflictResponse({ type: ErrorBody, description: "SELECTION_CHANGED" })
   offboardMany(
     @CurrentViewer() viewer: Viewer,
@@ -302,6 +304,7 @@ export class EmployeesController {
   @ApiOperation({ summary: "Move a scheduled last day; one of today or earlier closes the record now" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: OffboardingView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
   moveLeaving(
@@ -318,6 +321,7 @@ export class EmployeesController {
   @ApiOperation({ summary: "Call off a scheduled leaving before the record closes" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: EmployeeView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "LEAVING_CLOSED, LEAVING_NOT_SCHEDULED" })
   cancelLeaving(@CurrentViewer() viewer: Viewer, @Param("id", ParseIntPipe) id: number): Promise<Employee> {

@@ -120,7 +120,7 @@ export class CompensationController {
   @ApiOperation({ summary: "A raise appends a record; nothing is overwritten" })
   @ApiCreatedResponse({ type: PayRecordView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ALLOWANCE_TYPE_REPEATED" })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED | SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND | ALLOWANCE_TYPE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "PAY_DATE_TAKEN" })
   create(@CurrentViewer() viewer: Viewer, @Body() body: CreateCompensationDto): Promise<PayRecord> {
@@ -133,6 +133,7 @@ export class CompensationController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "What a bulk raise would write; the writer's own record is left out" })
   @ApiCreatedResponse({ type: [RaisePreviewView] })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
   preview(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<RaisePreview[]> {
     return this.pay.previewRaise(viewer, body);
   }
@@ -143,6 +144,7 @@ export class CompensationController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Write the raise the preview showed; allowances carry forward" })
   @ApiCreatedResponse({ type: RaiseWrittenView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
   bulk(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<{ written: number }> {
     return this.pay.applyRaise(viewer, body);
   }
@@ -182,7 +184,7 @@ export class CompensationController {
   @Roles("ADMIN", "PAYROLL")
   @ApiOperation({ summary: "Accept or turn down a registration still waiting" })
   @ApiCreatedResponse({ type: DependentView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DEPENDENT_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "REQUEST_ALREADY_DECIDED" })
   @ApiParam({

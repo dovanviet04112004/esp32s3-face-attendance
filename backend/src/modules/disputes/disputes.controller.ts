@@ -64,7 +64,7 @@ export class DisputesController {
   @AuditedInService()
   @ApiOperation({ summary: "Answer one; upholding with an amount mints the adjustment" })
   @ApiCreatedResponse({ type: DisputeView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DISPUTE_ALREADY_ANSWERED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DISPUTE_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Dispute id (UUID)", example: "6ccf84bd-c7d6-4ee6-9217-aa0aaa9380ac" })

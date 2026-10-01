@@ -58,15 +58,15 @@ describe("the last active administrator (e2e)", () => {
 
   it("counts a locked administrator out, so the only active one can be neither locked nor demoted", async () => {
     await assert.rejects(users.update(locked, seedAdmin, { active: false }), lastAdmin);
-    await assert.rejects(users.update(locked, seedAdmin, { role: "HR" }), lastAdmin);
+    await assert.rejects(users.update(locked, seedAdmin, { role: "VIEWER" }), lastAdmin);
     const held = await db.user.findUniqueOrThrow({ where: { id: seedAdmin } });
     assert.deepEqual([held.role, held.active], ["ADMIN", true]);
   });
 
   it("lets an administrator go once another active one exists", async () => {
     await users.update(seedAdmin, locked, { active: true });
-    await users.update(seedAdmin, locked, { role: "HR" });
-    assert.equal((await db.user.findUniqueOrThrow({ where: { id: locked } })).role, "HR");
+    await users.update(seedAdmin, locked, { role: "VIEWER" });
+    assert.equal((await db.user.findUniqueOrThrow({ where: { id: locked } })).role, "VIEWER");
     await users.update(seedAdmin, locked, { active: false });
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: locked } })).active, false);
   });

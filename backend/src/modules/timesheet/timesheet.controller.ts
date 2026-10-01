@@ -3,6 +3,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -111,6 +112,7 @@ export class TimesheetController {
   @Roles("ADMIN", "HR")
   @ApiOperation({ summary: "Correct somebody else's day by hand, leaving the measurement and a trace" })
   @ApiOkResponse({ type: DayView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiErrors(HttpStatus.NOT_FOUND)
   @ApiParam({ name: "id", description: "Day row id, a decimal integer", example: "18342" })
   correct(

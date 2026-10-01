@@ -13,7 +13,7 @@ import { Prisma, type Employee } from "@prisma/client";
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
 import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
@@ -1360,6 +1360,7 @@ export class EmployeesService implements OnModuleInit {
   /** Move a scheduled last day; a day already here closes the record as recording it would. */
   async moveLeaving(viewer: Viewer, id: number, body: MoveLeavingDto): Promise<Offboarding> {
     const person = await this.get(id, viewer);
+    refuseOwn(viewer, id);
     const lastDay = body.leaveDate.slice(0, 10);
     const moved = await this.db.employee.updateMany({
       where: { id, active: true, leaveDate: { not: null } },
@@ -1381,6 +1382,7 @@ export class EmployeesService implements OnModuleInit {
   /** Call off a leaving that has not happened yet; the person carries on working. */
   async cancelLeaving(viewer: Viewer, id: number): Promise<Employee> {
     const person = await this.get(id, viewer);
+    refuseOwn(viewer, id);
     const cancelled = await this.db.employee.updateMany({
       where: { id, active: true, leaveDate: { not: null } },
       data: { leaveDate: null },

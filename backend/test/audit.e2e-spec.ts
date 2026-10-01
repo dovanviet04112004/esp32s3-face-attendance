@@ -161,8 +161,8 @@ describe("audit trail (e2e)", () => {
     const moved = await request(http)
       .patch(`/users/${accountId}`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ role: "HR" });
-    assert.equal(moved.status, 200);
+      .send({ role: "HR", employeeId });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
 
     const rows = await trail(`subjectType=user&subjectId=${accountId}&action=user.role`);
     assert.equal(rows.length, 1);

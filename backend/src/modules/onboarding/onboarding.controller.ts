@@ -146,7 +146,7 @@ export class OnboardingController {
   @ApiOperation({ summary: "Mark one onboarding task done" })
   @ApiParam({ name: "id", description: "Task id", example: "8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f" })
   @ApiCreatedResponse({ type: FinishedTaskView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "TASK_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "TASK_ALREADY_DONE" })
   finish(

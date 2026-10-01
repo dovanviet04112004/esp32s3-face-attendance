@@ -104,7 +104,10 @@ export class UsersController {
   @AuditedInService()
   @ApiOperation({ summary: "Open a login with any of the six roles and mail its one-time setup link" })
   @ApiCreatedResponse({ type: AccountView })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE: EMPLOYEE, MANAGER and PAYROLL need employeeId" })
+  @ApiBadRequestResponse({
+    type: ErrorBody,
+    description: "ROLE_NEEDS_EMPLOYEE: EMPLOYEE and MANAGER need employeeId; DESK_NEEDS_EMPLOYEE: so do HR and PAYROLL",
+  })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT, EMPLOYEE_HAS_LEFT" })
   create(@Body() body: CreateUserDto, @Req() req: Request): Promise<AccountView> {
@@ -134,7 +137,7 @@ export class UsersController {
   })
   @ApiParam(ACCOUNT_ID)
   @ApiOkResponse({ type: AccountView })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE" })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE, DESK_NEEDS_EMPLOYEE" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({
     type: ErrorBody,

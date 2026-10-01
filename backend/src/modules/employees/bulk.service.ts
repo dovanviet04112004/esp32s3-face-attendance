@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { Prisma } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
@@ -521,6 +521,7 @@ export class BulkService {
    *  apply=true writes the day in one transaction; a day already here queues the closing (KEHOACH 9.14).
    */
   async offboard(viewer: Viewer, body: BulkOffboardDto, apply: boolean): Promise<LeavingPlan> {
+    refuseOwn(viewer);
     const lastDay = body.leaveDate.slice(0, 10);
     const closesNow = lastDay <= this.employees.today();
     const chosen = await this.resolve(viewer, body);

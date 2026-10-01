@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -21,7 +20,7 @@ import {
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -343,9 +342,7 @@ export class TimesheetService implements OnModuleInit {
       throw new NotFoundException("DAY_NOT_FOUND");
     }
     // Nobody signs off their own timesheet (KEHOACH 9.4).
-    if (held.employeeId === viewer.employeeId) {
-      throw new ForbiddenException("SELF_DECISION");
-    }
+    refuseOwn(viewer, held.employeeId);
     if (body.workedMinutes === undefined && body.state === undefined) {
       throw new BadRequestException("NOTHING_TO_CORRECT");
     }

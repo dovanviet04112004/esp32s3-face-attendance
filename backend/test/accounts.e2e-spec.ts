@@ -124,16 +124,21 @@ describe("accounts and roles (e2e)", () => {
     await app.close();
   });
 
-  it("grants each of the six roles, and ties the three that act as a person to a record", async () => {
+  it("grants each of the six roles, and ties the four that act as a person to a record", async () => {
     const grant = (email: string, role: string, employeeId?: number) =>
       asAdmin("post", "/users").send({ email, role, ...(employeeId === undefined ? {} : { employeeId }) });
 
-    for (const role of ["EMPLOYEE", "MANAGER", "PAYROLL"]) {
+    for (const [role, code] of [
+      ["EMPLOYEE", "ROLE_NEEDS_EMPLOYEE"],
+      ["MANAGER", "ROLE_NEEDS_EMPLOYEE"],
+      ["HR", "DESK_NEEDS_EMPLOYEE"],
+      ["PAYROLL", "DESK_NEEDS_EMPLOYEE"],
+    ] as const) {
       const bare = await grant(mail(`bare-${role}`), role);
       assert.equal(bare.status, 400, `${role} opened with no employee behind it`);
-      assert.equal(bare.body.message, "ROLE_NEEDS_EMPLOYEE");
+      assert.equal(bare.body.message, code);
     }
-    for (const role of ["ADMIN", "HR", "VIEWER"]) {
+    for (const role of ["ADMIN", "VIEWER"]) {
       const made = await grant(mail(`free-${role}`), role);
       assert.equal(made.status, 201, JSON.stringify(made.body));
       assert.equal(made.body.role, role);
@@ -219,7 +224,7 @@ describe("accounts and roles (e2e)", () => {
 
   it("finds an account by email, code or name, and pages through them by email", async () => {
     const mine = await page(`search=${encodeURIComponent(DOMAIN)}&take=200`);
-    assert.ok(mine.total >= 9, `only ${mine.total} of this suite's accounts matched`);
+    assert.ok(mine.total >= 8, `only ${mine.total} of this suite's accounts matched`);
     assert.ok(mine.rows.every((row) => row.email.endsWith(DOMAIN)));
 
     const seen: string[] = [];
@@ -280,9 +285,9 @@ describe("accounts and roles (e2e)", () => {
     const kept = await asAdmin("delete", `/users/${account.BOSS}`);
     assert.equal(kept.status, 409);
     assert.equal(kept.body.message, "ACCOUNT_HAS_HISTORY");
-    const gone = await asAdmin("delete", `/users/${account["free-HR"]}`);
+    const gone = await asAdmin("delete", `/users/${account["free-ADMIN"]}`);
     assert.equal(gone.status, 204);
-    assert.equal(await db.user.count({ where: { id: account["free-HR"] } }), 0);
+    assert.equal(await db.user.count({ where: { id: account["free-ADMIN"] } }), 0);
   });
 
   it("makes somebody MANAGER when a report arrives and EMPLOYEE when it moves away", async () => {
@@ -346,5 +351,17 @@ describe("accounts and roles (e2e)", () => {
     const left = await asAdmin("post", `/employees/${person.STAFF}/offboard`).send({ leaveDate: "2026-01-31" });
     assert.equal(left.status, 201, JSON.stringify(left.body));
     assert.equal(await roleOf(account.BOSS), "EMPLOYEE", "a manager of nobody still working stayed MANAGER");
+  });
+
+  it("keeps HR and PAYROLL on a record through every role change and every relink", async () => {
+    const promoted = await asAdmin("patch", `/users/${account["free-VIEWER"]}`).send({ role: "PAYROLL" });
+    assert.equal(promoted.status, 400, "an account with no record became PAYROLL");
+    assert.equal(promoted.body.message, "DESK_NEEDS_EMPLOYEE");
+    assert.equal(await roleOf(account["free-VIEWER"]), "VIEWER");
+    const unlinked = await asAdmin("patch", `/users/${account.DESK}`).send({ employeeId: null });
+    assert.equal(unlinked.status, 400, "an HR account dropped its record");
+    assert.equal(unlinked.body.message, "DESK_NEEDS_EMPLOYEE");
+    const held = await db.user.findUniqueOrThrow({ where: { id: account.DESK } });
+    assert.equal(held.employeeId, person.DESK);
   });
 });

@@ -192,7 +192,7 @@ export class LeaveController {
   @Post("requests/:id/decide")
   @ApiOperation({ summary: "Approve or turn down; the balance moves here" })
   @ApiCreatedResponse({ type: FiledRequestView })
-  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, NOT_YOUR_REQUEST" })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE, NOT_YOUR_REQUEST" })
   @ApiConflictResponse({ type: ErrorBody, description: "REQUEST_ALREADY_DECIDED" })
   @ApiNotFoundResponse({ type: ErrorBody, description: "REQUEST_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Request id (UUID)", example: "e3bf5f75-3ad5-4aca-9258-33e4a3357956" })
