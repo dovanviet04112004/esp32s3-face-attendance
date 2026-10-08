@@ -80,39 +80,63 @@ type Fit = "row" | "split" | "sheet";
  */
 function useFit(splits: boolean) {
   const box = useRef<HTMLDivElement>(null);
-  const bar = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement | null>(null);
   const need = useRef<Record<Fit, number>>({ row: 0, split: 0, sheet: 0 });
   const [fit, setFit] = useState<Fit>("row");
+  // The layout the toolbar on screen belongs to: a width read from it says nothing of a layout still pending.
+  const shown = useRef<Fit>("row");
+  const watch = useRef<ResizeObserver | null>(null);
+
+  const settle = useCallback(() => {
+    const room = box.current?.clientWidth ?? 0;
+    if (room === 0) {
+      return;
+    }
+    const now = shown.current;
+    const width = bar.current?.offsetWidth ?? 0;
+    if (now !== "sheet" && width > room + 1) {
+      need.current[now] = width;
+      setFit(now === "row" && splits ? "split" : "sheet");
+    } else if (now !== "row" && room >= need.current.row) {
+      setFit("row");
+    } else if (now === "sheet" && splits && room >= need.current.split) {
+      setFit("split");
+    }
+  }, [splits]);
 
   // Read after every render: a longer value on a trigger widens the toolbar without a resize.
   useLayoutEffect(() => {
-    const room = box.current?.clientWidth ?? 0;
-    const width = bar.current?.offsetWidth ?? 0;
-    if (fit !== "sheet" && room > 0 && width > room + 1) {
-      need.current[fit] = width;
-      setFit(fit === "row" && splits ? "split" : "sheet");
-    }
+    shown.current = fit;
+    settle();
   });
 
+  // Both change without a render too: the rail opening, a scrollbar, the right column, a late font.
   useEffect(() => {
-    const held = box.current;
-    if (!held) {
-      return;
+    const observer = new ResizeObserver(settle);
+    for (const one of [box.current, bar.current]) {
+      if (one) {
+        observer.observe(one);
+      }
     }
-    const watch = new ResizeObserver(() => {
-      const room = held.clientWidth;
-      setFit((now) => {
-        if (now !== "row" && room >= need.current.row) {
-          return "row";
-        }
-        return now === "sheet" && splits && room >= need.current.split ? "split" : now;
-      });
-    });
-    watch.observe(held);
-    return () => watch.disconnect();
-  }, [splits]);
+    watch.current = observer;
+    return () => {
+      observer.disconnect();
+      watch.current = null;
+    };
+  }, [settle]);
 
-  return { box, bar, fit };
+  // Each layout draws its own toolbar, so the observer moves to whichever one is on screen.
+  const barRef = useCallback((node: HTMLDivElement | null) => {
+    if (bar.current) {
+      watch.current?.unobserve(bar.current);
+    }
+    bar.current = node;
+    if (node) {
+      watch.current?.observe(node);
+    }
+  }, []);
+
+  return { box, bar: barRef, fit };
 }
 
 function fold(text: string): string {
