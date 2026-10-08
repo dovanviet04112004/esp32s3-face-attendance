@@ -112,10 +112,10 @@ export function AccountMenu() {
             <span className="truncate text-kumo-subtle">{role ? roleName(role) : t("account")}</span>
           </DropdownMenu.Label>
           <DropdownMenu.Separator />
-          <DropdownMenu.LinkItem icon={GearIcon} render={<Link href="/settings" />}>
+          <DropdownMenu.LinkItem icon={GearIcon} closeOnClick render={<Link href="/settings" />}>
             {t("settings")}
           </DropdownMenu.LinkItem>
-          <DropdownMenu.LinkItem icon={KeyIcon} render={<Link href="/change-password" />}>
+          <DropdownMenu.LinkItem icon={KeyIcon} closeOnClick render={<Link href="/change-password" />}>
             {t("changePassword")}
           </DropdownMenu.LinkItem>
         </DropdownMenu.Group>
