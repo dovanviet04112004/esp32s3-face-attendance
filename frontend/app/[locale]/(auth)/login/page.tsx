@@ -21,14 +21,38 @@ interface SessionAnswer {
   email: string;
 }
 
-type LoginAnswer = ({ step: "session" } & SessionAnswer) | { step: "code" | "enroll"; email: string; challenge: string };
+type LoginAnswer =
+  | ({ step: "session" } & SessionAnswer)
+  | { step: "code" | "enroll"; email: string; challenge: string; expiresInSeconds: number };
+
+type Waiting = { at: "code"; email: string; challenge: string; until: number } | { at: "enroll"; email: string; challenge: string; until: number; offer: OfferedSecret };
 
 // The password first; a role in MFA_ROLES then gives its code, or links an app the first time (KEHOACH 9.4).
-type Stage =
-  | { at: "password" }
-  | { at: "code"; email: string; challenge: string }
-  | { at: "enroll"; email: string; challenge: string; offer: OfferedSecret }
-  | { at: "codes"; codes: string[]; home: string };
+type Stage = { at: "password" } | Waiting | { at: "codes"; codes: string[]; home: string };
+
+const kWaitingKey = "login-waiting";
+
+// A phone may drop the tab while its owner reads the authenticator; the ticket comes back for as long as it lives.
+function heldStage(): Waiting | null {
+  try {
+    const held = JSON.parse(sessionStorage.getItem(kWaitingKey) ?? "null") as Waiting | null;
+    return held && held.until > Date.now() ? held : null;
+  } catch {
+    return null;
+  }
+}
+
+function holdStage(stage: Waiting | null): void {
+  try {
+    if (stage) {
+      sessionStorage.setItem(kWaitingKey, JSON.stringify(stage));
+    } else {
+      sessionStorage.removeItem(kWaitingKey);
+    }
+  } catch {
+    return;
+  }
+}
 
 // An Android browser, not the app itself: the shell opens this page standalone, or from its own referrer.
 function useAndroidBrowser(): boolean {
@@ -64,14 +88,30 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const android = useAndroidBrowser();
 
+  useEffect(() => {
+    const held = heldStage();
+    if (held) {
+      setStage(held);
+    } else {
+      holdStage(null);
+    }
+  }, []);
+
+  function wait(next: Waiting): void {
+    holdStage(next);
+    setStage(next);
+  }
+
   // Keep the session and say where its role lands.
   function keep(answer: SessionAnswer): string {
+    holdStage(null);
     const claims = claimsOf(answer.accessToken);
     setSession(answer.accessToken, claims, answer.email);
     return homeFor(claims.role, claims.employeeId !== null);
   }
 
   function restart(): void {
+    holdStage(null);
     setStage({ at: "password" });
     setCode("");
     setRefused(null);
@@ -88,6 +128,7 @@ export default function LoginPage() {
     } catch (fell: unknown) {
       setCode("");
       if (faultCode(fell) === "MFA_CHALLENGE_SPENT") {
+        holdStage(null);
         setStage({ at: "password" });
       }
       // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
@@ -105,11 +146,14 @@ export default function LoginPage() {
       setPassword("");
       if (answer.step === "session") {
         router.replace(keep(answer));
-      } else if (answer.step === "code") {
-        setStage({ at: "code", email: answer.email, challenge: answer.challenge });
+        return;
+      }
+      const ticket = { email: answer.email, challenge: answer.challenge, until: Date.now() + answer.expiresInSeconds * 1000 };
+      if (answer.step === "code") {
+        wait({ at: "code", ...ticket });
       } else {
         const offer = (await api.post<OfferedSecret>("/auth/mfa/setup", { challenge: answer.challenge })).data;
-        setStage({ at: "enroll", email: answer.email, challenge: answer.challenge, offer });
+        wait({ at: "enroll", ...ticket, offer });
       }
     });
   }
