@@ -18,6 +18,7 @@ import { pushHere } from "@/components/notifications/push-switch";
 import { Link, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { foldIntoSignIn } from "@/lib/history";
 import { dropOwned, useOutbox } from "@/lib/outbox";
 import { applyTheme, asTheme, readTheme, type Theme } from "@/lib/theme";
 
@@ -38,7 +39,7 @@ export function useSignOut(): { start: () => void; isPending: boolean; confirm: 
   const [asking, setAsking] = useState(false);
   const leave = () => {
     signOut();
-    router.replace("/login");
+    void foldIntoSignIn().then(() => router.replace("/login"));
   };
   // An unreachable server still signs this browser out; its session ends on its own clock.
   const leaving = useMutation({

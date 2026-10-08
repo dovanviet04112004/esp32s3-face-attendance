@@ -2,13 +2,15 @@
 
 import { KumoLocaleProvider, LinkProvider, Toasty, type LinkComponentProps } from "@cloudflare/kumo";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createContext, forwardRef, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { Suspense, createContext, forwardRef, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { toasts, useNotify } from "@/components/ui/notify";
 import { Link } from "@/i18n/navigation";
 import { whenSignedOut } from "@/lib/auth";
 import { isProduction } from "@/lib/env";
+import { followHistory, noteShown } from "@/lib/history";
 import { followSystem } from "@/lib/theme";
 
 const STALE_MS = 30_000;
@@ -58,6 +60,14 @@ const RouterLink = forwardRef<HTMLAnchorElement, LinkComponentProps>(function Ro
 ) {
   return <Link ref={ref} href={href ?? to ?? "/"} {...rest} />;
 });
+
+function HistoryGuard() {
+  const path = usePathname();
+  const search = useSearchParams().toString();
+  useEffect(() => followHistory(), []);
+  useEffect(() => noteShown(), [path, search]);
+  return null;
+}
 
 export function Providers({ children, sidebarOpen }: { children: ReactNode; sidebarOpen: boolean }) {
   const [client] = useState(clientForSession);
@@ -126,6 +136,9 @@ export function Providers({ children, sidebarOpen }: { children: ReactNode; side
         <LinkProvider component={RouterLink}>
           <SidebarSeed.Provider value={sidebarOpen}>
             <Toasty toastManager={toasts}>{children}</Toasty>
+            <Suspense fallback={null}>
+              <HistoryGuard />
+            </Suspense>
           </SidebarSeed.Provider>
         </LinkProvider>
       </KumoLocaleProvider>
