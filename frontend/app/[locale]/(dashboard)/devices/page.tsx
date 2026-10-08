@@ -535,8 +535,8 @@ function Devices() {
                 autoComplete="one-time-code"
                 placeholder={t("claimPlaceholder")}
                 value={claim}
-                maxLength={kClaimDigits}
                 description={claim.length !== kClaimDigits ? t("claimHint", { digits: kClaimDigits }) : undefined}
+                // Cut after the clean-up, never by maxLength: the browser would cut a pasted "123 456" to "123 45" first.
                 onChange={(event) => setClaim(event.target.value.replace(/\D/g, "").slice(0, kClaimDigits))}
                 className="font-mono tracking-widest tabular-nums"
               />
