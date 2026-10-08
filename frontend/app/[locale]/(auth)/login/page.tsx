@@ -30,11 +30,12 @@ type Waiting = { at: "code"; email: string; challenge: string; until: number } |
 // The password first; a role in MFA_ROLES then gives its code, or links an app the first time (KEHOACH 9.4).
 type Stage = { at: "password" } | Waiting | { at: "codes"; codes: string[]; home: string };
 
-// A phone may drop the tab while its owner reads the authenticator; the ticket comes back for as long as it lives.
+// A phone may drop the tab while its owner reads the authenticator, so the code step comes back for as long as
+// its ticket lives. Enrolment is never kept: its offered secret must not outlive the page that shows it.
 function heldStage(): Waiting | null {
   try {
     const held = JSON.parse(sessionStorage.getItem(PENDING_SIGN_IN_KEY) ?? "null") as Waiting | null;
-    return held && held.until > Date.now() ? held : null;
+    return held?.at === "code" && held.until > Date.now() ? held : null;
   } catch {
     return null;
   }
@@ -42,7 +43,7 @@ function heldStage(): Waiting | null {
 
 function holdStage(stage: Waiting | null): void {
   try {
-    if (stage) {
+    if (stage?.at === "code") {
       sessionStorage.setItem(PENDING_SIGN_IN_KEY, JSON.stringify(stage));
     } else {
       sessionStorage.removeItem(PENDING_SIGN_IN_KEY);
@@ -108,6 +109,7 @@ export default function LoginPage() {
       setChecking(true);
       void reopenSession().then((token) => (token ? router.replace(home()) : setChecking(false)));
     }
+    return () => holdStage(null);
   }, [router]);
 
   function wait(next: Waiting): void {
