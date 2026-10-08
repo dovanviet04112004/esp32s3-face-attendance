@@ -4898,7 +4898,7 @@ frontend/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
 │   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
-│   ├── auth.ts                       # kho phiên zustand + đọc vai từ token
+│   ├── auth.ts                       # kho phiên zustand, vai đọc từ token, dấu đăng xuất (§9.12)
 │   ├── outbox.ts                     # ★ §9.21.3 luật 2 — đơn chưa gửi, IndexedDB
 │   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
 │   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
@@ -7364,7 +7364,9 @@ e2e đăng nhập bằng tài khoản mồi hàng trăm lần mỗi phút, còn 
    và dòng `Session` ghi `mfaAt`. `JwtStrategy` và ổ cắm realtime từ chối vé của một vai thuộc
    `MFA_ROLES` mà thiếu cờ ấy, lượt gia hạn từ chối phiên chưa qua bước mã, cả hai bằng
    `401 MFA_REQUIRED`. Phiên mở trước ngày bật, hay mở khi vai chưa bị hỏi, vì thế không sống qua
-   lần gia hạn kế tiếp.
+   lần gia hạn kế tiếp. Trình duyệt cất vé chờ của bước mã trong `sessionStorage` của tab tới khi
+   nó hết hạn, để điện thoại bỏ tab lúc chủ mở ứng dụng xác thực vẫn quay về đúng bước mã. Vé của
+   bước ghi danh thì không cất: khoá bí mật nó đưa ra không được rời trang đang vẽ nó (luật 2).
 2. **Lần đầu ghi danh ngay trong lượt đăng nhập.** Tài khoản chưa có ứng dụng xác thực thì vé
    chờ dẫn sang bước ghi danh: máy chủ sinh khoá bí mật 160 bit, trình duyệt tự vẽ mã QR
    `otpauth://` từ nó (không gửi khoá cho dịch vụ nào), người dùng quét rồi gõ mã đầu tiên. Mã
@@ -7999,9 +8001,26 @@ không phải một hộp trống.
 **Đăng xuất nằm trong menu tài khoản ở góc phải thanh trên, và trong *Cài đặt*.** Cả hai chỗ
 đều cần hai lần bấm có chủ đích. Thứ bị cấm là một nút đăng xuất thường trực dưới thanh bên,
 cạnh những mục người ta bấm cả ngày: tần suất dùng vài lần một ngày, còn hậu quả bấm nhầm là
-mất hết việc đang làm dở. Menu tài khoản hiện email đang đăng nhập và vai. Đăng xuất xoá sạch bộ
-nhớ đệm dữ liệu trên máy, vì người dùng tiếp theo của cùng một trình duyệt không được thấy một
-dòng nào của người trước.
+mất hết việc đang làm dở. Menu tài khoản hiện email đang đăng nhập và vai.
+
+**Đăng xuất là của cả trình duyệt, và không chờ mạng.** Người dùng tiếp theo của cùng một trình
+duyệt không được thấy một dòng nào của người trước, nên đăng xuất xoá mọi thứ của tài khoản trên
+máy: bộ nhớ đệm dữ liệu, ngăn đọc của service worker, bản nháp cất theo tài khoản, vé của bước mã
+đang dở. Trình duyệt ghi một dấu "đã đăng xuất có chủ đích" vào `localStorage`, chung cho mọi tab,
+và còn dấu ấy thì không trang nào được đổi cookie refresh lấy phiên mới, cho tới lần đăng nhập
+bằng mật khẩu kế tiếp. Vì thế bấm đăng xuất lúc mất mạng vẫn đăng xuất ngay: máy chủ không nghe
+thấy thì phiên ấy hết theo đồng hồ của nó, còn trình duyệt không bao giờ dùng lại cookie ấy. Tab
+khác đang mở bị cắt ở lần đọc kế tiếp, vì đăng xuất cắt luôn vé access của phiên (§9.23). Một tab
+nhận về vé của người khác — đăng xuất rồi đăng nhập người khác ở tab bên — thì bỏ mọi thứ đã đọc
+của người trước, kể cả ổ cắm realtime, trước khi vẽ.
+
+**Nút lùi và tiến của trình duyệt đi như Facebook.** Sau khi đăng xuất, lùi về một trang trong
+app chỉ thấy nền trống rồi form đăng nhập — không bao giờ khung app, thanh bên hay một liên kết
+nào. Sau khi đăng nhập, form không quay lại: đăng nhập thay chỗ của form trong lịch sử, và một
+trình duyệt đang có phiên mà vẫn tới form — gõ địa chỉ, hay lùi vào một mục cũ — thì về thẳng
+trang chủ của vai mà không thấy form. Trang do bộ nhớ đệm lùi-tiến (bfcache) trả về thì tải lại,
+vì nó mang theo bộ nhớ lúc rời đi, cả vé access lẫn dữ liệu đã đọc. Trang mà vai không được mở
+thì không dựng lên, và không gửi lần đọc nào, trong lúc nó được đưa về trang chủ.
 
 **Thanh bên thu gọn thành dải icon, và rê chuột tới là nó mở ra đè lên nội dung** — chế độ
 `peekable` của `Sidebar` Kumo, không xô trang. Mở và đóng đi qua một nhịp chủ ý như Cloudflare: chuột
