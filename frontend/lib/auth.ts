@@ -59,10 +59,34 @@ function renewAtOf(accessToken: string): number | null {
   return Date.now() + (claims.exp - claims.iat) * 1000 - kRenewEarlyMs;
 }
 
+const kSignedOutTab = "signed-out";
+
+function markSignedOut(on: boolean): void {
+  try {
+    if (on) {
+      sessionStorage.setItem(kSignedOutTab, "1");
+    } else {
+      sessionStorage.removeItem(kSignedOutTab);
+    }
+  } catch {
+    return;
+  }
+}
+
+/** Whether this tab signed out on purpose, so a page reached by Back goes to the form without trying the cookie. */
+export function signedOutHere(): boolean {
+  try {
+    return sessionStorage.getItem(kSignedOutTab) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** The access token lives in memory only (KEHOACH 4.6). */
 export const useSession = create<Session>((set) => ({
   ...kSignedOut,
-  setSession: (accessToken, claims, email) =>
+  setSession: (accessToken, claims, email) => {
+    markSignedOut(false);
     set((held) => ({
       accessToken,
       renewAt: renewAtOf(accessToken),
@@ -70,13 +94,15 @@ export const useSession = create<Session>((set) => ({
       role: claims.role,
       employeeId: claims.employeeId,
       email: email ?? held.email,
-    })),
+    }));
+  },
   clear: () => {
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
   },
   // A failed refresh keeps the worker's reads: it may be the network, and they are the offline copy.
   signOut: () => {
+    markSignedOut(true);
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
     forgetHome();

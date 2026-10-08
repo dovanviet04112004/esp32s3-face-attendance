@@ -23,7 +23,7 @@ import { toasts } from "@/components/ui/notify";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { reopenSession } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { signedOutHere, useSession } from "@/lib/auth";
 import { dayOf, todayIso } from "@/lib/format";
 import { allows, frameAt, homeFor, namesItself, ownerOf } from "@/lib/nav";
 import { startOutbox } from "@/lib/outbox";
@@ -164,6 +164,9 @@ function usePunchToast(): (punch: PunchHeard) => void {
   };
 }
 
+// The mark only changes across a sign-in or a sign-out, and both remount this layout.
+const neverChanges = () => () => {};
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const t = useTranslations("nav");
   const app = useTranslations("app");
@@ -184,8 +187,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   // the sidebar lights up (KEHOACH 9.15).
   const tab = owner ? `${t(owner.key)} · ${app("name")}` : app("name");
 
+  const signedOut = useSyncExternalStore(neverChanges, signedOutHere, () => false);
   useEffect(() => {
     if (accessToken) {
+      return;
+    }
+    if (signedOut) {
+      router.replace("/login");
       return;
     }
     // A reload empties the store but not the refresh cookie, so the cookie
@@ -195,7 +203,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         router.replace("/login");
       }
     });
-  }, [accessToken, router]);
+  }, [accessToken, signedOut, router]);
 
   // The sidebar hides what a role cannot use, but the address bar keeps the
   // last one: signing in as a narrower role leaves it standing there (9.15).
@@ -214,7 +222,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }, [signedIn, role, hasRecord]);
 
   if (!accessToken) {
-    return <Opening rail={rail} here={here} />;
+    return signedOut ? <div className="min-h-svh bg-kumo-canvas" /> : <Opening rail={rail} here={here} />;
   }
 
   return (
