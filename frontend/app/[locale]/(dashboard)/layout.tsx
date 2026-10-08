@@ -15,7 +15,7 @@ import {
 
 import { useSidebarSeed } from "@/app/providers";
 import { SectionBar, SectionBarLoading } from "@/components/nav/section-bar";
-import { Sidebar } from "@/components/nav/sidebar";
+import { kRailLogo, Sidebar } from "@/components/nav/sidebar";
 import { TabBar, TabBarLoading } from "@/components/nav/tab-bar";
 import { TopBar, TopBarLoading } from "@/components/nav/top-bar";
 import { PageFoot } from "@/components/ui/bottom-bar";
@@ -124,7 +124,7 @@ function Opening({ rail, here }: { rail: Rail; here: string }) {
     <KumoSidebar.Provider className={kFrame} peekable {...rail}>
       <KumoSidebar className="max-md:hidden md:sticky md:top-0 md:z-40 md:h-svh md:self-start">
         <KumoSidebar.Header className="h-[calc(58px+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]">
-          <img src="/logo.svg" alt="" width={24} height={24} fetchPriority="high" className="shrink-0" />
+          <img src="/logo.svg" alt="" width={24} height={24} fetchPriority="high" className={kRailLogo} />
           <p className="min-w-0 truncate ps-2 text-base font-semibold group-data-[state=collapsed]/sidebar:hidden">{app("name")}</p>
         </KumoSidebar.Header>
         <KumoSidebar.Content>

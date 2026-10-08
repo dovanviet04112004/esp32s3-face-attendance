@@ -12,6 +12,9 @@ import { useWaitingCount } from "./waiting-count";
 const kPeekOpenMs = 150;
 const kPeekCloseMs = 300;
 
+/** The brand mark on the axis Kumo centres the collapsed rail's icons on; its header pads 12 px, 4 short of it. */
+export const kRailLogo = "shrink-0 group-data-[state=collapsed]/sidebar:ms-1";
+
 /** Peeks the collapsed rail with Cloudflare's intent delay, and closes it once a page is chosen (KEHOACH 9.12).
  *  Kumo opens and closes on the first pointer crossing, so a brush past the edge flickers.
  */
@@ -93,7 +96,7 @@ export function Sidebar() {
           aria-label={app("name")}
           className="flex min-w-0 flex-1 items-center rounded-md motion-press focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none"
         >
-          <img src="/logo.svg" alt="" width={24} height={24} className="shrink-0" />
+          <img src="/logo.svg" alt="" width={24} height={24} className={kRailLogo} />
           <span className="min-w-0 ps-2 group-data-[state=collapsed]/sidebar:hidden">
             <span className="block truncate text-base font-semibold">{app("name")}</span>
             <span className="block truncate text-sm text-kumo-subtle">{role ? roleName(role) : null}</span>
