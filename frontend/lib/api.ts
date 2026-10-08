@@ -24,21 +24,24 @@ let renewing: Promise<string | null> | null = null;
 
 async function renew(): Promise<string | null> {
   try {
-    const res = await axios.post<{ accessToken: string; email?: string }>(
+    const res = await axios.post<{ accessToken: string; email?: string } | "">(
       `${env.NEXT_PUBLIC_API_URL}/auth/refresh`,
       {},
       { withCredentials: true },
     );
-    const token = res.data.accessToken;
-    useSession.getState().setSession(token, claimsOf(token), res.data.email);
-    return token;
+    if (res.data) {
+      useSession.getState().setSession(res.data.accessToken, claimsOf(res.data.accessToken), res.data.email);
+      return res.data.accessToken;
+    }
+    // 204: no refresh cookie came, so nobody is signed in on this browser (KEHOACH 7.2).
+    forgetQuietSignIn();
   } catch (fell: unknown) {
     if (isAxiosError(fell) && fell.response?.status === 401) {
       forgetQuietSignIn();
     }
-    useSession.getState().clear();
-    return null;
   }
+  useSession.getState().clear();
+  return null;
 }
 
 /** Trade the refresh cookie for a session; racing callers share one; never after a sign-out on purpose. */
