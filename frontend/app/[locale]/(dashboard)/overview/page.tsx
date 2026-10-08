@@ -559,7 +559,7 @@ function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
                       : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
                   )}
                 >
-                  <span className="truncate">{pile.label}</span>
+                  <span className="min-w-0 leading-snug text-pretty">{pile.label}</span>
                   <span className="shrink-0 tabular-nums">{countOf(pile)}</span>
                 </button>
               ))}
@@ -710,15 +710,15 @@ function ExceptionsSheet({ open, onClose }: { open: boolean; onClose: () => void
                   <li key={row.employeeId}>
                     <Link
                       href={exceptionHref(row)}
-                      className="flex min-h-10 items-center gap-3 rounded-md px-2 hover:bg-kumo-tint motion-press"
+                      className="flex min-h-12 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-kumo-tint motion-press"
                     >
-                      <span className="min-w-0 flex-1 truncate">{row.fullName}</span>
-                      <span className="shrink-0 font-mono text-sm text-kumo-subtle">{row.code}</span>
-                      {row.receivedAt ? (
-                        <span className="shrink-0 text-sm text-kumo-subtle tabular-nums">
-                          {t("heardAt", { time: format.dateTime(new Date(row.receivedAt), "clock") })}
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate">{row.fullName}</span>
+                        <span className="truncate text-sm text-kumo-subtle tabular-nums">
+                          <span className="font-mono">{row.code}</span>
+                          {row.receivedAt ? ` · ${t("heardAt", { time: format.dateTime(new Date(row.receivedAt), "clock") })}` : null}
                         </span>
-                      ) : null}
+                      </span>
                       <StatePill tone={REASON_TONE[row.reason]}>
                         {row.reason === "LATE" && row.minutes > 0 ? t("lateBy", { minutes: row.minutes }) : t(REASON_KEY[row.reason])}
                       </StatePill>
