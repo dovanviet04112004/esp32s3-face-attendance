@@ -9185,7 +9185,7 @@ và một lượt quét chạy lại không mở lại được chúng.
 | `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng thì `ADMIN` đóng tay | `/devices/<id>` |
 | `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau không còn mã hỏng nào → `CLEARED` | chi tiết ngay trên trang thông báo |
 | `ATTENDANCE_EXCEPTION` · `ATTENDANCE` | lượt dựng ngày (§9.8) thấy một ngày lệch | chính người ấy | — | ngày được sửa; một đơn đã duyệt phủ ngày ấy; người ấy bấm *Không cần giải trình*; kỳ lương của ngày ấy chốt → `EXPIRED` | `/me/attendance?day=<ngày>` |
-| `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | ngoại lệ của ngày ấy, trong phạm vi người xem |
+| `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | hôm nay: thẻ của nhóm trên trang chủ người xem (`?focus=today`, cuộn tới sau khi trang tải xong, vì trên điện thoại thẻ ấy nằm dưới hộp chờ duyệt); ngày đã qua: ngoại lệ của ngày ấy trong bảng công; cả hai trong phạm vi người xem |
 
 Sáu thứ trong bảng cần nói thêm:
 
