@@ -100,6 +100,10 @@ export async function flush(): Promise<void> {
     await reload();
     const me = useSession.getState().userId;
     for (const entry of held.filter((one) => one.owner === me)) {
+      // An account switch midway sends the rest under the next account's token.
+      if (useSession.getState().userId !== me) {
+        break;
+      }
       try {
         await api.post(entry.path, { ...entry.body, clientKey: entry.clientKey });
         await drop(entry.clientKey);

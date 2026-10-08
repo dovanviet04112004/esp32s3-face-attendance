@@ -121,10 +121,15 @@ export function forgetQuietSignIn(): void {
 }
 
 /** The access token lives in memory only (KEHOACH 4.6). */
-export const useSession = create<Session>((set) => ({
+export const useSession = create<Session>((set, get) => ({
   ...kSignedOut,
   setSession: (accessToken, claims, email) => {
     writeMark("in");
+    // Another account's reads must not show under this one (a second tab, or a sign-in over a live session).
+    const was = get().userId;
+    if (was !== null && was !== claims.userId) {
+      forgetters.forEach((forget) => forget());
+    }
     set((held) => ({
       accessToken,
       renewAt: renewAtOf(accessToken),

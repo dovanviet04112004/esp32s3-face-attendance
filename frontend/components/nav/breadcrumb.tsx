@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { usePathname } from "@/i18n/navigation";
-import { useSession } from "@/lib/auth";
+import { useSession, whenSignedOut } from "@/lib/auth";
 import { homeFor, namesItself, trailFor } from "@/lib/nav";
 
 interface Named {
@@ -21,6 +21,8 @@ const useNamed = create<Named>((set) => ({
   title: null,
   set: (path, title) => set({ path, title }),
 }));
+
+whenSignedOut(() => useNamed.setState({ path: null, title: null }));
 
 /** A page reports what it shows, so the trail can end on a record's own name (KEHOACH 9.15). */
 export function useCrumb(title: string | undefined): void {

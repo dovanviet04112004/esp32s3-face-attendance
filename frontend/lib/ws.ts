@@ -189,14 +189,15 @@ function gatherer(cache: QueryClient): { add: (keys: string[]) => void; stop: ()
  */
 export function useFeedConnection(onPunch?: (punch: PunchHeard) => void): void {
   const cache = useQueryClient();
-  const signedIn = useSession((s) => s.accessToken !== null);
+  // Keyed on the account, so a renewal that brings another account opens a socket of its own.
+  const reader = useSession((s) => (s.accessToken !== null ? s.userId : null));
   const toldOf = useRef(onPunch);
   useEffect(() => {
     toldOf.current = onPunch;
   });
 
   useEffect(() => {
-    if (!signedIn) {
+    if (reader === null) {
       return;
     }
     const socket: Socket = io(`${env.NEXT_PUBLIC_WS_URL}/feed`, {
@@ -268,7 +269,7 @@ export function useFeedConnection(onPunch?: (punch: PunchHeard) => void): void {
       spreading.forEach(clearTimeout);
       socket.close();
     };
-  }, [cache, signedIn]);
+  }, [cache, reader]);
 }
 
 /** Read what has arrived. A page that only wants fresh data needs none of
