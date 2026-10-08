@@ -42,6 +42,7 @@ export function useSignOut(): { start: () => void; isPending: boolean; confirm: 
   };
   // An unreachable server still signs this browser out; its session ends on its own clock.
   const leaving = useMutation({
+    networkMode: "always",
     mutationFn: async () => {
       const device = await pushHere();
       try {
