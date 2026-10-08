@@ -71,6 +71,17 @@ export function Providers({ children, sidebarOpen }: { children: ReactNode; side
 
   useEffect(() => whenSignedOut(() => client.clear()), [client]);
 
+  // A page put back from the back-forward cache returns with the memory it left with, token and reads included.
+  useEffect(() => {
+    const revisit = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener("pageshow", revisit);
+    return () => window.removeEventListener("pageshow", revisit);
+  }, []);
+
   useEffect(() => {
     let hiddenAt = 0;
     const flip = () => {
