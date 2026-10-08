@@ -10,8 +10,8 @@ import { BackupCodes } from "@/components/auth/backup-codes";
 import { CodeField } from "@/components/auth/code-field";
 import { PasswordField } from "@/components/ui/password-field";
 import { useRouter } from "@/i18n/navigation";
-import { api } from "@/lib/api";
-import { claimsOf, useSession } from "@/lib/auth";
+import { api, reopenSession } from "@/lib/api";
+import { claimsOf, maySignInQuietly, useSession } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { faultCode, useFault } from "@/lib/fault";
 import { homeFor } from "@/lib/nav";
@@ -87,15 +87,30 @@ export default function LoginPage() {
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const android = useAndroidBrowser();
+  const holding = useSession((s) => s.accessToken !== null);
+  const [checking, setChecking] = useState(false);
 
+  // A browser already signed in never sees the form, so Back onto it lands home (KEHOACH 9.12).
   useEffect(() => {
+    const home = () => {
+      const { role, employeeId } = useSession.getState();
+      return homeFor(role, employeeId !== null);
+    };
+    if (useSession.getState().accessToken) {
+      router.replace(home());
+      return;
+    }
     const held = heldStage();
     if (held) {
       setStage(held);
     } else {
       holdStage(null);
     }
-  }, []);
+    if (maySignInQuietly()) {
+      setChecking(true);
+      void reopenSession().then((token) => (token ? router.replace(home()) : setChecking(false)));
+    }
+  }, [router]);
 
   function wait(next: Waiting): void {
     holdStage(next);
@@ -176,6 +191,11 @@ export default function LoginPage() {
       setStage({ at: "codes", codes: enrolled.backupCodes, home: keep(enrolled) });
       return "staying";
     });
+  }
+
+  // A held session shows nothing on its way home; this page's own sign-in keeps its busy form, then its codes.
+  if ((holding && !busy && stage.at !== "codes") || checking) {
+    return null;
   }
 
   const banner = refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null;

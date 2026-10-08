@@ -1,6 +1,6 @@
-import axios, { AxiosError, type AxiosRequestConfig } from "axios";
+import axios, { AxiosError, isAxiosError, type AxiosRequestConfig } from "axios";
 
-import { claimsOf, useSession } from "./auth";
+import { claimsOf, forgetQuietSignIn, signedOutHere, useSession } from "./auth";
 import { env } from "./env";
 
 export const api = axios.create({
@@ -32,14 +32,20 @@ async function renew(): Promise<string | null> {
     const token = res.data.accessToken;
     useSession.getState().setSession(token, claimsOf(token), res.data.email);
     return token;
-  } catch {
+  } catch (fell: unknown) {
+    if (isAxiosError(fell) && fell.response?.status === 401) {
+      forgetQuietSignIn();
+    }
     useSession.getState().clear();
     return null;
   }
 }
 
-/** Trade the refresh cookie for a session; racing callers share one renewal. */
+/** Trade the refresh cookie for a session; racing callers share one; never after a sign-out on purpose. */
 export function reopenSession(): Promise<string | null> {
+  if (signedOutHere()) {
+    return Promise.resolve(null);
+  }
   renewing ??= renew().finally(() => {
     renewing = null;
   });

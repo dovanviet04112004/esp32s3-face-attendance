@@ -59,26 +59,42 @@ function renewAtOf(accessToken: string): number | null {
   return Date.now() + (claims.exp - claims.iat) * 1000 - kRenewEarlyMs;
 }
 
-const kSignedOutTab = "signed-out";
+const kSessionMark = "session-mark";
 
-function markSignedOut(on: boolean): void {
+function readMark(): "in" | "out" | null {
   try {
-    if (on) {
-      sessionStorage.setItem(kSignedOutTab, "1");
+    const held = localStorage.getItem(kSessionMark);
+    return held === "in" || held === "out" ? held : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMark(mark: "in" | "out" | null): void {
+  try {
+    if (mark) {
+      localStorage.setItem(kSessionMark, mark);
     } else {
-      sessionStorage.removeItem(kSignedOutTab);
+      localStorage.removeItem(kSessionMark);
     }
   } catch {
     return;
   }
 }
 
-/** Whether this tab signed out on purpose, so a page reached by Back goes to the form without trying the cookie. */
+/** Whether this browser signed out on purpose: nothing may renew from the cookie until a password sign-in. */
 export function signedOutHere(): boolean {
-  try {
-    return sessionStorage.getItem(kSignedOutTab) === "1";
-  } catch {
-    return false;
+  return readMark() === "out";
+}
+
+/** Whether the sign-in form should first try the cookie. */
+export function maySignInQuietly(): boolean {
+  return readMark() === "in";
+}
+
+export function forgetQuietSignIn(): void {
+  if (readMark() === "in") {
+    writeMark(null);
   }
 }
 
@@ -86,7 +102,7 @@ export function signedOutHere(): boolean {
 export const useSession = create<Session>((set) => ({
   ...kSignedOut,
   setSession: (accessToken, claims, email) => {
-    markSignedOut(false);
+    writeMark("in");
     set((held) => ({
       accessToken,
       renewAt: renewAtOf(accessToken),
@@ -102,7 +118,7 @@ export const useSession = create<Session>((set) => ({
   },
   // A failed refresh keeps the worker's reads: it may be the network, and they are the offline copy.
   signOut: () => {
-    markSignedOut(true);
+    writeMark("out");
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
     forgetHome();
