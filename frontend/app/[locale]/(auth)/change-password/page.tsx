@@ -5,6 +5,7 @@ import { CheckCircleIcon, WarningCircleIcon, WarningIcon } from "@phosphor-icons
 import { useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { pushHere } from "@/components/notifications/push-switch";
 import { PasswordField } from "@/components/ui/password-field";
 import { useRouter } from "@/i18n/navigation";
 import { api, reopenSession } from "@/lib/api";
@@ -50,6 +51,9 @@ export default function ChangePasswordPage() {
       setCurrent("");
       setNext("");
       setDone(true);
+      // Every session just closed, so this device stops showing the account's notices too, as on a sign-out.
+      const device = await pushHere().catch(() => null);
+      await device?.unsubscribe().catch(() => false);
       signOut();
     } catch (fell: unknown) {
       setRefused(faultOf(fell));
