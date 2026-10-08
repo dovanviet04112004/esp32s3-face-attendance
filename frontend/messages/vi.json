@@ -2461,6 +2461,7 @@
     "mfa": "Hai bước",
     "mfaOn": "Đã bật",
     "mfaReset": "Đặt lại xác minh hai bước",
+    "mfaResetHint": "Khi người này mất điện thoại và không còn mã dự phòng: gỡ ứng dụng xác thực cũ, lần đăng nhập tới họ quét mã mới.",
     "mfaResetTitle": "Đặt lại xác minh hai bước của {email}?",
     "mfaResetWarn": "{name} bị đăng xuất khỏi mọi thiết bị, các mã dự phòng cũ hết hiệu lực, và lần đăng nhập tới phải gắn lại ứng dụng xác thực. Chỉ đặt lại khi đã xác nhận chính người ấy đang nhờ, chẳng hạn bằng một cuộc gọi.",
     "mfaResetGo": "Đặt lại",

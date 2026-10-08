@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { Banner, Button, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
 import {
   EnvelopeSimpleIcon,
   LockIcon,
@@ -459,6 +459,25 @@ function Accounts() {
                   description={t("emailHint")}
                   error={emailWrong ? t("emailInvalid") : undefined}
                 />
+                {draft.account?.mfaEnabledAt && draft.account.id !== self.data?.id ? (
+                  <Field label={t("mfa")} description={t("mfaResetHint")}>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <StatePill tone="good">{t("mfaOn")}</StatePill>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={ShieldSlashIcon}
+                        onClick={() => {
+                          setFault(null);
+                          setResetting(draft.account);
+                          setDraft(null);
+                        }}
+                      >
+                        {t("mfaReset")}
+                      </Button>
+                    </div>
+                  </Field>
+                ) : null}
                 {faultBanner}
               </div>
             ) : null}
