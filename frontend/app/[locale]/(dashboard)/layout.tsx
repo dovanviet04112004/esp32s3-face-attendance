@@ -224,6 +224,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   if (!accessToken) {
     return signedOut ? <div className="min-h-svh bg-kumo-canvas" /> : <Opening rail={rail} here={here} />;
   }
+  // A page this role cannot open must not mount and send its reads while the effect above moves it home.
+  if (!allows(role, hasRecord, here)) {
+    return <Opening rail={rail} here={here} />;
+  }
 
   return (
     // Kumo's chrome is one colour with the page; cards and tables are the lifted surface (KEHOACH 9.12).
