@@ -117,14 +117,17 @@ export default function LoginPage() {
     setRefused(null);
   }
 
-  async function attempt(work: () => Promise<void>): Promise<void> {
+  // On the way to the home page the button stays busy: a form that looks reset reads as a failed sign-in.
+  async function attempt(work: () => Promise<"leaving" | "staying">): Promise<void> {
     if (busy) {
       return;
     }
     setBusy(true);
     setRefused(null);
     try {
-      await work();
+      if ((await work()) === "staying") {
+        setBusy(false);
+      }
     } catch (fell: unknown) {
       setCode("");
       if (faultCode(fell) === "MFA_CHALLENGE_SPENT") {
@@ -134,7 +137,6 @@ export default function LoginPage() {
       // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
       // password alike, so telling the truth here still says neither.
       setRefused(faultOf(fell));
-    } finally {
       setBusy(false);
     }
   }
@@ -143,11 +145,11 @@ export default function LoginPage() {
     event.preventDefault();
     void attempt(async () => {
       const answer = (await api.post<LoginAnswer>("/auth/login", { email, password })).data;
-      setPassword("");
       if (answer.step === "session") {
         router.replace(keep(answer));
-        return;
+        return "leaving";
       }
+      setPassword("");
       const ticket = { email: answer.email, challenge: answer.challenge, until: Date.now() + answer.expiresInSeconds * 1000 };
       if (answer.step === "code") {
         wait({ at: "code", ...ticket });
@@ -155,6 +157,7 @@ export default function LoginPage() {
         const offer = (await api.post<OfferedSecret>("/auth/mfa/setup", { challenge: answer.challenge })).data;
         wait({ at: "enroll", ...ticket, offer });
       }
+      return "staying";
     });
   }
 
@@ -162,6 +165,7 @@ export default function LoginPage() {
     event.preventDefault();
     void attempt(async () => {
       router.replace(keep((await api.post<SessionAnswer>("/auth/mfa/verify", { challenge, code })).data));
+      return "leaving";
     });
   }
 
@@ -170,6 +174,7 @@ export default function LoginPage() {
     void attempt(async () => {
       const enrolled = (await api.post<SessionAnswer & { backupCodes: string[] }>("/auth/mfa/confirm", { challenge, code })).data;
       setStage({ at: "codes", codes: enrolled.backupCodes, home: keep(enrolled) });
+      return "staying";
     });
   }
 
