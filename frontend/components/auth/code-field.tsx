@@ -7,6 +7,11 @@ import { useState } from "react";
 const kDigits = 6;
 const kBackupLength = 11;
 
+// Cut after the clean-up, never by maxLength: the browser would cut a pasted "767 123" to "767 12" first.
+function tidy(typed: string, backup: boolean): string {
+  return backup ? typed.replace(/\s/g, "").slice(0, kBackupLength) : typed.replace(/\D/g, "").slice(0, kDigits);
+}
+
 /** One box for the six digits, or for a backup code once the person has no phone at hand (KEHOACH 9.4). */
 export function CodeField({
   value,
@@ -42,9 +47,8 @@ export function CodeField({
         spellCheck={false}
         autoFocus={autoFocus}
         required
-        maxLength={backup ? kBackupLength : kDigits}
         value={value}
-        onChange={(event) => onChange(backup ? event.target.value : event.target.value.replace(/\D/g, ""))}
+        onChange={(event) => onChange(tidy(event.target.value, backup))}
         className="w-full font-mono tabular-nums tracking-widest"
       />
       {allowBackup ? (
