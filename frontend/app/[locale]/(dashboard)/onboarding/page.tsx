@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Combobox, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { Banner, Button, Combobox, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
 import {
   ArrowCounterClockwiseIcon,
   CheckIcon,
@@ -573,15 +573,18 @@ function Onboarding() {
                         onChange={(event) => patchItem(one.key, { dueDays: event.target.value })}
                         className="tabular-nums"
                       />
-                      <Button
-                        variant="ghost"
-                        shape="square"
-                        icon={TrashIcon}
-                        aria-label={t("itemRemove", { n: at + 1 })}
-                        className="sm:mt-6"
-                        disabled={draft.items.length === 1}
-                        onClick={() => setDraft({ ...draft, items: draft.items.filter((row) => row.key !== one.key) })}
-                      />
+                      <div className="max-sm:[&_label]:hidden">
+                        <Field label={<span aria-hidden>&nbsp;</span>}>
+                          <Button
+                            variant="ghost"
+                            shape="square"
+                            icon={TrashIcon}
+                            aria-label={t("itemRemove", { n: at + 1 })}
+                            disabled={draft.items.length === 1}
+                            onClick={() => setDraft({ ...draft, items: draft.items.filter((row) => row.key !== one.key) })}
+                          />
+                        </Field>
+                      </div>
                     </div>
                   ))}
                   {draft.items.length < kMaxItems ? (
