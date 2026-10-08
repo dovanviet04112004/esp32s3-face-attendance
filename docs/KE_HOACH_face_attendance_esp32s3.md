@@ -4898,20 +4898,21 @@ frontend/
 │   ├── env.ts                        # ★ zod — NƠI DUY NHẤT đọc process.env (§4.9)
 │   ├── api.ts                        # axios + interceptor tự refresh khi 401
 │   ├── ws.ts                         # socket.io /feed, và xoá cache query theo tin
-│   ├── auth.ts                       # kho phiên zustand, vai đọc từ token, dấu đăng xuất (§9.12)
+│   ├── auth.ts                       # kho phiên zustand, vai đọc từ token, cookie dấu `signed` (§9.12)
+│   ├── history.ts                    # ★ §9.12 — lùi/tiến không mở trang phiên không được xem
 │   ├── outbox.ts                     # ★ §9.21.3 luật 2 — đơn chưa gửi, IndexedDB
 │   ├── cn.ts                         # gộp class Tailwind, lớp sau thắng lớp trước
 │   ├── fault.ts                      # ★ mã lỗi API → câu; NƠI DUY NHẤT làm việc đó
 │   ├── nav.ts                        # ★ điều hướng theo vai; khoá ràng kiểu vào vi.json
 │   ├── url-state.ts                  # ★ tìm, lọc, sắp của một danh sách nằm trên query string
-│   ├── theme.ts                      # ★ cookie để server vẽ đúng lần đầu: sáng tối, thanh bên, trang chủ
+│   ├── theme.ts                      # ★ cookie để server vẽ đúng lần đầu: sáng tối, thanh bên, trang chủ, ngôn ngữ đã chọn
 │   └── format.ts                     # ★ tiền, giờ công, ngày — số nào cũng kèm đơn vị
 ├── types/
 │   ├── generated/                    # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
 │   └── messages.d.ts                 # ★ khai Messages = typeof vi.json, chốt en.json đủ khoá
 ├── .env.example                      # ✅ commit — mọi biến, giá trị giả
 ├── .env.local                        # ❌ gitignore — giá trị thật
-├── proxy.ts                          # `/` → trang chủ lần trước hoặc `/vi`; chặn route không có locale
+├── proxy.ts                          # `/` → trang chủ lần trước; dấu `signed` → form hay trang chủ
 └── next.config.ts
 ```
 
@@ -4977,9 +4978,18 @@ và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link
 đúng thứ tiếng người gửi đang thấy, và trang render sẵn ở phía server đã đúng ngôn ngữ ngay
 lần vẽ đầu — cookie thì server không biết trước, nên hoặc chớp một nhịp tiếng sai hoặc phải bỏ
 render sẵn. `proxy.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn mở được, và thẳng tới trang chủ máy
-ấy mở lần trước khi có cookie `home` (§9.21.6) — tên file là quy ước
+ấy mở lần trước khi có cookie `home` (§9.21.6); theo cookie `signed` nó đưa trình duyệt đã đăng
+xuất tới form và trình duyệt đã đăng nhập ra khỏi form, trước khi vẽ (§9.12) — tên file là quy ước
 Next 16 đặt cho thứ vẫn gọi là middleware, chạy trong chính tiến trình Next; lớp proxy thật
 của hệ là Traefik ở §11, hai thứ không dính nhau.
+
+**Ngôn ngữ chọn tay chỉ giữ nút lùi và tiến.** Bấm đổi ngôn ngữ ghi thêm cookie `lang`. Cookie
+ấy không quyết định trang vẽ bằng thứ tiếng nào — URL quyết — mà chỉ quyết định lịch sử: một mục
+lùi hay tiến tới mang thứ tiếng khác thì được mở bằng thứ tiếng đã chọn. Mục còn trong cùng
+document thì lớp chặn lịch sử của §9.12 dịch nó trước khi router vẽ; mục phải tải lại từ server
+thì một đoạn script trong `<head>` chuyển nó, trước khi vẽ, khi lượt tải là lượt lùi hay tiến. Cookie
+`NEXT_LOCALE` của next-intl không làm được việc này: nó chạy theo URL vừa mở, kể cả URL mà nút
+lùi vừa mở lại.
 
 **Không có `app/layout.tsx`.** Layout gốc là `app/[locale]/layout.tsx`, vì `<html lang>` phải
 mang đúng mã ngôn ngữ đang hiện: một layout đứng trên `[locale]` thì chưa biết locale, nên nó
@@ -8006,21 +8016,31 @@ mất hết việc đang làm dở. Menu tài khoản hiện email đang đăng 
 **Đăng xuất là của cả trình duyệt, và không chờ mạng.** Người dùng tiếp theo của cùng một trình
 duyệt không được thấy một dòng nào của người trước, nên đăng xuất xoá mọi thứ của tài khoản trên
 máy: bộ nhớ đệm dữ liệu, ngăn đọc của service worker, bản nháp cất theo tài khoản, vé của bước mã
-đang dở. Trình duyệt ghi một dấu "đã đăng xuất có chủ đích" vào `localStorage`, chung cho mọi tab,
-và còn dấu ấy thì không trang nào được đổi cookie refresh lấy phiên mới, cho tới lần đăng nhập
-bằng mật khẩu kế tiếp. Vì thế bấm đăng xuất lúc mất mạng vẫn đăng xuất ngay: máy chủ không nghe
+đang dở. Trình duyệt ghi dấu "đã đăng xuất có chủ đích" vào cookie `signed=out` trên chính domain
+của app — chung cho mọi tab, và proxy đọc được — còn đăng nhập ghi `signed=in`. Còn dấu `out` thì
+không trang nào được đổi cookie refresh lấy phiên mới, cho tới lần đăng nhập bằng mật khẩu kế
+tiếp. Vì thế bấm đăng xuất lúc mất mạng vẫn đăng xuất ngay: máy chủ không nghe
 thấy thì phiên ấy hết theo đồng hồ của nó, còn trình duyệt không bao giờ dùng lại cookie ấy. Tab
 khác đang mở bị cắt ở lần đọc kế tiếp, vì đăng xuất cắt luôn vé access của phiên (§9.23). Một tab
 nhận về vé của người khác — đăng xuất rồi đăng nhập người khác ở tab bên — thì bỏ mọi thứ đã đọc
 của người trước, kể cả ổ cắm realtime, trước khi vẽ.
 
-**Nút lùi và tiến của trình duyệt đi như Facebook.** Sau khi đăng xuất, lùi về một trang trong
-app chỉ thấy nền trống rồi form đăng nhập — không bao giờ khung app, thanh bên hay một liên kết
-nào. Sau khi đăng nhập, form không quay lại: đăng nhập thay chỗ của form trong lịch sử, và một
-trình duyệt đang có phiên mà vẫn tới form — gõ địa chỉ, hay lùi vào một mục cũ — thì về thẳng
-trang chủ của vai mà không thấy form. Trang do bộ nhớ đệm lùi-tiến (bfcache) trả về thì tải lại,
-vì nó mang theo bộ nhớ lúc rời đi, cả vé access lẫn dữ liệu đã đọc. Trang mà vai không được mở
-thì không dựng lên, và không gửi lần đọc nào, trong lúc nó được đưa về trang chủ.
+**Nút lùi và tiến không mở ra trang mà trình duyệt không được xem, và thanh địa chỉ không nhảy.**
+Như Facebook: đăng xuất xong, bấm lùi từ form không trỏ về địa chỉ nào trong app. Lúc đăng xuất,
+trang gấp mọi mục lịch sử của app trong tab về đúng một mục là form, bằng Navigation API nơi
+trình duyệt có, nên lùi một lần là rời trang như ở mọi trang web khác. Nơi chưa gấp được — trình
+duyệt chưa có Navigation API, hay tab bị cắt phiên từ tab khác — mỗi lần lùi hay tiến trúng một
+trang app thì mục ấy được ghi lại thành trang đang hiện trước khi router kịp vẽ, nên màn hình và
+thanh địa chỉ đứng yên. Đăng nhập xong thì form được đối xử y như vậy: lùi hay tiến trúng form thì
+trang đang hiện đứng yên, và đăng nhập thay chỗ của form trong lịch sử. Trang tải từ server theo
+đúng luật ấy ngay ở proxy, trước khi vẽ một điểm ảnh: trình duyệt mang dấu `out` xin một trang
+ngoài nhóm đăng nhập thì nhận thẳng form, mang dấu `in` xin form thì về trang chủ máy ấy mở lần
+trước. Dấu chỉ quyết định vẽ gì, quyền vẫn do api; lượt gia hạn hỏng vì bất cứ lý do gì cũng xoá
+dấu `in`, để proxy không đẩy qua đẩy lại giữa form và trang chủ. Đổi ngôn ngữ theo cùng luật:
+lùi hay tiến sau khi đổi mở trang cũ bằng thứ tiếng vừa chọn (§4.7). Trang do bộ nhớ đệm lùi-tiến
+(bfcache) trả về thì tải lại, vì nó mang theo bộ nhớ lúc rời đi, cả vé access lẫn dữ liệu đã đọc.
+Trang mà vai không được mở thì không dựng lên, và không gửi lần đọc nào, trong lúc nó được đưa
+về trang chủ.
 
 **Thanh bên thu gọn thành dải icon, và rê chuột tới là nó mở ra đè lên nội dung** — chế độ
 `peekable` của `Sidebar` Kumo, không xô trang. Mở và đóng đi qua một nhịp chủ ý như Cloudflare: chuột
