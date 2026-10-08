@@ -17,7 +17,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { pushHere } from "@/components/notifications/push-switch";
 import { Link, useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { markSignedOut, useSession } from "@/lib/auth";
 import { foldIntoSignIn } from "@/lib/history";
 import { dropOwned, useOutbox } from "@/lib/outbox";
 import { applyTheme, asTheme, readTheme, type Theme } from "@/lib/theme";
@@ -45,6 +45,8 @@ export function useSignOut(): { start: () => void; isPending: boolean; confirm: 
   const leaving = useMutation({
     networkMode: "always",
     mutationFn: async () => {
+      // First: the logout cuts the feed socket, whose renewal would otherwise race it with the old cookie.
+      markSignedOut();
       const device = await pushHere();
       try {
         await api.post("/auth/logout", device ? { pushEndpoint: device.endpoint } : {});

@@ -110,6 +110,10 @@ export function maySignInQuietly(): boolean {
   return readMark() === "in";
 }
 
+export function markSignedOut(): void {
+  writeMark("out");
+}
+
 export function forgetQuietSignIn(): void {
   if (readMark() === "in") {
     writeMark(null);
