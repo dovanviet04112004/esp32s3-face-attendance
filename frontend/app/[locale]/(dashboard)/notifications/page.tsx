@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { useNoticeCounts } from "@/components/notifications/bell";
-import { NOTICE_CATEGORIES, NOTICE_LOOK, type Notice } from "@/components/notifications/kinds";
+import { NOTICE_CATEGORIES, NOTICE_LOOK, useReader, type Notice } from "@/components/notifications/kinds";
 import {
   NOTICES_KEY,
   NoticeLine,
@@ -58,6 +58,7 @@ function queryOf(params: Record<string, string>): string {
 function Notifications() {
   const t = useTranslations("notices");
   const router = useRouter();
+  const reader = useReader();
   const say = useNoticeWords();
   const counts = useNoticeCounts();
   const marks = useNoticeMarks();
@@ -103,7 +104,7 @@ function Notifications() {
     if (notice.readAt === null) {
       marks.mutate({ action: "read", ids: [notice.id], quiet: true });
     }
-    const where = NOTICE_LOOK[notice.kind].path(notice);
+    const where = NOTICE_LOOK[notice.kind].path(notice, reader);
     if (where !== null) {
       router.push(where);
     }

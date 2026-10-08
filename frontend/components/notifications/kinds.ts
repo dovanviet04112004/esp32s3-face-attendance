@@ -23,7 +23,9 @@ import {
 } from "@phosphor-icons/react";
 
 import type { RequestKind } from "@/components/requests/request-card";
+import { useSession } from "@/lib/auth";
 import { todayIso } from "@/lib/format";
+import { homeFor } from "@/lib/nav";
 
 export type NoticeKind =
   | "REQUEST_DECIDED"
@@ -144,6 +146,16 @@ export interface Said {
   month?: string;
 }
 
+/** Who reads the notice, for the links that open the reader's own home. */
+export interface Reader {
+  home: string;
+}
+
+export function useReader(): Reader {
+  const home = useSession((s) => homeFor(s.role, s.employeeId !== null));
+  return { home };
+}
+
 interface KindLook {
   icon: IconType;
   category: NoticeCategory;
@@ -151,7 +163,7 @@ interface KindLook {
   label: { key: NoticeSentence; count?: number };
   sentence: (notice: Notice) => Said;
   /** The page the notice opens, or null when no page says more than the notice (KEHOACH 9.21.4). */
-  path: (notice: Notice) => string | null;
+  path: (notice: Notice, reader: Reader) => string | null;
 }
 
 // The inbox tab each kind of waiting record answers in; a request opens its own page.
@@ -235,10 +247,10 @@ function myDayAt(notice: Notice): string {
   return day ? `/me/attendance?day=${day}` : "/me/attendance";
 }
 
-// Today's summary opens the reader's home, which draws today; a day gone opens its exceptions in the timesheet.
-function teamDayAt(notice: Notice): string {
+// Today's summary opens the reader's home on its team card; a day gone opens its exceptions in the timesheet.
+function teamDayAt(notice: Notice, reader: Reader): string {
   const day = factText(notice, "day");
-  return !day || day === todayIso() ? "/" : `/timesheet?from=${day}&to=${day}&exceptions=1`;
+  return !day || day === todayIso() ? `${reader.home}?focus=today` : `/timesheet?from=${day}&to=${day}&exceptions=1`;
 }
 
 const kContractDays = 30;

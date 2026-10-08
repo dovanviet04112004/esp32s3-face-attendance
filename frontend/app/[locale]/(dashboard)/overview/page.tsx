@@ -20,6 +20,7 @@ import { useSession, type Role } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { dayOnly, percent, todayIso } from "@/lib/format";
 import { allows } from "@/lib/nav";
+import { useFocusOnArrival } from "@/lib/url-state";
 
 interface Today {
   date: string;
@@ -232,10 +233,10 @@ interface CardLink {
   onPick?: () => void;
 }
 
-function Card({ title, link, children }: { title: ReactNode; link?: CardLink; children: ReactNode }) {
+function Card({ id, title, link, children }: { id?: string; title: ReactNode; link?: CardLink; children: ReactNode }) {
   const face = "shrink-0 font-normal text-kumo-link hover:underline";
   return (
-    <LayerCard>
+    <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
       <LayerCard.Secondary className="justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2">{title}</span>
         {link?.href ? (
@@ -430,6 +431,7 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
   const t = useTranslations("overview");
   const { role, employeeId } = useSession();
   const [listing, setListing] = useState<Bucket | null>(null);
+  useFocusOnArrival(asked.isSuccess);
 
   if (asked.data === null) {
     return null;
@@ -447,7 +449,7 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
   ];
 
   return (
-    <Card title={t("todayTitle")}>
+    <Card id="today" title={t("todayTitle")}>
       {asked.isError ? (
         <div className="p-4">
           <Failed onRetry={() => void asked.refetch()} />

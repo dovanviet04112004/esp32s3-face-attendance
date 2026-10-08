@@ -1,5 +1,6 @@
 "use client";
 
+import { useIsFetching } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
@@ -46,4 +47,22 @@ export function useUrlState<T extends Record<string, string>>(defaults: T): [T, 
   );
 
   return [state, patch];
+}
+
+/** Scrolls to the element `?focus=` names once `ready` and every read in flight has landed, then drops the param. */
+export function useFocusOnArrival(ready: boolean): void {
+  const pathname = usePathname();
+  const router = useRouter();
+  const fetching = useIsFetching();
+  useEffect(() => {
+    const held = new URLSearchParams(window.location.search);
+    const target = held.get("focus");
+    if (!target || !ready || fetching > 0) {
+      return;
+    }
+    document.getElementById(target)?.scrollIntoView({ block: "start" });
+    held.delete("focus");
+    const rest = held.toString();
+    router.replace(rest ? `${pathname}?${rest}` : pathname, { scroll: false });
+  }, [ready, fetching, pathname, router]);
 }

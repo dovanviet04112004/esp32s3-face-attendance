@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-import { NOTICE_LOOK, type Notice, type NoticeKind } from "@/components/notifications/kinds";
+import { NOTICE_LOOK, useReader, type Notice, type NoticeKind } from "@/components/notifications/kinds";
 import { Failed } from "@/components/ui/failed";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { useRouter } from "@/i18n/navigation";
@@ -38,6 +38,7 @@ function OpenNotice() {
   const { id } = useParams<{ id: string }>();
   const kind = useSearchParams().get("kind");
   const router = useRouter();
+  const reader = useReader();
   const cache = useQueryClient();
   const [fault, setFault] = useState<"gone" | "failed" | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -48,7 +49,7 @@ function OpenNotice() {
     if (id === "none") {
       const bare = rowless(kind);
       if (bare) {
-        router.replace(NOTICE_LOOK[bare.kind].path(bare) ?? "/");
+        router.replace(NOTICE_LOOK[bare.kind].path(bare, reader) ?? "/");
       }
       return;
     }
@@ -58,7 +59,7 @@ function OpenNotice() {
         await api.post("/notifications/read", { ids: [notice.id] });
         void cache.invalidateQueries({ queryKey: ["notifications"] });
         if (!left) {
-          router.replace(NOTICE_LOOK[notice.kind].path(notice) ?? "/");
+          router.replace(NOTICE_LOOK[notice.kind].path(notice, reader) ?? "/");
         }
       } catch (fell) {
         if (!left) {
@@ -69,7 +70,7 @@ function OpenNotice() {
     return () => {
       left = true;
     };
-  }, [id, kind, attempt, router, cache]);
+  }, [id, kind, attempt, router, cache, reader.home]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (fault === "failed") {
     return (

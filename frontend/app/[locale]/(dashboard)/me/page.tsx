@@ -20,6 +20,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { addDays, atClock, clockOf, dayOnly, dayWindow, days, money, todayIso } from "@/lib/format";
+import { useFocusOnArrival } from "@/lib/url-state";
 
 interface Balance {
   leaveTypeId: string;
@@ -164,9 +165,9 @@ function Pad({ children }: { children: ReactNode }) {
 }
 
 /** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
-function Card({ title, link, children }: { title: ReactNode; link?: { href: string; label: string }; children: ReactNode }) {
+function Card({ id, title, link, children }: { id?: string; title: ReactNode; link?: { href: string; label: string }; children: ReactNode }) {
   return (
-    <LayerCard>
+    <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
       <LayerCard.Secondary className="justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2 truncate">{title}</span>
         {link ? (
@@ -412,6 +413,7 @@ function TeamCard() {
     queryKey: ["reports", "team-today"],
     queryFn: () => unlessMissing<TeamToday>("/reports/team-today"),
   });
+  useFocusOnArrival(team.isSuccess);
   const held = team.data;
   if (held === null) {
     return null;
@@ -423,6 +425,7 @@ function TeamCard() {
   const allIn = held !== undefined && TEAM_BUCKETS.every(({ key }) => held.totals[key] === 0);
   return (
     <Card
+      id="today"
       title={t("teamTitle")}
       link={bucket === "onLeave" && total > 0 ? { href: `/leave?kind=LEAVE&state=APPROVED&from=${day}&to=${day}`, label: t("teamLeaveAll", { count: total }) } : undefined}
     >

@@ -11,7 +11,7 @@ import { Failed } from "@/components/ui/failed";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { NOTICE_LOOK, type Notice } from "./kinds";
+import { NOTICE_LOOK, useReader, type Notice } from "./kinds";
 import { NOTICES_KEY, NoticeLine, useNoticeActions, useNoticeMarks, type NoticeStatus } from "./notice-row";
 
 const kBellTake = 20;
@@ -26,7 +26,8 @@ const EMPTY: Record<NoticeStatus, "emptyAction" | "emptyUnread" | "empty" | "emp
 /** A notice row: a link where a page says more, otherwise a button that only marks it read. */
 function Opener({ notice, onRead, onGo, children }: { notice: Notice; onRead: () => void; onGo: () => void; children: ReactNode }) {
   const look = "flex min-h-11 min-w-0 flex-1 items-start rounded-md px-2.5 py-2 text-start text-base hover:bg-kumo-tint";
-  const where = NOTICE_LOOK[notice.kind].path(notice);
+  const reader = useReader();
+  const where = NOTICE_LOOK[notice.kind].path(notice, reader);
   if (where === null) {
     return (
       <button type="button" className={look} onClick={onRead}>
