@@ -60,6 +60,28 @@ function renewAtOf(accessToken: string): number | null {
 }
 
 const kSessionMark = "session-mark";
+/** The two-step ticket the sign-in page keeps for a reload; a sign-out drops it with the rest. */
+export const PENDING_SIGN_IN_KEY = "login-waiting";
+/** Every localStorage key holding one account's work starts with this, so a sign-out can sweep it unseen. */
+export const ACCOUNT_STORE_PREFIX = "acct:";
+const kUnscopedDraftPrefix = "bonus-sheet:";
+
+function dropPendingSignIn(): void {
+  try {
+    sessionStorage.removeItem(PENDING_SIGN_IN_KEY);
+  } catch {
+    return;
+  }
+}
+
+function sweepAccountStore(): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, at) => localStorage.key(at) ?? "");
+    keys.filter((key) => key.startsWith(ACCOUNT_STORE_PREFIX) || key.startsWith(kUnscopedDraftPrefix)).forEach((key) => localStorage.removeItem(key));
+  } catch {
+    return;
+  }
+}
 
 function readMark(): "in" | "out" | null {
   try {
@@ -119,10 +141,13 @@ export const useSession = create<Session>((set) => ({
   // A failed refresh keeps the worker's reads: it may be the network, and they are the offline copy.
   signOut: () => {
     writeMark("out");
+    dropPendingSignIn();
     set(kSignedOut);
     forgetters.forEach((forget) => forget());
+    sweepAccountStore();
     forgetHome();
-    navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
+    // A page without a controller yet (a hard reload) still reaches the worker through ready.
+    void navigator.serviceWorker?.ready.then((held) => held.active?.postMessage({ type: "forget" }));
   },
 }));
 

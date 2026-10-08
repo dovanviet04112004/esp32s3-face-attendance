@@ -11,7 +11,7 @@ import { CodeField } from "@/components/auth/code-field";
 import { PasswordField } from "@/components/ui/password-field";
 import { useRouter } from "@/i18n/navigation";
 import { api, reopenSession } from "@/lib/api";
-import { claimsOf, maySignInQuietly, useSession } from "@/lib/auth";
+import { PENDING_SIGN_IN_KEY, claimsOf, maySignInQuietly, useSession } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { faultCode, useFault } from "@/lib/fault";
 import { homeFor } from "@/lib/nav";
@@ -30,12 +30,10 @@ type Waiting = { at: "code"; email: string; challenge: string; until: number } |
 // The password first; a role in MFA_ROLES then gives its code, or links an app the first time (KEHOACH 9.4).
 type Stage = { at: "password" } | Waiting | { at: "codes"; codes: string[]; home: string };
 
-const kWaitingKey = "login-waiting";
-
 // A phone may drop the tab while its owner reads the authenticator; the ticket comes back for as long as it lives.
 function heldStage(): Waiting | null {
   try {
-    const held = JSON.parse(sessionStorage.getItem(kWaitingKey) ?? "null") as Waiting | null;
+    const held = JSON.parse(sessionStorage.getItem(PENDING_SIGN_IN_KEY) ?? "null") as Waiting | null;
     return held && held.until > Date.now() ? held : null;
   } catch {
     return null;
@@ -45,9 +43,9 @@ function heldStage(): Waiting | null {
 function holdStage(stage: Waiting | null): void {
   try {
     if (stage) {
-      sessionStorage.setItem(kWaitingKey, JSON.stringify(stage));
+      sessionStorage.setItem(PENDING_SIGN_IN_KEY, JSON.stringify(stage));
     } else {
-      sessionStorage.removeItem(kWaitingKey);
+      sessionStorage.removeItem(PENDING_SIGN_IN_KEY);
     }
   } catch {
     return;

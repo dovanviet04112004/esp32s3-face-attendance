@@ -10,6 +10,7 @@ import { useNotify } from "@/components/ui/notify";
 import { PersonPicker } from "@/components/ui/person-picker";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
+import { ACCOUNT_STORE_PREFIX, useSession } from "@/lib/auth";
 import { money } from "@/lib/format";
 
 interface Item {
@@ -31,7 +32,7 @@ interface Loaded {
   employee: { id: number; code: string; fullName: string };
 }
 
-const kStore = "bonus-sheet:";
+const kStore = `${ACCOUNT_STORE_PREFIX}bonus-sheet:`;
 const kFresh: Sheet = { lineCode: "TET", items: [] };
 
 function recall(key: string): Sheet | null {
@@ -89,7 +90,8 @@ export function BonusSheet({ runId, editable }: { runId: string; editable: boole
   const locale = useLocale();
   const notify = useNotify();
   const cache = useQueryClient();
-  const draftKey = `${kStore}${runId}:draft`;
+  const me = useSession((s) => s.userId);
+  const draftKey = `${kStore}${me}:${runId}:draft`;
   const [draft, setDraftState] = useState<Sheet>(kFresh);
   const [amount, setAmount] = useState("");
 
