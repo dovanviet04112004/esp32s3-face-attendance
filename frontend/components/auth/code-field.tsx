@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Input } from "@cloudflare/kumo";
+import { Input } from "@cloudflare/kumo";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -48,9 +48,9 @@ export function CodeField({
         className="w-full font-mono tabular-nums tracking-widest"
       />
       {allowBackup ? (
-        <Button variant="ghost" size="sm" className="self-start" onClick={switchKind}>
+        <button type="button" onClick={switchKind} className="self-start text-sm text-kumo-link underline-offset-2 hover:underline">
           {backup ? t("useApp") : t("useBackup")}
-        </Button>
+        </button>
       ) : null}
     </div>
   );
