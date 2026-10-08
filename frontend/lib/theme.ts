@@ -1,3 +1,5 @@
+import { routing } from "@/i18n/routing";
+
 export type Theme = "system" | "light" | "dark";
 
 export const THEMES: Theme[] = ["system", "light", "dark"];
@@ -8,10 +10,13 @@ export const kSidebarCookie = "sidebar";
 
 export const kHomeCookie = "home";
 
+export const kLangCookie = "lang";
+
 export const kYearSeconds = 31_536_000;
 // A path inside the app: "//host" or a scheme would turn "/" into an open redirect.
 const kAppPath = /^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
 const kDarkQuery = "(prefers-color-scheme: dark)";
+const kLocales = routing.locales.join("|");
 
 export function asTheme(raw: string | undefined): Theme {
   return raw === "dark" || raw === "light" ? raw : "system";
@@ -90,6 +95,19 @@ export function rememberSidebar(open: boolean): void {
 export function homeOf(raw: string | undefined): string | null {
   return raw !== undefined && kAppPath.test(raw) ? raw : null;
 }
+
+export function rememberLanguage(locale: string): void {
+  document.cookie = `${kLangCookie}=${locale}; path=/; max-age=${kYearSeconds}; samesite=lax`;
+}
+
+export function chosenLanguage(): string | null {
+  const hit = document.cookie.split("; ").find((one) => one.startsWith(`${kLangCookie}=`));
+  const raw = hit?.slice(kLangCookie.length + 1) ?? "";
+  return (routing.locales as readonly string[]).includes(raw) ? raw : null;
+}
+
+/** Back and Forward keep the language picked by hand: a page loaded in another moves to it ahead of paint (KEHOACH 9.12). */
+export const kLangScript = `try{var n=performance.getEntriesByType("navigation")[0],m=document.cookie.match(/(?:^|; )${kLangCookie}=(${kLocales})(?:;|$)/),p=location.pathname.split("/");if(n&&n.type==="back_forward"&&m&&p[1]!==m[1]&&/^(${kLocales})$/.test(p[1])){p[1]=m[1];location.replace(p.join("/")+location.search+location.hash)}}catch(e){}`;
 
 export function rememberHome(path: string): void {
   if (homeOf(path) !== null) {

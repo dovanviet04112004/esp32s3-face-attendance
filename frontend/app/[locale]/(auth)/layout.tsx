@@ -8,6 +8,7 @@ import { Suspense, useTransition, type ReactNode } from "react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
+import { rememberLanguage } from "@/lib/theme";
 
 /** The other language for the same door, query kept: a set-password link carries its token there. */
 function LanguageSwitch() {
@@ -28,6 +29,7 @@ function LanguageSwitch() {
         if (next === locale || !routing.locales.includes(next as Locale)) {
           return;
         }
+        rememberLanguage(next);
         startMoving(() => router.replace(query ? `${here}?${query}` : here, { locale: next as Locale }));
       }}
       tabs={routing.locales.map((code) => ({

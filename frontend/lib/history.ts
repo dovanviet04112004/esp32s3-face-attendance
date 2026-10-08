@@ -1,4 +1,7 @@
+import { routing } from "@/i18n/routing";
+
 import { SIGNED_OUT_PAGES, signedOutHere, useSession } from "./auth";
+import { chosenLanguage } from "./theme";
 
 interface Shown {
   url: string;
@@ -11,6 +14,7 @@ const kFoldWaitMs = 1_000;
 let shown: Shown | null = null;
 let foldingIntoSignIn = false;
 let folded: (() => void) | null = null;
+let go: ((url: string) => void) | null = null;
 
 // Straight to the browser: Next's patched pushState and replaceState act on whatever they write.
 function write(how: "pushState" | "replaceState", state: unknown, url: string): void {
@@ -32,7 +36,7 @@ function shownLocale(): string {
 }
 
 function guard(event: PopStateEvent): void {
-  const { page } = segmentsOf(location.pathname);
+  const { locale, page } = segmentsOf(location.pathname);
   if (foldingIntoSignIn) {
     event.stopImmediatePropagation();
     write("replaceState", null, `/${shownLocale()}/login`);
@@ -45,6 +49,14 @@ function guard(event: PopStateEvent): void {
   if (barred && shown !== null) {
     event.stopImmediatePropagation();
     write("replaceState", shown.state, shown.url);
+    return;
+  }
+  const chosen = chosenLanguage();
+  if (go !== null && chosen !== null && locale !== chosen && (routing.locales as readonly string[]).includes(locale)) {
+    event.stopImmediatePropagation();
+    const translated = `/${chosen}${location.pathname.slice(locale.length + 1)}${location.search}`;
+    write("replaceState", null, translated);
+    go(translated);
   }
 }
 
@@ -74,12 +86,16 @@ function takeFold(): boolean {
   }
 }
 
-/** Finish a fold that a page load cut short, once the page has hydrated. */
-export function followHistory(): void {
+/** Hand the guard Next's own navigation for Back into another language, and finish a fold a page load cut short. */
+export function followHistory(navigate: (url: string) => void): () => void {
+  go = navigate;
   const nav = navigationOf();
   if (takeFold() && nav) {
     void dropForward(nav);
   }
+  return () => {
+    go = null;
+  };
 }
 
 /** Fold this tab's entries of the app into one, the form's, so Back from it leaves the site (KEHOACH 9.12). */

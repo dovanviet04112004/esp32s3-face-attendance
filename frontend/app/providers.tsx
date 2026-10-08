@@ -2,7 +2,8 @@
 
 import { KumoLocaleProvider, LinkProvider, Toasty, type LinkComponentProps } from "@cloudflare/kumo";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { usePathname, useSearchParams } from "next/navigation";
+import type { Route } from "next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Suspense, createContext, forwardRef, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
@@ -62,9 +63,10 @@ const RouterLink = forwardRef<HTMLAnchorElement, LinkComponentProps>(function Ro
 });
 
 function HistoryGuard() {
+  const router = useRouter();
   const path = usePathname();
   const search = useSearchParams().toString();
-  useEffect(() => followHistory(), []);
+  useEffect(() => followHistory((url) => router.replace(url as Route)), [router]);
   useEffect(() => noteShown(), [path, search]);
   return null;
 }

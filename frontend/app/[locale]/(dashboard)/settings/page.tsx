@@ -19,6 +19,7 @@ import { routing, type Locale } from "@/i18n/routing";
 import { api } from "@/lib/api";
 import { env } from "@/lib/env";
 import { useSession, type Role } from "@/lib/auth";
+import { rememberLanguage } from "@/lib/theme";
 
 interface OpenedAccount {
   employeeCode: string;
@@ -149,6 +150,7 @@ export default function SettingsPage() {
       return;
     }
     // Same page, other language: the locale rides on the URL, so this is a move.
+    rememberLanguage(next);
     startMoving(() => router.replace(here, { locale: next as Locale }));
   }
 

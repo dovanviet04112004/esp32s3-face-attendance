@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import "../globals.css";
 import { Providers } from "../providers";
 import { routing, type Locale } from "@/i18n/routing";
-import { isSidebarOpen, kModeScript, kSidebarCookie } from "@/lib/theme";
+import { isSidebarOpen, kLangScript, kModeScript, kSidebarCookie } from "@/lib/theme";
 
 const sans = Inter({ subsets: ["latin", "vietnamese"], variable: "--font-inter", display: "swap" });
 
@@ -56,6 +56,7 @@ export default async function LocaleLayout({ children, params }: LocaleParams & 
   return (
     <html lang={locale} className={sans.variable} suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: kLangScript }} />
         <script dangerouslySetInnerHTML={{ __html: kModeScript }} />
       </head>
       <body className="min-h-svh font-sans text-base antialiased" suppressHydrationWarning>
