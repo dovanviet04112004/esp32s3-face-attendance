@@ -106,10 +106,16 @@ export type NoticeSentence =
   | "kindREQUEST_STALLED"
   | "kindPAYSLIP_ISSUED"
   | "kindCONTRACT_ENDING"
+  | "kindCONTRACT_ENDING_today"
+  | "kindCONTRACT_ENDING_late"
   | "kindDISPUTE_ANSWERED"
   | "kindADVANCE_PAID"
   | "kindCONTRACT_DUE"
+  | "kindCONTRACT_DUE_today"
+  | "kindCONTRACT_DUE_late"
   | "kindPROBATION_DUE"
+  | "kindPROBATION_DUE_today"
+  | "kindPROBATION_DUE_late"
   | "kindPAYROLL_RUN_DONE"
   | "kindPAYROLL_RUN_DONE_count"
   | "kindPAYROLL_RUN_DONE_failed"
@@ -253,6 +259,16 @@ function teamDayAt(notice: Notice, reader: Reader): string {
   return !day || day === todayIso() ? `${reader.home}?focus=today` : `/timesheet?from=${day}&to=${day}&exceptions=1`;
 }
 
+type DueKey = "kindPROBATION_DUE" | "kindCONTRACT_DUE" | "kindCONTRACT_ENDING";
+
+/** Days left are counted when the notice is read, so a date already gone reads as overdue, not as minus days. */
+function dueSentence(key: DueKey, daysLeft: number): Said {
+  if (daysLeft < 0) {
+    return { key: `${key}_late`, count: -daysLeft };
+  }
+  return daysLeft === 0 ? { key: `${key}_today` } : { key, count: daysLeft };
+}
+
 const kContractDays = 30;
 const kProbationDays = 7;
 const kStalledDays = 7;
@@ -319,14 +335,14 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     icon: FileTextIcon,
     category: "PEOPLE",
     label: { key: "kindCONTRACT_DUE", count: kContractDays },
-    sentence: (notice) => ({ key: "kindCONTRACT_DUE", count: notice.daysLeft ?? kContractDays }),
+    sentence: (notice) => dueSentence("kindCONTRACT_DUE", notice.daysLeft ?? kContractDays),
     path: (notice) => personAt(notice, "?tab=contracts"),
   },
   PROBATION_DUE: {
     icon: HourglassMediumIcon,
     category: "PEOPLE",
     label: { key: "kindPROBATION_DUE", count: kProbationDays },
-    sentence: (notice) => ({ key: "kindPROBATION_DUE", count: notice.daysLeft ?? kProbationDays }),
+    sentence: (notice) => dueSentence("kindPROBATION_DUE", notice.daysLeft ?? kProbationDays),
     path: (notice) => personAt(notice),
   },
   BACKUP_ALERT: {
@@ -364,7 +380,7 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     icon: CalendarDotsIcon,
     category: "PEOPLE",
     label: { key: "kindCONTRACT_ENDING", count: kContractDays },
-    sentence: (notice) => ({ key: "kindCONTRACT_ENDING", count: notice.daysLeft ?? 0 }),
+    sentence: (notice) => dueSentence("kindCONTRACT_ENDING", notice.daysLeft ?? 0),
     path: () => null,
   },
   ATTENDANCE_EXCEPTION: {

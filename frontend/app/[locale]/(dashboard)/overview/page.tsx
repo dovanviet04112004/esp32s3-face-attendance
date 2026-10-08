@@ -603,7 +603,9 @@ function HrCard() {
       aside: (
         <span className="flex items-baseline gap-2">
           <span className="text-sm text-kumo-subtle">{short(row.endsOn)}</span>
-          <span className={cn("min-w-20", row.daysLeft <= kSoonDays && "font-medium")}>{t("daysLeft", { count: row.daysLeft })}</span>
+          <span className={cn("min-w-20", row.daysLeft <= kSoonDays && "font-medium")}>
+            {row.daysLeft < 0 ? t("daysOverdue", { count: -row.daysLeft }) : t("daysLeft", { count: row.daysLeft })}
+          </span>
         </span>
       ),
     })),
