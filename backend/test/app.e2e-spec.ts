@@ -123,6 +123,14 @@ describe("auth (e2e)", () => {
     assert.equal(res.body.email, SIGNER_EMAIL, "a reload loses the address the menu shows");
   });
 
+  it("answers a renewal without the cookie with 204, not an error, and sets no cookie", async () => {
+    const res = await request(http).post("/auth/refresh");
+    assert.equal(res.status, 204, "a visitor who never signed in got an error in the console");
+    assert.equal(res.headers["set-cookie"], undefined);
+    const forged = await request(http).post("/auth/refresh").set("Cookie", `${REFRESH_COOKIE}=not-a-token`);
+    assert.equal(forged.status, 401, "a cookie that does not verify passed as no cookie");
+  });
+
   it("lets one of two renewals racing on one cookie win, and refuses the other", async () => {
     const login = await signIn(SIGNER_EMAIL, password);
     const held = cookieFrom(login.headers);

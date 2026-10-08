@@ -195,18 +195,19 @@ export class AuthController {
   }
 
   @Post("refresh")
-  @HttpCode(HttpStatus.OK)
   @UseGuards(JwtRefreshGuard)
   @NotAudited()
   @ApiCookieAuth(API_AUTH.refresh)
   @ApiOperation({ summary: "Trade the refresh cookie for a fresh access token" })
   @ApiOkResponse({ type: SessionView, description: "Also replaces the refresh cookie" })
-  async refresh(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<SessionView> {
+  @ApiNoContentResponse({ description: "No refresh cookie came: nobody is signed in on this browser" })
+  async refresh(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (req.user === undefined) {
+      res.status(HttpStatus.NO_CONTENT).end();
+      return;
+    }
     const tokens = await this.auth.rotate(req.user as RefreshClaims);
-    return this.handOver(tokens, res);
+    res.status(HttpStatus.OK).json(this.handOver(tokens, res));
   }
 
   @Post("logout")
