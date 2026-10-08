@@ -37,19 +37,20 @@ export function useNoticeCounts() {
 function Counted({ counts, children }: { counts: NoticeCounts | undefined; children: ReactNode }) {
   const t = useTranslations("notices");
   const unread = counts?.unread ?? 0;
+  const critical = (counts?.critical ?? 0) > 0;
   return (
     <span className="relative">
       {children}
       {unread > 0 ? (
-        <Badge variant="warning" className="pointer-events-none absolute -top-1 -right-1 px-1.5 tabular-nums">
+        <Badge variant={critical ? "error" : "warning"} className="pointer-events-none absolute -top-1 -right-1 px-1.5 tabular-nums">
           {unread > kMaxShown ? `${kMaxShown}+` : unread}
+          {critical ? <span className="sr-only">{t("criticalOpen")}</span> : null}
         </Badge>
-      ) : null}
-      {(counts?.critical ?? 0) > 0 ? (
+      ) : critical ? (
         <span
           role="img"
           aria-label={t("criticalOpen")}
-          className="pointer-events-none absolute -bottom-0.5 -left-0.5 size-2.5 rounded-full bg-kumo-danger ring-2 ring-kumo-base"
+          className="pointer-events-none absolute top-1 right-1 size-2.5 rounded-full bg-kumo-danger ring-2 ring-kumo-base"
         />
       ) : null}
     </span>
