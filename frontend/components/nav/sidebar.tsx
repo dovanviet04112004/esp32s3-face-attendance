@@ -12,8 +12,10 @@ import { useWaitingCount } from "./waiting-count";
 const kPeekOpenMs = 150;
 const kPeekCloseMs = 300;
 
-/** The brand mark on the axis Kumo centres the collapsed rail's icons on; its header pads 12 px, 4 short of it. */
-export const kRailLogo = "shrink-0 group-data-[state=collapsed]/sidebar:ms-1";
+/** The brand mark on the axis Kumo centres the collapsed rail's icons on, open or shut, so a toggle leaves it in
+ *  place; Kumo's header pads 12 px, 4 short of that axis.
+ */
+export const kRailLogo = "shrink-0 ms-1";
 
 /** Peeks the collapsed rail with Cloudflare's intent delay, and closes it once a page is chosen (KEHOACH 9.12).
  *  Kumo opens and closes on the first pointer crossing, so a brush past the edge flickers.
