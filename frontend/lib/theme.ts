@@ -8,7 +8,7 @@ export const kSidebarCookie = "sidebar";
 
 export const kHomeCookie = "home";
 
-const kYearSeconds = 31_536_000;
+export const kYearSeconds = 31_536_000;
 // A path inside the app: "//host" or a scheme would turn "/" into an open redirect.
 const kAppPath = /^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
 const kDarkQuery = "(prefers-color-scheme: dark)";

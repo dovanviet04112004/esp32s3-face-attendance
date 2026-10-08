@@ -1,4 +1,4 @@
-import axios, { AxiosError, isAxiosError, type AxiosRequestConfig } from "axios";
+import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 
 import { claimsOf, forgetQuietSignIn, signedOutHere, useSession } from "./auth";
 import { env } from "./env";
@@ -33,13 +33,10 @@ async function renew(): Promise<string | null> {
       useSession.getState().setSession(res.data.accessToken, claimsOf(res.data.accessToken), res.data.email);
       return res.data.accessToken;
     }
-    // 204: no refresh cookie came, so nobody is signed in on this browser (KEHOACH 7.2).
-    forgetQuietSignIn();
-  } catch (fell: unknown) {
-    if (isAxiosError(fell) && fell.response?.status === 401) {
-      forgetQuietSignIn();
-    }
+  } catch {
+    // A 204, a 401 and a lost network alike: an "in" left behind would bounce the proxy between form and home.
   }
+  forgetQuietSignIn();
   useSession.getState().clear();
   return null;
 }

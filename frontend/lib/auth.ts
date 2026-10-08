@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { forgetHome } from "./theme";
+import { forgetHome, kYearSeconds } from "./theme";
 
 export const ROLES = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"] as const;
 
@@ -59,7 +59,10 @@ function renewAtOf(accessToken: string): number | null {
   return Date.now() + (claims.exp - claims.iat) * 1000 - kRenewEarlyMs;
 }
 
-const kSessionMark = "session-mark";
+/** Which way this browser last went, "in" or "out": a cookie, so the proxy reads it too (KEHOACH 9.12). */
+export const SIGNED_COOKIE = "signed";
+/** The pages a browser without a session may open; the proxy sends a signed-out browser anywhere else to the form. */
+export const SIGNED_OUT_PAGES: ReadonlySet<string> = new Set(["login", "forgot-password", "set-password", "change-password"]);
 /** The two-step ticket the sign-in page keeps for a reload; a sign-out drops it with the rest. */
 export const PENDING_SIGN_IN_KEY = "login-waiting";
 /** Every localStorage key holding one account's work starts with this, so a sign-out can sweep it unseen. */
@@ -83,25 +86,19 @@ function sweepAccountStore(): void {
   }
 }
 
-function readMark(): "in" | "out" | null {
-  try {
-    const held = localStorage.getItem(kSessionMark);
-    return held === "in" || held === "out" ? held : null;
-  } catch {
-    return null;
-  }
+type Mark = "in" | "out";
+
+export function markOf(raw: string | undefined): Mark | null {
+  return raw === "in" || raw === "out" ? raw : null;
 }
 
-function writeMark(mark: "in" | "out" | null): void {
-  try {
-    if (mark) {
-      localStorage.setItem(kSessionMark, mark);
-    } else {
-      localStorage.removeItem(kSessionMark);
-    }
-  } catch {
-    return;
-  }
+function readMark(): Mark | null {
+  const hit = document.cookie.split("; ").find((one) => one.startsWith(`${SIGNED_COOKIE}=`));
+  return markOf(hit?.slice(SIGNED_COOKIE.length + 1));
+}
+
+function writeMark(mark: Mark | null): void {
+  document.cookie = `${SIGNED_COOKIE}=${mark ?? ""}; path=/; max-age=${mark ? kYearSeconds : 0}; samesite=lax`;
 }
 
 /** Whether this browser signed out on purpose: nothing may renew from the cookie until a password sign-in. */
@@ -109,7 +106,6 @@ export function signedOutHere(): boolean {
   return readMark() === "out";
 }
 
-/** Whether the sign-in form should first try the cookie. */
 export function maySignInQuietly(): boolean {
   return readMark() === "in";
 }
