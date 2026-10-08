@@ -242,6 +242,11 @@ function factText(notice: Notice, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function factCount(notice: Notice, name: string): number {
+  const value = notice.facts?.[name];
+  return typeof value === "number" ? value : 0;
+}
+
 /** The sentence that names the day the facts carry, or the one that names none. */
 function onDay(notice: Notice, bare: NoticeSentence, dated: NoticeSentence): Said {
   const day = factText(notice, "day");
@@ -253,10 +258,19 @@ function myDayAt(notice: Notice): string {
   return day ? `/me/attendance?day=${day}` : "/me/attendance";
 }
 
-// Today's summary opens the reader's home on its team card; a day gone opens its exceptions in the timesheet.
+// Today's summary opens the names it counts, the ones to ask after first; a day gone opens its exceptions.
 function teamDayAt(notice: Notice, reader: Reader): string {
-  const day = factText(notice, "day");
-  return !day || day === todayIso() ? `${reader.home}?focus=today` : `/timesheet?from=${day}&to=${day}&exceptions=1`;
+  const day = factText(notice, "day") ?? todayIso();
+  if (day !== todayIso()) {
+    return `/timesheet?from=${day}&to=${day}&exceptions=1`;
+  }
+  if (factCount(notice, "absent") + factCount(notice, "notPunched") > 0) {
+    return `${reader.home}?focus=today&who=absent`;
+  }
+  if (factCount(notice, "late") > 0) {
+    return `/attendance?from=${day}&to=${day}&show=late`;
+  }
+  return factCount(notice, "onLeave") > 0 ? `${reader.home}?focus=today&who=onLeave` : `${reader.home}?focus=today`;
 }
 
 type DueKey = "kindPROBATION_DUE" | "kindCONTRACT_DUE" | "kindCONTRACT_ENDING";

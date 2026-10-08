@@ -49,11 +49,17 @@ export function useUrlState<T extends Record<string, string>>(defaults: T): [T, 
   return [state, patch];
 }
 
-/** Scrolls to the element `?focus=` names once `ready` and every read in flight has landed, then drops the param. */
-export function useFocusOnArrival(ready: boolean): void {
+/** Scrolls to the element `?focus=` names once `ready` and every read in flight has landed, then drops the param.
+ *  A `?who=` beside it names the list a notice opens there: it goes to `open` and is dropped too (KEHOACH 9.21.4).
+ */
+export function useFocusOnArrival(ready: boolean, open?: (who: string) => void): void {
   const pathname = usePathname();
   const router = useRouter();
   const fetching = useIsFetching();
+  const opener = useRef(open);
+  useEffect(() => {
+    opener.current = open;
+  });
   useEffect(() => {
     const held = new URLSearchParams(window.location.search);
     const target = held.get("focus");
@@ -61,7 +67,12 @@ export function useFocusOnArrival(ready: boolean): void {
       return;
     }
     document.getElementById(target)?.scrollIntoView({ block: "start" });
+    const who = held.get("who");
+    if (who) {
+      opener.current?.(who);
+    }
     held.delete("focus");
+    held.delete("who");
     const rest = held.toString();
     router.replace(rest ? `${pathname}?${rest}` : pathname, { scroll: false });
   }, [ready, fetching, pathname, router]);

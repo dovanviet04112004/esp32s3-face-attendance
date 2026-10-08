@@ -413,7 +413,13 @@ function TeamCard() {
     queryKey: ["reports", "team-today"],
     queryFn: () => unlessMissing<TeamToday>("/reports/team-today"),
   });
-  useFocusOnArrival(team.isSuccess);
+  useFocusOnArrival(team.isSuccess, (who) => {
+    if (who === "onLeave") {
+      setPicked("onLeave");
+    } else if (who === "absent") {
+      setPicked((team.data?.totals.absent ?? 0) > 0 ? "absent" : "notPunched");
+    }
+  });
   const held = team.data;
   if (held === null) {
     return null;

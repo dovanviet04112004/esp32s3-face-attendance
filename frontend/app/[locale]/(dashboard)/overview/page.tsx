@@ -431,7 +431,11 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
   const t = useTranslations("overview");
   const { role, employeeId } = useSession();
   const [listing, setListing] = useState<Bucket | null>(null);
-  useFocusOnArrival(asked.isSuccess);
+  useFocusOnArrival(asked.isSuccess, (who) => {
+    if (who === "absent" || who === "onLeave") {
+      setListing(who);
+    }
+  });
 
   if (asked.data === null) {
     return null;
