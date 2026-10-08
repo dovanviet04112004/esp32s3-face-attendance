@@ -9284,8 +9284,9 @@ theo tin cũ; đổi lại, **không có đường nào để một tin gửi v�
 | *Cần xử lý* | tab đầu của chuông và của trang thông báo | việc đang mở mà người xem nằm trong nhóm |
 | hộp chờ duyệt | thanh trên, cạnh chuông | tổng thật của các hàng đợi (§9.10), đọc từ bảng nghiệp vụ chứ không từ bảng thông báo |
 
-`ADMIN` thêm một chấm đỏ trên chuông khi còn một việc `CRITICAL` đang mở: một kiosk chết hay một bản sao
-lưu hỏng không được chìm giữa hai mươi đơn nghỉ.
+Với `ADMIN`, chuông chuyển đỏ khi còn một việc `CRITICAL` đang mở: một kiosk chết hay một bản sao lưu hỏng
+không được chìm giữa hai mươi đơn nghỉ. Vẫn là một dấu ở góc chuông: con số chưa đọc đổi sang màu đỏ, và
+khi không còn gì chưa đọc thì một chấm đỏ đứng đúng chỗ con số. Không có dấu thứ hai tách khỏi chuông.
 
 **Dữ liệu.**
 
