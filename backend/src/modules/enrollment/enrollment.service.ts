@@ -236,7 +236,7 @@ export class EnrollmentService {
       value: await tx.deviceEnrollment
         .update({
           where: { deviceId_employeeId: { deviceId, employeeId } },
-          data: { state: "REVOKED" },
+          data: { state: "REVOKED", revokedAt: new Date() },
         })
         .catch((error: unknown) => {
           throw isCode(error, NOT_FOUND) ? new NotFoundException("ENROLLMENT_NOT_FOUND") : error;
@@ -339,7 +339,11 @@ export class EnrollmentService {
   private async eraseIn(tx: Prisma.TransactionClient, employeeId: number, doorIds: string[]): Promise<Door[]> {
     await tx.faceTemplate.deleteMany({ where: { employeeId } });
     await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: null } });
-    await tx.deviceEnrollment.updateMany({ where: { employeeId }, data: { state: "REVOKED" } });
+    // A pair revoked earlier keeps its own time: punches its door took up to then still count (KEHOACH 9.8).
+    await tx.deviceEnrollment.updateMany({
+      where: { employeeId, state: { not: "REVOKED" } },
+      data: { state: "REVOKED", revokedAt: new Date() },
+    });
     if (doorIds.length === 0) {
       return [];
     }

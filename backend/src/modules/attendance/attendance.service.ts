@@ -24,7 +24,7 @@ export function isQuestionable(ts: Date, receivedAt: Date): boolean {
 }
 
 /** What became of one punch. */
-export type PunchOutcome = "stored" | "duplicate" | "unknown-employee" | "while-revoked";
+export type PunchOutcome = "stored" | "duplicate" | "unknown-employee" | "while-revoked" | "not-on-device";
 
 /** How many punches a person's range holds, and how many of them carry each flag. */
 export interface PunchCounts {
@@ -156,6 +156,11 @@ export class AttendanceService {
     if (held) {
       return "duplicate";
     }
+    // A questionable punch's own time says nothing, so its door is judged at its receipt.
+    if (!(await this.onDoor(punch.deviceId, punch.employeeId, questionableTime ? receivedAt : ts))) {
+      this.log.warn(`${punch.deviceId} sent a punch for employee ${punch.employeeId}, who is not on that door`);
+      return "not-on-device";
+    }
     try {
       await this.db.attendanceRecord.create({
         data: {
@@ -190,6 +195,18 @@ export class AttendanceService {
       await this.timesheet.scheduleRebuild(punch.employeeId, day);
     }
     return "stored";
+  }
+
+  /** Whether the door holds the person, or still held them at `at` (KEHOACH 9.8). */
+  private async onDoor(deviceId: string, employeeId: number, at: Date): Promise<boolean> {
+    const pair = await this.db.deviceEnrollment.findUnique({
+      where: { deviceId_employeeId: { deviceId, employeeId } },
+      select: { state: true, revokedAt: true },
+    });
+    if (pair === null) {
+      return false;
+    }
+    return pair.state !== "REVOKED" || (pair.revokedAt !== null && at < pair.revokedAt);
   }
 }
 

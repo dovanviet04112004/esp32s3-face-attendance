@@ -207,6 +207,7 @@ describe("broker login and device tickets (e2e)", () => {
   it("keeps punches from either side of a revoke and drops those made while revoked", async () => {
     await issued(OUTCAST, "APPROVED");
     const person = await db.employee.create({ data: { code: PUNCHER, fullName: "Thử thu hồi" } });
+    await db.deviceEnrollment.create({ data: { deviceId: OUTCAST, employeeId: person.id, state: "ENROLLED" } });
     const attendance = app.get(AttendanceService);
     let serial = 0;
     const punch = (at: Date): Promise<string> => {

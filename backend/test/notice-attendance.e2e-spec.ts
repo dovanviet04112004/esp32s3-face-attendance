@@ -350,6 +350,7 @@ describe("the attendance family, each told to its own people and closed when the
 
   it("never writes a row for a punch, and tells the person's open screens only while they want it", async () => {
     const heard = await watch("clean");
+    await db.deviceEnrollment.create({ data: { deviceId: DEVICE, employeeId: id("clean"), state: "ENROLLED" } });
     const bus = app.get(EventEmitter2);
     const arrive = async () => {
       local += 1;

@@ -268,6 +268,7 @@ describe("home page numbers and the punch door (e2e)", () => {
     await listener.onPunch({ topic: "attendance", deviceId: DEVICE, payload: punch, receivedAt: new Date() });
     assert.equal(await db.attendanceRecord.count({ where: { localId: "900001" } }), 0, "a forged punch was stored");
 
+    await db.deviceEnrollment.create({ data: { deviceId: DEVICE, employeeId: idOf.get(ABSENT) as number, state: "ENROLLED" } });
     const honest = { ...punch, deviceId: DEVICE, localId: "900002" };
     await listener.onPunch({ topic: "attendance", deviceId: DEVICE, payload: honest, receivedAt: new Date() });
     await listener.onPunch({ topic: "attendance", deviceId: DEVICE, payload: honest, receivedAt: new Date() });

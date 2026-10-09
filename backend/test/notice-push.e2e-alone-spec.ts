@@ -223,6 +223,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
   it("pushes a punch only once its person turns that on, with no row behind it", async () => {
     const bus = app.get(EventEmitter2);
     await db.device.create({ data: { id: DEVICE, status: "APPROVED" } });
+    await db.deviceEnrollment.create({ data: { deviceId: DEVICE, employeeId: idOf.get("asker") as number, state: "ENROLLED" } });
     let local = 0;
     const arrive = async () => {
       local += 1;

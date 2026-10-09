@@ -116,6 +116,7 @@ describe("company time (e2e)", () => {
         },
       });
       idOf.set(code, made.id);
+      await db.deviceEnrollment.create({ data: { deviceId: DEVICE, employeeId: made.id, state: "ENROLLED" } });
     }
   });
 

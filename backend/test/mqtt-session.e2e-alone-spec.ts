@@ -94,6 +94,7 @@ describe("broker session (e2e)", () => {
     await sweep();
     await db.device.create({ data: { id: KIOSK, status: "APPROVED", rosterVersion: SERVER_ROSTER } });
     employeeId = (await db.employee.create({ data: { code: CODE, fullName: "Người chấm qua phiên bền", active: true } })).id;
+    await db.deviceEnrollment.create({ data: { deviceId: KIOSK, employeeId, state: "ENROLLED" } });
   });
 
   after(async () => {
