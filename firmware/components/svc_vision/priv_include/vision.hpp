@@ -61,6 +61,7 @@ public:
     void enrol_next(uint32_t employee_id, uint16_t template_idx, const char *name, float yaw_min,
                     float yaw_max) noexcept;
     bool enrol_pending() const noexcept { return enrol_id_ != 0; }
+    void enrol_cancel() noexcept { enrol_id_ = 0; }
     void reset() noexcept;
 
 private:

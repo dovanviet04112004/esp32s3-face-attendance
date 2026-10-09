@@ -80,14 +80,19 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
                          float *yaw_min, float *yaw_max);
 
 /** Tell the enrol flow the pipeline has kept the face it asked for.
- *  @ctx ui_task | non-blocking
+ *  @ctx ui_task | non-blocking | counted only while the enrol screen still wants a face
  */
 void ui_kiosk_enrol_kept(void);
 
 /** Tell the enrol flow the pipeline turned the offered face away as a spoof.
- *  @ctx ai_task | non-blocking | every refusal, the screen does the counting
+ *  @ctx any | non-blocking | every refusal; ui_task does the counting at its next tick
  */
 void ui_kiosk_enrol_refused(void);
+
+/** Whether the enrol screen still wants the face it asked for (KEHOACH 4.5.5h.2).
+ *  @ctx ui_task | non-blocking | false once the screen has failed, finished or closed
+ */
+bool ui_kiosk_enrol_wanted(void);
 
 #define UI_KIOSK_FACTS 8
 

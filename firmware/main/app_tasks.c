@@ -1587,9 +1587,10 @@ static void ai_task(void *arg)
                 if (result.kind == SVC_VISION_SPOOF) {
                     ui_kiosk_enrol_refused();
                 }
-            // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
-            } else {
+            // The step that kept a sample matched that very sample, which is no check-in.
+            } else if (!result.enrol_kept) {
                 note_verdict(&result);
+                // A dropped MATCH is an attendance nobody ever records (KEHOACH 5.3).
                 if (xQueueSend(wiring->results, &result, pdMS_TO_TICKS(RESULT_WAIT_MS)) != pdTRUE) {
                     ESP_LOGE(TAG, "result %d dropped, attend queue full", (int)result.kind);
                 }
@@ -2057,6 +2058,9 @@ static void ui_task(void *arg)
     // A retake fills the bank the person is not using, so the old one matches until it is done (KEHOACH 7.5).
     uint16_t bank = 0;
     int64_t session_ms = 0;
+    uint32_t ticket = 0;
+    uint32_t owed_employee = 0;           // a bank to drop once the step in flight is over
+    uint16_t owed_bank = 0;
 
     for (;;) {
         const uint32_t tick_ms =
@@ -2064,20 +2068,31 @@ static void ui_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(tick_ms));
         ui_kiosk_tick(tick_ms);
         const bool now_enrolling = ui_kiosk_enrolling();
+        // A capture that failed or closed takes back the face it asked for (KEHOACH 4.5.5h.2).
+        if (armed && !ui_kiosk_enrol_wanted()) {
+            armed = false;
+            ticket = svc_vision_enrol_cancel();
+        }
         if (enrolling && !now_enrolling) {
             // The enrolled track has already matched, and a matched track is
             // never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
             // Leaving early drops this session's samples and leaves any older ones matching.
             if (new_employee != 0 && !ui_kiosk_enrol_complete()) {
-                drop_bank(new_employee, bank);
-                ESP_LOGW(TAG, "enrol %" PRIu32 " left unfinished, dropped: %s", new_employee,
-                         esp_err_to_name(svc_facedb_persist()));
+                owed_employee = new_employee;
+                owed_bank = bank;
             }
             new_employee = 0;
             new_name[0] = '\0';
         }
         enrolling = now_enrolling;
+        // The step running at the cancel can still keep one sample, so the bank goes after it.
+        if (owed_employee != 0 && svc_vision_settled(ticket)) {
+            drop_bank(owed_employee, owed_bank);
+            ESP_LOGW(TAG, "enrol %" PRIu32 " left unfinished, dropped: %s", owed_employee,
+                     esp_err_to_name(svc_facedb_persist()));
+            owed_employee = 0;
+        }
         if (armed && !svc_vision_enrol_pending()) {
             armed = false;
             ui_kiosk_enrol_kept();
@@ -2127,8 +2142,9 @@ static void ui_task(void *arg)
         char name[STORAGE_NAME_CAP] = { 0 };
         float yaw_min = 0.0f;
         float yaw_max = 0.0f;
-        if (!ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name), &yaw_min,
-                                 &yaw_max)) {
+        // A new session waits for the old bank to go, or it would read that bank as a held face.
+        if (owed_employee != 0 ||
+            !ui_kiosk_take_enrol(&employee_id, &template_idx, name, sizeof(name), &yaw_min, &yaw_max)) {
             continue;
         }
         svc_attendance_policy_t policy = { 0 };

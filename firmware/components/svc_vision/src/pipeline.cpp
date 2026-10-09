@@ -229,6 +229,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     if (enrol_id_ != 0 && turn >= enrol_yaw_min_ && turn <= enrol_yaw_max_ &&
         matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_) == ESP_OK) {
         enrol_id_ = 0;
+        out.enrol_kept = true;
     }
     char name[STORAGE_NAME_CAP] = { 0 };
     const esp_err_t found = matcher_.best(embedding_, scale, &employee_id, &score, name, sizeof(name));

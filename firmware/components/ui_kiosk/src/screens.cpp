@@ -1033,6 +1033,8 @@ public:
 
     bool done() const noexcept { return kept_ >= kSamples; }
 
+    bool live() const noexcept { return !done() && !failed_; }
+
     // The pipeline stops trying at the same count, so idling out the budget
     // after that only shows a pose prompt to a photograph (KEHOACH 4.5.5h.2).
     void refused_one() noexcept
@@ -1868,17 +1870,26 @@ Pending &pending() noexcept
 
 void enrol_kept() noexcept
 {
-    s_capture.kept_one();
+    if (enrol_wanted()) {
+        s_capture.kept_one();
+    }
 }
 
 void enrol_refused() noexcept
 {
-    s_capture.refused_one();
+    if (enrol_wanted()) {
+        s_capture.refused_one();
+    }
 }
 
 bool enrol_complete() noexcept
 {
     return s_capture.done();
+}
+
+bool enrol_wanted() noexcept
+{
+    return manager().at() == ScreenId::Capture && s_capture.live();
 }
 
 People &people() noexcept

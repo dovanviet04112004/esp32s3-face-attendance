@@ -506,6 +506,33 @@ TEST_CASE("a face that leaves the guide is a new arrival when it comes back", "[
     TEST_ASSERT_EQUAL(2, rig.liveness.scores);
 }
 
+TEST_CASE("the step that keeps an asked-for face says so, and matches it", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    rig.pipeline.enrol_next(kEmployee, 3, "Một", -1.0f, 1.0f);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    const svc_vision_result_t kept = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(1, rig.matcher.keeps);
+    TEST_ASSERT_EQUAL(3, rig.matcher.kept_idx);
+    TEST_ASSERT_TRUE(kept.enrol_kept);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, kept.kind);
+    TEST_ASSERT_FALSE(rig.pipeline.enrol_pending());
+}
+
+TEST_CASE("a withdrawn ask keeps no face from any later step", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    rig.pipeline.enrol_next(kEmployee, 0, "Một", -1.0f, 1.0f);
+    rig.pipeline.enrol_cancel();
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    const svc_vision_result_t matched = rig.pipeline.step(kFrame);
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, matched.kind);
+    TEST_ASSERT_FALSE(matched.enrol_kept);
+    TEST_ASSERT_EQUAL(0, rig.matcher.keeps);
+}
+
 extern "C" void app_main(void)
 {
     // The whole suite prints in a few ms, and the console drops whatever will

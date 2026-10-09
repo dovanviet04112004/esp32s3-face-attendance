@@ -56,6 +56,8 @@ uint32_t s_offer_serial;
 uint32_t s_taken_serial;
 int64_t s_clear_in_ms;
 std::atomic<int32_t> s_touch{ -1 };
+std::atomic<uint32_t> s_refusals{ 0 };    // spoof refusals ai_task heard while enrolling
+uint32_t s_refusals_taken;
 int64_t s_clock_poll_ms;
 int64_t s_minute_shown = -1;
 // ota_task and attend_task write the update, ui_task alone turns it into a screen.
@@ -315,6 +317,11 @@ void ui_kiosk_tick(uint32_t dt_ms)
         was = now;
         s_dirty = ui::manager().current()->on_touch(x, y, now >= 0) || s_dirty;
     }
+    for (const uint32_t heard = s_refusals.load(std::memory_order_acquire); s_refusals_taken != heard;
+         ++s_refusals_taken) {
+        ui::enrol_refused();
+        s_dirty = true;
+    }
     mind_the_clock(dt_ms);
     settle_stage(dt_ms);
     take_verdict(dt_ms);
@@ -496,9 +503,13 @@ void ui_kiosk_enrol_kept(void)
 void ui_kiosk_enrol_refused(void)
 {
     if (s_ready) {
-        ui::enrol_refused();
-        s_dirty = true;
+        s_refusals.fetch_add(1, std::memory_order_release);
     }
+}
+
+bool ui_kiosk_enrol_wanted(void)
+{
+    return s_ready && ui::enrol_wanted();
 }
 
 void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count)

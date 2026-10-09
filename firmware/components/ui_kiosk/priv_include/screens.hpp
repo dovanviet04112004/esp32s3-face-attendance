@@ -110,6 +110,9 @@ bool enrol_complete() noexcept;
 /** The capture screen counts a sample the pipeline turned away as a spoof. */
 void enrol_refused() noexcept;
 
+/** The capture screen is up and has neither failed nor finished. */
+bool enrol_wanted() noexcept;
+
 /** What the device page shows, handed down by main (KEHOACH 4.5.4 rule 2). */
 struct Facts {
     int count;

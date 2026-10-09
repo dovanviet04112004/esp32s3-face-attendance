@@ -1,6 +1,6 @@
 /** The face pipeline as one step per camera frame: detect every frame, then at
  *  most one more model, and an event when something worth reporting happened.
- *  @ctx ai_task only | blocking for the models it runs | no lock of its own (KEHOACH 4.5.5d)
+ *  @ctx ai_task steps | other tasks post requests, applied as its next step starts (KEHOACH 4.5.5d)
  */
 #pragma once
 
@@ -56,6 +56,7 @@ typedef struct {
     svc_vision_box_t primary;             // the face being tracked
     svc_vision_box_t boxes[SVC_VISION_REPORTED_FACES];
     uint8_t faces;                        // faces this detect saw, may exceed the boxes kept
+    bool enrol_kept;                      // this step kept the face enrol_next asked for
 } svc_vision_result_t;
 
 /** Take the thresholds and check the recognition branch is there.
@@ -76,7 +77,7 @@ typedef void (*svc_vision_seen_cb_t)(const svc_vision_box_t *boxes, uint8_t coun
 void svc_vision_on_seen(svc_vision_seen_cb_t cb, void *ctx);
 
 /** Keep the next face this pipeline embeds, under this id and name.
- *  @ctx task | non-blocking | one shot: the next embedding is kept, then matched
+ *  @ctx task | non-blocking | one shot, taken up as ai_task starts its next step
  *  @param yaw_min the turn window the sample must fall in (KEHOACH 4.5.5h.2)
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE until svc_vision_init has run
  */
@@ -84,9 +85,20 @@ esp_err_t svc_vision_enrol_next(uint32_t employee_id, uint16_t template_idx, con
                                 float yaw_min, float yaw_max);
 
 /** True while a face asked for by svc_vision_enrol_next has not arrived yet.
- *  @ctx any | non-blocking | clears the moment the pipeline keeps one
+ *  @ctx any | non-blocking | clears the moment the pipeline keeps one, or on a cancel
  */
 bool svc_vision_enrol_pending(void);
+
+/** Withdraw the face asked for, so no step that begins after this call keeps one.
+ *  @ctx task | non-blocking | the step already running may still keep a sample
+ *  @ret a ticket for svc_vision_settled, which says when that step is over
+ */
+uint32_t svc_vision_enrol_cancel(void);
+
+/** True once every step that began ahead of the ticket has ended.
+ *  @ctx any | non-blocking
+ */
+bool svc_vision_settled(uint32_t ticket);
 
 /** The smallest face this pipeline will verify, in frame pixels.
  *  @ctx any | non-blocking | zero until svc_vision_init has run
@@ -99,8 +111,8 @@ int svc_vision_face_min_px(void);
  */
 esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result_t *out);
 
-/** Drop the tracked face and any verification in flight.
- *  @ctx ai_task | non-blocking
+/** Drop the tracked face, so the next step starts a new track and verifies again.
+ *  @ctx any | non-blocking | applied as ai_task starts its next step
  */
 void svc_vision_reset(void);
 
