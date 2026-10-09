@@ -24,7 +24,8 @@ board_paths:
   board_100: {face_px: 100}
   board_120: {face_px: 120}
 
-band_hz: [0.7, 4.0]
+# 45-180 bpm, the pass band of rPPG-Toolbox's own POS (measurements/rppg §1).
+band_hz: [0.75, 3.0]
 # Power within this of the peak counts as pulse, widened to the Hann main lobe (2/T)
 # when a short window smears the peak further.
 peak_halfwidth_hz: 0.1

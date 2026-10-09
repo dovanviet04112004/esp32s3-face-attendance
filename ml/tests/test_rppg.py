@@ -12,7 +12,7 @@ from facepipe.tasks.rppg.board_path import rgb565_levels
 from facepipe.tasks.rppg.config import Region, load_config
 from facepipe.tasks.rppg.data import axon_clips, unique_clips
 from facepipe.tasks.rppg.eval import auc, gate, summarise
-from facepipe.tasks.rppg.pulse import pulse_of, uniform
+from facepipe.tasks.rppg.pulse import butter_bandpass, filtfilt, pulse_of, uniform
 from facepipe.tasks.rppg.roi import region_boxes, region_means
 from facepipe.tasks.rppg.spectrum import peak_halfwidth, peak_snr, power_spectrum
 
@@ -59,6 +59,15 @@ def test_the_pulse_survives_board_noise_and_rgb565(method: str) -> None:
         means.append(rgb565_levels(patch, CFG.board_noise_lsb, rng).reshape(-1, 3).mean(axis=0))
     bpm, _ = rate_and_snr(np.array(means), method)
     assert abs(bpm - 72.0) <= 1.0
+
+
+def test_the_biquad_band_pass_matches_scipy_both_ways() -> None:
+    signal = pytest.importorskip("scipy.signal")
+    noise = np.random.default_rng(3).normal(size=120)
+    b, a = butter_bandpass(FS, CFG.band_hz)
+    ref_b, ref_a = signal.butter(1, CFG.band_hz, btype="bandpass", fs=FS)
+    assert np.allclose(b, ref_b) and np.allclose(a, ref_a)
+    assert np.allclose(filtfilt(b, a, noise), signal.filtfilt(ref_b, ref_a, noise), atol=1e-10)
 
 
 def test_rgb565_levels_truncate_each_channel_to_its_own_depth() -> None:
