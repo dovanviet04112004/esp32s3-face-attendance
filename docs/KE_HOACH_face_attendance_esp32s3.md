@@ -5673,7 +5673,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
-| `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
+| `wifi` | `saved`, `ssid`, `pass` | blob / str | `saved` (blob `storage_wifi_saved_t`, layout ở `storage_format.h`) giữ năm mạng máy đã vào được, mạng dùng gần nhất trước, mỗi mạng một tên và mật khẩu (§7.6); chỉ ghi khi một mạng thật sự trả lời. `ssid`/`pass` là đường của console và của bản firmware chưa có `saved`: có thì lúc khởi động `net_wifi` đưa mạng ấy lên đầu `saved` rồi xoá hai khoá |
 | `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, layout khai ở `storage_format.h`. Khoá `enroll_out` do firmware có nút xoá ở máy để lại bị xoá ở lần khởi động đầu, nên yêu cầu nằm trong đó không bao giờ được gửi |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
@@ -5754,6 +5754,14 @@ lại cả danh sách (§9.23).
 `pending` chứa 64 người (§7.5). Đầy rồi thì `ASSIGN` kế tiếp không vào danh sách nhưng vẫn được
 đếm — `roster_ver` vẫn tiến — và máy báo `ROSTER_REJECTED`, qua đúng cái van một phút mỗi loại
 sự kiện mà mọi sự kiện lỗi khác đi qua. Trong RAM, danh sách chính là ảnh blob ấy, nằm ở PSRAM.
+
+**Blob `saved` của `wifi` giữ năm mạng đã vào được (§7.6).** Cùng khuôn `magic` rồi `count`; một blob
+lệch layout đọc như vắng khoá, tức máy không nhớ mạng nào và hiện màn chọn Wi-Fi. Nó chỉ được ghi
+khi một mạng vừa trả lời hay vừa bị quên, tức vài lần trong đời một máy.
+
+| Blob | Byte | Nội dung |
+|---|---|---|
+| `saved` = `storage_wifi_saved_t`, 498 B | 0–3 `magic` `'WFS1'`, 4 `count`, 5–7 chừa, rồi 5 × 98 B | mỗi mạng: `ssid` char[33], `pass` char[65], cả hai kết thúc bằng 0; mật khẩu rỗng là mạng mở; dòng 0 là mạng dùng gần nhất |
 
 #### 6.2.2 Partition `models_0` / `models_1` — định dạng ảnh model
 
@@ -6663,31 +6671,71 @@ không phải nạp lại firmware, và điều đó đúng — nhưng nó đòi
 Kiosk treo trên tường trong phòng khác thì không ai làm được thao tác ấy, và đó là lúc cần đổi
 mạng nhất: công ty đổi router, đổi mật khẩu, dọn sang phòng mới.
 
-Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm: quét, liệt kê theo cường độ sóng,
-chạm chọn, gõ mật khẩu, kết nối. Đây là bàn phím duy nhất của kiosk. Mật khẩu Wi-Fi cần cả
-hoa, thường, số và ký hiệu, nên nó có ba bộ ký tự đổi bằng một phím chuyển.
+Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm, và chủ repo chốt 09/10 là làm **trọn**
+như điện thoại: quét, liệt kê, chạm chọn, gõ mật khẩu, kết nối; nhớ những mạng đã vào được và tự nối
+lại; chạm mạng đang nối thì xem thông tin của nó; quên một mạng. Đây là bàn phím duy nhất của kiosk.
+Mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên bàn phím có bốn bộ ký tự: thường, hoa, số với
+ký hiệu hay gặp, và bộ ký hiệu thứ hai cho `. , / % = [ ]` cùng phần còn lại của bàn phím ASCII.
+Ô mật khẩu dài hơn ô thì hiện phần **cuối**, vì đó là chỗ người gõ đang nhìn.
 
 **Nó vào từ Cài đặt, không từ menu gốc** (§4.5.5h.4): Wi-Fi là thuộc tính của máy, không phải
 một việc người vận hành mở máy ra để làm.
 
 **Cường độ sóng vẽ bằng vạch, không bằng số.** `-67` là đơn vị của người làm radio; bốn vạch cao
 dần là thứ mọi người đã đọc được sẵn từ điện thoại. Ngưỡng chia vạch là chuyện **hiển thị**, không
-phải ngưỡng nghiệp vụ, nên nó không sinh khoá nào cho §4.9. Mạng có khoá mang thêm hình ổ khoá.
+phải ngưỡng nghiệp vụ, nên nó không sinh khoá nào cho §4.9. Mạng có khoá mang thêm hình ổ khoá. Số
+dBm chỉ hiện ở trang thông tin, cho người đang dò chỗ đặt máy.
 
-**Danh sách tự làm mới trong lúc đang mở.** Đứng nhìn một danh sách chết cho tới khi bấm "Quét
-lại" là thứ chỉ có trên thiết bị nhúng; điện thoại quét lại nền và danh sách tự đổi. Màn này
-xin quét lại mỗi `WIFI_RESCAN_MS` chừng nào nó còn đang hiện danh sách, và **dừng hẳn** khi
-người dùng đã chuyển sang gõ mật khẩu — quét thả link, nên quét trong lúc đang nối là tự phá.
+**Thứ tự như điện thoại.** Mạng đang nối đứng đầu, rồi các mạng đã lưu, rồi các mạng khác theo
+cường độ sóng. Nhiều điểm phát cùng một tên gộp thành một dòng mang sóng mạnh nhất. Dòng cuối là
+**Mạng đã lưu**, mở danh sách năm mạng máy đang nhớ.
+
+**Mở lại màn là thấy ngay danh sách lần quét trước**, kèm một dòng nhỏ "Đang quét…" trong lúc lượt
+mới chạy. Chỉ lần mở đầu tiên kể từ khởi động, khi chưa có lần quét nào, mới hiện "Đang tìm mạng…"
+thay cho danh sách.
+
+**Danh sách tự làm mới trong lúc đang mở, kể cả khi đang nối.** Màn này xin quét lại mỗi
+`WIFI_RESCAN_MS` (15 s) chừng nào nó còn hiện danh sách. Một lượt quét kéo radio khỏi kênh của nó
+vài giây nên MQTT có thể chập chờn trong lúc ấy; chủ repo chốt 09/10 nhận cái giá đó, vì màn chỉ
+mở khi có người đứng chỉnh mạng, và hàng đợi offline giữ mọi lượt chấm công (§6.2.6). Quét dừng
+khi người dùng đang gõ mật khẩu, đang nối, hay đang xem trang thông tin.
+
+**Danh sách không đổi chỗ dưới ngón tay.** Kết quả quét mới chỉ thay danh sách khi không có ngón
+tay nào đang đặt trên màn và không có lượt nối nào đang chạy; mạng được chọn giữ theo **tên**, không
+theo số dòng, nên một lượt quét tới giữa lúc gõ mật khẩu không đổi được mạng sẽ nối.
+
+**Nhớ năm mạng** (`wifi/saved`, §6.2.1), mạng dùng gần nhất trước. Nối được một mạng thì nó lên đầu
+danh sách; mạng thứ sáu, cũ nhất, rơi ra. Chạm một mạng đã lưu mà chưa nối là nối luôn, không hỏi
+lại mật khẩu, và mật khẩu ấy không bao giờ rời `net_wifi` để làm việc đó (§4.5.4). Đến E13-T3, mật
+khẩu nằm trong NVS chưa mã hoá như mọi bí mật khác của máy.
+
+**Chỉ ghi NVS khi mạng thật sự trả lời.** `net_wifi_join` đặt cấu hình, gọi `esp_wifi_connect`,
+chờ tới `WIFI_JOIN_WAIT_MS`, và **chỉ khi vào được** mới ghi mạng ấy vào danh sách. Ghi trước rồi
+mới thử là cách một lỗi gõ mật khẩu khoá kiosk khỏi đúng cái mạng nó vẫn đang dùng được — sau lần
+khởi động kế tiếp thì không còn đường nào vào nữa.
+
+**Không nối được thì nói đúng lý do.** Lý do lấy từ sự kiện ngắt của radio: sai mật khẩu (xác thực
+hỏng, bắt tay bốn bước hết giờ), không thấy mạng, hay hết giờ chờ. Ba câu khác nhau, vì "Sai mật
+khẩu" cho một mạng ngoài tầm là bảo người ta gõ lại một mật khẩu vốn đúng.
+
+**Tự nối lại mạng đã lưu mạnh nhất.** Lúc khởi động máy nối ngay mạng dùng gần nhất. Mất mạng thì
+nó thử lại mạng ấy, giãn dần như trước; hỏng ba lần liền thì nó quét một lượt **không chặn**, bắt
+kết quả trong sự kiện quét xong, và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy. Quét không
+chặn là bắt buộc: lần thử lại chạy trên bộ hẹn giờ của `esp_timer`, chặn ở đó vài giây là chặn mọi
+bộ hẹn giờ khác của máy.
+
+**Trang thông tin của một mạng.** Chạm mạng đang nối, hay một dòng trong **Mạng đã lưu**, mở trang
+của mạng ấy: cường độ sóng (vạch kèm dBm), địa chỉ IP, kiểu bảo mật, và nút **Quên mạng**. Quên là
+xoá mạng ấy khỏi danh sách cùng mật khẩu của nó, nên nó đi bằng hai lần chạm: lần đầu nút đổi thành
+"Chạm lần nữa để quên", chạm chỗ khác thì thôi. Quên mạng đang nối thì máy ngắt ngay và tự nối mạng
+đã lưu khác có sóng; không còn mạng nào thì máy đứng ở trạng thái chưa nối, chấm công vẫn ghi
+offline. Chủ repo chốt 09/10 cho quên cả mạng đang nối dù menu không khoá (§7.5): ai đứng trước máy
+cũng làm được kiosk mất mạng tới khi có người gõ lại mật khẩu.
 
 **Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây
 và thả link trong lúc quét; đặt nó trên task vẽ màn hình là **màn hình đứng hình** đúng lúc người
-dùng vừa bấm. `ui_kiosk` chỉ giương cờ xin quét, `sync_task` quét rồi trả danh sách về — cùng
-đường mà `People` đã dùng cho danh sách người.
-
-**Chỉ ghi NVS khi mạng thật sự trả lời.** `net_wifi_join` đặt cấu hình, gọi `esp_wifi_connect`,
-chờ tới `WIFI_JOIN_WAIT_MS`, và **chỉ khi vào được** mới ghi `wifi/ssid` với `wifi/pass`. Ghi
-trước rồi mới thử là cách một lỗi gõ mật khẩu khoá kiosk khỏi đúng cái mạng nó vẫn đang dùng
-được — sau lần khởi động kế tiếp thì không còn đường nào vào nữa.
+dùng vừa bấm. `ui_kiosk` chỉ giương cờ xin quét, xin nối, xin quên; `sync_task` làm rồi trả kết quả
+về — cùng đường mà `People` đã dùng cho danh sách người.
 
 **Hai kiểu struct cho một danh sách mạng, có chủ ý.** `net_wifi_ap_t` là của radio,
 `ui_kiosk_ap_t` là của màn hình; tầng nối dây chuyển đổi. Cho `ui_kiosk` (L6) gọi thẳng
