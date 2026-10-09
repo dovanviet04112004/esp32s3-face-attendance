@@ -18,9 +18,10 @@ from pathlib import Path
 
 import numpy as np
 import serial
+import yaml
 from PIL import Image
 
-COLD_DRIVE = Path("/mnt/e/face-attendance-data/raw/device/ov5640")
+ML_ROOT = Path(__file__).resolve().parents[1]
 SHOT_CASE = '"hand back the frames the button kept"'
 RAW_CASE = '"metered frames reach the host as raw rgb565"'
 MENU_PROMPT = b"Enter test for running"
@@ -33,6 +34,12 @@ LOG_LINE = re.compile(rb"[EWIDV] \(\d+\) [^\r\n]*")
 SHOT_HEAD = re.compile(rb"--SHOT ([\w.\-]+) (\d+)--")
 RAW_HEAD = re.compile(rb"--RAW (\d+)x(\d+) level (-?\d+) exposure (\d+) gain16 (\d+)--")
 SHOT_METER = re.compile(r"_L(\d+)_E(\d+)_G(\d+)\.jpg$")
+
+
+def capture_root() -> Path:
+    """Where board frames are kept: device.ov5640 of configs/common/paths.yaml."""
+    paths = yaml.safe_load((ML_ROOT / "configs/common/paths.yaml").read_text(encoding="utf-8"))
+    return ML_ROOT / paths["device"]["ov5640"]
 
 
 def opened(port: str) -> serial.Serial:
@@ -111,7 +118,8 @@ def written(meta_dir: Path, stem: str, payload: dict) -> None:
 
 def pull_shots(handle: serial.Serial, session: str, labels: dict) -> int:
     """Save the button's JPEGs under the repo naming, meter state moved into the json."""
-    images, meta = COLD_DRIVE / "images", COLD_DRIVE / "meta"
+    root = capture_root()
+    images, meta = root / "images", root / "meta"
     images.mkdir(parents=True, exist_ok=True)
     index = 0
 
@@ -145,7 +153,8 @@ def pull_shots(handle: serial.Serial, session: str, labels: dict) -> int:
 
 def pull_raw(handle: serial.Serial, session: str, labels: dict) -> int:
     """Save fresh frames as lossless png, one meta file each."""
-    images, meta = COLD_DRIVE / "images", COLD_DRIVE / "meta"
+    root = capture_root()
+    images, meta = root / "images", root / "meta"
     images.mkdir(parents=True, exist_ok=True)
     index = 0
 
@@ -221,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     finally:
         handle.close()
-    print(f"saved {saved} file(s) under {COLD_DRIVE}")
+    print(f"saved {saved} file(s) under {capture_root()}")
     return 0 if saved else 1
 
 
