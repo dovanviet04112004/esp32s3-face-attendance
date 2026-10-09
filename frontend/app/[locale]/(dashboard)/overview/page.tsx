@@ -234,7 +234,9 @@ interface CardLink {
 }
 
 function Card({ id, title, link, children }: { id?: string; title: ReactNode; link?: CardLink; children: ReactNode }) {
-  const face = "shrink-0 font-normal text-kumo-link hover:underline";
+  // Link or button, 44 px under a finger as globals.css makes every button, yet the band keeps one height (KEHOACH 9.21.2).
+  const face =
+    "shrink-0 font-normal text-kumo-link hover:underline pointer-coarse:-my-3 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center";
   return (
     <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
       <LayerCard.Secondary className="justify-between gap-3">
