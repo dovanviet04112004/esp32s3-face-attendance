@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
+import type { Prisma } from "@prisma/client";
 import type { Queue } from "bullmq";
 
 import type { DeviceEvent } from "../../common/generated/device_event.js";
@@ -21,25 +22,15 @@ export class RealtimeListener {
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
 
-  /** Keep what a kiosk reports, then show it. A fault nobody saw still counts. */
+  /** Keep what a kiosk reports, then show it, once per seq. A fault nobody saw still counts. */
   @OnEvent(KIOSK_EVENT.event, { suppressErrors: false })
   async onEvent(message: KioskMessage<DeviceEvent>): Promise<void> {
     const body = message.payload;
     await this.devices.seen(message.deviceId, message.receivedAt);
-    await this.db.deviceEvent.create({
-      data: {
-        deviceId: message.deviceId,
-        type: body.type,
-        severity: body.severity,
-        employeeId: body.employeeId,
-        livenessScore: body.livenessScore,
-        cmdId: body.cmdId,
-        errorCode: body.errorCode,
-        message: body.message,
-        ts: new Date(body.ts),
-        receivedAt: message.receivedAt,
-      },
-    });
+    if (!(await this.keep(message))) {
+      this.log.debug(`${message.deviceId} event seq ${body.seq} already held, not shown again`);
+      return;
+    }
     this.feed.publish(FEED.event, body);
     if (body.severity === "ERROR") {
       // Telling someone is somebody else's job and may be slow, so it leaves
@@ -47,6 +38,30 @@ export class RealtimeListener {
       const queue: Queue = this.queues[QUEUE.notify];
       await queue.add(JOB.webhook, { deviceId: message.deviceId, reason: body.type });
     }
+  }
+
+  // False for a redelivery: (deviceId, seq) is unique, and a row without seq never collides (KEHOACH 4.6).
+  private async keep(message: KioskMessage<DeviceEvent>): Promise<boolean> {
+    const body = message.payload;
+    const row: Prisma.DeviceEventCreateManyInput = {
+      deviceId: message.deviceId,
+      seq: body.seq,
+      type: body.type,
+      severity: body.severity,
+      employeeId: body.employeeId,
+      livenessScore: body.livenessScore,
+      cmdId: body.cmdId,
+      errorCode: body.errorCode,
+      message: body.message,
+      ts: new Date(body.ts),
+      receivedAt: message.receivedAt,
+    };
+    if (body.seq === undefined) {
+      await this.db.deviceEvent.create({ data: row });
+      return true;
+    }
+    const made = await this.db.deviceEvent.createMany({ data: [row], skipDuplicates: true });
+    return made.count === 1;
   }
 
   @OnEvent(DEVICE_CHANGED)

@@ -408,6 +408,8 @@ model DeviceCommand {
 model DeviceEvent {
   id            BigInt   @id @default(autoincrement())
   deviceId      String   @db.VarChar(32)
+  // BigInt: the contract admits up to 2^53 - 1. Rows without one never collide (KEHOACH 4.6).
+  seq           BigInt?
   type          String
   severity      String
   employeeId    Int?
@@ -419,6 +421,7 @@ model DeviceEvent {
   receivedAt    DateTime @default(now())
   device        Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
+  @@unique([deviceId, seq])
   @@index([deviceId, ts])
   @@index([type, ts])
 }

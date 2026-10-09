@@ -10,17 +10,24 @@ import request from "supertest";
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { GUARD } from "../src/common/cache/cache-keys.js";
+import type { DeviceEvent } from "../src/common/generated/device_event.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { RedisService } from "../src/database/redis.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { RealtimeListener } from "../src/modules/realtime/realtime.listener.js";
 import { publishAsKiosk, tokensOf } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-feed";
 const STRANGER_ID = "kiosk-e2e-stranger";
 const ASKING_ID = "kiosk-e2e-asking";
 const SETTLE_MS = 1500;
+const POLL_MS = 100;
+const WAIT_LIMIT_MS = 20_000;
+const REPEATS = 10;
+const REPEATED_SEQ = 7;
+const SHOWN_SEQ = 70;
 const RANGE = { from: "2020-01-01T00:00:00.000Z", to: "2020-01-02T00:00:00.000Z" };
 const LOCKED_MAIL = "e2e-rt-locked@kiosk.local";
 const CUT_MAIL = "e2e-rt-cut@kiosk.local";
@@ -75,6 +82,33 @@ describe("realtime and reports (e2e)", () => {
     });
   }
 
+  function doorOpened(ts: number, seq?: number): DeviceEvent {
+    return { deviceId: DEVICE_ID, seq, ts, type: "DOOR_OPENED_MANUALLY", severity: "INFO" };
+  }
+
+  // Every suite's api hears the broker; a call straight to this listener is heard by this api alone.
+  function hearHere(payload: DeviceEvent): Promise<void> {
+    return app.get(RealtimeListener).onEvent({ topic: "event", deviceId: DEVICE_ID, receivedAt: new Date(), payload });
+  }
+
+  function stored(seq: number): Promise<number> {
+    return db.deviceEvent.count({ where: { deviceId: DEVICE_ID, seq } });
+  }
+
+  function announced(seq: number): number {
+    return seen.event.filter((body) => (body as { seq?: number }).seq === seq).length;
+  }
+
+  async function until(check: () => Promise<boolean> | boolean, what: string): Promise<void> {
+    for (let waited = 0; waited < WAIT_LIMIT_MS; waited += POLL_MS) {
+      if (await check()) {
+        return;
+      }
+      await new Promise((done) => setTimeout(done, POLL_MS));
+    }
+    throw new Error(`${what} did not happen in ${WAIT_LIMIT_MS} ms`);
+  }
+
   before(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -124,6 +158,36 @@ describe("realtime and reports (e2e)", () => {
       (body) => (body as { type?: string }).type === "CAMERA_FAULT",
     );
     assert.ok(shown, "the fault never reached an open dashboard");
+  });
+
+  it("keeps one row for an event its kiosk sends ten times", async () => {
+    const event = doorOpened(Date.now(), REPEATED_SEQ);
+    for (let sent = 0; sent < REPEATS; sent += 1) {
+      await publishAsKiosk(`kiosk/${DEVICE_ID}/up/event`, event);
+    }
+    // A kiosk's messages are handled in arrival order, so the next seq landing means the ten are done.
+    await publishAsKiosk(`kiosk/${DEVICE_ID}/up/event`, { ...event, seq: REPEATED_SEQ + 1 });
+    await until(async () => (await stored(REPEATED_SEQ + 1)) === 1, "the event after the ten");
+    assert.equal(await stored(REPEATED_SEQ), 1, "a redelivered event became a second row");
+  });
+
+  it("shows an event its kiosk sends again only the first time", async () => {
+    const event = doorOpened(Date.now(), SHOWN_SEQ);
+    for (let sent = 0; sent < REPEATS; sent += 1) {
+      await hearHere(event);
+    }
+    await hearHere({ ...event, seq: SHOWN_SEQ + 1 });
+    await until(() => announced(SHOWN_SEQ + 1) === 1, "the event after the ten on the feed");
+    assert.equal(await stored(SHOWN_SEQ), 1);
+    assert.equal(announced(SHOWN_SEQ), 1, "a redelivered event reached the dashboard again");
+  });
+
+  it("keeps every event that carries no seq, a repeat included", async () => {
+    const event = doorOpened(Date.now());
+    await hearHere(event);
+    await hearHere(event);
+    const kept = await db.deviceEvent.count({ where: { deviceId: DEVICE_ID, type: event.type, seq: null } });
+    assert.equal(kept, 2, "an event without a seq was taken for a redelivery");
   });
 
   it("drops what a kiosk nobody approved says, and writes no row for it", async () => {
