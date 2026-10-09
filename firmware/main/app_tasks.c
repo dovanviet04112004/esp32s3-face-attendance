@@ -68,6 +68,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define CAM_TASK_STACK_BYTES 4096
 #define RATE_WINDOW_FRAMES 60
 #define COVER_WAIT_MS 70
+#define CAMERA_STALL_MS 1000
 #define TOF_TASK_CORE 0
 #define TOF_TASK_PRIORITY 6
 #define TOF_TASK_STACK_BYTES 3072
@@ -1413,6 +1414,8 @@ static void cam_task(void *arg)
     bool resting = false;
     bool relight = false;
     bool updating = false;
+    bool stalled = false;
+    int64_t framed_at = esp_timer_get_time();
 
     for (;;) {
         const drv_lcd_overlay_t *overlay = ui_kiosk_hold();
@@ -1433,6 +1436,7 @@ static void cam_task(void *arg)
                 // frame rate the kiosk never ran at.
                 window_started = esp_timer_get_time();
                 frames = 0;
+                framed_at = window_started;
             }
             ESP_LOGI(TAG, "panel and sensor %s, %lld ms since %s", resting ? "asleep" : "awake",
                      (long long)asleep_for_ms(), atomic_load(&s_awake_by));
@@ -1446,6 +1450,7 @@ static void cam_task(void *arg)
         if (ui_kiosk_update_covers() != updating) {
             updating = !updating;
             drv_camera_rest(updating);
+            framed_at = esp_timer_get_time();
         }
         if (updating) {
             const esp_err_t painted =
@@ -1460,6 +1465,28 @@ static void cam_task(void *arg)
                 drv_lcd_backlight(atomic_load(&s_brightness));
             }
             ui_kiosk_wait_publish(COVER_WAIT_MS);
+            continue;
+        }
+        // A silent sensor must not freeze the screens: they go on the ground until frames return.
+        if (stalled) {
+            if (overlay != NULL && overlay->serial != drawn_serial) {
+                last_blit = drv_lcd_paint(overlay, ui_kiosk_ground_rgb565());
+                drawn_serial = overlay->serial;
+                ui_kiosk_shown(overlay->serial);
+            }
+            ui_kiosk_release();
+            if (relight && last_blit == ESP_OK && drawn_serial != 0) {
+                relight = false;
+                drv_lcd_backlight(atomic_load(&s_brightness));
+            }
+            if (!drv_camera_has_frame()) {
+                ui_kiosk_wait_publish(COVER_WAIT_MS);
+                continue;
+            }
+            stalled = false;
+            drawn_serial = 0;
+            framed_at = esp_timer_get_time();
+            ESP_LOGW(TAG, "camera sends frames again");
             continue;
         }
         // A covering screen has no video to wait for, so it is drawn on publish (KEHOACH 4.5.5h).
@@ -1478,11 +1505,18 @@ static void cam_task(void *arg)
         camera_fb_t *frame = drv_camera_grab();
         if (frame == NULL) {
             ui_kiosk_release();
+            const int64_t silent_ms = (esp_timer_get_time() - framed_at) / 1000;
+            if (silent_ms >= CAMERA_STALL_MS) {
+                stalled = true;
+                drawn_serial = 0;
+                ESP_LOGE(TAG, "no frame for %lld ms: screens go on without video", (long long)silent_ms);
+            }
             // Spinning here at this priority would starve the idle task and
             // trip the watchdog, so a dry pool costs one tick, not the core.
             vTaskDelay(1);
             continue;
         }
+        framed_at = esp_timer_get_time();
         drv_camera_expose(frame);
         const esp_err_t err = show(overlay, frame, &drawn_serial);
         ui_kiosk_release();

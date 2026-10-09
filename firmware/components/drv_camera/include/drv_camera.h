@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <stdbool.h>
+
 #include "esp_camera.h"
 #include "esp_err.h"
 
@@ -26,6 +28,11 @@ camera_fb_t *drv_camera_grab(void);
  *  @ctx task | non-blocking | never called twice on one frame
  */
 void drv_camera_release(camera_fb_t *frame);
+
+/** Whether a frame is waiting, so a caller can look without blocking in drv_camera_grab.
+ *  @ctx any | non-blocking
+ */
+bool drv_camera_has_frame(void);
 
 /** Hold the middle of the frame at a steady brightness, one step per frame.
  *  @ctx task | blocking on SCCB | call while the frame is still held

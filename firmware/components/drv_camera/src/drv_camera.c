@@ -218,6 +218,11 @@ void drv_camera_release(camera_fb_t *frame)
     }
 }
 
+bool drv_camera_has_frame(void)
+{
+    return s_ready && esp_camera_available_frames();
+}
+
 static void set_gain16(sensor_t *sensor, int gain16)
 {
     const int raw = gain16 > 0 ? gain16 - 1 : 0;
