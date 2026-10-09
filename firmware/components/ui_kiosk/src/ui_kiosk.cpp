@@ -63,6 +63,7 @@ int64_t s_clear_in_ms;
 std::atomic<int32_t> s_touch{ kTouchUp };
 int32_t s_touch_taken = kTouchUp;         // the last value of s_touch handed on
 int32_t s_press = kTouchUp;               // where the press in progress landed
+int64_t s_touched_ms;                     // the last touch, or the last screen change
 bool s_wait_fresh;                        // presses until s_fresh_from_ms belong to another screen
 int64_t s_fresh_from_ms;
 std::atomic<uint32_t> s_refusals{ 0 };    // spoof refusals ai_task heard while enrolling
@@ -100,6 +101,7 @@ void take_touch()
         return;
     }
     s_touch_taken = now;
+    s_touched_ms = now_ms();
     if (now >= 0) {
         const bool fresh = s_press < 0;
         s_press = now;
@@ -358,13 +360,46 @@ void ui_kiosk_on_touch_lost(void)
     }
 }
 
+namespace {
+
+// The screens an operator opens; a capture counts once it has failed or finished (KEHOACH 5.4).
+bool left_open(ui::ScreenId at)
+{
+    switch (at) {
+        case ui::ScreenId::Menu:
+        case ui::ScreenId::Enrol:
+        case ui::ScreenId::People:
+        case ui::ScreenId::Settings:
+        case ui::ScreenId::Wifi:
+        case ui::ScreenId::Device:
+            return true;
+        case ui::ScreenId::Capture:
+            return !ui::enrol_wanted();
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
 void ui_kiosk_tick(uint32_t dt_ms)
 {
     if (!s_ready) {
         return;
     }
+    // Every screen clock counts the time that passed, not the tick asked for (KEHOACH 5.4).
+    static int64_t last_ms = 0;
+    const int64_t now = now_ms();
+    if (last_ms != 0) {
+        dt_ms = (uint32_t)(now - last_ms);
+    }
+    last_ms = now;
     const ui::ScreenId was_on = ui::manager().at();
     take_touch();
+    if (left_open(was_on) && now - s_touched_ms >= (int64_t)CONFIG_UI_ADMIN_IDLE_S * 1000) {
+        ui::manager().go(ui::ScreenId::Scan);
+        s_dirty = true;
+    }
     for (const uint32_t heard = s_refusals.load(std::memory_order_acquire); s_refusals_taken != heard;
          ++s_refusals_taken) {
         ui::enrol_refused();
@@ -378,6 +413,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
     if (ui::manager().at() != was_on) {
         s_wait_fresh = true;
         s_fresh_from_ms = now_ms() + kFreshPressMs;
+        s_touched_ms = now_ms();
     }
     if (!s_dirty) {
         return;
@@ -571,6 +607,14 @@ void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count)
         memcpy(ui::facts().row, facts, sizeof(ui_kiosk_fact_t) * (size_t)kept);
     }
     s_dirty = true;
+}
+
+void ui_kiosk_set_recognition(bool on)
+{
+    if (s_ready && ui::recognition() != on) {
+        ui::recognition() = on;
+        s_dirty = true;
+    }
 }
 
 void ui_kiosk_set_net(const ui_kiosk_net_t *net)

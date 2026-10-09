@@ -453,16 +453,16 @@ void button(Canvas &to, int x, int y, int w, int h, const char *label, uint8_t f
             w - 2 * theme::kGapM, label, ink, Align::Centre);
 }
 
-// The chevron overlays the left edge rather than taking width off both sides,
-// which keeps a long title centred on the panel and whole.
+// A title stays centred on the panel, so the back arrow's width comes off both sides.
 void header(Canvas &to, const char *title, bool back) noexcept
 {
     const int y = theme::kBarH;
     if (back) {
         draw_back(to, kBackX, y, kBackBox, DRV_LCD_ACCENT);
     }
-    to.text(theme::Font::Title, theme::kGutter, Canvas::centre_y(theme::Font::Title, y, kBackBox),
-            APP_LCD_H_RES - 2 * theme::kGutter, title, DRV_LCD_INK, Align::Centre);
+    const int edge = back ? kBackX + kBackBox + theme::kGapS : theme::kGutter;
+    to.text(theme::Font::Title, edge, Canvas::centre_y(theme::Font::Title, y, kBackBox),
+            APP_LCD_H_RES - 2 * edge, title, DRV_LCD_INK, Align::Centre);
 }
 
 bool on_back(int x, int y) noexcept

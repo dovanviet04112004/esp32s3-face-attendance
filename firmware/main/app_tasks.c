@@ -294,6 +294,24 @@ static uint32_t roster_version(void)
     return version;
 }
 
+// A server name runs to 64 characters and a record holds 31 bytes: the cut lands on a whole
+// character and says so with an ellipsis, rather than leaving half a letter.
+static void keep_name(char *out, size_t cap, const char *in)
+{
+    static const char kEllipsis[] = "\xE2\x80\xA6";
+    const size_t len = strlen(in);
+    if (len < cap) {
+        memcpy(out, in, len + 1);
+        return;
+    }
+    size_t end = cap - sizeof(kEllipsis);
+    while (end > 0 && ((unsigned char)in[end] & 0xC0u) == 0x80u) {
+        --end;
+    }
+    memcpy(out, in, end);
+    memcpy(out + end, kEllipsis, sizeof(kEllipsis));
+}
+
 // Comparing across models is worse than refusing, and sync_task counts the refusal (KEHOACH 7.5).
 static app_roster_refusal_t decode_embedding(const enroll_payload_t *wire, app_roster_t *op)
 {
@@ -334,7 +352,7 @@ static void take_roster_push(const char *payload, size_t len)
     op.roster_version = (uint32_t)wire.roster_version;
     op.has_roster_version = wire.has_roster_version;
     if (wire.has_full_name) {
-        strlcpy(op.name, wire.full_name, sizeof(op.name));
+        keep_name(op.name, sizeof(op.name), wire.full_name);
     }
     if (wire.op == ENROLL_PAYLOAD_OP_UPSERT) {
         op.refusal = (uint8_t)decode_embedding(&wire, &op);
@@ -1669,13 +1687,18 @@ static void show_facts(void)
     char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
     sys_storage_device_id(device_id, sizeof(device_id));
     int n = 0;
-    say(&fact[n++], UI_KIOSK_FACT_VERSION, "%.20s", app != NULL ? app->version : "?");
+    say(&fact[n++], UI_KIOSK_FACT_VERSION, "%s", app != NULL ? app->version : "?");
     say(&fact[n++], UI_KIOSK_FACT_DEVICE_ID, "%s", device_id);
     say(&fact[n++], UI_KIOSK_FACT_ENROLLED, "%u", (unsigned)svc_facedb_count());
     say(&fact[n++], UI_KIOSK_FACT_RECORDS, "%" PRIu32, svc_attendance_records());
     say(&fact[n++], UI_KIOSK_FACT_WIFI_DROPS, "%" PRIu32, net_wifi_disconnects());
     say(&fact[n++], UI_KIOSK_FACT_WAKE_WITHIN, "%" PRIu32 " cm", atomic_load(&s_gate_mm) / 10);
-    say(&fact[n++], UI_KIOSK_FACT_MIN_FACE, "%d px", svc_vision_face_min_px());
+    if ((xEventGroupGetBits(app_wiring()->flags) & APP_EG_AI_READY) != 0) {
+        say(&fact[n++], UI_KIOSK_FACT_MIN_FACE, "%d px", svc_vision_face_min_px());
+    } else {
+        const esp_err_t models = app_boot_models_error();
+        say(&fact[n++], UI_KIOSK_FACT_RECOGNITION, "%s", models != ESP_OK ? esp_err_to_name(models) : "-");
+    }
     say(&fact[n++], UI_KIOSK_FACT_RAM_FREE, "%u KB",
         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     ui_kiosk_set_facts(fact, n);
@@ -1689,6 +1712,8 @@ static void show_net(void)
         net_wifi_ssid(net.ssid, sizeof(net.ssid));
         net_wifi_rssi_dbm(&net.rssi_dbm);
     }
+    net.broker = net_mqtt_is_up();
+    net.clock_trusted = sys_time_trusted();
     ui_kiosk_set_net(&net);
 }
 
@@ -2483,6 +2508,7 @@ esp_err_t app_tasks_start(void)
     // Core 1 stays clear for ai_task, whose one Invoke holds a core for
     // 100-400 ms and would stall everything sharing it (KEHOACH 5.1).
     const EventBits_t up = xEventGroupGetBits(wiring->flags);
+    ui_kiosk_set_recognition((up & APP_EG_AI_READY) != 0);
     for (size_t i = 0; i < TASK_COUNT; ++i) {
         const app_task_spec_t *spec = &kTasks[i];
         if ((up & spec->needs) != spec->needs) {

@@ -111,6 +111,7 @@ typedef enum {
     UI_KIOSK_FACT_WAKE_WITHIN,
     UI_KIOSK_FACT_MIN_FACE,
     UI_KIOSK_FACT_RAM_FREE,
+    UI_KIOSK_FACT_RECOGNITION,              // why recognition is off; only then shown
 } ui_kiosk_fact_kind_t;
 
 /** One reading on the device page; wording the label is the kiosk's job.
@@ -129,12 +130,19 @@ void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count);
 #define UI_KIOSK_SSID_CAP STORAGE_WIFI_SSID_CAP
 #define UI_KIOSK_IP_CAP 16                // a dotted quad and its terminator
 
-/** What the settings page says on its Wi-Fi row. */
+/** Where the radio and the broker stand, for the status bar and the Wi-Fi row. */
 typedef struct {
     bool joined;
     char ssid[UI_KIOSK_SSID_CAP];
     int rssi_dbm;
+    bool broker;                          // the MQTT session is up
+    bool clock_trusted;                   // NTP, the RTC or the api has set the clock
 } ui_kiosk_net_t;
+
+/** Say whether recognition runs: off when the models pack, the face table or the pipeline failed.
+ *  @ctx task | non-blocking | once at boot, ahead of ui_task; Scan and Capture then ask for no face
+ */
+void ui_kiosk_set_recognition(bool on);
 
 /** Tell the screens where the radio stands.
  *  @ctx any | non-blocking

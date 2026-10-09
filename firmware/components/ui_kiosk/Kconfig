@@ -23,6 +23,15 @@ menu "Kiosk screen"
             Seeds NVS ui/brightness on first boot, the way svc_vision seeds its
             thresholds. The settings slider owns the key after that (KEHOACH 6.2.1).
 
+    config UI_ADMIN_IDLE_S
+        int "Seconds an operator screen stays up without a touch"
+        range 10 600
+        default 30
+        help
+            Menu, the enrol list, People, Settings, Wi-Fi, the device page, and a
+            capture that has failed or finished go back to Scan after this long
+            untouched; one left open would hide the viewfinder (KEHOACH 5.4).
+
     config UI_SEED_VOLUME
         int "Speaker percent a kiosk starts life at"
         range 0 100

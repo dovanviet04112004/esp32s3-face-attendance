@@ -128,7 +128,7 @@ struct Update {
     ui_kiosk_update_why_t why;
     bool capture_dropped;                 // the update took the panel from a capture
     uint8_t resume_s;                     // what the failure screen counts down
-    char version[16];
+    char version[33];
 };
 
 Update &update() noexcept;
@@ -145,6 +145,9 @@ Level &volume() noexcept;
 
 /** Set when the settings screen took a language main has yet to write to NVS. */
 bool &language_changed() noexcept;
+
+/** Whether the models answer at all; Scan and Capture say so when they do not. */
+bool &recognition() noexcept;
 
 /** What the people screen shows, handed down by main (KEHOACH 4.5.4 rule 2). */
 struct People {

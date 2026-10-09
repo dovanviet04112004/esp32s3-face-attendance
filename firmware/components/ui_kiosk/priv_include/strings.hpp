@@ -123,6 +123,9 @@ enum class StrId : uint16_t {
     KeySymbols,
     KeyMoreSymbols,
     KeyDigits,
+    ScanRecognitionOff,
+    CaptureNoRecognition,
+    DeviceRecognition,
 
     Count,
 };

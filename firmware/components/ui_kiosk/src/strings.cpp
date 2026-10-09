@@ -123,6 +123,9 @@ constexpr Entry kRows[] = {
     { StrId::KeySymbols, "?123", "?123" },
     { StrId::KeyMoreSymbols, "#+=", "#+=" },
     { StrId::KeyDigits, "123", "123" },
+    { StrId::ScanRecognitionOff, "Máy chưa nhận diện được, báo quản trị", "Recognition is off, tell an admin" },
+    { StrId::CaptureNoRecognition, "Máy chưa nhận diện được", "Recognition is off" },
+    { StrId::DeviceRecognition, "Nhận diện", "Recognition" },
 };
 
 constexpr size_t kCount = sizeof(kRows) / sizeof(kRows[0]);

@@ -39,7 +39,7 @@ constexpr int kTicketLineH = 22;          // the id line; the claim code takes t
 constexpr int kBandH = 96;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - theme::kGutter;
 constexpr int kMenuBox = 44;
-constexpr int kRingR = 26;
+constexpr int kRingR = 20;
 constexpr int kKeyRadius = 8;
 
 constexpr int kSamples = 3;
@@ -195,14 +195,20 @@ Level s_brightness = { 70, false, false };
 Restart s_vision_reset = Restart::No;
 Level s_volume = { 60, false, false };
 bool s_language_changed = false;
+bool s_recognition = true;
 
 bool inside(int x, int y, int bx, int by, int bw, int bh)
 {
     return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
+// A clock nothing has set reads 1970 boot time, which is a wrong hour, not an hour (KEHOACH 4.5.5h.1).
 void clock_text(char *out, size_t cap)
 {
+    if (!s_net.clock_trusted) {
+        strlcpy(out, "--:--", cap);
+        return;
+    }
     const time_t now = time(nullptr);
     struct tm parts;
     localtime_r(&now, &parts);
@@ -221,10 +227,28 @@ int signal_level(int rssi_dbm)
     return rssi_dbm >= -78 ? 2 : 1;
 }
 
+// Bars say the radio holds a network; the mark beside them says the broker does not (KEHOACH 4.5.5h.1).
+void wifi_mark(Canvas &to, int right, bool on_video)
+{
+    const int box = 22;
+    const int x = right - box;
+    widgets::wifi_bars(to, x, (theme::kBarH - box) / 2, box, s_net.joined ? signal_level(s_net.rssi_dbm) : 0,
+                       DRV_LCD_INK, on_video ? DRV_LCD_EDGE : DRV_LCD_LINE);
+    if (!s_net.joined || s_net.broker) {
+        return;
+    }
+    const int w = theme::text_width(Font::Caption, "!");
+    const int y = Canvas::centre_y(Font::Caption, 0, theme::kBarH);
+    if (on_video) {
+        to.text_on_video(Font::Caption, x - w - 2, y, w, "!", DRV_LCD_WARN);
+    } else {
+        to.text(Font::Caption, x - w - 2, y, w, "!", DRV_LCD_WARN);
+    }
+}
+
 void status_bar(Canvas &to, bool on_video)
 {
     const uint8_t ink = DRV_LCD_INK;
-    const uint8_t rest = on_video ? DRV_LCD_EDGE : DRV_LCD_LINE;
     char now[8] = { 0 };
     clock_text(now, sizeof(now));
     const int y = Canvas::centre_y(Font::Caption, 0, theme::kBarH);
@@ -233,9 +257,7 @@ void status_bar(Canvas &to, bool on_video)
     } else {
         to.text(Font::Caption, theme::kGutter, y, 80, now, ink);
     }
-    const int box = 22;
-    widgets::wifi_bars(to, APP_LCD_H_RES - theme::kGutter - box, (theme::kBarH - box) / 2, box,
-                       s_net.joined ? signal_level(s_net.rssi_dbm) : 0, ink, rest);
+    wifi_mark(to, APP_LCD_H_RES - theme::kGutter, on_video);
 }
 
 void page(Canvas &to, const char *title, bool back)
@@ -353,6 +375,37 @@ const char *prompt_for(ui_kiosk_stage_t stage)
     }
 }
 
+// Where a name breaks to fit width: the last space that fits, else wherever the width runs out.
+size_t wrap_at(Font face, const char *utf8, int width)
+{
+    if (theme::text_width(face, utf8) <= width) {
+        return strlen(utf8);
+    }
+    char probe[STORAGE_NAME_CAP];
+    size_t space = 0;
+    size_t fits = 0;
+    const char *at = utf8;
+    while (*at != '\0') {
+        const char *next = at;
+        theme::next_code(&next);
+        const size_t end = (size_t)(next - utf8);
+        if (end >= sizeof(probe)) {
+            break;
+        }
+        memcpy(probe, utf8, end);
+        probe[end] = '\0';
+        if (theme::text_width(face, probe) > width) {
+            break;
+        }
+        if (*at == ' ') {
+            space = (size_t)(at - utf8);
+        }
+        fits = end;
+        at = next;
+    }
+    return space > 0 ? space : fits;
+}
+
 const char *refusal(app_ui_verdict_t verdict)
 {
     switch (verdict) {
@@ -384,6 +437,8 @@ const char *fact_label(ui_kiosk_fact_kind_t kind)
             return text(StrId::DeviceMinFace);
         case UI_KIOSK_FACT_RAM_FREE:
             return text(StrId::DeviceRamFree);
+        case UI_KIOSK_FACT_RECOGNITION:
+            return text(StrId::DeviceRecognition);
         default:
             return text(StrId::DeviceVersion);
     }
@@ -492,7 +547,14 @@ void ticket_line(Canvas &to)
     case UI_KIOSK_TICKET_REFUSED: strlcpy(line, text(StrId::TicketRefused), sizeof(line)); break;
     case UI_KIOSK_TICKET_NO_TOKEN: strlcpy(line, text(StrId::TicketNoToken), sizeof(line)); break;
     case UI_KIOSK_TICKET_OFFLINE: strlcpy(line, text(StrId::TicketOffline), sizeof(line)); break;
-    default: return;
+    default: break;
+    }
+    // A kiosk that recognises nobody says so first; a claim code still shows under it.
+    if (!s_recognition) {
+        strlcpy(line, text(StrId::ScanRecognitionOff), sizeof(line));
+    }
+    if (line[0] == '\0') {
+        return;
     }
     const bool coded = s_ticket.state == UI_KIOSK_TICKET_WAITING && strlen(s_ticket.claim) == 6;
     const int split = coded ? theme::kBarH + kTicketLineH : kGuideY;
@@ -574,14 +636,14 @@ public:
         clock_text(now, sizeof(now));
         to.text_on_video(Font::Caption, theme::kGutter,
                          Canvas::centre_y(Font::Caption, 0, theme::kBarH), 80, now, DRV_LCD_INK);
-        const int box = 22;
-        widgets::wifi_bars(to, APP_LCD_H_RES - kMenuBox - box - theme::kGapS,
-                           (theme::kBarH - box) / 2, box,
-                           s_net.joined ? signal_level(s_net.rssi_dbm) : 0, DRV_LCD_INK,
-                           DRV_LCD_EDGE);
+        wifi_mark(to, APP_LCD_H_RES - kMenuBox - theme::kGapS, true);
         widgets::icon(to, APP_LCD_H_RES - kMenuBox, 0, kMenuBox, widgets::Icon::Menu,
                       held_ ? DRV_LCD_ACCENT : DRV_LCD_INK);
         ticket_line(to);
+        // A guide nobody answers is the one thing worse than saying recognition is off (KEHOACH 7.7).
+        if (!s_recognition) {
+            return;
+        }
 
         uint8_t tone = DRV_LCD_INK;
         const char *prompt = text(StrId::ScanFrame);
@@ -638,10 +700,23 @@ private:
                       DRV_LCD_INK);
         const int text_x = cx + kRingR + theme::kGapM;
         const int room = theme::kGutter + theme::kContentW - theme::kGapM - text_x;
-        const int block = theme::line_height(Font::Strong) + theme::line_height(Font::Caption) + 4;
-        to.text(Font::Strong, text_x, cy - block / 2, room, who, DRV_LCD_INK);
-        to.text(Font::Caption, text_x, cy - block / 2 + theme::line_height(Font::Strong) + 4, room,
-                text(StrId::ScanCheckedIn), DRV_LCD_OK);
+        // The card is the only word on whom the kiosk recognised, so the name takes two lines ahead of a cut.
+        const size_t split = wrap_at(Font::Body, who, room);
+        char first[STORAGE_NAME_CAP];
+        strlcpy(first, who, split + 1 < sizeof(first) ? split + 1 : sizeof(first));
+        const char *rest = who + split;
+        while (*rest == ' ') {
+            ++rest;
+        }
+        const int body = theme::line_height(Font::Body);
+        const int lines = rest[0] != '\0' ? 2 : 1;
+        int y = cy - (lines * body + theme::line_height(Font::Caption) + 4) / 2;
+        to.text(Font::Body, text_x, y, room, first, DRV_LCD_INK);
+        if (lines == 2) {
+            y += body;
+            to.text(Font::Body, text_x, y, room, rest, DRV_LCD_INK);
+        }
+        to.text(Font::Caption, text_x, y + body + 4, room, text(StrId::ScanCheckedIn), DRV_LCD_OK);
     }
 
     bool held_ = false;
@@ -991,12 +1066,11 @@ public:
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
-            char code[16];
-            snprintf(code, sizeof(code), "%u", (unsigned)s_pending.row[i].employee_id);
-            const char *tail = s_pending.row[i].retake ? text(StrId::EnrolRetake) : code;
+            // The kiosk has no employee code, and the server's row id means nothing at the door.
+            const char *tail = s_pending.row[i].retake ? text(StrId::EnrolRetake) : nullptr;
             const widgets::Row what = { s_pending.row[i].name, tail,
                                         widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
-                                        DRV_LCD_INK, -1, widgets::Icon::None };
+                                        DRV_LCD_INK, -1, widgets::Icon::None, true };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
         list.paint(to, held_);
@@ -1118,6 +1192,9 @@ public:
 
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
+        // Whose face is being taken stays on the glass, so it cannot land under the wrong name.
+        to.text_on_video(Font::Body, kWideX, Canvas::centre_y(Font::Body, 0, theme::kBarH), kWideW,
+                         enrol_request().name, DRV_LCD_INK, Align::Centre);
         const int ask_y = theme::kBarH + theme::kGapS;
         uint8_t tone = DRV_LCD_INK;
         char line[64];
@@ -1294,6 +1371,11 @@ private:
         why_ = nullptr;
         refused_ms_ = kRefusalShowMs;
         begin();
+        if (!s_recognition) {
+            enrol_request().waiting = false;
+            failed_ = true;
+            why_ = text(StrId::CaptureNoRecognition);
+        }
     }
 
     void begin() noexcept
@@ -1406,7 +1488,8 @@ public:
                                         DRV_LCD_ACCENT,
                                         DRV_LCD_INK,
                                         -1,
-                                        widgets::Icon::None };
+                                        widgets::Icon::None,
+                                        true };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, false);
         }
         list.paint(to, held_);
@@ -2214,6 +2297,11 @@ Level &volume() noexcept
 bool &language_changed() noexcept
 {
     return s_language_changed;
+}
+
+bool &recognition() noexcept
+{
+    return s_recognition;
 }
 
 Pending &pending() noexcept
