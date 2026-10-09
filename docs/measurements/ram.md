@@ -419,3 +419,32 @@ TFLM 32 dòng cùng bench là 14,06 fps (13,75–14,20). TFLM ở 20 dòng chưa
 tách được giữa runtime và đệm bounce.
 
 Tái lập: `ml/artifacts/device/board_20260923/bench_mem_espdl_20rows.log`.
+
+## 11. Có phiên TLS thật — `bench_mem`, profile `bench`, 09/10 (E9-T9)
+
+Cùng board (`kiosk-2884859fd3c8`), ESP-DL, đệm bounce 20 dòng, ảnh `models_0` của bộ deploy;
+`bench_mem` dựng từ 3e1587d7. Lần này kiosk vào mạng thật **và nối broker qua TLS**: quay số
+`mqtts://mqtt.cckiosk.io.vn:8883` lúc 7.904 ms, broker trả lời lúc 9.097 ms. Chờ 30 s rồi lấy
+mẫu 10 s một lần trong 60 s, đúng như `bench_mem.c`.
+
+| ESP-DL deploy, 20 dòng | 23/09, không TLS (§10.1) | **09/10, có TLS** | Đổi |
+|---|---:|---:|---:|
+| `min_free` RAM nội từ lúc boot | 38.067 B | **29.755 B** | −8.312 B |
+| RAM nội trống lúc chạy (8-bit) | 47.351 B | 41.827 B | −5.524 B |
+| khối liền lớn nhất (cũng là khối DMA lớn nhất) | 31.744 B | 31.744 B | 0 |
+| đáy PSRAM | 2.695 KB | **2.046 KB** | −649 KB |
+
+Theo từng mốc: trước khi boot RAM nội 220 KB, PSRAM 8.188 KB; sau `app_boot` 92 KB và 2.224 KB.
+Task mỏng nhất là `ipc0`, còn 460 B. Cả hai ca của `bench_mem` qua.
+
+- **Cổng 24 KB của E9-T31 qua khi có TLS**, nhưng mới qua 1,5 phút chứ chưa phải 10 phút như cổng
+  đặt 🔬.
+- **PSRAM tụt 649 KB**, khớp khoảng 610 KB mà hàng đợi roster và bộ ghép tin của E10-T23 dời sang
+  PSRAM sau ngày 23/09; phần còn lại chưa tách được.
+- **−8.312 B RAM nội chưa tách được** giữa phiên TLS và code thêm sau 23/09: hôm nay không có lượt
+  không TLS để đối chứng.
+- Suốt lượt đo màn cảm ứng GT911 báo lỗi đọc I2C liên tục, và một người đứng trước camera nên
+  kiosk ghi thật một lượt chấm công (nhân viên 6) — số trên gồm cả lượt nhận diện ấy.
+
+Tái lập: `make fw-app APP=firmware/test_apps/bench_mem`, `make fw-app-flash APP=… MONITOR= PORT=…`,
+`make fw-log APP=… LOG_S=170`; log ở `ml/artifacts/device/board_20261009/bench_mem_espdl_tls.log`.
