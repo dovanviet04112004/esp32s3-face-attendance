@@ -65,6 +65,11 @@ void ui_kiosk_on_verdict(const ui_kiosk_verdict_t *verdict);
  */
 void ui_kiosk_on_touch(bool down, int x, int y);
 
+/** End the press in progress without acting: the controller lost the finger for a while.
+ *  @ctx touch_task | non-blocking
+ */
+void ui_kiosk_on_touch_lost(void);
+
 /** Run the screen showing and repaint it when it has something new to say.
  *  @ctx ui_task | non-blocking | dt_ms is the time since the last call
  */

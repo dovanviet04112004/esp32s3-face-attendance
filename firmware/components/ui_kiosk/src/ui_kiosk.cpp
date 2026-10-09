@@ -8,6 +8,7 @@
 #include "canvas.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -30,6 +31,10 @@ constexpr int64_t kStageDwellMs = 700;
 constexpr int64_t kClockPollMs = 1000;
 // A failure and the note after a new build both stand this long (KEHOACH 7.7).
 constexpr int64_t kUpdateHoldMs = 10000;
+constexpr int32_t kTouchUp = -1;
+constexpr int32_t kTouchLost = -2;
+// A new screen waits this long for a new press, so a double tap never acts on it.
+constexpr int64_t kFreshPressMs = 250;
 
 // One map per slot: cam_task reads the published one for a whole frame while
 // ui_task paints the other (KEHOACH 4.5.5h).
@@ -55,7 +60,11 @@ ui_kiosk_verdict_t s_offer;
 uint32_t s_offer_serial;
 uint32_t s_taken_serial;
 int64_t s_clear_in_ms;
-std::atomic<int32_t> s_touch{ -1 };
+std::atomic<int32_t> s_touch{ kTouchUp };
+int32_t s_touch_taken = kTouchUp;         // the last value of s_touch handed on
+int32_t s_press = kTouchUp;               // where the press in progress landed
+bool s_wait_fresh;                        // presses until s_fresh_from_ms belong to another screen
+int64_t s_fresh_from_ms;
 std::atomic<uint32_t> s_refusals{ 0 };    // spoof refusals ai_task heard while enrolling
 uint32_t s_refusals_taken;
 int64_t s_clock_poll_ms;
@@ -71,6 +80,46 @@ int64_t s_update_left_ms;
 bool covering(ui_kiosk_update_t state)
 {
     return state != UI_KIOSK_UPDATE_NONE && state != UI_KIOSK_UPDATE_DONE;
+}
+
+int64_t now_ms()
+{
+    return esp_timer_get_time() / 1000;
+}
+
+void hand_touch(int x, int y, bool down)
+{
+    s_dirty = ui::manager().current()->on_touch(x, y, down) || s_dirty;
+}
+
+// A lift acts where its press landed; a press the controller lost ends off the glass.
+void take_touch()
+{
+    const int32_t now = s_touch.load(std::memory_order_acquire);
+    if (now == s_touch_taken) {
+        return;
+    }
+    s_touch_taken = now;
+    if (now >= 0) {
+        const bool fresh = s_press < 0;
+        s_press = now;
+        if (s_wait_fresh && (!fresh || now_ms() < s_fresh_from_ms)) {
+            return;
+        }
+        s_wait_fresh = false;
+        hand_touch((now >> 12) & 0xFFFF, now & 0xFFF, true);
+        return;
+    }
+    const int32_t from = s_press;
+    s_press = kTouchUp;
+    if (from < 0 || s_wait_fresh) {
+        return;
+    }
+    if (now == kTouchLost) {
+        hand_touch(-1, -1, false);
+        return;
+    }
+    hand_touch((from >> 12) & 0xFFFF, from & 0xFFF, false);
 }
 
 // The whole panel is one map, but only the rectangle a screen touched is worth
@@ -300,7 +349,14 @@ void ui_kiosk_on_touch(bool down, int x, int y)
     if (!s_ready) {
         return;
     }
-    s_touch.store(down ? ((x & 0xFFFF) << 12) | (y & 0xFFF) : -1, std::memory_order_release);
+    s_touch.store(down ? ((x & 0xFFFF) << 12) | (y & 0xFFF) : kTouchUp, std::memory_order_release);
+}
+
+void ui_kiosk_on_touch_lost(void)
+{
+    if (s_ready) {
+        s_touch.store(kTouchLost, std::memory_order_release);
+    }
 }
 
 void ui_kiosk_tick(uint32_t dt_ms)
@@ -308,15 +364,8 @@ void ui_kiosk_tick(uint32_t dt_ms)
     if (!s_ready) {
         return;
     }
-    static int32_t was = -1;
-    const int32_t now = s_touch.load(std::memory_order_acquire);
-    if (now != was) {
-        const int32_t report = now >= 0 ? now : was;
-        const int x = report >= 0 ? (report >> 12) & 0xFFFF : 0;
-        const int y = report >= 0 ? report & 0xFFF : 0;
-        was = now;
-        s_dirty = ui::manager().current()->on_touch(x, y, now >= 0) || s_dirty;
-    }
+    const ui::ScreenId was_on = ui::manager().at();
+    take_touch();
     for (const uint32_t heard = s_refusals.load(std::memory_order_acquire); s_refusals_taken != heard;
          ++s_refusals_taken) {
         ui::enrol_refused();
@@ -327,6 +376,10 @@ void ui_kiosk_tick(uint32_t dt_ms)
     take_verdict(dt_ms);
     take_update(dt_ms);
     s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
+    if (ui::manager().at() != was_on) {
+        s_wait_fresh = true;
+        s_fresh_from_ms = now_ms() + kFreshPressMs;
+    }
     if (!s_dirty) {
         return;
     }

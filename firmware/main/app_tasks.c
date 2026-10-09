@@ -1607,6 +1607,8 @@ static void touch_task(void *arg)
 {
     (void)arg;
     bool held = false;
+    bool gap = false;                     // a read failed with a finger down
+    bool waking = false;                  // the press that lit a dark panel
     int failed = 0;
     int64_t reset_ms = 0;
     for (;;) {
@@ -1620,6 +1622,7 @@ static void touch_task(void *arg)
         uint8_t count = 0;
         // A failed read says nothing about the finger: reporting a lift types a key twice.
         if (drv_touch_read(points, TOUCH_POINTS, &count) != ESP_OK) {
+            gap = gap || held;
             // A controller that stops answering stays that way until RST resets it.
             const int64_t now_ms = esp_timer_get_time() / 1000;
             if (++failed >= TOUCH_FAILS_TO_RESET && now_ms - reset_ms > TOUCH_RESET_GAP_MS) {
@@ -1630,12 +1633,29 @@ static void touch_task(void *arg)
             continue;
         }
         failed = 0;
-        held = count > 0;
-        if (!held) {
+        const bool pressed = count > 0;
+        // Nobody saw where a press on a dark panel landed, so it only wakes it (KEHOACH 5.4).
+        waking = waking || (pressed && !held && rest_level() == REST_ALL);
+        held = pressed;
+        if (pressed) {
+            stay_awake("touch");
+        }
+        if (waking) {
+            waking = pressed;
+            gap = false;
+            continue;
+        }
+        // A press that spanned failed reads may have lifted at any point in them.
+        if (gap && !pressed) {
+            gap = false;
+            ui_kiosk_on_touch_lost();
+            continue;
+        }
+        gap = false;
+        if (!pressed) {
             ui_kiosk_on_touch(false, 0, 0);
             continue;
         }
-        stay_awake("touch");
         ui_kiosk_on_touch(true, points[0].x, points[0].y);
     }
 }
