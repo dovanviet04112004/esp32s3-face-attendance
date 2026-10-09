@@ -1,0 +1,2 @@
+# app_tasks.c, built here from firmware/main, reads the options the kiosk declares.
+rsource "../../../main/Kconfig.projbuild"
