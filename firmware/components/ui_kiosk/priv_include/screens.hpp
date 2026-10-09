@@ -22,7 +22,6 @@ enum class ScreenId {
     Settings,
     Wifi,
     Device,
-    Person,
     Update,
     Count,
 };
@@ -81,25 +80,6 @@ struct EnrolRequest {
 };
 
 EnrolRequest &enrol_request() noexcept;
-
-/** Where the people screen leaves the employee it wants gone. */
-struct RemoveRequest {
-    bool waiting;
-    uint32_t employee_id;
-};
-
-RemoveRequest &remove_request() noexcept;
-
-/** The person the people screen opened, and a retake the person screen asked for. */
-struct PersonPick {
-    uint32_t employee_id;
-    uint16_t templates;
-    char name[STORAGE_NAME_CAP];
-    bool retake_waiting;
-    bool room;                            // device/enroll_out can take another request
-};
-
-PersonPick &person_pick() noexcept;
 
 /** The capture screen counts a sample when the pipeline really kept one. */
 void enrol_kept() noexcept;
@@ -170,6 +150,9 @@ bool &language_changed() noexcept;
 struct People {
     bool wanted;
     int count;
+    int first;                            // where the rows held start in the whole table
+    int total;
+    int asked;                            // the first row the screen wants next
     ui_kiosk_person_t row[UI_KIOSK_PEOPLE_ROWS];
 };
 
@@ -220,7 +203,6 @@ Screen *people_screen() noexcept;
 Screen *settings_screen() noexcept;
 Screen *wifi_screen() noexcept;
 Screen *device_screen() noexcept;
-Screen *person_screen() noexcept;
 Screen *update_screen() noexcept;
 
 }  // namespace ui

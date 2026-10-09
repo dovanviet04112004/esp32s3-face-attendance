@@ -115,8 +115,6 @@ typedef struct __attribute__((packed)) {
 
 #define STORAGE_PENDING_MAGIC 0x32444E50u    // 'PND2'
 #define STORAGE_PENDING_CAP 64
-#define STORAGE_ENROLL_OUT_MAGIC 0x3154554Fu // 'OUT1'
-#define STORAGE_ENROLL_OUT_CAP 8
 
 /** One person this kiosk is to capture, as the server named them (KEHOACH 7.5).
  */
@@ -133,23 +131,6 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved[3];
     storage_pending_row_t row[STORAGE_PENDING_CAP];
 } storage_pending_t;
-
-/** One operator request the broker has not acked (KEHOACH 7.5).
- */
-typedef struct __attribute__((packed)) {
-    uint8_t op;                           // enroll_payload_op_t: RETAKE or DELETE_EMPLOYEE
-    uint8_t reserved[3];
-    uint32_t employee_id;
-} storage_enroll_ask_t;
-
-/** NVS device/enroll_out: requests to send at least once, oldest first (KEHOACH 6.2.1).
- */
-typedef struct __attribute__((packed)) {
-    uint32_t magic;
-    uint8_t count;
-    uint8_t reserved[3];
-    storage_enroll_ask_t ask[STORAGE_ENROLL_OUT_CAP];
-} storage_enroll_out_t;
 
 /** How far the uplink has got through the log. Only an acked record moves it,
  *  so a power cut costs a resend and never a record (KEHOACH 6.2.5).
@@ -179,8 +160,6 @@ static_assert(offsetof(storage_face_record_t, crc32) == 572, "face crc offset dr
 
 static_assert(sizeof(storage_pending_row_t) == 36, "pending row must match KEHOACH 6.2.1");
 static_assert(sizeof(storage_pending_t) == 2312, "pending blob must match KEHOACH 6.2.1");
-static_assert(sizeof(storage_enroll_ask_t) == 8, "enrol request must match KEHOACH 6.2.1");
-static_assert(sizeof(storage_enroll_out_t) == 72, "enrol outbox must match KEHOACH 6.2.1");
 
 static_assert(sizeof(storage_attend_record_t) == 48, "attend record must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_attend_record_t, ts_ms) == 16, "attend ts offset drifted");

@@ -298,27 +298,16 @@ bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pas
  */
 void ui_kiosk_wifi_joined(esp_err_t result);
 
-/** Collect the employee the people screen asked to delete.
- *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
- *  @ret false when nobody is waiting to be removed
+/** Hand the people screen one page of the face table (KEHOACH 4.5.5h.3).
+ *  @ctx ui_task | non-blocking | copied, the caller keeps its own array
+ *  @param first where the page starts in the whole table; total is how many people it holds
  */
-bool ui_kiosk_take_remove(uint32_t *employee_id);
+void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count, int first, int total);
 
-/** Collect the employee the people screen asked to capture again (KEHOACH 7.5).
- *  @ctx ui_task | non-blocking | one shot | name copied, at least STORAGE_NAME_CAP
- *  @ret false when nobody is waiting for a retake
- */
-bool ui_kiosk_take_retake(uint32_t *employee_id, char *name, size_t cap);
-
-/** Say whether device/enroll_out has room, so a full one refuses rather than drops.
+/** The person the people screen's page starts at, which main fills from.
  *  @ctx any | non-blocking
  */
-void ui_kiosk_set_asks_room(bool room);
-
-/** Hand the list to whichever screen asked for it.
- *  @ctx ui_task | non-blocking | copied, the caller keeps its own array
- */
-void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count);
+int ui_kiosk_people_first(void);
 
 /** True while a screen is collecting faces rather than checking anyone in.
  *  @ctx ai_task | non-blocking

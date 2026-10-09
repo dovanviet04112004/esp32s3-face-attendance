@@ -113,7 +113,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REBOOT_DRAIN_MS 400
 #define WIFI_JOIN_WAIT_MS 12000
 #define ENROLL_REPORT_CAP 1280            // a 31-byte name escaped to 186 still fits
-#define ASK_PAYLOAD_CAP 256
 #define ENROL_SAMPLES 3
 #define ROSTER_OFFER_WAIT_MS 200
 #define ROSTER_TAKE_WAIT_MS 3000          // past one table save, short of the ack wait
@@ -622,34 +621,10 @@ static esp_err_t report_sample(const svc_facedb_unreported_t *sample)
     return sent;
 }
 
-static esp_err_t send_ask(const storage_enroll_ask_t *ask)
-{
-    static char payload[ASK_PAYLOAD_CAP];
-    enroll_payload_t wire = { 0 };
-    wire.op = (enroll_payload_op_t)ask->op;
-    wire.employee_id = ask->employee_id;
-    wire.updated_at = sys_time_now_ms();
-    if (sys_storage_device_id(wire.device_id, sizeof(wire.device_id)) == ESP_OK) {
-        wire.has_device_id = true;
-    }
-    cJSON *root = enroll_payload_to_json(&wire);
-    const bool printed = root != NULL && cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
-    cJSON_Delete(root);
-    if (!printed) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    const esp_err_t sent = net_mqtt_publish(GEN_TOPIC_ENROLL_REPORT, payload, strlen(payload),
-                                            CONFIG_SYNC_ACK_TIMEOUT_MS);
-    ESP_LOGI(TAG, "asked %s for %" PRIu32 ": %s", enroll_payload_op_str(wire.op), ask->employee_id,
-             esp_err_to_name(sent));
-    return sent;
-}
-
 static_assert(UI_KIOSK_PENDING_ROWS <= STORAGE_PENDING_CAP, "a page never runs past the list");
 
 // The list and its NVS image at once, in PSRAM: 64 rows are 2.3 KB (KEHOACH 6.2.1).
 static storage_pending_t *s_pending;
-static storage_enroll_out_t s_asks;
 static bool s_roster_gapped;
 static _Atomic uint8_t s_brightness = 100;
 
@@ -708,58 +683,6 @@ static void load_pending(void)
     offer_pending();
 }
 
-static esp_err_t save_asks(void)
-{
-    s_asks.magic = STORAGE_ENROLL_OUT_MAGIC;
-    const esp_err_t saved = sys_storage_set_blob(STORAGE_NS_DEVICE, STORAGE_KEY_ENROLL_OUT, &s_asks,
-                                                 sizeof(s_asks));
-    if (saved != ESP_OK) {
-        note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "enrol requests not saved");
-    }
-    ui_kiosk_set_asks_room(s_asks.count < STORAGE_ENROLL_OUT_CAP);
-    return saved;
-}
-
-static void load_asks(void)
-{
-    if (sys_storage_get_blob(STORAGE_NS_DEVICE, STORAGE_KEY_ENROLL_OUT, &s_asks, sizeof(s_asks)) !=
-            ESP_OK ||
-        s_asks.magic != STORAGE_ENROLL_OUT_MAGIC || s_asks.count > STORAGE_ENROLL_OUT_CAP) {
-        memset(&s_asks, 0, sizeof(s_asks));
-    }
-    ui_kiosk_set_asks_room(s_asks.count < STORAGE_ENROLL_OUT_CAP);
-}
-
-// A full outbox refuses rather than overwrites: a lost removal keeps a face on the door (KEHOACH 6.2.1).
-static bool push_ask(int op, uint32_t employee_id)
-{
-    if (s_asks.count >= STORAGE_ENROLL_OUT_CAP) {
-        return false;
-    }
-    s_asks.ask[s_asks.count] = (storage_enroll_ask_t){ .op = (uint8_t)op, .employee_id = employee_id };
-    ++s_asks.count;
-    if (save_asks() == ESP_OK) {
-        return true;
-    }
-    // An ask flash does not hold cannot promise to arrive, so it is not made.
-    --s_asks.count;
-    ui_kiosk_set_asks_room(true);
-    return false;
-}
-
-// Requests lead reports: a retake has to reach the server ahead of its samples (KEHOACH 7.5).
-static void drain_asks(void)
-{
-    while (s_asks.count > 0 && net_mqtt_is_up()) {
-        if (send_ask(&s_asks.ask[0]) != ESP_OK) {
-            return;
-        }
-        memmove(&s_asks.ask[0], &s_asks.ask[1], (size_t)(s_asks.count - 1) * sizeof(s_asks.ask[0]));
-        --s_asks.count;
-        save_asks();
-    }
-}
-
 static void report_unbuilt(const svc_facedb_unreported_t *sample, esp_err_t err)
 {
     app_event_t event = { 0 };
@@ -777,7 +700,7 @@ static void drain_reports(void)
 {
     static svc_facedb_unreported_t next;
     bool moved = false;
-    for (int sent = 0; sent < REPORTS_PER_DRAIN && s_asks.count == 0 && net_mqtt_is_up(); ++sent) {
+    for (int sent = 0; sent < REPORTS_PER_DRAIN && net_mqtt_is_up(); ++sent) {
         if (svc_facedb_next_unreported(&next) != ESP_OK) {
             break;
         }
@@ -927,10 +850,6 @@ static roster_outcome_t apply_roster(const app_roster_t *op)
         // matches nobody until they land (KEHOACH 7.5).
         revoke_all_pending();
         done = svc_facedb_clear(op->source != APP_ROSTER_PURGE);
-        if (op->source == APP_ROSTER_PURGE) {
-            memset(&s_asks, 0, sizeof(s_asks));
-            save_asks();
-        }
         break;
     default:
         roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, ESP_ERR_NOT_SUPPORTED, "unknown roster op");
@@ -976,25 +895,6 @@ static void note_gap(const app_roster_t *op, uint32_t held)
     roster_refused(op, DEVICE_EVENT_SEVERITY_WARN, ESP_ERR_INVALID_STATE, note);
 }
 
-// The request is on flash first, so a power cut leaves it to send rather than a
-// removal the server never hears of (KEHOACH 7.5).
-static bool take_ask(const app_roster_t *op)
-{
-    if (!push_ask(op->op, op->employee_id)) {
-        ESP_LOGW(TAG, "request for %" PRIu32 " refused: outbox full or not saved", op->employee_id);
-        return false;
-    }
-    if (op->op == ENROLL_PAYLOAD_OP_RETAKE) {
-        assign_pending(op);
-        return false;
-    }
-    const esp_err_t gone = svc_facedb_remove(op->employee_id);
-    revoke_pending(op->employee_id);
-    ui_kiosk_refresh_people();
-    ESP_LOGI(TAG, "removed %" PRIu32 " here: %s", op->employee_id, esp_err_to_name(gone));
-    return gone == ESP_OK;
-}
-
 // A kiosk joining a fleet takes the whole roster as a run of upserts, so the
 // table is written once for the batch rather than once per person.
 static void take_roster(const app_wiring_t *wiring)
@@ -1004,10 +904,6 @@ static void take_roster(const app_wiring_t *wiring)
     uint32_t held = started_at;
     bool changed = false;
     while (xQueueReceive(wiring->roster, &op, 0) == pdTRUE) {
-        if (op.source == APP_ROSTER_ASKED) {
-            changed = take_ask(&op) || changed;
-            continue;
-        }
         if (op.source == APP_ROSTER_CAPTURED) {
             revoke_pending(op.employee_id);
             continue;
@@ -1041,6 +937,7 @@ static void take_roster(const app_wiring_t *wiring)
         }
     }
     if (changed) {
+        ui_kiosk_refresh_people();
         const esp_err_t saved = svc_facedb_persist();
         if (saved != ESP_OK) {
             note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, saved, "face table would not save");
@@ -1294,7 +1191,8 @@ static void sync_task(void *arg)
     }
     svc_door_t door = svc_door_servo();
     load_pending();
-    load_asks();
+    // Firmware that removed people at the kiosk kept its requests here; none of them is sent (KEHOACH 6.2.1).
+    sys_storage_erase_key(STORAGE_NS_DEVICE, STORAGE_KEY_ENROLL_OUT);
     app_event_t booted = { 0 };
     booted.type = DEVICE_EVENT_TYPE_BOOTED;
     booted.severity = DEVICE_EVENT_SEVERITY_INFO;
@@ -1333,7 +1231,6 @@ static void sync_task(void *arg)
             continue;
         }
         drain_ms = now_ms;
-        drain_asks();
         drain_reports();
         const esp_err_t drained = svc_sync_drain(wait_for_clock);
         more = drained == ESP_ERR_NOT_FINISHED;
@@ -1735,26 +1632,33 @@ static void show_people(void)
 {
     svc_facedb_person_t table[UI_KIOSK_PEOPLE_ROWS];
     ui_kiosk_person_t rows[UI_KIOSK_PEOPLE_ROWS];
-    const size_t found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS);
+    size_t total = 0;
+    size_t first = (size_t)ui_kiosk_people_first();
+    size_t found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS, first, &total);
+    // A table that shrank under the page lands the page on its last rows.
+    if (found == 0 && first > 0 && total > 0) {
+        first = total > UI_KIOSK_PEOPLE_ROWS ? total - UI_KIOSK_PEOPLE_ROWS : 0;
+        found = svc_facedb_people(table, UI_KIOSK_PEOPLE_ROWS, first, &total);
+    }
     for (size_t i = 0; i < found; ++i) {
         rows[i].employee_id = table[i].employee_id;
         rows[i].templates = table[i].templates;
         memcpy(rows[i].name, table[i].name, sizeof(rows[i].name));
     }
-    ui_kiosk_set_people(rows, (int)found);
+    ui_kiosk_set_people(rows, (int)found, (int)first, (int)total);
 }
 
-// The pending list and the outbox belong to sync_task, which also holds the broker link.
+// The pending list belongs to sync_task, which also holds the broker link.
 static void hand_roster(const app_wiring_t *wiring, app_roster_source_t source, int op,
                         uint32_t employee_id, const char *name)
 {
-    static app_roster_t asked;
-    memset(&asked, 0, sizeof(asked));
-    asked.source = (uint8_t)source;
-    asked.op = op;
-    asked.employee_id = employee_id;
-    strlcpy(asked.name, name != NULL ? name : "", sizeof(asked.name));
-    if (xQueueSend(wiring->roster, &asked, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
+    static app_roster_t handed;
+    memset(&handed, 0, sizeof(handed));
+    handed.source = (uint8_t)source;
+    handed.op = op;
+    handed.employee_id = employee_id;
+    strlcpy(handed.name, name != NULL ? name : "", sizeof(handed.name));
+    if (xQueueSend(wiring->roster, &handed, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
         note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, ESP_ERR_TIMEOUT, "roster request dropped");
     }
 }
@@ -2146,16 +2050,6 @@ static void ui_task(void *arg)
         }
         if (ui_kiosk_take_pending_request()) {
             offer_pending();
-        }
-        // Both reach the server as requests, and sync_task acts once each is saved (KEHOACH 7.5).
-        uint32_t going = 0;
-        if (ui_kiosk_take_remove(&going)) {
-            hand_roster(wiring, APP_ROSTER_ASKED, ENROLL_PAYLOAD_OP_DELETE_EMPLOYEE, going, NULL);
-        }
-        uint32_t again = 0;
-        char again_name[STORAGE_NAME_CAP] = { 0 };
-        if (ui_kiosk_take_retake(&again, again_name, sizeof(again_name))) {
-            hand_roster(wiring, APP_ROSTER_ASKED, ENROLL_PAYLOAD_OP_RETAKE, again, again_name);
         }
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;

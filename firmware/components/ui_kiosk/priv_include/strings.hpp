@@ -85,14 +85,10 @@ enum class StrId : uint16_t {
     PeopleEmpty,
     PeopleTemplatesFmt,                   // takes the template count
     PeopleUnnamed,
-    PersonRetake,
-    PersonRemove,
-    PersonConfirm,
-    PersonNoRoom,
     EnrolRetake,
-    EnrolPrev,
-    EnrolNext,
-    EnrolPageFmt,                         // first, last, total
+    PagePrev,
+    PageNext,
+    PageRangeFmt,                         // first, last, total
 
     WifiScanning,
     WifiNone,

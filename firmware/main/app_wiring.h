@@ -19,7 +19,6 @@ extern "C" {
 /** Who put a roster op on the queue, which decides what applying it means (KEHOACH 7.5). */
 typedef enum {
     APP_ROSTER_SERVER = 0,                // a down/enroll push, applied as it says
-    APP_ROSTER_ASKED,                     // an operator's RETAKE or DELETE_EMPLOYEE here
     APP_ROSTER_CAPTURED,                  // a capture finished here, off the pending list
     APP_ROSTER_PURGE,                     // a dead ticket: REPLACE_ALL sparing nothing
 } app_roster_source_t;

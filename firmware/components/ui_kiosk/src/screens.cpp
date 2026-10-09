@@ -154,11 +154,11 @@ int enter_x()
 
 constexpr int kNothing = -1;
 constexpr int kBack = -2;
+constexpr int kPrev = -10;
+constexpr int kNext = -11;
 
 ScreenManager s_manager;
 EnrolRequest s_request;
-RemoveRequest s_remove;
-PersonPick s_pick = { 0, 0, { 0 }, false, true };
 People s_people_list;
 Pending s_pending;
 Networks s_networks;
@@ -220,6 +220,71 @@ void page(Canvas &to, const char *title, bool back)
     status_bar(to, false);
     widgets::header(to, title, back);
 }
+
+// One page of a list main holds, under the pair of buttons Enrol and People share (KEHOACH 4.5.5h.3).
+struct Pager {
+    int first;
+    int count;
+    int total;
+    int cap;                              // rows main hands down at most
+
+    // The whole list fits without a pager; past that the pager takes the foot of the panel.
+    bool paged() const noexcept { return total > list_fits(total, kRowH, kListEnd); }
+
+    static int caption_y() noexcept { return kFootY - theme::kGapS - theme::line_height(Font::Caption); }
+    static int half_w() noexcept { return (theme::kContentW - theme::kGapM) / 2; }
+    static int next_x() noexcept { return theme::kGutter + half_w() + theme::kGapM; }
+
+    int size() const noexcept
+    {
+        const int bottom = paged() ? caption_y() - theme::kGapS : kListEnd;
+        const int fits = list_fits(cap, kRowH, bottom);
+        return fits > 0 ? fits : 1;
+    }
+
+    int rows() const noexcept { return count < size() ? count : size(); }
+    bool can_go_back() const noexcept { return first > 0; }
+    bool can_go_on() const noexcept { return first + rows() < total; }
+    int row_y(int i) const noexcept { return kContentY + i * kRowH; }
+
+    int hit(int x, int y) const noexcept
+    {
+        if (paged() && inside(x, y, theme::kGutter, kFootY, half_w(), theme::kButtonH)) {
+            return can_go_back() ? kPrev : kNothing;
+        }
+        if (paged() && inside(x, y, next_x(), kFootY, half_w(), theme::kButtonH)) {
+            return can_go_on() ? kNext : kNothing;
+        }
+        for (int i = 0; i < rows(); ++i) {
+            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
+                return i;
+            }
+        }
+        return kNothing;
+    }
+
+    // The first row to ask main for once a pager button fired.
+    int turned(int fired) const noexcept
+    {
+        const int to = first + (fired == kPrev ? -size() : size());
+        return to < 0 ? 0 : to;
+    }
+
+    void paint(Canvas &to, int held) const noexcept
+    {
+        if (!paged()) {
+            return;
+        }
+        char range[32];
+        snprintf(range, sizeof(range), text(StrId::PageRangeFmt), first + 1, first + rows(), total);
+        to.text(Font::Caption, theme::kGutter, caption_y(), theme::kContentW, range, DRV_LCD_DIM,
+                Align::Centre);
+        widgets::button(to, theme::kGutter, kFootY, half_w(), theme::kButtonH, text(StrId::PagePrev),
+                        DRV_LCD_SURFACE, can_go_back() ? DRV_LCD_INK : DRV_LCD_LINE, held == kPrev);
+        widgets::button(to, next_x(), kFootY, half_w(), theme::kButtonH, text(StrId::PageNext),
+                        DRV_LCD_SURFACE, can_go_on() ? DRV_LCD_INK : DRV_LCD_LINE, held == kNext);
+    }
+};
 
 // Corners, not an outline: a thirtieth of the cells, and the shape every
 // camera app uses for "put it here" (KEHOACH 4.5.5h).
@@ -823,7 +888,7 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit = row_at(x, y);
+        const int hit = widgets::on_back(x, y) ? kBack : pager().hit(x, y);
         if (down) {
             held_ = hit;
             return true;
@@ -835,13 +900,11 @@ public:
             return true;
         }
         if (fire == kPrev || fire == kNext) {
-            const int step = fire == kPrev ? -page_size() : page_size();
-            const int to = s_pending.first + step;
-            s_pending.asked = to < 0 ? 0 : to;
+            s_pending.asked = pager().turned(fire);
             s_pending.wanted = true;
             return true;
         }
-        if (fire < 0 || fire >= rows()) {
+        if (fire < 0) {
             return true;
         }
         // Only people the server assigned are enrolled here; a kiosk mints no id (KEHOACH 7.5).
@@ -855,7 +918,8 @@ public:
     {
         (void)seen;
         page(to, text(StrId::MenuEnrol), true);
-        const int count = rows();
+        const Pager list = pager();
+        const int count = list.rows();
         if (count == 0) {
             widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRowH);
             to.text(Font::Body, theme::kGutter, Canvas::centre_y(Font::Body, kContentY, kRowH),
@@ -866,7 +930,7 @@ public:
         }
         widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
         for (int i = 0; i < count; ++i) {
-            const int y = list_y(i);
+            const int y = list.row_y(i);
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
@@ -878,69 +942,13 @@ public:
                                         DRV_LCD_INK, -1, widgets::Icon::None };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
-        if (!paged()) {
-            return;
-        }
-        char range[32];
-        snprintf(range, sizeof(range), text(StrId::EnrolPageFmt), s_pending.first + 1,
-                 s_pending.first + count, s_pending.total);
-        to.text(Font::Caption, theme::kGutter, caption_y(), theme::kContentW, range, DRV_LCD_DIM,
-                Align::Centre);
-        widgets::button(to, theme::kGutter, kFootY, half_w(), theme::kButtonH, text(StrId::EnrolPrev),
-                        DRV_LCD_SURFACE, can_go_back() ? DRV_LCD_INK : DRV_LCD_LINE, held_ == kPrev);
-        widgets::button(to, next_x(), kFootY, half_w(), theme::kButtonH, text(StrId::EnrolNext),
-                        DRV_LCD_SURFACE, can_go_on() ? DRV_LCD_INK : DRV_LCD_LINE, held_ == kNext);
+        list.paint(to, held_);
     }
 
 private:
-    static constexpr int kPrev = -10;
-    static constexpr int kNext = -11;
-
-    // The whole list fits without a pager; past that the pager takes the foot of the panel.
-    static bool paged() noexcept { return s_pending.total > list_fits(s_pending.total, kRowH, kListEnd); }
-
-    static int caption_y() noexcept
+    static Pager pager() noexcept
     {
-        return kFootY - theme::kGapS - theme::line_height(Font::Caption);
-    }
-
-    static int page_size() noexcept
-    {
-        const int bottom = paged() ? caption_y() - theme::kGapS : kListEnd;
-        const int fits = list_fits(UI_KIOSK_PENDING_ROWS, kRowH, bottom);
-        return fits > 0 ? fits : 1;
-    }
-
-    static int rows() noexcept
-    {
-        const int size = page_size();
-        return s_pending.count < size ? s_pending.count : size;
-    }
-
-    static int half_w() noexcept { return (theme::kContentW - theme::kGapM) / 2; }
-    static int next_x() noexcept { return theme::kGutter + half_w() + theme::kGapM; }
-    static bool can_go_back() noexcept { return s_pending.first > 0; }
-    static bool can_go_on() noexcept { return s_pending.first + rows() < s_pending.total; }
-
-    static int list_y(int i) noexcept { return kContentY + i * kRowH; }
-
-    int row_at(int x, int y) const noexcept
-    {
-        if (widgets::on_back(x, y)) {
-            return kBack;
-        }
-        if (paged() && inside(x, y, theme::kGutter, kFootY, half_w(), theme::kButtonH)) {
-            return can_go_back() ? kPrev : kNothing;
-        }
-        if (paged() && inside(x, y, next_x(), kFootY, half_w(), theme::kButtonH)) {
-            return can_go_on() ? kNext : kNothing;
-        }
-        for (int i = 0; i < rows(); ++i) {
-            if (inside(x, y, theme::kGutter, list_y(i), theme::kContentW, kRowH)) {
-                return i;
-            }
-        }
-        return kNothing;
+        return { s_pending.first, s_pending.count, s_pending.total, UI_KIOSK_PENDING_ROWS };
     }
 
     int held_ = kNothing;
@@ -1286,6 +1294,7 @@ private:
     int held_ = 0;                        // 0 none, 1 left button, 2 right
 };
 
+// Read only: retake and removal are dashboard actions, since the menu has no lock (KEHOACH 7.5).
 class PeopleScreen final : public Screen {
 public:
     bool opaque() const noexcept override { return true; }
@@ -1298,25 +1307,19 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit = row_at(x, y);
+        const int hit = widgets::on_back(x, y) ? kBack : pager().hit(x, y);
         if (down) {
-            held_ = hit;
+            held_ = hit == kBack || hit == kPrev || hit == kNext ? hit : kNothing;
             return true;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
         if (fire == kBack) {
             manager().go(ScreenId::Menu);
-            return true;
+        } else if (fire == kPrev || fire == kNext) {
+            people().asked = pager().turned(fire);
+            people().wanted = true;
         }
-        if (fire < 0 || fire >= people().count) {
-            return true;
-        }
-        const ui_kiosk_person_t &who = people().row[fire];
-        person_pick().employee_id = who.employee_id;
-        person_pick().templates = who.templates;
-        strlcpy(person_pick().name, who.name, sizeof(person_pick().name));
-        manager().go(ScreenId::Person);
         return true;
     }
 
@@ -1324,16 +1327,17 @@ public:
     {
         (void)seen;
         page(to, text(StrId::MenuPeople), true);
-        const int count = shown();
-        if (people().count == 0) {
+        const Pager list = pager();
+        const int count = list.rows();
+        if (count == 0) {
             to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, text(StrId::PeopleEmpty),
                     DRV_LCD_DIM, Align::Centre);
-        } else {
-            widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
+            return;
         }
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
         for (int i = 0; i < count; ++i) {
             const ui_kiosk_person_t &who = people().row[i];
-            const int y = row_y(i);
+            const int y = list.row_y(i);
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
@@ -1346,119 +1350,18 @@ public:
                                         DRV_LCD_INK,
                                         -1,
                                         widgets::Icon::None };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, false);
         }
+        list.paint(to, held_);
     }
 
 private:
-    static int row_y(int i) noexcept { return kContentY + i * kRowH; }
-
-    // Whatever the table holds, only rows that clear the footer get drawn.
-    static int shown() noexcept { return list_fits(people().count, kRowH, kListEnd); }
-
-    int row_at(int x, int y) const noexcept
+    static Pager pager() noexcept
     {
-        if (widgets::on_back(x, y)) {
-            return kBack;
-        }
-        for (int i = 0; i < shown(); ++i) {
-            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
-                return i;
-            }
-        }
-        return kNothing;
+        return { people().first, people().count, people().total, UI_KIOSK_PEOPLE_ROWS };
     }
 
     int held_ = kNothing;
-};
-
-// Both actions are requests the server decides; the kiosk acts on them at once (KEHOACH 7.5).
-class PersonScreen final : public Screen {
-public:
-    bool opaque() const noexcept override { return true; }
-
-    void on_enter() noexcept override
-    {
-        held_ = kNothing;
-        armed_ = false;
-    }
-
-    bool on_touch(int x, int y, bool down) noexcept override
-    {
-        const int hit = row_at(x, y);
-        if (down) {
-            held_ = hit;
-            return true;
-        }
-        const int fire = held_ == hit ? hit : kNothing;
-        held_ = kNothing;
-        if (fire == kBack) {
-            manager().go(ScreenId::People);
-            return true;
-        }
-        if (!person_pick().room) {
-            return true;
-        }
-        if (fire == kRetake) {
-            person_pick().retake_waiting = true;
-            manager().go(ScreenId::Enrol);
-        } else if (fire == kRemove && armed_) {
-            remove_request().employee_id = person_pick().employee_id;
-            remove_request().waiting = true;
-            manager().go(ScreenId::People);
-        } else if (fire == kRemove) {
-            armed_ = true;
-        }
-        return true;
-    }
-
-    void paint(Canvas &to, const Sight &seen) noexcept override
-    {
-        (void)seen;
-        const char *name = person_pick().name[0] != '\0' ? person_pick().name : text(StrId::PeopleUnnamed);
-        page(to, name, true);
-        const bool room = person_pick().room;
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRows * kRowH);
-        const uint8_t ink = room ? DRV_LCD_INK : DRV_LCD_DIM;
-        const uint8_t go_tint = room ? DRV_LCD_ACCENT : DRV_LCD_DIM;
-        const uint8_t gone_tint = room ? DRV_LCD_DANGER : DRV_LCD_DIM;
-        const uint8_t gone_ink = room && armed_ ? DRV_LCD_DANGER : ink;
-        const widgets::Row retake = { text(StrId::PersonRetake), nullptr, widgets::Icon::PersonAdd,
-                                      go_tint, ink, -1, widgets::Icon::None };
-        widgets::row(to, theme::kGutter, row_y(kRetake), theme::kContentW, kRowH, retake, held_ == kRetake);
-        widgets::divider(to, theme::kGutter, row_y(kRemove), theme::kContentW);
-        const widgets::Row remove = { text(StrId::PersonRemove), armed_ ? text(StrId::PersonConfirm) : nullptr,
-                                      widgets::Icon::Person, gone_tint, gone_ink, -1,
-                                      widgets::Icon::None };
-        widgets::row(to, theme::kGutter, row_y(kRemove), theme::kContentW, kRowH, remove, held_ == kRemove);
-        if (!room) {
-            to.text(Font::Caption, theme::kGutter, kContentY + kRows * kRowH + theme::kGapM,
-                    theme::kContentW, text(StrId::PersonNoRoom), DRV_LCD_WARN, Align::Centre);
-        }
-    }
-
-private:
-    static constexpr int kRetake = 0;
-    static constexpr int kRemove = 1;
-    static constexpr int kRows = 2;
-
-    static int row_y(int i) noexcept { return kContentY + i * kRowH; }
-
-    static int row_at(int x, int y) noexcept
-    {
-        if (widgets::on_back(x, y)) {
-            return kBack;
-        }
-        for (int i = 0; i < kRows; ++i) {
-            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
-                return i;
-            }
-        }
-        return kNothing;
-    }
-
-    int held_ = kNothing;
-    bool armed_ = false;
 };
 
 class WifiScreen final : public Screen {
@@ -1774,7 +1677,6 @@ MenuScreen s_menu;
 EnrolScreen s_enrol;
 CaptureScreen s_capture;
 PeopleScreen s_people;
-PersonScreen s_person;
 SettingsScreen s_settings;
 WifiScreen s_wifi;
 DeviceScreen s_device;
@@ -1810,16 +1712,6 @@ JoinRequest &join_request() noexcept
 EnrolRequest &enrol_request() noexcept
 {
     return s_request;
-}
-
-PersonPick &person_pick() noexcept
-{
-    return s_pick;
-}
-
-RemoveRequest &remove_request() noexcept
-{
-    return s_remove;
 }
 
 Facts &facts() noexcept
@@ -1938,11 +1830,6 @@ Screen *wifi_screen() noexcept
 Screen *settings_screen() noexcept
 {
     return &s_settings;
-}
-
-Screen *person_screen() noexcept
-{
-    return &s_person;
 }
 
 Screen *device_screen() noexcept

@@ -35,7 +35,7 @@ esp_err_t sys_storage_init(void);
 #define STORAGE_KEY_TICKET_EXP "jwt_exp"  // u32, the ticket's own exp claim
 #define STORAGE_KEY_ROSTER_VER "roster_ver"  // u32, the roster cursor of KEHOACH 7.5
 #define STORAGE_KEY_PENDING "pending"     // blob storage_pending_t
-#define STORAGE_KEY_ENROLL_OUT "enroll_out"  // blob storage_enroll_out_t
+#define STORAGE_KEY_ENROLL_OUT "enroll_out"  // left by kiosk-side removal, erased at boot
 
 /** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)
