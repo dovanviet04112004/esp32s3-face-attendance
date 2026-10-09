@@ -81,7 +81,9 @@ jobs:
           fi
           version=$(sed -n 's/^set(PROJECT_VER "\(.*\)")$/\1/p' firmware/CMakeLists.txt)
           [ -n "$version" ] || { echo "no PROJECT_VER in firmware/CMakeLists.txt"; exit 1; }
-          published=$(curl --fail-with-body -sS -H "Authorization: Bearer $RELEASE_PUBLISH_TOKEN" \
+          # A deploy of the same push restarts the api, and Traefik answers 404 for that minute.
+          published=$(curl --fail-with-body -sS --retry 6 --retry-delay 10 --retry-all-errors \
+            -H "Authorization: Bearer $RELEASE_PUBLISH_TOKEN" \
             "$API_URL/releases/published?target=FIRMWARE&version=$version" | jq -r .published)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [ "$published" = "true" ]; then
@@ -119,7 +121,7 @@ jobs:
         env:
           RELEASE_PUBLISH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
         run: |
-          curl --fail-with-body -sS --retry 3 -X POST \
+          curl --fail-with-body -sS --retry 6 --retry-delay 10 --retry-all-errors -X POST \
             -H "Authorization: Bearer $RELEASE_PUBLISH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
             --data-binary @firmware/build_release/face_attendance.bin \
