@@ -3664,7 +3664,7 @@ thế của **một** mẫu. Nên màn hỏng đưa ra **hai nút**, người v�
 | Nút | Việc |
 |---|---|
 | **Thử lại** | Lấy lại từ mẫu đầu, **giữ nguyên `employee_id` và tên**. `FaceDb::enroll` thay thế theo cặp `(employee_id, template_idx)` nên ba mẫu mới đè lên ba mẫu cũ, không đẻ bản ghi thừa. Màn không rời đi nên `main` vẫn giữ mã người ấy |
-| **Thoát** | Rời về `Menu`. `main` **xoá người dở dang** bằng `svc_facedb_remove` + `svc_facedb_persist`, đúng đường màn Danh sách đang dùng |
+| **Thoát** | Rời về `Menu`. `main` **xoá dải mẫu của phiên dở dang** rồi `svc_facedb_persist`, nên mẫu cũ của một lần chụp lại vẫn nhận (§7.5) |
 
 `main` xoá khi thấy màn đã rời mà chưa đủ ba mẫu.
 
@@ -3849,7 +3849,9 @@ bao giờ lâu hơn, vì hết đồng hồ thì chỉ track của phán quyết
 **Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
 thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
 
-Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi; nút **ba gạch** góc phải
+Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi — vạch sóng nói máy bắt
+được mạng, còn một dấu chấm than nhỏ cạnh nó nói broker chưa nối, như điện thoại báo Wi-Fi không
+có internet, vì sóng đầy không có nghĩa là máy chủ đang nghe; nút **ba gạch** góc phải
 mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng chữ 22 px chỉ có ASCII và tiếng Việt nên một ký
 tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h). Không có gì che mặt người đang
 đứng — mọi thứ nằm ở mép.
@@ -4061,20 +4063,16 @@ có ở đây và đã hỏng hai lần. Lần đầu, "một hơn mã lớn nh�
 thông tin người vận hành cần để quyết định làm gì tiếp, mà một câu chạy qua trong hai giây thì
 không mang được gì cả.
 
-##### h.3) Màn `People` — xoá người bằng hai lần chạm, không bằng hộp thoại
+##### h.3) Màn `People` — chỉ đọc, chia trang
 
-Thêm được thì phải xoá được, nếu không một lần gõ nhầm tên là vĩnh viễn. `People` liệt kê mỗi
-người một dòng (tên và số mẫu); **chạm một dòng** làm nó chuyển hổ phách và hiện `Xoá?`, **chạm
-lại chính dòng ấy** mới xoá, chạm chỗ khác thì thôi. Hai lần chạm thay cho một hộp thoại xác
-nhận: hộp thoại cần thêm một màn, thêm một đường quay lui, và trên màn 320 px thì nút của nó
-nhỏ hơn chính cái dòng vừa chạm.
+`People` liệt kê mỗi người máy đang giữ trên một dòng, tên và số mẫu, chia trang bằng đúng cặp
+nút của `Enroll` (E10-T24), để một cửa giữ vài chục người vẫn xem được hết. Nó trả lời đúng một
+câu người vận hành hỏi ở máy: người này đã có mặt ở cửa này chưa, và đủ mẫu chưa. Dòng không mở ra
+gì, và màn không có nút nào đổi bảng mặt: gỡ một người khỏi máy hay lấy lại mẫu của họ làm trên
+dashboard, vì menu kiosk không khoá (§7.5).
 
-Việc xoá đi qua `main` như danh sách, vì §4.5.4 luật 2 cấm `ui_kiosk` gọi `svc_facedb`:
-`ui_kiosk_take_remove()` trả mã số, `main` gọi `svc_facedb_remove()` rồi `svc_facedb_persist()`
-rồi nạp lại danh sách. `persist()` mất **1,8–2,3 s** (§6.2.4) và `ui_task` không đăng ký
-watchdog nên nó chỉ đứng màn chừng ấy, không panic — nhưng dòng `Đang xoá…` phải được **vẽ
-xong trước** khi `main` chặn, nên `ui_kiosk_tick()` đứng trước phần lấy yêu cầu trong vòng lặp
-của `ui_task`, không phải sau.
+Danh sách đi qua `main`, vì §4.5.4 luật 2 cấm `ui_kiosk` gọi `svc_facedb`: màn xin một trang,
+`main` chép trang ấy từ bảng mặt rồi đưa xuống, còn `ui_kiosk` chỉ vẽ những gì nó được đưa.
 
 **Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `BoxTracker` (`src/box_tracker.cpp`) nhận hộp mới từ `svc_vision`, lấy một mẫu độ sáng **24×24 điểm bám** dưới tâm hộp — mỗi điểm bám là một pixel khung lấy cách 2 (nửa độ phân giải), tức mẫu phủ 48×48 px khung — rồi trên mỗi khung preview (core 0) đổi cửa sổ 56×56 điểm bám quanh vị trí cũ sang độ sáng một lần, quét **thô rồi tinh** trong bán kính ±16 điểm bám (**±32 px khung**) bằng tổng sai tuyệt đối trên 576 điểm: 17×17 = 289 vị trí cách nhau 2 điểm bám, rồi 3×3 vị trí sát quanh chỗ thắng — **298 phép so, đúng bằng số phép so của lưới dày cũ mà phủ gấp bốn diện tích**. Mỗi phép so **bỏ dở ngay giữa chừng** khi tổng đã vượt chỗ tốt nhất đang giữ, và phần lớn vị trí vượt ngay từ vài hàng đầu. Ba luật giữ nó không nói dối: chỉ dịch khi khớp **tốt hơn đứng yên**; sai lệch trung bình trên 48 mức/điểm là mất dấu, hộp đứng lại; mẫu phẳng (độ tương phản dưới 24 mức) không bám. Hộp mới từ detect **thay thế** hộp đang bám, nên sai số không tích luỹ quá một chu kỳ detect. **Đo trên board 13/09, không phải 1–2 ms như ước lượng cũ**: nối bộ bám vào `cam_task` kéo preview **13,2 → 9,5 fps**, tức ~29 ms mỗi khung ở profile `dev` (`-Og`). Thoát sớm trong phép so đưa về **11,2–12,9 fps**. Bài học: lưới 289 vị trí × 576 điểm là 166 nghìn phép trừ mỗi khung, và ước lượng 1–2 ms cho ngần ấy việc ở `-Og` là sai một bậc. Bộ bám không phát hiện mặt mới và không đưa gì về đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
 
@@ -4085,14 +4083,14 @@ components/ui_kiosk/
 ├── priv_include/canvas.hpp               # Canvas: bản đồ phủ 1 byte/điểm, hình + chữ + vùng đã vẽ
 ├── priv_include/theme.hpp                # bảng màu · thang chữ · nấc giãn cách · phép xếp dọc
 ├── priv_include/widgets.hpp              # nút · dòng · thanh trượt · công tắc · biểu tượng
-├── priv_include/screens.hpp              # Screen base + ScreenManager + 8 màn hình
+├── priv_include/screens.hpp              # Screen base + ScreenManager + 9 màn hình
 ├── priv_include/strings.hpp              # StrId + ui::text() — catalogue Việt/Anh
 ├── src/box_tracker.cpp
 ├── src/canvas.cpp
 ├── src/theme.cpp
 ├── src/strings.cpp                       # bảng [ngôn ngữ][StrId], nằm trong flash
 ├── src/widgets.cpp
-├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device
+├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device · Update
 ├── src/ui_kiosk.cpp                      # hai ô canvas, hai ô overlay, công bố nguyên tử
 └── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
 ```
@@ -5547,10 +5545,18 @@ thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh th�
 **Danh sách nguồn đánh thức là danh sách đóng.** Chỉ năm thứ dưới đây được ghi lại mốc:
 
 1. ToF đọc được khoảng cách trong `vision.present_mm` — **mỗi lượt poll**, không chỉ lúc qua cạnh
-2. Chạm màn GT911
+2. Chạm màn GT911. Cú chạm đánh thức một màn đang tắt **chỉ bật màn**, không tới màn hình nào:
+   người chạm không thấy mình chạm vào đâu, và nếu cú chạm ấy tới màn thì chạm vào góc phải lúc
+   màn tối là mở menu
 3. Màn lấy mẫu đăng ký đang mở (`ui_kiosk_enrolling()`)
 4. Một màn phủ kín đang mở, kể cả màn **Cập nhật** (§7.7) — màn này đọc từ trạng thái cập nhật chứ
    không từ lần vẽ, vì panel đang nghỉ không vẽ
+
+**Màn của người vận hành tự đóng.** Menu, Thêm người, Danh sách, Cài đặt, Wi-Fi, Thiết bị, và màn
+lấy mẫu khi đã hỏng, tự về `Scan` sau `UI_ADMIN_IDLE_S` (30 s) không chạm; màn lấy mẫu hỏng về như
+bấm *Thoát*. Màn lấy mẫu đang chụp và màn Cập nhật không tự đóng, vì chúng tự kết thúc. Thiếu luật
+này thì nguồn số 4 thành vòng tự nuôi: một menu bị bỏ mở che khung ngắm và giữ máy thức mãi, trong
+khi chấm công vẫn chạy ngầm phía sau mà người đứng trước máy không thấy gì.
 5. `drv_tof_read_mm` trả lỗi **thật** — khác `ESP_ERR_TIMEOUT`, vốn chỉ là "chưa tới lượt đo" và
    xảy ra mỗi 100 ms. Lưới an toàn: cảm biến hỏng thì máy phải thức, không phải ngủ vĩnh viễn
 
@@ -5668,7 +5674,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | Namespace | Key | Kiểu | Ghi chú |
 |---|---|---|---|
 | `wifi` | `ssid`, `pass` | str / blob | ghi khi provisioning |
-| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending`, `enroll_out` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, và `enroll_out` (blob `storage_enroll_out_t`) là các yêu cầu `RETAKE` / `DELETE_EMPLOYEE` chưa được broker ack (§7.5); layout của hai blob khai ở `storage_format.h` |
+| `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, layout khai ở `storage_format.h`. Khoá `enroll_out` do firmware có nút xoá ở máy để lại bị xoá ở lần khởi động đầu, nên yêu cầu nằm trong đó không bao giờ được gửi |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
@@ -5735,26 +5741,19 @@ vì vậy chỉ nâng khi con số trong `Kconfig` thật sự đổi, không n�
 
 **Không để dữ liệu sinh trắc trong NVS.** NVS là key-value nhỏ, ghi nhiều sẽ mòn; embedding nằm ở LittleFS.
 
-**Hai blob của `device` cho đăng ký tại máy (§7.5).** Cả hai mở đầu bằng `magic` rồi `count`, và
-chỉ được ghi khi danh sách đổi, tức vài lần mỗi ngày, không theo nhịp giây. Một blob có kích
-thước hoặc `magic` khác layout bị bỏ qua như vắng khoá. Với `pending` thì đó là một danh sách
-rỗng, và lượt đồng bộ lại kế tiếp của máy chủ đổ lại đủ người: heartbeat khai số đang giữ, máy
-chủ thấy lệch thì phát lại cả danh sách (§9.23).
+**Blob `pending` của `device` giữ danh sách chờ chụp (§7.5).** Nó mở đầu bằng `magic` rồi `count`,
+và chỉ được ghi khi danh sách đổi, tức vài lần mỗi ngày, không theo nhịp giây. Một blob có kích
+thước hoặc `magic` khác layout bị bỏ qua như vắng khoá, tức một danh sách rỗng, và lượt đồng bộ
+lại kế tiếp của máy chủ đổ lại đủ người: heartbeat khai số đang giữ, máy chủ thấy lệch thì phát
+lại cả danh sách (§9.23).
 
 | Blob | Byte | Nội dung |
 |---|---|---|
 | `pending` = `storage_pending_t`, 2.312 B | 0–3 `magic` `'PND2'`, 4 `count`, 5–7 chừa, rồi 64 × 36 B | mỗi dòng: `employee_id` u32, `name` char[32] |
-| `enroll_out` = `storage_enroll_ask_t` × 8 trong `storage_enroll_out_t`, 72 B | 0–3 `magic` `'OUT1'`, 4 `count`, 5–7 chừa, rồi 8 × 8 B | mỗi yêu cầu: `op` u8 (`RETAKE` / `DELETE_EMPLOYEE`), 3 B chừa, `employee_id` u32 |
 
 `pending` chứa 64 người (§7.5). Đầy rồi thì `ASSIGN` kế tiếp không vào danh sách nhưng vẫn được
 đếm — `roster_ver` vẫn tiến — và máy báo `ROSTER_REJECTED`, qua đúng cái van một phút mỗi loại
 sự kiện mà mọi sự kiện lỗi khác đi qua. Trong RAM, danh sách chính là ảnh blob ấy, nằm ở PSRAM.
-
-`enroll_out` đầy (8 yêu cầu chưa ack) thì màn hình từ chối thêm yêu cầu cho tới khi có mạng,
-chứ không đè yêu cầu cũ nhất: một yêu cầu xoá bị đè là một người lẽ ra phải biến khỏi máy. Một
-yêu cầu chỉ tồn tại khi NVS đã ghi xong nó: ghi hỏng thì máy không nhận yêu cầu ấy, và với lệnh
-xoá thì máy cũng không xoá người đó khỏi bảng mặt — xoá tại máy chỉ chạy **sau** khi yêu cầu đã
-nằm trong `enroll_out`.
 
 #### 6.2.2 Partition `models_0` / `models_1` — định dạng ảnh model
 
@@ -6283,7 +6282,7 @@ mặc định `AI_RUNTIME`.
 
 | Hạng mục | Cách làm |
 |---|---|
-| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ mở `kiosk/{chính nó}/#` (§7.4) |
+| Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ cho máy ghi `kiosk/{chính nó}/up/#` và đọc `kiosk/{chính nó}/down/#` (§7.4) |
 | Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke. Đăng xuất một máy cắt luôn vé access và ổ cắm realtime của đúng phiên ấy, không chờ vé hết hạn (§9.23). Lượt gia hạn không mang cookie refresh nhận `204` không thân chứ không phải `401`: chưa đăng nhập là trạng thái thường của người mới mở trang, không phải lỗi, nên console của họ sạch; cookie có mà sai, hết hạn hay đã thu hồi thì vẫn `401`. Mọi vé ký bằng HS256 và mọi chỗ kiểm vé chỉ nhận HS256, ghim ở `JWT_ALGORITHM` |
 | Mật khẩu | scrypt N=2^14, r=8, p=5: 16 MiB mỗi lần băm, mức OWASP xếp ngang N=2^17, p=1 mà không đòi 128 MiB RAM cho mỗi lượt đăng nhập đang chạy. Tham số ghi ngay trong chuỗi băm, nên băm cũ vẫn kiểm được và được băm lại ở lần đăng nhập đúng kế tiếp. Đặt hay đổi mật khẩu gửi thư báo cho chủ tài khoản (§9.4) |
@@ -6291,7 +6290,7 @@ mặc định `AI_RUNTIME`.
 | Tài liệu API (Swagger) | `API_DOCS` chọn ai đọc `/docs` và JSON của nó ở `/docs/json`: `open` cho mọi người, mặc định ngoài production; `admin`, mặc định ở production; `off` tắt hẳn. Ở `admin`, ai không có phiên tài liệu nhận **404 `ROUTE_NOT_FOUND`** như một đường không tồn tại, cho cả trang lẫn JSON: tài liệu công khai là bản đồ dâng sẵn cho kẻ dò (OWASP API9). ADMIN bấm *Mở tài liệu API* ở trang Cài đặt: `POST /auth/docs-pass` (ghi audit) cấp một vé ngẫu nhiên dùng **một lần**, sống 60 giây; tab mới mở `/docs?pass=…`, vé đổi lấy cookie `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/docs`, sống 15 phút, rồi chuyển về `/docs` cho vé rời khỏi thanh địa chỉ. Mỗi request kiểm lại tài khoản còn mở, vẫn là ADMIN và chưa bị cắt phiên. Production tắt *Try it out* (`supportedSubmitMethods: []`): tài liệu ở đó chỉ để đọc, gọi thử thì làm ở máy dev. Mỗi thao tác mở đầu bằng vai được gọi, đọc từ chính metadata `RolesGuard` dùng |
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu. `api` gọi REST của nó trong mạng compose để đá phiên máy bị thu hồi (§7.4) |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
-| OTA | Verify sha256 + chữ ký; rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
+| OTA | Verify sha256; chỉ tải từ đúng gốc API của máy (§7.7); chữ ký bản kê khai đi cùng Secure Boot (E13-T3); rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
 | Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
 | Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng và cho ô tìm, và hạn mức riêng cho cửa nhận mật khẩu, quên mật khẩu, đăng ký kiosk, đếm ở Redis; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP, và khoá IP đã sai quá nhiều lần |
 | Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
@@ -6410,7 +6409,8 @@ bị `Kconfig` loại khỏi bản `prod`.
    về rồi hỏi ngay, không ngồi hết nhịp lùi.
 4. **Nhận máy** — admin thấy máy `pending` trong dashboard, bấm duyệt, **gõ mã nhận máy đang
    hiện trên màn kiosk**, rồi đặt tên người đọc được và vị trí. Sai mã thì không duyệt. Lần hỏi
-   kế tiếp, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày.
+   kế tiếp **mang đúng mã ấy**, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày;
+   lời hỏi mang mã khác vẫn chỉ nhận 202.
    Kiosk ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
    **không bao giờ dùng lại token bootstrap**.
@@ -6466,6 +6466,11 @@ thì một lần đứt mạng đúng lúc câu trả lời đang về là đủ
 (vì câu trả lời trước không tới) thì server cấp vé khác và **giữ nguyên** `prevTokenHash`, nên vé
 bị lạc trên đường chết luôn. Thu hồi và đăng ký lại xoá cả hai cột.
 
+**Cấp vé sau lần duyệt, hay đưa máy về `pending` vì mất NVS, đều đá phiên đang mở như thu hồi.**
+Broker chỉ chấm vé lúc nối, còn `api` chỉ xét trạng thái máy (§7.4), nên một phiên mở bằng một vé
+nay đã chết vẫn sống, và được nghe lại ngay khi máy được duyệt lại. Hai bước ấy vì thế xoá cache
+xác thực rồi đá phiên của `deviceId` ấy, đúng thứ tự `revoke` dùng, và cũng là best effort như ở đó.
+
 **Máy tự đổi vé, không chờ server bảo.** Máy đọc hạn từ chính JWT của nó, nên server không phải
 nhớ vé nào hết hạn lúc nào, và không có bộ hẹn giờ nào phía server phải chạy đúng. Cái giá là
 máy cần một đồng hồ tin được, và máy chỉ có RTC mà mạng chặn NTP thì không có. Nên máy như thế
@@ -6486,6 +6491,11 @@ thì không ai gõ được mã của nó. Đây là cách Hikvision (mã xác m
 - **Máy sinh, server chỉ giữ băm.** Sáu chữ số ngẫu nhiên, lưu ở `device/claim` để khởi động
   lại không đổi mã giữa lúc người ta đang đọc; server giữ `sha256(deviceId:mã)`. Có vé thì máy
   xoá mã; vé chết thì mã mới đi cùng lượt đăng ký mới.
+- **Vé chỉ giao cho đúng mã đã duyệt.** Server giữ băm qua lần duyệt, cấp vé cho lời hỏi mang
+  đúng mã ấy, rồi mới xoá băm. Thiếu điều này thì mã chỉ buộc được lần bấm duyệt chứ không buộc
+  được người nhận vé: giữa lúc duyệt và lần hỏi kế tiếp của máy thật, ai cầm token lô hỏi trước
+  là lấy được vé. Mã hiện trên màn nên người đứng trước máy vẫn đọc được; chỉ cert riêng từng máy
+  mới xoá nốt khe ấy (đoạn token bootstrap dưới đây).
 - **Sai `DEVICE_CLAIM_ATTEMPTS` lần (mặc định 5) là khoá.** Lần hỏi kế tiếp của máy nhận **202
   kèm `claimRenew`**, máy bỏ mã cũ và hiện mã mới. Chỉ ADMIN duyệt được, nên đây không phải cửa
   cho kẻ đoán mò, mà để một mã gõ sai năm lần không nằm lì trên màn như thể vẫn còn đúng.
@@ -6499,10 +6509,10 @@ thiết bị chưa được nhận **không có gì để nối bằng**, và kh
 
 **Cái phân biệt "vừa được duyệt" với "đang chạy" là `tokenHash`, không phải trạng thái.** Một
 máy `APPROVED` mà **chưa có** `tokenHash` là máy vừa được admin bấm duyệt và chưa kịp lấy token
-— lượt hỏi kế tiếp trả 200 và lưu băm của token vừa cấp. Một máy `APPROVED` mà **đã có**
-`tokenHash` thì lẽ ra không bao giờ gọi lại `register` nữa, vì nó đã có `device/jwt` trong NVS;
-gọi lại nghĩa là NVS đã mất. Thiếu cột này thì hai tình huống ấy trông giống hệt nhau và máy chủ
-buộc phải đoán.
+— lượt hỏi kế tiếp mang đúng mã đã duyệt trả 200 và lưu băm của token vừa cấp. Một máy
+`APPROVED` mà **đã có** `tokenHash` thì lẽ ra không bao giờ gọi lại `register` nữa, vì nó đã có
+`device/jwt` trong NVS; gọi lại nghĩa là NVS đã mất. Thiếu cột này thì hai tình huống ấy trông
+giống hệt nhau và máy chủ buộc phải đoán.
 
 **`deviceId` quay lại sau factory reset là chuyện bình thường, không phải lỗi.** Nút BOOT giữ 5 s
 (§2) xoá `wifi`, `device` và bảng khuôn mặt, nhưng eFuse thì không xoá được, nên máy trở lại
@@ -6539,7 +6549,7 @@ Hình dạng phía thiết bị chốt từ trước khi có `api`, và nó khô
 | Username | `deviceId` |
 | Client ID | **bằng đúng username** |
 | Password | JWT thiết bị của §7.3 |
-| ACL | `kiosk/{username}/#`, ngoài ra cấm |
+| ACL | ghi `kiosk/{username}/up/#`, đọc `kiosk/{username}/down/#`, ngoài ra cấm |
 
 **EMQX tra hai tầng theo thứ tự.** Tầng đầu là `built_in_database`, chỉ giữ tài khoản dịch vụ
 `svc-*`. Tầng sau là `http`: EMQX gửi `username`, `password`, `clientid` tới
@@ -6598,18 +6608,24 @@ compose tới `emqx:18083`; cổng ấy vẫn không ra ngoài.
   kéo được danh sách. Máy lạ vì thế không đẻ ra được dòng `pending` qua broker; broker vốn đã
   không cho máy chưa duyệt vào.
 
-**ACL phải có hai vai, không phải một.** Luật `kiosk/${username}/#` nhốt mỗi máy trong nhánh
-của chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` phải đọc bản ghi của
-**mọi** kiosk — `kiosk/+/up/#` — và đẩy lệnh xuống **mọi** kiosk — `kiosk/+/down/#`. Không luật
-nào trong hai luật hiện có cho phép chuyện đó, nên `{deny, all}` chặn backend ngay từ gói
-SUBSCRIBE đầu tiên. Đây là lỗ hổng lộ ra khi viết `svc_sync`, không phải khi làm E11: nếu để
+**ACL phải có hai vai, không phải một.** Luật theo `${username}` nhốt mỗi máy trong nhánh của
+chính nó, và đó đúng là thứ cần cho thiết bị. Nhưng `api` phải đọc bản ghi của
+**mọi** kiosk — `kiosk/+/up/#` — và đẩy lệnh xuống **mọi** kiosk — `kiosk/+/down/#`. Luật của
+thiết bị không cho phép chuyện đó, nên thiếu vai dịch vụ thì `{deny, all}` chặn backend ngay từ
+gói SUBSCRIBE đầu tiên. Đây là lỗ hổng lộ ra khi viết `svc_sync`, không phải khi làm E11: nếu để
 tới lúc ấy mới phát hiện thì nó xuất hiện dưới dạng "backend không nhận được gì" với broker
 lặng thinh.
 
 | Vai | Tên đăng nhập | Được đọc | Được ghi |
 |---|---|---|---|
-| Thiết bị | `kiosk-<12 hex>` hoặc serial do vận hành đặt | `kiosk/{chính nó}/#` | `kiosk/{chính nó}/#` |
+| Thiết bị | `kiosk-<12 hex>` hoặc serial do vận hành đặt | `kiosk/{chính nó}/down/#` | `kiosk/{chính nó}/up/#` |
 | Dịch vụ | **`svc-<tên>`** | `kiosk/+/up/#` | `kiosk/+/down/#` |
+
+**Thiết bị chỉ ghi `up/` và chỉ đọc `down/` của chính nó.** Mọi topic máy gửi, kể cả di chúc
+`status`, nằm dưới `up/`, và mọi topic máy nghe nằm dưới `down/` (`mqtt_topics.yaml`), nên luật
+hẹp này không chặn gì máy thật cần. Luật rộng `kiosk/{chính nó}/#` thì cho một vé đọc trộm ghi
+được lên `down/` của chính máy ấy: một tin giữ lại trên `down/ota` hay `down/cmd` nằm chờ ở
+broker, và máy thật nhận nó ở lần nối sau như thể server vừa gửi.
 
 **Vai dịch vụ bị cấm ghi lên `up/` một cách tường minh**, dù nó chẳng cần tới. Lý do là bất
 đối xứng của hai chiều: một bản ghi trên `up/` là **lời khai của thiết bị** — nó đi vào bảng
@@ -6751,23 +6767,33 @@ thái.
 `storage_face_record_t` đã có `STORAGE_FACE_FLAG_DELETED`, nên bia mộ có sẵn ở tầng lưu trữ:
 xoá mềm giữ được `employeeId` để đối chiếu, và `compact()` dọn khi quá 30% (§6.2.4).
 
-**Xoá ở màn hình máy là một *yêu cầu*, không phải sự thật.** Nếu máy tự xoá rồi coi như xong,
-lần hội tụ kế tiếp server sẽ đẩy người đó **quay lại**. Nên thao tác ấy gửi lên server một lệnh
-`DELETE_EMPLOYEE` trên `up/enroll`, server chuyển cặp máy–người sang `REVOKED`, rồi lệnh xoá
-chảy xuống theo đúng đường hội tụ. Máy xoá người ấy khỏi bảng ngay lúc bấm, vì người đứng trước
-máy vừa bảo nó làm vậy, và server luôn nhận yêu cầu xoá kèm một dòng audit: người vận hành có
-quyền vào menu của máy thì có quyền gỡ một người khỏi máy ấy. Mẫu trên server **không** bị xoá,
-vì cửa khác còn dùng; xoá sinh trắc học của một người trên mọi máy là việc khác, làm từ dashboard
-(§9.19). Yêu cầu nằm trong `device/enroll_out` (§6.2.1) cho tới khi broker ack, nên bấm lúc mất
-mạng vẫn tới nơi.
+**Gỡ một người khỏi máy và lấy lại mẫu chỉ làm từ dashboard, không làm ở màn hình máy.** Menu
+kiosk không khoá: ai đứng trước máy cũng chạm được nút ba gạch. Một nút "Chụp lại" ở đó là để
+người lạ chụp mặt mình vào hồ sơ người khác, và phiên mới thay mẫu của người ấy ở **mọi cửa**
+(bước 3 dưới đây); một nút "Xoá" là để họ gỡ đồng nghiệp khỏi cửa. Khoá màn hình cũng không đủ,
+vì mọi thao tác ở máy đi lên server thành một tin `up/enroll`, mà đó đúng là thứ một vé đọc trộm
+khỏi flash gửi được mà không cần chạm màn (E13-T3). Nên **không tin nào từ kiosk đổi được ai đứng
+ở cửa nào**: chỉ `HR` và `ADMIN`, đã qua xác minh hai bước (§7.2), bấm trên trang nhân viên, và
+trang ấy dùng được trên điện thoại khi người bấm đứng ngay cạnh máy (§9.21).
+
+Gỡ trên dashboard chuyển cặp máy–người sang `REVOKED`, rồi lệnh xoá chảy xuống theo đúng đường hội
+tụ, kèm một dòng audit mang người bấm. Mẫu trên server **không** bị xoá, vì cửa khác còn dùng; xoá
+sinh trắc học của một người trên mọi máy là việc khác, cũng làm từ dashboard (§9.19). Một kiosk còn
+chạy firmware có nút xoá mà gửi `DELETE_EMPLOYEE` lên thì server không gỡ ai: nó đẩy cho đúng cửa
+ấy thứ nó đang giữ cho cặp đó (bước 4 dưới đây), nên người bị xoá ở máy được trả lại.
+
+Cái giá nói rõ: hết đường chụp lại tại chỗ lúc mất mạng, và chụp lại cần một người có quyền bấm.
+Thứ còn hở là **lần chụp đầu**: người đang nằm trong danh sách chờ thì ai đứng trước máy cũng chụp
+được cho họ, từ lúc HR gán tới lúc chụp xong. Cửa sổ ấy ngắn khi HR gán lúc người ấy đang có mặt.
 
 **Lấy lại mẫu là một trạng thái riêng, `RETAKE`, không phải gán lại từ đầu.** Người đổi kiểu tóc,
 đeo kính mới, hay mẫu cũ chụp tối thì cần chụp lại, nhưng trong lúc chờ họ vẫn phải chấm công
 được. `ASSIGNED` nghĩa là "chưa có mặt", nên đặt lại về đó là tuyên bố sai. Luồng:
-1. **Hai nơi bấm, một trạng thái.** Dashboard, trang nhân viên, nút "Lấy lại mẫu" ở từng máy; hoặc
-   màn Danh sách của kiosk, chạm một người rồi chọn "Chụp lại". Kiosk gửi `RETAKE` trên
-   `up/enroll` qua cùng `device/enroll_out`, và đưa người ấy vào danh sách chờ của nó ngay, ghi
-   là chụp lại. Server chuyển cặp từ `ENROLLED` sang `RETAKE` rồi đẩy `ASSIGN` xuống.
+1. **Một nơi bấm: dashboard.** Trang nhân viên, nút "Lấy lại mẫu" ở từng máy. Server chuyển cặp
+   từ `ENROLLED` sang `RETAKE` rồi đẩy `ASSIGN` xuống, và máy đưa người ấy vào danh sách chờ, ghi
+   là chụp lại. Một `RETAKE` tới trên `up/enroll` — chỉ firmware cũ còn gửi — không đổi trạng thái
+   nào: cặp đang `ASSIGNED` hay `RETAKE` thì server gửi lại `ASSIGN`, còn lại thì gửi `REVOKE` để
+   máy bỏ dòng chờ nó đã tự thêm.
 2. **Mẫu cũ dùng tiếp tới lúc chụp xong.** Mẫu mới ghi vào dải `template_idx` còn lại (0–2 hoặc
    3–5, §6.2.4). Chụp đủ thì máy xoá dải cũ; bỏ dở thì máy xoá dải mới, còn dải cũ nguyên vẹn.
 3. **Server chỉ nhận mẫu từ cửa đang được giao chụp.** Một lần chụp là một phiên: mọi mẫu của nó
@@ -6807,9 +6833,7 @@ bảng mặt xuống flash.
 — gỡ một người còn đang chờ chụp — là trạng thái đích đã đạt, không phải lỗi; coi nó là lỗi thì
 số đang giữ không tiến và một lượt thu hồi kéo theo một lượt đồng bộ lại toàn phần. Lệnh ấy cũng
 **gỡ người đó khỏi danh sách chờ**: người bị thu hồi hay đã rút đồng ý không được còn đứng trong
-danh sách chụp của bất kỳ cửa nào (§9.19). Xoá ở màn hình máy thì yêu cầu vào `device/enroll_out`
-**trước**, rồi máy mới xoá người ấy khỏi bảng: mất điện giữa hai bước để lại một yêu cầu còn phải
-gửi, không để lại một người đã xoá ở máy mà máy chủ không hề biết.
+danh sách chụp của bất kỳ cửa nào (§9.19).
 
 **Máy chủ nghe kiosk bằng một phiên bền, và chỉ ack khi đã ghi xong.** Kiosk bỏ một bản ghi khỏi
 hàng đợi của nó ngay khi broker ack, nên đường nghe phía `api` không được là chỗ tin rơi mất. Nó
@@ -6854,7 +6878,7 @@ và không phải nghĩ lại.
 
 | Thêm | Ở đâu | Làm gì |
 |---|---|---|
-| Topic `kiosk/{deviceId}/up/enroll` | `mqtt_topics.yaml`, QoS 1 | Chiều lên: máy báo đã chụp được ai, hoặc người vận hành xin xoá ai |
+| Topic `kiosk/{deviceId}/up/enroll` | `mqtt_topics.yaml`, QoS 1 | Chiều lên: máy báo mẫu vừa chụp cho một người server đã mở phiên chụp |
 | `rosterVersion` | `enroll_payload` **và** `heartbeat` | Con trỏ hội tụ |
 | `ASSIGN` / `REVOKE` | enum `op` | Server báo trước "máy này sắp đăng ký người X, tên là Y" |
 
@@ -6916,6 +6940,13 @@ URL — đòi header là máy cũ không bao giờ lên được bản mới. M�
 thẳng file, không redirect: `net_ota` tự mở kết nối và không theo redirect, nên file không thể nằm
 trên GitHub Releases, nơi mọi link tải là một cú 302.
 
+**Kiosk chỉ tải từ đúng gốc API của nó.** Trước khi mở kết nối, `net_ota` so link với địa chỉ API
+máy biên dịch sẵn (`NET_PROVISION_API_URL`, §7.3): cùng scheme, host và cổng, không có phần
+`người@`, đường bắt đầu bằng `/releases/`. Lệch là từ chối, kèm `OTA_FAILED`. Thiếu phép so ấy thì
+ai đặt được một lời mời lên `down/ota` là chỉ được máy tới bất kỳ host nào có cert công khai, và
+sha256 đi cùng chính lời mời ấy nên không chặn được gì. `main` đưa địa chỉ ấy cho `net_ota` như
+một tham số, vì hai component cùng tầng không gọi nhau (§4.5.4).
+
 **Người thấy bản mới mà không phải đi tìm.** Trang *Kiosk* so `fwVersion` và `modelVersion` của
 từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ hơn mang huy hiệu "Có bản x.y.z", máy
 đang cập nhật mang "Đang cập nhật…", đầu trang có **Cập nhật tất cả (n)** với n chỉ đếm máy chưa
@@ -6966,11 +6997,15 @@ nhánh; thiếu nhánh hay ra sai là quay về ngăn cũ. Bản firmware còn �
 `MODELS` (`FIRMWARE_ON_TRIAL`): khởi động lại để thử model cũng là khởi động lại một firmware chưa xác
 nhận, và bootloader sẽ quay firmware về mà không ai hay.
 
-**Kiosk nói cho người đứng trước nó, bằng cả màn hình.** Nhận lời mời là `ota_task` giương
-`OTA_RUNNING`, và màn **Cập nhật** phủ kín LCD: phiên bản đang lên, một thanh tiến trình và một dòng
-pha — *Đang kết nối*, *Đang tải x%*, *Đang kiểm tra*, *Đang khởi động lại*. Phần trăm lấy từ số byte
-`net_ota` đã nhận và đếm lại từ 0 ở mỗi lần tải; pha lấy từ `net_ota`, vì xoá flash và kiểm sha256
-mất vài giây mà không nhận byte nào. Màn đổi trên `ui_task`, còn các task khác chỉ ghi trạng thái.
+**Kiosk nói cho người đứng trước nó, bằng cả màn hình.** Lời mời qua được các phép kiểm trước khi
+tải — loại có đường cài, firmware không đang chạy thử, bản kê khai đúng, link đúng gốc — thì
+`ota_task` giương `OTA_RUNNING`, và màn **Cập nhật** phủ kín LCD: phiên bản đang lên, một thanh
+tiến trình và một dòng pha — *Đang kết nối*, *Đang tải x%*, *Đang kiểm tra*, *Đang khởi động lại*.
+Phần trăm lấy từ số byte `net_ota` đã nhận và đếm lại từ 0 ở mỗi lần tải; pha lấy từ `net_ota`, vì
+xoá flash và kiểm sha256 mất vài giây mà không nhận byte nào. Màn đổi trên `ui_task`, còn các task
+khác chỉ ghi trạng thái. Lời mời bị từ chối ở các phép kiểm trước khi tải **không phủ màn**: chỉ sự
+kiện `OTA_FAILED` đi lên kèm lý do, trang *Kiosk* hiện nó ở dòng *Lỗi*, và người đứng trước máy
+không mất lượt chấm nào cho một bản máy không bao giờ tải.
 
 - **Màn sáng lên.** Nó là màn phủ kín nên là nguồn đánh thức số 4 của §5.4, và `rest_level()` đọc
   thẳng trạng thái cập nhật: panel đang nghỉ không vẽ được lần nào, nên chờ một lần vẽ để biết màn
@@ -10036,7 +10071,9 @@ Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
   (§7.5, lấy lại mẫu, bước 4). Kết quả phụ thuộc thứ tự tới, nhưng hai phiên đều hợp lệ như
   nhau, và mọi cửa kết thúc với **cùng một** bộ mẫu.
 - **Báo cáo phải đến từ cửa đã được giao người ấy.** Máy chủ nhận dữ liệu sinh trắc thì không
-  được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối.
+  được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối. Và chỉ
+  dashboard đưa được một cặp vào `ASSIGNED` hay `RETAKE`, nên không cửa nào tự mở cho mình một
+  phiên chụp: tin `RETAKE` từ kiosk không đổi trạng thái nào (§7.5).
 - **Đường sửa chữa phải chạy được từ chính trạng thái cần sửa.** `resync` từng suy ra phiên
   bản bắt đầu bằng phép trừ, nên một máy giữ nhiều người hơn số đếm của nó sẽ sinh phiên bản
   âm, bị hợp đồng từ chối, và **đúng cái cửa cần đẩy lại cả danh sách là cái cửa không bao giờ
