@@ -2402,7 +2402,7 @@ esp32s3-face-attendance/
 | `.editorconfig` | Thống nhất indent/EOL cho 4 ngôn ngữ. Không có thì diff đầy nhiễu whitespace |
 | `.gitattributes` | `* text=auto eol=lf`, `*.tflite binary`, `*.espdl binary`, `*/generated/* linguist-generated` |
 | `.pre-commit-config.yaml` | Chạy `check_comments` · `ruff` · `clang-format` · `prettier` trước khi commit |
-| `Makefile` | Điểm vào duy nhất: `make gen` · `make lint` · `make train-det` · `make flash` |
+| `Makefile` | Điểm vào duy nhất, và là Makefile duy nhất của repo: mọi lệnh của sáu khối — cài môi trường, sinh code, kiểm tra, dữ liệu, train, lượng tử, xuất model, đo rPPG, firmware, gắn board vào WSL qua usbipd, backend, frontend, deploy. `make help` liệt kê; lệnh chưa có target thì thêm target rồi mới chạy |
 
 Ba khối `ml` / `firmware` / `backend+frontend` **không bao giờ copy định nghĩa của nhau**. Payload MQTT, danh sách model đang deploy, vector kiểm thử — tất cả nằm ở `contracts/`, mỗi bên sinh code từ đó. Đây là thứ giữ monorepo không rữa sau vài tháng.
 
@@ -2723,7 +2723,6 @@ Số ID:    train 288186 / val 36023 / test 36023
 ml/
 ├── pyproject.toml  ├── uv.lock            # ✅ pin phiên bản, không dùng requirements.txt rời
 ├── Dockerfile                             # môi trường train tái lập được
-├── Makefile
 ├── .env.example                           # ✅ commit — HF_TOKEN và các biến, giá trị giả
 ├── .env                                   # ❌ gitignore — giá trị thật (§4.9)
 │
@@ -2865,7 +2864,7 @@ ml/
 │          cam_bridge.py}                  # ★ chạy trên Windows: virtual cam → MJPEG
 │       ★ Điểm vào chạy thẳng, KHÔNG phải thư viện. Nằm ngoài src/facepipe/ vì gói cài
 │         đặt được không được kéo theo cv2 và http.server của một cái demo.
-│         cv2 khai ở extra `bench` của pyproject: `uv sync --extra bench`.
+│         cv2 khai ở extra `bench` của pyproject; `make ml-sync` cài nó cùng các extra khác.
 │
 ├── scripts/                               # đánh số = thứ tự chạy
 │   ├── _resume_loop.sh                    # ★ khong danh so vi khong chay truc tiep:
@@ -2879,8 +2878,9 @@ ml/
 │   │                            #   crop cua pool, ghi interim/antispoof/depth_maps/.
 │   │                            #   Chay sau 01, truoc 21_train_spoof.sh (§3)
 │   ├── 20_train_det.sh ├── 21_train_spoof.sh ├── 22_train_recog.sh
-│   ├── 30_quantize.sh ├── 40_export.sh     ├── 41_emit_golden.sh
-│   ├── 50_pack_and_flash.sh
+│   ├── 30_quantize.sh
+│   ├── 50_pack_and_flash.sh     # xuất model và golden là module Python, gọi qua
+│   │                            #   `make export` và `make golden`
 │   └── trainctl.sh              # ★ start | pause | resume | check cho mot nhanh.
 │                                #   Khong phai mot chang cua pipeline nen khong
 │                                #   co so, giong _resume_loop.sh
