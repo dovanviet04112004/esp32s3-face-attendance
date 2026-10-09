@@ -96,6 +96,7 @@ model User {
   noticeItemsDone    NoticeItem[] @relation("NoticeItemActor")
   noticeItemsClaimed NoticeItem[] @relation("NoticeItemClaim")
   mfa            UserMfa?
+  punchReviews   AttendanceRecord[] @relation("PunchReviews")
 }
 
 /**
@@ -428,6 +429,18 @@ model DeviceEvent {
   @@index([type, ts])
 }
 
+/** Why a stored punch waits for HR before it counts (KEHOACH 9.8). */
+enum PunchHold {
+  LATE
+  CLOSED_PERIOD
+}
+
+enum PunchReview {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 model AttendanceRecord {
   id              BigInt   @id @default(autoincrement())
   // Decimal string, not a number: the kiosk counter is uint64, which overruns
@@ -448,14 +461,22 @@ model AttendanceRecord {
   receivedAt       DateTime?
   // ts before 2020 or a day past receivedAt: the punch lands in no day (KEHOACH 9.8).
   questionableTime Boolean  @default(false)
+  // Set with review PENDING: the punch counts only once HR accepts it (KEHOACH 9.8).
+  hold            PunchHold?
+  review          PunchReview?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNote      String?
   photoUrl        String?
   createdAt       DateTime @default(now())
   device          Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  reviewedBy      User?    @relation("PunchReviews", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@unique([deviceId, localId])
   @@index([employeeId, ts, id])
   @@index([ts, id])
+  // The HR queue's index is partial, WHERE review = 'PENDING', so it lives in the migration.
 }
 
 model Shift {

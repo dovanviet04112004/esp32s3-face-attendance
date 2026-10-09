@@ -29,14 +29,16 @@ export class AttendanceListener {
     this.log.log(
       `${outcome}: ${punch.deviceId} localId ${punch.localId} employee ${punch.employeeId}`,
     );
-    if (outcome !== "stored") {
+    if (outcome !== "stored" && outcome !== "held") {
       return;
     }
     const questionableTime = isQuestionable(new Date(punch.ts), message.receivedAt);
+    const held = outcome === "held";
     // Announced only once the row is written, since the dashboard answers by
     // asking for the list again.
-    this.feed.publish(FEED.attendance, { ...punch, questionableTime }, punch.employeeId);
-    if (!questionableTime) {
+    this.feed.publish(FEED.attendance, { ...punch, questionableTime, held }, punch.employeeId);
+    // A held punch has not counted yet, so its person hears nothing of it (KEHOACH 9.8).
+    if (!questionableTime && !held) {
       await this.notices.punched(punch.employeeId, {
         ts: new Date(punch.ts),
         deviceId: punch.deviceId,

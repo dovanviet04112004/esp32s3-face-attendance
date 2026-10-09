@@ -54,6 +54,12 @@ export class ListAttendanceDto extends PaginationDto {
   @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   questionableTime?: boolean;
+
+  @ApiPropertyOptional({ description: "Only punches stored but waiting for HR before they count (KEHOACH 9.8)" })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === "true")
+  @IsBoolean()
+  held?: boolean;
 }
 
 export class PunchView {
@@ -108,6 +114,28 @@ export class PunchView {
   @ApiProperty({ example: false, description: "Before 2020 or more than a day after receivedAt; counted in no day" })
   questionableTime!: boolean;
   @ApiProperty({
+    enum: ["LATE", "CLOSED_PERIOD"],
+    enumName: "PunchHold",
+    nullable: true,
+    example: null,
+    description: "Why the punch waited for HR: too far behind its receipt, or its day in a locked period; null when it counted at once",
+  })
+  hold!: string | null;
+  @ApiProperty({
+    enum: ["PENDING", "ACCEPTED", "REJECTED"],
+    enumName: "PunchReview",
+    nullable: true,
+    example: null,
+    description: "HR's decision on a held punch; only a null or ACCEPTED one counts",
+  })
+  review!: string | null;
+  @ApiProperty({ type: String, nullable: true, example: null, description: "User who decided it" })
+  reviewedById!: string | null;
+  @ApiProperty({ type: String, nullable: true, format: "date-time", example: null, description: "When it was decided" })
+  reviewedAt!: string | null;
+  @ApiProperty({ type: String, nullable: true, example: null, description: "Why it was turned down" })
+  reviewNote!: string | null;
+  @ApiProperty({
     type: String,
     nullable: true,
     example: "https://files.example.com/punches/1842.jpg",
@@ -143,4 +171,5 @@ export class PunchCountsView {
   @ApiProperty({ example: 37, description: "Of those, taken while the kiosk was offline" }) capturedOffline!: number;
   @ApiProperty({ example: 4, description: "Of those, stamped by a clock that had not synced" }) clockUnsynced!: number;
   @ApiProperty({ example: 1, description: "Questionable punches heard inside the range" }) questionableTime!: number;
+  @ApiProperty({ example: 2, description: "Of the punches captured inside the range, those waiting for HR" }) held!: number;
 }

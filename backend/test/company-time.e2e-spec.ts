@@ -19,7 +19,7 @@ import { NoticeItemsService } from "../src/modules/notifications/notice-items.se
 import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sweep.js";
 import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
 import { ReportsService } from "../src/modules/reports/reports.service.js";
-import { dayWindow, localDateSql, localDay } from "../src/modules/timesheet/local-day.js";
+import { dayAsDate, dayWindow, localDateSql, localDay } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE } from "../src/queue/queues.js";
@@ -37,9 +37,8 @@ const UNREACHABLE = "none$";
 const DEVICE = "e2e-clock-01";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-// Finished weekdays inside the partition range that no other suite builds.
+// A finished weekday inside the partition range that no other suite builds.
 const FUTURE_DAY = "2026-04-15";
-const LATE_DAY = "2026-04-14";
 // 00:30 on 14 March 2031 in Vietnam is still the 13th in UTC; far from the clock every other suite reads.
 const HALF_PAST_MIDNIGHT = new Date("2031-03-13T17:30:00.000Z");
 
@@ -169,14 +168,20 @@ describe("company time (e2e)", () => {
   });
 
   it("rebuilds a finished day when a punch for it arrives after the build", async () => {
-    await timesheet.build(LATE_DAY, idOf.get(LATE));
-    assert.equal((await dayRow(LATE, LATE_DAY))?.state, "ABSENT");
+    // A recent weekday: a punch further behind its receipt waits for HR rather than rebuilding (KEHOACH 9.8).
+    let at = dayAsDate(timesheet.yesterday());
+    while (at.getUTCDay() === 0 || at.getUTCDay() === 6) {
+      at = new Date(at.getTime() - DAY_MS);
+    }
+    const lateDay = at.toISOString().slice(0, 10);
+    await timesheet.build(lateDay, idOf.get(LATE));
+    assert.equal((await dayRow(LATE, lateDay))?.state, "ABSENT");
 
-    assert.equal(await attendance.record(punch(LATE, atLocal(LATE_DAY, 8).getTime()), new Date()), "stored");
-    let row = await dayRow(LATE, LATE_DAY);
+    assert.equal(await attendance.record(punch(LATE, atLocal(lateDay, 8).getTime()), new Date()), "stored");
+    let row = await dayRow(LATE, lateDay);
     for (let waited = 0; row?.punchCount !== 1 && waited < 40; waited += 1) {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      row = await dayRow(LATE, LATE_DAY);
+      row = await dayRow(LATE, lateDay);
     }
     assert.equal(row?.punchCount, 1, "the late punch never reached its day");
     assert.equal(row?.state, "WORKED");

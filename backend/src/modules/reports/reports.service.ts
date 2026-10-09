@@ -26,7 +26,7 @@ import { TallyRangeDto, type D02QueryDto } from "./dto/report.dto.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { dayAsDate, dayWindow, localDay, localMinutesSql, minutesIntoDay } from "../timesheet/local-day.js";
-import { branchOf } from "../timesheet/timesheet.service.js";
+import { branchOf, countedPunchSql } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 
@@ -235,7 +235,7 @@ function lateInRange(query: TallyRangeDto, zone: string): Prisma.Sql {
          LIMIT 1
       ) h ON true
      WHERE r."ts" >= ${new Date(query.from)} AND r."ts" <= ${new Date(query.to)}
-       AND NOT r."questionableTime"
+       AND ${countedPunchSql("r")}
        AND EXTRACT(ISODOW FROM ${local}) < 6
      GROUP BY r."employeeId", ${local}::date, h."startTime", h."graceMinutes"
     HAVING min(${localMinutesSql(Prisma.sql`r."ts"`, zone)}) > ${dueMinutes(Prisma.sql`h`)}`;
@@ -514,7 +514,7 @@ export class ReportsService {
         SELECT r."employeeId", count(*)::int AS "marks", min(r."ts") AS "firstAt"
           FROM "AttendanceRecord" r
           JOIN people p ON p."id" = r."employeeId"
-         WHERE r."ts" >= ${from} AND r."ts" < ${to} AND NOT r."questionableTime"
+         WHERE r."ts" >= ${from} AND r."ts" < ${to} AND ${countedPunchSql("r")}
          GROUP BY r."employeeId"
       ),
       away AS (
@@ -711,7 +711,7 @@ export class ReportsService {
         SELECT 1
         FROM "AttendanceRecord" a
         JOIN "Employee" e ON e."id" = a."employeeId"
-        WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
+        WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
           ${tallyFilter(visible, query, this.zone)}
         GROUP BY a."employeeId", e."fullName"
         LIMIT ${COUNT_CEILING + 1}
@@ -728,7 +728,7 @@ export class ReportsService {
              (count(*) FILTER (WHERE a."clockUnsynced"))::int     AS "unsyncedClock"
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
-      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
         ${tallyFilter(visible, query, this.zone)}
     `;
     return summed;
@@ -780,7 +780,7 @@ export class ReportsService {
              count(*) FILTER (WHERE a."clockUnsynced")        AS "unsyncedClock"
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
-      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND NOT a."questionableTime"
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
         ${tallyFilter(visible, query, this.zone)}
         ${
           after

@@ -31,6 +31,18 @@ import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { MAX_DAY_ROWS, type CorrectDayDto, type ListDaysDto, type SummaryQueryDto } from "./dto/timesheet.dto.js";
 import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
+/** What makes a punch count toward a day: a believable time, and no HR hold left on it (KEHOACH 9.8). */
+export const COUNTED_PUNCH = {
+  questionableTime: false,
+  OR: [{ review: null }, { review: "ACCEPTED" }],
+} satisfies Prisma.AttendanceRecordWhereInput;
+
+/** COUNTED_PUNCH in SQL, for the punch row under `alias`. */
+export function countedPunchSql(alias: string): Prisma.Sql {
+  const row = Prisma.raw(alias);
+  return Prisma.sql`NOT ${row}."questionableTime" AND (${row}."review" IS NULL OR ${row}."review" = 'ACCEPTED')`;
+}
+
 const SATURDAY = 6;
 const SUNDAY = 0;
 const DAY_ID = /^\d{1,19}$/;
@@ -553,7 +565,7 @@ export class TimesheetService implements OnModuleInit {
     const person = only === undefined ? {} : { employeeId: only };
     const [punches, staff, holidays, approved] = await Promise.all([
       this.db.attendanceRecord.findMany({
-        where: { ts: { gte: from, lt: to }, questionableTime: false, ...person },
+        where: { ts: { gte: from, lt: to }, ...COUNTED_PUNCH, ...person },
         select: { employeeId: true, ts: true, clockUnsynced: true },
         orderBy: { ts: "asc" },
       }),
