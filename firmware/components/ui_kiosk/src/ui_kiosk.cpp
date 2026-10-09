@@ -675,6 +675,18 @@ void ui_kiosk_enrol_refused(void)
     }
 }
 
+void ui_kiosk_enrol_blocked(ui_kiosk_enrol_block_t why)
+{
+    if (!s_ready) {
+        return;
+    }
+    const ui::StrId line = why == UI_KIOSK_ENROL_NO_LIVENESS ? ui::StrId::CaptureNoLiveness
+                           : why == UI_KIOSK_ENROL_NO_ID     ? ui::StrId::CaptureNoId
+                                                             : ui::StrId::CaptureNotReady;
+    ui::enrol_blocked(ui::text(line));
+    s_dirty = true;
+}
+
 bool ui_kiosk_enrol_wanted(void)
 {
     return s_ready && ui::enrol_wanted();

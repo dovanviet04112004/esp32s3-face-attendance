@@ -75,6 +75,8 @@ constexpr int64_t kRescanMs = 15000;
 // A stranger needs 2.9 s to be refused at worst (KEHOACH 4.5.5d), so past
 // double that the pipeline owes an answer it is not going to give.
 constexpr int64_t kWorkingCeilingMs = 6000;
+// A restart blanks the face for one detect; gone longer than this means the person left.
+constexpr int64_t kFaceGoneMs = 2000;
 
 // A phone keyboard, because the operator's thumbs already know where the
 // letters are: ten, nine, then seven under a shift and a backspace.
@@ -579,6 +581,8 @@ public:
         held_ = false;
         working_ms_ = 0;
         stuck_ = false;
+        gave_up_ = false;
+        absent_ms_ = 0;
         // The person standing here now gets a fresh look, not whatever the
         // pipeline settled on while a menu covered the preview.
         s_vision_reset = Restart::Returned;
@@ -602,14 +606,18 @@ public:
         if (stuck && !stuck_) {
             s_vision_reset = Restart::Stuck;
         }
+        absent_ms_ = seen.face ? 0 : absent_ms_ + (int64_t)dt_ms;
+        // After one restart the claim stops until this face leaves or gets its answer.
+        const bool gave_up = (gave_up_ || stuck) && !answered && absent_ms_ < kFaceGoneMs;
         if (answered == answered_ && carded == carded_ && refused == refused_ &&
-            stuck == stuck_) {
+            stuck == stuck_ && gave_up == gave_up_) {
             return false;
         }
         answered_ = answered;
         carded_ = carded;
         refused_ = refused;
         stuck_ = stuck;
+        gave_up_ = gave_up;
         return true;
     }
 
@@ -656,6 +664,9 @@ public:
             // The kiosk has finished with this face: no guidance, no claim.
             tone = DRV_LCD_ACCENT;
             prompt = nullptr;
+        } else if (gave_up_) {
+            tone = DRV_LCD_WARN;
+            prompt = text(StrId::ScanTryLater);
         } else if (seen.stage == UI_KIOSK_STAGE_WORKING && !stuck_) {
             tone = seen.face ? DRV_LCD_ACCENT : DRV_LCD_INK;
             prompt = seen.face ? prompt_for(seen.stage) : prompt;
@@ -722,6 +733,8 @@ private:
     bool answered_ = false;
     bool carded_ = false;
     bool stuck_ = false;
+    bool gave_up_ = false;                // a restart did not help this face
+    int64_t absent_ms_ = 0;
     int64_t working_ms_ = 0;
     uint32_t watched_ = 0;                // track the working clock belongs to
     const char *refused_ = nullptr;
@@ -1148,6 +1161,8 @@ public:
             enrol_request().waiting = false;
             failed_ = true;
             since_ms_ = 0;
+            const char *fix = hint(seen);
+            why_ = fix != nullptr ? fix : text(StrId::CaptureNoFrame);
             return true;
         }
         if (!armed_) {
@@ -1196,20 +1211,43 @@ public:
 
     bool refusing() const noexcept { return spoofs_ > 0 && refused_ms_ < kRefusalShowMs; }
 
+    void blocked(const char *why) noexcept
+    {
+        if (!live()) {
+            return;
+        }
+        enrol_request().waiting = false;
+        failed_ = true;
+        since_ms_ = 0;
+        why_ = why;
+    }
+
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         // Whose face is being taken stays on the glass, so it cannot land under the wrong name.
         to.text_on_video(Font::Body, kWideX, Canvas::centre_y(Font::Body, 0, theme::kBarH), kWideW,
                          enrol_request().name, DRV_LCD_INK, Align::Centre);
         const int ask_y = theme::kBarH + theme::kGapS;
+        if (failed_) {
+            to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, text(StrId::CaptureNoSample), DRV_LCD_WARN,
+                             Align::Centre);
+            if (why_ != nullptr) {
+                to.text_on_video(Font::Caption, kWideX, ask_y + theme::line_height(Font::Strong), kWideW, why_,
+                                 DRV_LCD_INK, Align::Centre);
+            }
+            const int half = (theme::kContentW - theme::kGapM) / 2;
+            widgets::button(to, theme::kGutter, kFootY, half, theme::kButtonH, text(StrId::CaptureRetry),
+                            DRV_LCD_ACCENT, DRV_LCD_INK, held_ == 1);
+            widgets::button(to, theme::kGutter + half + theme::kGapM, kFootY, half,
+                            theme::kButtonH, text(StrId::CaptureQuit), DRV_LCD_SURFACE, DRV_LCD_INK,
+                            held_ == 2);
+            return;
+        }
         uint8_t tone = DRV_LCD_INK;
         char line[64];
         // One line, one place. A correction and an instruction are the same kind
         // of sentence, and the guide leaves room for exactly one of them.
-        if (failed_) {
-            snprintf(line, sizeof(line), "%s", why_ != nullptr ? why_ : text(StrId::CaptureNoSample));
-            tone = DRV_LCD_WARN;
-        } else if (done()) {
+        if (done()) {
             snprintf(line, sizeof(line), text(StrId::CaptureAddedFmt), enrol_request().name);
             tone = DRV_LCD_OK;
         } else if (refusing()) {
@@ -1224,18 +1262,12 @@ public:
         to.text_on_video(Font::Strong, kWideX, ask_y, kWideW, line, tone, Align::Centre);
         dots(to, ask_y + theme::line_height(Font::Strong) + 3);
         guide(to, done() ? DRV_LCD_OK : DRV_LCD_ACCENT);
+        if (live() && !refusing()) {
+            meter(to, gauge(seen));
+        }
         if (done()) {
             widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH,
                             text(StrId::CaptureConfirm), DRV_LCD_OK, DRV_LCD_INK, held_ == 1);
-            return;
-        }
-        if (failed_) {
-            const int half = (theme::kContentW - theme::kGapM) / 2;
-            widgets::button(to, theme::kGutter, kFootY, half, theme::kButtonH, text(StrId::CaptureRetry),
-                            DRV_LCD_ACCENT, DRV_LCD_INK, held_ == 1);
-            widgets::button(to, theme::kGutter + half + theme::kGapM, kFootY, half,
-                            theme::kButtonH, text(StrId::CaptureQuit), DRV_LCD_SURFACE, DRV_LCD_INK,
-                            held_ == 2);
             return;
         }
         widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, text(StrId::CaptureCancel),
@@ -1248,16 +1280,32 @@ private:
                                               StrId::CaptureTurnLeft,
                                               StrId::CaptureTurnRight };
 
+    static constexpr int kPillW = 52;
+    static constexpr int kPillGap = 10;
+    static constexpr int kPillsW = kSamples * kPillW + (kSamples - 1) * kPillGap;
+    static constexpr int kMeterH = 6;
+
     void dots(Canvas &to, int y) const noexcept
     {
-        const int pill_w = 52;
-        const int gap = 10;
-        const int left = (APP_LCD_H_RES - (kSamples * pill_w + (kSamples - 1) * gap)) / 2;
+        const int left = (APP_LCD_H_RES - kPillsW) / 2;
         for (int i = 0; i < kSamples; ++i) {
-            const int x = left + i * (pill_w + gap);
+            const int x = left + i * (kPillW + kPillGap);
             const bool lit = i < kept_;
             const bool at = i == kept_ && !done();
-            to.card(x, y, pill_w, 8, 4, lit ? DRV_LCD_OK : (at ? DRV_LCD_ACCENT : DRV_LCD_DIM));
+            to.card(x, y, kPillW, 8, 4, lit ? DRV_LCD_OK : (at ? DRV_LCD_ACCENT : DRV_LCD_DIM));
+        }
+    }
+
+    // The bar moves with the head, so the person sees the kiosk is listening (KEHOACH 4.5.5h.2 rule 1).
+    static void meter(Canvas &to, int step) noexcept
+    {
+        const int x = (APP_LCD_H_RES - kPillsW) / 2;
+        const int y = kGuideY + kGuideH + (kFootY - kGuideY - kGuideH - kMeterH) / 2;
+        to.card(x, y, kPillsW, kMeterH, kMeterH / 2, DRV_LCD_DIM);
+        const int lit = kPillsW * step / kGaugeSteps;
+        if (lit > 0) {
+            to.card(x, y, lit > kMeterH ? lit : kMeterH, kMeterH, kMeterH / 2,
+                    step >= kGaugeSteps ? DRV_LCD_OK : DRV_LCD_ACCENT);
         }
     }
 
@@ -2329,6 +2377,13 @@ void enrol_refused() noexcept
 {
     if (enrol_wanted()) {
         s_capture.refused_one();
+    }
+}
+
+void enrol_blocked(const char *why) noexcept
+{
+    if (enrol_wanted()) {
+        s_capture.blocked(why);
     }
 }
 

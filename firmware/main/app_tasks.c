@@ -2224,11 +2224,13 @@ static void ui_task(void *arg)
         if (ai_engine_spoof_input_bytes() == 0 &&
             (svc_attendance_policy(&policy) != ESP_OK || !policy.allow_no_spoof)) {
             ESP_LOGE(TAG, "enrol refused for %s: no spoof branch and the policy forbids it", name);
+            ui_kiosk_enrol_blocked(UI_KIOSK_ENROL_NO_LIVENESS);
             continue;
         }
         // The id is the one the server assigned; a kiosk mints none (KEHOACH 7.5).
         if (employee_id == 0) {
             ESP_LOGE(TAG, "enrol refused for %s: the server assigned no id", name);
+            ui_kiosk_enrol_blocked(UI_KIOSK_ENROL_NO_ID);
             continue;
         }
         if (new_employee != employee_id) {
@@ -2242,6 +2244,9 @@ static void ui_task(void *arg)
         armed = asked == ESP_OK;
         ESP_LOGI(TAG, "enrol %u sample %u for %s: %s", (unsigned)employee_id, (unsigned)slot, name,
                  esp_err_to_name(asked));
+        if (!armed) {
+            ui_kiosk_enrol_blocked(UI_KIOSK_ENROL_NOT_READY);
+        }
     }
 }
 

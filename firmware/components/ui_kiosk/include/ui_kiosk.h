@@ -94,6 +94,18 @@ void ui_kiosk_enrol_kept(void);
  */
 void ui_kiosk_enrol_refused(void);
 
+/** Why main would not ask the pipeline for the sample the enrol screen wants. */
+typedef enum {
+    UI_KIOSK_ENROL_NO_LIVENESS = 0,       // no spoof branch, and attend.allow_no_spoof says no
+    UI_KIOSK_ENROL_NO_ID,                 // the server assigned this person no id
+    UI_KIOSK_ENROL_NOT_READY,             // svc_vision turned the request down
+} ui_kiosk_enrol_block_t;
+
+/** Fail the enrol screen at once and say why, in place of a sample that will never come.
+ *  @ctx ui_task | non-blocking
+ */
+void ui_kiosk_enrol_blocked(ui_kiosk_enrol_block_t why);
+
 /** Whether the enrol screen still wants the face it asked for (KEHOACH 4.5.5h.2).
  *  @ctx ui_task | non-blocking | false once the screen has failed, finished or closed
  */

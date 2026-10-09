@@ -126,6 +126,11 @@ constexpr Entry kRows[] = {
     { StrId::ScanRecognitionOff, "Máy chưa nhận diện được, báo quản trị", "Recognition is off, tell an admin" },
     { StrId::CaptureNoRecognition, "Máy chưa nhận diện được", "Recognition is off" },
     { StrId::DeviceRecognition, "Nhận diện", "Recognition" },
+    { StrId::CaptureNoFrame, "Không khung nào đạt", "No frame passed the checks" },
+    { StrId::CaptureNoLiveness, "Máy thiếu bước chống giả", "Liveness check is missing" },
+    { StrId::CaptureNoId, "Máy chủ chưa cấp mã cho người này", "The server gave this person no id" },
+    { StrId::CaptureNotReady, "Máy chưa sẵn sàng, thử lại sau", "The kiosk is not ready" },
+    { StrId::ScanTryLater, "Máy bận, thử lại sau", "Busy, try again later" },
 };
 
 constexpr size_t kCount = sizeof(kRows) / sizeof(kRows[0]);

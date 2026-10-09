@@ -92,6 +92,9 @@ bool enrol_complete() noexcept;
 /** The capture screen counts a sample the pipeline turned away as a spoof. */
 void enrol_refused() noexcept;
 
+/** The capture screen fails at once, saying why no sample is coming. */
+void enrol_blocked(const char *why) noexcept;
+
 /** The capture screen is up and has neither failed nor finished. */
 bool enrol_wanted() noexcept;
 

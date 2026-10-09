@@ -126,6 +126,11 @@ enum class StrId : uint16_t {
     ScanRecognitionOff,
     CaptureNoRecognition,
     DeviceRecognition,
+    CaptureNoFrame,
+    CaptureNoLiveness,
+    CaptureNoId,
+    CaptureNotReady,
+    ScanTryLater,
 
     Count,
 };
