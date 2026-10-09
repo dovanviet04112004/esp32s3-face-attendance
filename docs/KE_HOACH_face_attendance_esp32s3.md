@@ -3051,7 +3051,7 @@ firmware/
 │   ├── svc_vision/        [C++]  L4  # detect mỗi khung, chuỗi spoof → recog khi mặt ổn định (§4.5.5d)
 │   ├── svc_attendance/    [C++]  L5  # state machine, chống trùng, ghi log
 │   ├── svc_sync/          [C++]  L5  # hàng đợi offline → MQTT
-│   └── ui_kiosk/          [C++]  L6  # 8 màn hình vẽ thẳng lên panel + bộ bám hộp (§4.5.5h)
+│   └── ui_kiosk/          [C++]  L6  # 9 màn hình vẽ thẳng lên panel (§4.5.5h)
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
@@ -3558,8 +3558,9 @@ public:
     virtual bool on_touch(int x, int y, bool down) { return false; }   // true = vẽ lại
     virtual bool tick(uint32_t dt_ms, const Sight& seen) { return false; }
     virtual void paint(Canvas& to, const Sight& seen) = 0;   // cover map, không phải lv_obj
+    virtual bool opaque() const { return false; }             // true = phủ kín panel, không video
 };
-// ScanScreen · MenuScreen · EnrolScreen · CaptureScreen · PeopleScreen · SettingsScreen
+// Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device · Update
 class ScreenManager {
     Screen*  screens_[kScreenCount];   // dựng sẵn lúc boot, không tạo/hủy lúc chạy
     Screen*  cur_;
@@ -3568,7 +3569,7 @@ public:
 };
 ```
 
-Sáu màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
+Chín màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
 
 **Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
 thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
@@ -3576,7 +3577,7 @@ bộ vẽ cùng ghi một panel SPI, đúng thứ `m_spi_lcd` sinh ra để ch�
 một lần bàn giao panel — chỗ mà xé hình hay quay lại. Nên mọi màn dùng **một bộ vẽ duy nhất**:
 `Canvas` là một **cover map 1 byte mỗi pixel** mang chỉ số bảng màu cộng độ phủ (xem đoạn bảng
 màu ở §4.5.5h), chữ lấy từ bảng glyph 4bpp `assets/fonts/` sinh sẵn từ TTF, và `drv_lcd` cắt
-map ấy theo từng dải 48 dòng ngay trong vòng gom khung. Cái giá phải trả là bàn phím, danh
+map ấy theo từng dải 20 dòng (§6.4) ngay trong vòng gom khung. Cái giá phải trả là bàn phím, danh
 sách, thanh trượt và nút bấm **tự viết**, mỗi thứ cỡ trăm dòng; cái được là không thêm thư
 viện, không thêm 48 KB heap, và **không bao giờ có hai người ghi panel**.
 
@@ -3590,11 +3591,15 @@ dọc** tự cộng dồn toạ độ. Màn hình mô tả *có những gì*, kh
 đuôi bằng `…`** ngay trong hàm vẽ chứ không trông vào người viết màn hình đếm ký tự, vì tên
 người và tên Wi-Fi là dữ liệu chạy lúc chạy, không đoán trước được.
 
-**Một dòng, dùng lại ở khắp nơi.** Menu, Cài đặt, Danh sách người và Wi-Fi đều là *danh sách
-những dòng chạm được*, nên cả bốn vẽ bằng **cùng một widget**: ô biểu tượng, nhãn, giá trị xám,
-mũi tên. Nhờ vậy bo góc, chiều cao, lề trong và màu lúc nhấn giống nhau ở mọi màn mà không ai
-phải nhớ con số — đổi một chỗ là đổi cả máy. Màn hình nào cũng tự đi ra khỏi kiểu chung thì
-giao diện thành chắp vá, và đó đúng là thứ tầng này dựng ra để chặn.
+**Một dòng, dùng lại ở khắp nơi.** Menu, Cài đặt, Thêm người, Danh sách và Wi-Fi đều là *danh
+sách những dòng chạm được*, nên cả năm vẽ bằng **cùng một widget**: ô biểu tượng (hay quạt sóng ở
+Wi-Fi), nhãn, giá trị xám, và một biểu tượng đuôi khi dòng cần nói thêm, như ổ khoá của mạng có mật
+khẩu. Ở những danh sách mà thứ người ta đọc là **cái tên** — người chờ chụp, người trong bảng, mạng
+Wi-Fi — giá trị xuống dòng dưới tên bằng chữ nhỏ thay vì đứng bên phải, nên tên giữ trọn bề rộng
+dòng thay vì nhường chỗ cho trạng thái. Nhờ vậy bo góc, chiều cao (`theme::kRowH`), lề trong và màu
+lúc nhấn giống nhau ở mọi màn mà không ai phải nhớ con số — đổi một chỗ là đổi cả máy. Màn hình nào
+cũng tự đi ra khỏi kiểu chung thì giao diện thành chắp vá, và đó đúng là thứ tầng này dựng ra để
+chặn.
 
 **Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` lấy `m_spi_lcd` và
 tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
@@ -3609,6 +3614,21 @@ có overlay mới là vẽ ngay. Bàn phím và danh sách vì thế hiện phí
 cộng một lượt vẽ, thay vì chờ thêm tới một khung camera (~75 ms ở 13 fps). AI vẫn nhận khung như
 cũ, và `cam_task` vẫn là người duy nhất ghi panel.
 
+**Camera im thì màn hình vẫn chạy.** `ui_task` chỉ công bố overlay mới khi `cam_task` báo cái trước
+đã lên kính (`ui_kiosk_shown`), và với overlay có video thì lời báo ấy chỉ đến sau một lần blit. Quá
+`CAMERA_STALL_MS` (1 s) không có khung, `cam_task` thôi chờ camera: nó vẽ mỗi overlay mới lên nền tối
+rồi báo đã hiện, và hỏi `drv_camera_has_frame()` giữa hai lần công bố thay vì chặn tới 4 s trong
+`esp_camera_fb_get`. Khung đầu tiên quay lại đưa nó về đường video. Không có luật này thì camera hỏng
+kéo cả màn hình đứng theo: đồng hồ dừng, menu không mở, trong khi chạm vẫn tác động lên những màn
+không ai nhìn thấy.
+
+**Trạng thái từ task khác tới `ui_task` qua hộp thư, không ghi thẳng.** Thông tin máy và mạng
+(`attend_task`), dải vé (`ota_task`), trang danh sách chờ (`sync_task`) đều là những giá trị nhiều
+byte mà `ui_task` đang vẽ từ đó. Mỗi thứ đi qua một hộp thư khoá bằng spinlock: bên gửi sửa giá trị
+trong hộp, `ui_task` chép nó ra ở nhịp kế, và hộp chỉ báo có thư khi byte thật sự đổi — nên bảng
+thông tin máy không bắt vẽ lại cả panel mỗi 3 giây, và quạt Wi-Fi chỉ vẽ lại khi sóng đổi vạch.
+Danh sách chờ chỉ `sync_task` đọc và ghi; màn `Enrol` xin trang nào thì `sync_task` trả lời ở đó.
+
 **Cover map gửi xuống theo hộp bao, không gửi cả màn.** `Canvas` nhớ hình chữ nhật nhỏ nhất
 chứa mọi ô khác 0; `drv_lcd_mask_t` mang thêm `stride` nên nó nhận thẳng một vùng con của bản
 đồ 320×480 mà không phải chép ra. Màn `Scan` chỉ đụng thanh trên, khung ngắm và dải dưới, nên
@@ -3617,17 +3637,20 @@ mỗi khung chỉ quét đúng ngần ấy byte thay vì 153 KB.
 **Đường đi giữa các màn:**
 
 ```
-Scan ──ba gạch──> Menu ──"Thêm người"──> Enroll ──chọn tên──> Capture ──đủ mẫu──> Scan
- ▲                 │                                                              │
- │                 ├──"Danh sách"──> People                                        │
- │                 │                                                              │
- │                 └──"Cài đặt"───> Settings ──"Wi-Fi"─────> Wifi                  │
- │                                     │                                          │
- │                                     └──"Thiết bị của tôi"──> Device             │
- └────────────────────────────── Đóng / Huỷ ───────────────────────────────────────┘
+Scan ──ba gạch──> Menu ──"Thêm người"──> Enrol ──chọn tên──> Capture ──Xác nhận · Thoát · Huỷ──> Menu
+ ▲                 │
+ │                 ├──"Danh sách"──> People ──quay lại──> Menu
+ │                 │
+ │                 └──"Cài đặt"──> Settings ──"Wi-Fi"──> Wifi ──quay lại──> Settings
+ │                                    │
+ │                                    └──"Thiết bị của tôi"──> Device ──quay lại──> Settings
+ │
+ └── "Đóng" ở Menu, hoặc 30 s không chạm ở bất kỳ màn nào của người vận hành (§5.4)
 ```
 
-`Enroll` là màn **danh sách chờ**, không phải màn bàn phím. Gõ tên là thao tác tệ nhất có thể
+`Update` phủ lên mọi màn trong lúc tải và cài bản mới, rồi trả panel về `Scan` (§7.7).
+
+`Enrol` là màn **danh sách chờ**, không phải màn bàn phím. Gõ tên là thao tác tệ nhất có thể
 đặt lên một màn 3,5 inch, và nó còn sai về dữ liệu: §7.5 đã cho server giữ hồ sơ nhân viên và
 đẩy xuống lệnh `ASSIGN` kèm `employeeId` cùng tên đủ dấu. Người vận hành vì thế **chọn một
 dòng** rồi đưa mặt vào khung — máy đã biết người ấy là ai, không ai phải đánh vần lại.
@@ -3638,10 +3661,12 @@ không có chỗ nào đặt được một mã số mà server ghi nhận (§7.
 một lần. Thứ duy nhất mất đi là thêm một người server **chưa từng biết**, và người đó vốn không
 có hồ sơ nào để chấm công vào.
 
-Danh sách chờ trống thì màn này **không được là trang trắng**: nó nói thẳng rằng chưa có ai
-được giao từ server, và chỉ sang đúng chỗ giao người là trang nhân viên trên dashboard. `CaptureScreen`
-gọi `svc_vision_enrol_next()` rồi đứng chờ chính `MATCH` của người vừa thêm, nên "thêm thành
-công" là câu nói sau khi máy **đã nhận lại được**, không phải sau khi ghi xong file.
+Danh sách chờ trống thì màn này **không được là trang trắng**: nó nói thẳng rằng máy chủ chưa giao
+ai, và chỉ sang đúng chỗ giao người là trang nhân viên trên dashboard. Dòng của danh sách chỉ mang
+**tên**, và dòng của người đang chờ chụp lại mang thêm chữ *Chụp lại* bên dưới: máy không có mã nhân
+sự, còn mã dòng của server thì không nói gì với người đứng ở cửa. `CaptureScreen` xin từng mẫu qua
+`svc_vision_enrol_next()` và chỉ đếm mẫu khi pipeline **đã giữ** nó; câu "Đã thêm" hiện lúc mẫu thứ
+ba được giữ, không phải lúc người vận hành bấm chụp.
 
 **Đếm lần từ chối phải cùng nhịp với pipeline, và nhịp ấy là từng mẫu.** Màn `Capture` bỏ cuộc
 theo số lần bị gọi ảnh giả, `svc_vision` ngừng xác thực theo `kEnrolSpoofTries` — hai con số này
@@ -3699,25 +3724,31 @@ Khung ngắm vì thế **240 × 296 px panel**, đặt giữa, mép trên cách 
 hộp mặt 240 / 1,48 ≈ **162 px panel = 108 px khung**, dư 8 px trên cổng. Ai lấp đầy khung thì
 chắc chắn qua cổng, và đó là một lời hứa đo được chứ không phải một gợi ý.
 
-**Khung ngắm thay luôn hộp bám mặt.** Hộp vẽ theo đầu ra detect phải bám một khuôn mặt đang đi
-lại bằng một bộ so vân sáng chạy mỗi khung, và đo trên board 13/09 nó tốn **~2 fps** mà vẫn
-trượt khi người quay nhanh (§4.5.5h, đoạn `BoxTracker`). Khung ngắm **đứng yên** thì không có gì
-để trượt, không tốn phép tính nào, và nói được nhiều hơn: hộp bám chỉ nói "máy thấy anh", khung
-ngắm nói "đứng vào đây thì máy làm việc được". `BoxTracker` vì thế **ra khỏi đường vẽ**; mã giữ
-lại trong cây cho luồng nào cần bám thật (ví dụ nhiều người cùng khung ở E10-T7).
+**Khung ngắm thay luôn hộp bám mặt.** Hộp vẽ theo đầu ra detect phải bám một khuôn mặt đang đi lại
+bằng một bộ so vân sáng chạy mỗi khung, và đo trên board 13/09 nó tốn **~2 fps** mà vẫn trượt khi
+người quay nhanh. Khung ngắm **đứng yên** thì không có gì để trượt, không tốn phép tính nào, và nói
+được nhiều hơn: hộp bám chỉ nói "máy thấy anh", khung ngắm nói "đứng vào đây thì máy làm việc được".
+`BoxTracker` vì thế **ra khỏi đường vẽ**; mã giữ lại trong cây cho luồng nào cần bám thật (ví dụ
+nhiều người cùng khung ở E10-T7). Bộ bám ấy so một mẫu độ sáng 24×24 điểm dưới tâm hộp với cửa sổ
+±32 px khung quanh chỗ cũ, theo lưới thô rồi tinh — 298 phép so mỗi khung, mỗi phép bỏ dở ngay khi
+tổng sai đã vượt chỗ tốt nhất. Nối vào `cam_task` nó kéo preview **13,2 → 9,5 fps** ở profile `dev`;
+bỏ dở sớm đưa về 11,2–12,9 fps, vẫn là cái giá không đáng cho một hộp chỉ nói "máy thấy anh". Test
+app `tracker` giữ nó chạy được trên khung tổng hợp.
 
 Các trạng thái của khung, màu là thông tin chứ không phải trang trí:
 
 | Máy đang | Khung | Dòng nhắc dưới khung |
 |---|---|---|
-| chờ, không thấy ai | trắng mờ | `Đưa khuôn mặt vào khung` |
+| chờ, không thấy ai | trắng | `Đưa khuôn mặt vào khung` |
 | thấy mặt nhưng chưa vào khung (dưới `guide_min`), hoặc đã rời khung (dưới nửa `guide_min`) | hổ phách | `Đưa khuôn mặt vào khung` |
 | trong khung nhưng nhỏ hơn cổng | hổ phách | `Lại gần hơn` |
 | trong khung nhưng ô 1,0× tràn khung camera — gần như chỉ khi đứng quá gần | hổ phách | `Lùi lại một chút` |
-| mặt qua cổng, pipeline đang làm việc | xanh mint | `Đang nhận diện...` |
-| xong, đạt | xanh mint | thẻ dấu tích + tên + `Đã chấm công` ở dải dưới |
-| xong, lượt đến này đã chấm rồi | xanh mint | không gì: không thẻ, không mở cửa, không tiếng |
+| mặt qua cổng, pipeline đang làm việc | xanh dương | `Đang nhận diện...` |
+| xong, đạt | xanh lá | thẻ dấu tích + tên + `Đã chấm công` ở dải dưới |
+| xong, lượt đến này đã chấm rồi | xanh lá | không gì: không thẻ, không mở cửa, không tiếng |
 | xong, từ chối | hổ phách | một dòng chữ ở dải dưới, **giữ cho tới khi mặt ấy rời khung hoặc pipeline bắt sang người khác** |
+| đã khởi động lại pipeline một lần mà mặt ấy vẫn chưa có câu trả lời | hổ phách | `Máy bận, thử lại sau`, giữ tới khi có câu trả lời hoặc mặt vắng quá 2 s |
+| bộ model không nạp được (`AI_READY` không lên) | không vẽ | không có; dải vé nói `Máy chưa nhận diện được, báo quản trị` |
 
 **Máy chưa có vé thì nói ra, ở khoảng giữa thanh trên và khung ngắm.** Trong lúc xin vé (§7.3
 bước 3), màn quét mang hai dòng hổ phách: `Chờ duyệt · kiosk-a1b2c3d4e5f6`, đúng chuỗi admin
@@ -3731,6 +3762,14 @@ biến mất, trong khoảng một nhịp hỏi sau lúc admin bấm duyệt (§
 chen dòng nhắc dưới khung, và không chặn chấm công: bản ghi vẫn xếp hàng như lúc mất mạng. Dòng
 này nói về **cái máy**, không nói về người đứng trước nó, nên nó đi riêng một đường vào
 `ui_kiosk` (`ui_kiosk_set_ticket()`), không đi qua kênh trạng thái của pipeline.
+
+**Máy không nhận diện được thì nói ra trước mọi dòng khác.** Gói model không nạp được, bảng mặt hay
+pipeline không lên thì `AI_READY` không bao giờ được giương và `ai_task` không chạy (§7.7); khung
+ngắm vẫn mời đưa mặt vào là mời người ta đứng trước một cái máy không ai trả lời. `main` báo trạng
+thái ấy cho `ui_kiosk` một lần lúc khởi động (`ui_kiosk_set_recognition`). Khi đó dải vé nói `Máy
+chưa nhận diện được, báo quản trị`, khung ngắm và dòng nhắc không vẽ, mã nhận máy nếu đang chờ duyệt
+vẫn hiện dưới dòng ấy, `Capture` từ chối ngay khi mở kèm đúng lý do đó, và trang `Device` thay dòng
+*Mặt nhỏ nhất* bằng dòng *Nhận diện* mang mã lỗi nạp model.
 
 **Màn hình không tự đoán, nó chỉ vẽ điều `svc_vision` nói.** Các trạng thái trên là các cổng của
 pipeline (§4.5.5d): không có mặt, mặt chưa vào khung ngắm, mặt dưới `face_min_px`, ô 1,0×
@@ -3770,9 +3809,10 @@ cưa**: bảng glyph 4bpp đưa thẳng độ phủ vào 4 bit cao.
 nét chữ và mọi mảng đặc vì thế vẫn chỉ tốn một phép tra, và phép trộn RGB565 chỉ chạy trên
 đúng những pixel ở rìa.
 
-**Đỏ có mặt, và chỉ cho một việc.** Xoá một người là thao tác không lùi được, nên nó là chỗ
-duy nhất dùng màu nguy hiểm. Từ chối chấm công vẫn nói bằng hổ phách cộng câu chữ: người bị
-từ chối oan không đáng bị màn hình quát bằng màu đỏ (§4.5.5d, `kUnknownTries`).
+**Đỏ có mặt, và chỉ cho một việc.** Quên một mạng Wi-Fi là thao tác duy nhất trên máy không lùi
+được — mật khẩu đi cùng nó — nên nút ấy là chỗ duy nhất dùng màu nguy hiểm. Từ chối chấm công, lỗi
+cập nhật hay sai mật khẩu Wi-Fi đều nói bằng hổ phách cộng câu chữ: người bị từ chối oan không đáng
+bị màn hình quát bằng màu đỏ (§4.5.5d, `kUnknownTries`).
 
 **Đã trả lời rồi thì thôi hướng dẫn.** Mọi câu nhắc căn khung — `Đang nhận diện...`, `Lại gần
 hơn`, `Lùi lại một chút` — đều tắt từ lúc có **bất kỳ** phán quyết nào, đạt hay từ chối, cho tới
@@ -3849,12 +3889,13 @@ bao giờ lâu hơn, vì hết đồng hồ thì chỉ track của phán quyết
 **Câu chữ phải đọc được.** `svc_vision` đổi ý mỗi bước, nhanh hơn mắt, nên một câu nhắc giữ tối
 thiểu **700 ms** trước khi câu khác thay; riêng "mất mặt" là tin ngay lập tức.
 
-Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ, ngày và dấu Wi-Fi — vạch sóng nói máy bắt
-được mạng, còn một dấu chấm than nhỏ cạnh nó nói broker chưa nối, như điện thoại báo Wi-Fi không
-có internet, vì sóng đầy không có nghĩa là máy chủ đang nghe; nút **ba gạch** góc phải
-mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng chữ 22 px chỉ có ASCII và tiếng Việt nên một ký
-tự như `≡` sẽ ra ô trống; **dải dưới** mang kết quả (§4.5.5h). Không có gì che mặt người đang
-đứng — mọi thứ nằm ở mép.
+Ba thứ còn lại trên `Scan`: **thanh trên** mang giờ và dấu Wi-Fi. Giờ hiện `--:--` cho tới khi NTP,
+RTC hay máy chủ đã đặt đồng hồ (`sys_time_trusted()`): đồng hồ chưa ai đặt đọc ra giờ của năm 1970,
+và một giờ sai thì tệ hơn không có giờ. Vạch sóng nói máy bắt được mạng, còn một dấu chấm than nhỏ
+cạnh nó nói broker chưa nối, như điện thoại báo Wi-Fi không có internet, vì sóng đầy không có nghĩa
+là máy chủ đang nghe. Nút **ba gạch** góc phải mở `Menu` — ba hình chữ nhật vẽ thẳng, vì bảng glyph
+chỉ có ASCII và tiếng Việt nên một ký tự như `≡` sẽ ra ô trống. **Dải dưới** mang kết quả
+(§4.5.5h). Không có gì che mặt người đang đứng — mọi thứ nằm ở mép.
 
 **Thẻ kết quả tắt khi *người tiếp theo được phục vụ*, không phải khi hết một đồng hồ.** Kiosk
 đặt ở cửa thì phía sau luôn có người chờ, và lúc thẻ của người trước còn trên kính là lúc người
@@ -3867,15 +3908,23 @@ sổ im lặng chặn câu lặp thì không dùng được: dài hơn thời gi
 định chặn, `Chưa có trong hệ thống` sáng, tắt trong lúc máy vẫn đang từ chối, rồi sáng lại. Câu
 chữ vì thế đứng yên suốt thời gian người ta còn bị từ chối, và tắt 1,5 s sau khi họ đi.
 
-Đồng hồ ấy đếm lùi theo **bước tick nguyên**, nên phép kiểm phải là "đã qua 0" chứ không phải
-"bằng 0": chỉ cần đổi `UI_TICK_MS` sang một số không chia hết 1.500 là câu chữ **không bao giờ
-tắt nữa**.
+Đồng hồ ấy đếm lùi theo **thời gian thật**, đo bằng `esp_timer` giữa hai nhịp `ui_task`, nên mỗi bước
+dài ngắn khác nhau và phép kiểm phải là "đã qua 0" chứ không phải "bằng 0". Mọi hẹn giờ của màn đều
+đếm như vậy, không đếm số nhịp `ui_task` xin: một vòng lặp bị kéo dài thì thẻ 1,5 s vẫn đứng 1,5 s,
+và lời đếm ngược trên màn `Update` vẫn khớp đồng hồ trên tay.
+
+**Thẻ là lời duy nhất nói máy vừa nhận ra ai, nên tên được hai dòng.** Tên đi bằng chữ thân 20 px
+trên tối đa hai dòng, ngắt ở khoảng trắng cuối cùng còn lọt, rồi mới cắt bằng `…`; một dòng 24 px
+chỉ chứa khoảng 12 ký tự, tức phần lớn tên người Việt đủ họ và tên sẽ bị cắt. Tên từ máy chủ dài
+tới 64 ký tự còn bản ghi trên máy giữ 31 byte, nên lúc nhận `main` cắt đúng ranh giới ký tự UTF-8
+và thêm `…` thay vì để lại nửa chữ.
 
 ##### h.2) Màn `Capture` — đăng ký lấy nhiều mẫu, có vạch tiến trình
 
 Máy thương mại lấy nhiều mẫu và hiện vạch phần trăm; người dùng biết còn phải đứng bao lâu.
 `Capture` lấy **3 mẫu cách nhau ≥ 400 ms** (chính diện, hơi nghiêng trái, hơi nghiêng phải),
-mỗi mẫu là một `template_idx`, và vẽ ba ô vuông sáng dần. Câu nhắc đổi theo mẫu đang chờ.
+mỗi mẫu là một `template_idx`, và vẽ ba vạch sáng dần. Câu nhắc đổi theo mẫu đang chờ, và tên
+người đang được chụp nằm ở thanh trên suốt màn, để mặt không thể rơi vào tên người khác.
 Bỏ dở giữa chừng thì những mẫu đã lấy **bị xoá**, vì một người chỉ có mẫu chính diện sẽ nhận
 kém ở mọi tư thế khác và đó là lỗi khó truy sau này.
 
@@ -3941,9 +3990,10 @@ vài mẫu và không đủ kết luận.
 **Năm luật giữ cho nó không thành cực hình.** Đây là phần quyết định việc này *xịn* hay *ức
 chế*:
 
-1. **Phản hồi sống, không phải đúng/sai.** Một vạch chỉ hướng đầy dần theo góc quay hiện tại.
-   Người dùng thấy nó nhúc nhích theo đầu mình thì biết máy đang nghe; đứng đoán xem đã đủ chưa
-   mới là thứ gây ức chế.
+1. **Phản hồi sống, không phải đúng/sai.** Một vạch chỉ hướng đầy dần theo góc quay hiện tại,
+   nằm trong khe giữa khung ngắm và nút, rộng bằng dãy ba vạch mẫu: xanh dương khi đang quay, xanh
+   lá khi góc đã đủ. Người dùng thấy nó nhúc nhích theo đầu mình thì biết máy đang nghe; đứng đoán
+   xem đã đủ chưa mới là thứ gây ức chế.
 2. **Giữ 300 ms mới tính.** Quét nhanh qua đúng góc sẽ lấy phải khung nhoè. Giữ một nhịp ngắn
    vừa tránh nhoè vừa làm thao tác có cảm giác dứt khoát.
 3. **Có trễ ở ngưỡng nhận**, cùng lý do §4.5.5h.1: điểm mốc rung thì vạch sẽ giật quanh biên.
@@ -4034,9 +4084,11 @@ không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai lu�
   tới hạn 15 s là mười mấy giây đứng nhìn một câu nhắc tư thế vô nghĩa. Hạn 15 giây vẫn giữ cho
   trường hợp không có từ chối nào mà mẫu cũng không đậu (mặt rời khung, bảng không trả lời).
   Cả hai đường đều xoá những mẫu đã lấy đúng như đường huỷ, báo "Chưa lấy được mẫu" **kèm lý do
-  gần nhất**, rồi chờ một lần chạm **"Đã hiểu"** mới về `Menu`. Chờ chạm chứ không hẹn giờ: câu báo lỗi mà tự biến mất thì người
-  vận hành giơ ảnh giả bị chặn sẽ không biết vì sao và thử lại mãi, còn nút thì luôn có sẵn nên
-  không ai bị nhốt. ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung tốt nhất đã
+  gần nhất** ở dòng dưới — câu từ chối, câu sửa tư thế hay căn khung người ấy nhận sau cùng, hoặc
+  `Không khung nào đạt` — rồi chờ người vận hành chọn **Thử lại** hay **Thoát**; khung ngắm và ba
+  vạch mẫu thôi vẽ, vì không còn gì để nhắm. Chờ chạm chứ không hẹn giờ: câu báo lỗi mà tự biến
+  mất thì người vận hành giơ ảnh giả bị chặn sẽ không biết vì sao và thử lại mãi, còn nút thì luôn
+  có sẵn nên không ai bị nhốt. ⚠️ Khác hẳn luật 5 ở trên: hết giờ vì **tư thế** thì lấy khung tốt nhất đã
   thấy, còn hết giờ vì **liveness** thì **tuyệt đối không được lấy** — nhận đại một mẫu ở đây là
   tự tay ghi khuôn mặt giả vào bảng.
 
@@ -4045,6 +4097,12 @@ không một dòng giải thích, lối ra duy nhất là nút "Huỷ". Hai lu�
 có mã": `main` gặp một yêu cầu mang mã 0 thì **từ chối có báo**, không tự cấp. Cấp tại máy từng
 có ở đây và đã hỏng hai lần. Lần đầu, "một hơn mã lớn nhất trong bảng" cho hai máy cùng một mã
 (§7.5). Lần sau, mã ở dải riêng từ `0x80000000` trở lên không có chỗ ghi trên server.
+
+**Yêu cầu bị chặn thì màn hỏng ngay, kèm lý do.** `main` không xin mẫu khi máy thiếu nhánh chống giả
+mà `attend.allow_no_spoof` tắt, khi người ấy không có mã, hay khi `svc_vision` không nhận yêu cầu. Cả
+ba báo thẳng cho màn lấy mẫu (`ui_kiosk_enrol_blocked`), và màn hỏng ngay với `Máy thiếu bước chống
+giả`, `Máy chủ chưa cấp mã cho người này` hay `Máy chưa sẵn sàng, thử lại sau`, thay vì đứng `Giữ
+nguyên` 15 giây rồi báo hỏng không lý do.
 
 **Lấy xong không tự đi đâu cả: người vận hành xác nhận rồi mới rời màn.** Mẫu thứ ba đậu thì
 `Capture` hiện tên vừa thêm và một nút **"Xác nhận"**, đứng yên chờ. Chạm nút mới rời, và rời về
@@ -4059,22 +4117,20 @@ có ở đây và đã hỏng hai lần. Lần đầu, "một hơn mã lớn nh�
    mọi lớp chống giả phía sau dựa vào; kết thúc nó bằng một hành động có chủ ý rẻ hơn nhiều so với
    một bản ghi sai không ai để ý.
 
-Đường **thất bại** cũng dừng lại chờ chạm, nhưng bằng nút **"Đã hiểu"** và kèm lý do: nó mang
-thông tin người vận hành cần để quyết định làm gì tiếp, mà một câu chạy qua trong hai giây thì
+Đường **thất bại** cũng dừng lại chờ chạm, bằng hai nút **Thử lại** và **Thoát** và kèm lý do: nó
+mang thông tin người vận hành cần để quyết định làm gì tiếp, mà một câu chạy qua trong hai giây thì
 không mang được gì cả.
 
 ##### h.3) Màn `People` — chỉ đọc, chia trang
 
-`People` liệt kê mỗi người máy đang giữ trên một dòng, tên và số mẫu, chia trang bằng đúng cặp
-nút của `Enroll` (E10-T24), để một cửa giữ vài chục người vẫn xem được hết. Nó trả lời đúng một
-câu người vận hành hỏi ở máy: người này đã có mặt ở cửa này chưa, và đủ mẫu chưa. Dòng không mở ra
-gì, và màn không có nút nào đổi bảng mặt: gỡ một người khỏi máy hay lấy lại mẫu của họ làm trên
+`People` liệt kê mỗi người máy đang giữ trên một dòng, tên ở trên và số mẫu ở dưới, chia trang bằng
+đúng cặp nút của `Enrol` (E10-T24), để một cửa giữ vài chục người vẫn xem được hết. Nó trả lời đúng
+một câu người vận hành hỏi ở máy: người này đã có mặt ở cửa này chưa, và đủ mẫu chưa. Dòng không mở
+ra gì, và màn không có nút nào đổi bảng mặt: gỡ một người khỏi máy hay lấy lại mẫu của họ làm trên
 dashboard, vì menu kiosk không khoá (§7.5).
 
 Danh sách đi qua `main`, vì §4.5.4 luật 2 cấm `ui_kiosk` gọi `svc_facedb`: màn xin một trang,
 `main` chép trang ấy từ bảng mặt rồi đưa xuống, còn `ui_kiosk` chỉ vẽ những gì nó được đưa.
-
-**Hộp mặt trên preview bám theo khung hình, không bám theo nhịp detect.** Detect ra hộp 3–4 lần/giây và im hẳn 0,93 s trong lúc spoof + recog chạy (§4.5.5d); vẽ hộp theo nhịp đó là hộp khựng. `BoxTracker` (`src/box_tracker.cpp`) nhận hộp mới từ `svc_vision`, lấy một mẫu độ sáng **24×24 điểm bám** dưới tâm hộp — mỗi điểm bám là một pixel khung lấy cách 2 (nửa độ phân giải), tức mẫu phủ 48×48 px khung — rồi trên mỗi khung preview (core 0) đổi cửa sổ 56×56 điểm bám quanh vị trí cũ sang độ sáng một lần, quét **thô rồi tinh** trong bán kính ±16 điểm bám (**±32 px khung**) bằng tổng sai tuyệt đối trên 576 điểm: 17×17 = 289 vị trí cách nhau 2 điểm bám, rồi 3×3 vị trí sát quanh chỗ thắng — **298 phép so, đúng bằng số phép so của lưới dày cũ mà phủ gấp bốn diện tích**. Mỗi phép so **bỏ dở ngay giữa chừng** khi tổng đã vượt chỗ tốt nhất đang giữ, và phần lớn vị trí vượt ngay từ vài hàng đầu. Ba luật giữ nó không nói dối: chỉ dịch khi khớp **tốt hơn đứng yên**; sai lệch trung bình trên 48 mức/điểm là mất dấu, hộp đứng lại; mẫu phẳng (độ tương phản dưới 24 mức) không bám. Hộp mới từ detect **thay thế** hộp đang bám, nên sai số không tích luỹ quá một chu kỳ detect. **Đo trên board 13/09, không phải 1–2 ms như ước lượng cũ**: nối bộ bám vào `cam_task` kéo preview **13,2 → 9,5 fps**, tức ~29 ms mỗi khung ở profile `dev` (`-Og`). Thoát sớm trong phép so đưa về **11,2–12,9 fps**. Bài học: lưới 289 vị trí × 576 điểm là 166 nghìn phép trừ mỗi khung, và ước lượng 1–2 ms cho ngần ấy việc ở `-Og` là sai một bậc. Bộ bám không phát hiện mặt mới và không đưa gì về đường model: nó chỉ là cách mắt không thấy giật mà kết quả chấm công không chậm thêm một mili giây nào. Kết quả chấm công vẽ đè lên khung preview trong cùng đường này, không qua LVGL cho vùng preview.
 
 ```
 components/ui_kiosk/
@@ -4097,11 +4153,11 @@ components/ui_kiosk/
 
 **Overlay là dữ liệu, không phải lời gọi vẽ.** `ui_kiosk` (L6) không được gọi xuống `cam_task`
 và `drv_lcd` (L2) không được biết màn hình nào đang hiện, nên cái đi giữa hai bên là một struct
-phẳng khai ở `drv_lcd.h`: vài **hộp rỗng** (hộp mặt) và vài **ô đặc** kèm con trỏ pixel RGB565
-(thẻ thông báo). `drv_lcd_blit_frame` cắt chúng theo từng dải 20 dòng ngay trong vòng gom, nên
-overlay đi cùng chuyến với preview chứ không phải một lượt ghi panel thứ hai. Pixel của ô đặc
-phải nằm sẵn **theo thứ tự byte của panel** — đường preview không đảo byte, vì khung camera đã
-đúng chiều rồi.
+phẳng khai ở `drv_lcd.h`: tới tám **vùng bản đồ phủ** (`drv_lcd_mask_t`: hình chữ nhật, con trỏ vào
+bản đồ kèm bước dòng, bảng màu), tới bốn **hộp rỗng**, cờ `opaque` của màn phủ kín và một số
+`serial` tăng mỗi lần vẽ. `drv_lcd_blit_frame` cắt chúng theo từng dải 20 dòng ngay trong vòng gom,
+nên overlay đi cùng chuyến với preview chứ không phải một lượt ghi panel thứ hai. Bảng màu nằm sẵn
+**theo thứ tự byte của panel** — đường preview không đảo byte, vì khung camera đã đúng chiều rồi.
 
 `ui_kiosk` giữ **hai ô overlay** và công bố bằng một phép ghi con trỏ nguyên tử: nó chỉ điền vào
 ô đang không được công bố rồi mới đổi con trỏ, `cam_task` đọc con trỏ một lần cho cả khung. Không
@@ -4115,15 +4171,14 @@ một việc, nó là một thuộc tính của máy, nên nó nằm **trong** C
 không phải một dòng ngang hàng ở menu gốc. Luật chung: cái gì trả lời *"máy đang thế nào"* thì
 vào Cài đặt; cái gì trả lời *"tôi muốn làm gì"* mới được đứng ở menu gốc.
 
-**Trang Cài đặt là những thẻ nhóm, không phải một danh sách trơ.** Nền xám nhạt, mỗi nhóm là
-một **thẻ trắng bo góc** nổi trên nền ấy, các nhóm cách nhau một khoảng. Đó là cách mọi hệ
-điều hành điện thoại xếp trang này, và nó có lý do: mắt đọc bốn nhóm ba dòng nhanh hơn đọc một
-cột mười hai dòng, vì khoảng trắng giữa hai thẻ đã làm sẵn việc phân loại.
+**Trang Cài đặt là những thẻ nhóm, không phải một danh sách trơ.** Nền tối, mỗi nhóm là một **thẻ
+bo góc** sáng hơn nền một bậc, các nhóm cách nhau một khoảng. Đó là cách mọi hệ điều hành điện
+thoại xếp trang này, và nó có lý do: mắt đọc bốn nhóm ba dòng nhanh hơn đọc một cột mười hai dòng,
+vì khoảng trắng giữa hai thẻ đã làm sẵn việc phân loại.
 
-Mỗi dòng có đúng bốn phần, trái sang phải: **ô biểu tượng vuông bo góc** mang màu riêng của
-nhóm, **nhãn**, **giá trị** màu xám, và **mũi tên `>`** khi dòng ấy mở ra một trang. Giá trị
-xám là thứ trả lời câu hỏi mà không bắt người ta chạm vào: dòng Wi-Fi hiện luôn tên mạng đang
-nối, nên phần lớn lần mở Cài đặt kết thúc ngay ở đó.
+Mỗi dòng có ba phần, trái sang phải: **ô biểu tượng vuông bo góc** mang màu riêng, **nhãn**, và
+**giá trị** màu xám. Giá trị xám là thứ trả lời câu hỏi mà không bắt người ta chạm vào: dòng Wi-Fi
+hiện luôn tên mạng đang nối, nên phần lớn lần mở Cài đặt kết thúc ngay ở đó.
 
 | Thẻ | Dòng | Kiểu | Nguồn |
 |---|---|---|---|
@@ -4144,12 +4199,12 @@ cho nhãn cộng giá trị, công tắc chiếm 76 px, nên nhãn còn 110 px �
 **205 px** và sẽ bị cắt thành `Ngôn ng…`. Đây là ví dụ đúng của luật ngay dưới: chọn từ ngắn
 hơn lúc viết catalogue, không nới ô.
 
-**Catalogue là một bảng hằng trong flash, không phải file nạp lúc chạy.** `strings.cpp` khai
-`const char *const table[Lang::Count][StrId::Count]`, tức mọi chuỗi nằm ở `.rodata` và đổi ngôn
-ngữ chỉ là đổi một chỉ số — không cấp phát, không đọc flash qua SPI1, nên `ui_task` gọi được
-trong chính vòng vẽ (§5.1 cấm đọc flash ở đó). Giá phải trả đo trên `strings.cpp.obj` là
-**2.685 B** flash cho 57 chuỗi hai thứ tiếng, rẻ hơn nhiều so với một phân vùng asset và một
-đường nạp.
+**Catalogue là một bảng hằng trong flash, không phải file nạp lúc chạy.** `strings.cpp` khai một
+bảng `kRows[]`, mỗi dòng `{ StrId, tiếng Việt, tiếng Anh }`, tức mọi chuỗi nằm ở `.rodata` và đổi
+ngôn ngữ chỉ là đổi cột đọc — không cấp phát, không đọc flash qua SPI1, nên `ui_task` gọi được trong
+chính vòng vẽ (§5.1 cấm đọc flash ở đó). Giá phải trả đo trên `strings.cpp.obj` là **5.402 B**
+flash cho 110 chuỗi hai thứ tiếng cùng mã tra, rẻ hơn nhiều so với một phân vùng asset và một đường
+nạp.
 
 **Bảng phải đủ và phải đúng thứ tự, và trình biên dịch nói điều đó chứ không phải người đọc.**
 `strings.cpp` chốt hai `static_assert`: số dòng bằng `StrId::Count`, và dòng thứ `i` mang đúng
@@ -4177,10 +4232,16 @@ ghi NVS mỗi lần là ghi flash theo nhịp ngón tay, đúng thứ §6 cấm.
 mỗi lần chạm — đèn nền và âm lượng đổi tức thì để người ta thấy mình đang chỉnh cái gì — còn NVS
 chỉ nhận **một** phép ghi lúc ngón tay rời màn.
 
-Dòng trạng thái vẫn do `main` điền qua `ui_kiosk_set_settings()` từ những gì nó với tới được
-**mà không đọc flash**: đọc flash qua SPI1 là tắt cache và ngắt trên cả hai lõi (§5.1).
-`ui_kiosk` chỉ hiện chữ và trả về con số người dùng vặn; nó không gọi tầng dịch vụ nào và không
-chạm NVS (§4.5.4 luật 2) — `main` cầm cả hai đầu ấy.
+Một lần kéo **dính vào thanh nó bắt đầu**: ngón tay trôi sang thanh kia vẫn chỉnh thanh cũ, và thả
+tay ở đâu cũng là thả. Độ sáng có sàn `UI_MIN_BRIGHTNESS` (10 %), cả lúc kéo lẫn lúc khởi động, vì
+0 % là panel tối hẳn mà không còn cách nào nhìn thấy thanh để kéo lên. Panel chỉ vẽ lại khi mức
+thật sự đổi, và một lần nhấn chỉ vẽ lại khi thứ dưới ngón tay đổi: mỗi lần vẽ màn phủ kín là ghi lại
+cả panel.
+
+Những con số ấy do `main` đưa xuống qua `ui_kiosk_set_facts()` và `ui_kiosk_set_net()`, từ những gì
+nó với tới được **mà không đọc flash**: đọc flash qua SPI1 là tắt cache và ngắt trên cả hai lõi
+(§5.1). `ui_kiosk` chỉ hiện chữ và trả về con số người dùng vặn; nó không gọi tầng dịch vụ nào và
+không chạm NVS (§4.5.4 luật 2) — `main` cầm cả hai đầu ấy.
 
 ##### i) Vòng đời đối tượng — dựng một lần, không bao giờ hủy
 
@@ -4213,7 +4274,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
 | `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
 | `svc_sync` | `UplinkQueue`, `IPersist`, `ILink` | Composition | Thay LittleFS **và** broker bằng fake khi test: luật "con trỏ đi sau ack" của §6.2.6 chỉ kiểm được khi ép được cả hai bên trả lỗi |
-| `ui_kiosk` | `Screen` → 6 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Sáu màn hình cùng vòng đời; hộp mặt theo khung hình, không theo nhịp detect |
+| `ui_kiosk` | `Screen` → 9 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Chín màn hình cùng vòng đời; khung ngắm đứng yên, bộ bám giữ lại ngoài đường vẽ |
 
 #### 4.5.6 `ai_engine` — mỗi model một thư mục
 
@@ -5551,14 +5612,15 @@ thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh th�
 3. Màn lấy mẫu đăng ký đang mở (`ui_kiosk_enrolling()`)
 4. Một màn phủ kín đang mở, kể cả màn **Cập nhật** (§7.7) — màn này đọc từ trạng thái cập nhật chứ
    không từ lần vẽ, vì panel đang nghỉ không vẽ
-
-**Màn của người vận hành tự đóng.** Menu, Thêm người, Danh sách, Cài đặt, Wi-Fi, Thiết bị, và màn
-lấy mẫu khi đã hỏng, tự về `Scan` sau `UI_ADMIN_IDLE_S` (30 s) không chạm; màn lấy mẫu hỏng về như
-bấm *Thoát*. Màn lấy mẫu đang chụp và màn Cập nhật không tự đóng, vì chúng tự kết thúc. Thiếu luật
-này thì nguồn số 4 thành vòng tự nuôi: một menu bị bỏ mở che khung ngắm và giữ máy thức mãi, trong
-khi chấm công vẫn chạy ngầm phía sau mà người đứng trước máy không thấy gì.
 5. `drv_tof_read_mm` trả lỗi **thật** — khác `ESP_ERR_TIMEOUT`, vốn chỉ là "chưa tới lượt đo" và
    xảy ra mỗi 100 ms. Lưới an toàn: cảm biến hỏng thì máy phải thức, không phải ngủ vĩnh viễn
+
+**Màn của người vận hành tự đóng.** Menu, Thêm người, Danh sách, Cài đặt, Wi-Fi, Thiết bị, và màn
+lấy mẫu khi đã hỏng hay đã xong, tự về `Scan` sau `UI_ADMIN_IDLE_S` (30 s) không chạm; màn lấy mẫu
+hỏng về như bấm *Thoát*, màn đã xong về như bấm *Xác nhận*. Màn lấy mẫu đang chụp và màn Cập nhật
+không tự đóng, vì chúng tự kết thúc. Thiếu luật này thì nguồn số 4 thành vòng tự nuôi: một menu bị
+bỏ mở che khung ngắm và giữ máy thức mãi, trong khi chấm công vẫn chạy ngầm phía sau mà người đứng
+trước máy không thấy gì.
 
 **Đầu ra của model không nằm trong danh sách, và đây là luật.** Lấy `result.faces > 0` làm nguồn
 đánh thức là vòng tự nuôi: bộ dò còn báo thấy mặt thì máy không bao giờ nghỉ, đúng hay sai cũng
