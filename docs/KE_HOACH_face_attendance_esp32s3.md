@@ -4092,7 +4092,7 @@ components/ui_kiosk/
 ├── src/widgets.cpp
 ├── src/screens.cpp                       # Scan · Menu · Enrol · Capture · People · Settings · Wifi · Device · Update
 ├── src/ui_kiosk.cpp                      # hai ô canvas, hai ô overlay, công bố nguyên tử
-└── test_apps/tracker/{main/test_tracker.cpp, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
+└── test_apps/tracker/{main/test_tracker.cpp, main/idf_component.yml, CMakeLists.txt, pytest_tracker.py}   # khung tổng hợp, không cần camera
 ```
 
 **Overlay là dữ liệu, không phải lời gọi vẽ.** `ui_kiosk` (L6) không được gọi xuống `cam_task`
