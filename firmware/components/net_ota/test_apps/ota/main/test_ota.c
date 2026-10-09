@@ -12,17 +12,19 @@
 #define DIGEST_SHORT "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde"
 #define DIGEST_UPPER "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"
 #define DIGEST_GAPPED "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"
-#define URL_TLS "https://example.invalid/kiosk.bin"
-#define URL_PLAIN "http://example.invalid/kiosk.bin"
+#define ORIGIN "https://api.example.invalid"
+#define URL_TLS ORIGIN "/releases/7/image?device=kiosk&exp=1&sig=00"
+#define URL_PLAIN "http://api.example.invalid/releases/7/image"
 // 192.0.2.0/24 is reserved for documentation (RFC 5737), so no network routes it.
-#define URL_DEAD "https://192.0.2.1/models.bin"
+#define ORIGIN_DEAD "https://192.0.2.1"
+#define URL_DEAD ORIGIN_DEAD "/releases/7/image"
 #define SMALL_IMAGE_BYTES 65536
 #define CHEAP_REFUSAL_US 50000
 #define NARROW_CAP 4
 
 static net_ota_image_t manifest(const char *url, const char *digest, size_t size_bytes)
 {
-    const net_ota_image_t image = { .url = url, .sha256 = digest, .size_bytes = size_bytes };
+    const net_ota_image_t image = { .url = url, .sha256 = digest, .size_bytes = size_bytes, .origin = ORIGIN };
     return image;
 }
 
@@ -51,6 +53,37 @@ TEST_CASE("plain http is refused for firmware and for models alike", "[net_ota]"
     TEST_ASSERT_EQUAL_STRING("url is not https", why);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, net_ota_check(&plain, true, why, sizeof(why)));
     TEST_ASSERT_EQUAL_STRING("url is not https", why);
+}
+
+TEST_CASE("an image from anywhere but the api's releases path is refused", "[net_ota]")
+{
+    const char *elsewhere[] = {
+        "https://evil.invalid/releases/7/image",
+        "https://api.example.invalid.evil.invalid/releases/7/image",
+        "https://api.example.invalid@evil.invalid/releases/7/image",
+        "https://api.example.invalid:8443/releases/7/image",
+        "https://api.example.invalid/firmware/7/image",
+        "https://api.example.invalid/releasesx/7/image",
+    };
+    char why[NET_OTA_WHY_CAP] = { 0 };
+    for (size_t i = 0; i < sizeof(elsewhere) / sizeof(elsewhere[0]); ++i) {
+        const net_ota_image_t image = manifest(elsewhere[i], DIGEST_OK, SMALL_IMAGE_BYTES);
+        TEST_ASSERT_EQUAL_MESSAGE(ESP_ERR_INVALID_ARG, net_ota_check(&image, false, why, sizeof(why)), elsewhere[i]);
+        TEST_ASSERT_EQUAL_STRING("url is not the api's", why);
+    }
+    net_ota_image_t unpinned = manifest(URL_TLS, DIGEST_OK, SMALL_IMAGE_BYTES);
+    unpinned.origin = NULL;
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, net_ota_check(&unpinned, false, why, sizeof(why)));
+    TEST_ASSERT_EQUAL_STRING("url is not the api's", why);
+}
+
+TEST_CASE("an origin written with a trailing slash still pins the releases path", "[net_ota]")
+{
+    storage_up();
+    net_ota_image_t image = manifest(URL_TLS, DIGEST_OK, SMALL_IMAGE_BYTES);
+    image.origin = ORIGIN "/";
+    char why[NET_OTA_WHY_CAP] = { 0 };
+    TEST_ASSERT_EQUAL(ESP_OK, net_ota_check(&image, false, why, sizeof(why)));
 }
 
 TEST_CASE("a digest that is not 64 lowercase hex digits is refused", "[net_ota]")
@@ -129,7 +162,8 @@ TEST_CASE("an unreachable host is named and the spare slot is left alone", "[net
 {
     storage_up();
     const uint8_t slot = sys_storage_models_slot();
-    const net_ota_image_t image = manifest(URL_DEAD, DIGEST_OK, SMALL_IMAGE_BYTES);
+    net_ota_image_t image = manifest(URL_DEAD, DIGEST_OK, SMALL_IMAGE_BYTES);
+    image.origin = ORIGIN_DEAD;
     char why[NET_OTA_WHY_CAP] = { 0 };
 
     int64_t t0 = esp_timer_get_time();

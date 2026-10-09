@@ -1665,9 +1665,8 @@ static void hand_roster(const app_wiring_t *wiring, app_roster_source_t source, 
 
 // An image that fails silently is one nobody can account for, so the reason
 // leaves the kiosk while the kiosk is still the one running.
-static void ota_refused(const ota_manifest_t *offer, const char *why, ui_kiosk_update_why_t shown)
+static void ota_refused(const ota_manifest_t *offer, const char *why)
 {
-    ui_kiosk_set_update(UI_KIOSK_UPDATE_FAILED, 0, offer->version, shown);
     strlcpy(s_ota_release, offer->release_id, sizeof(s_ota_release));
     app_event_t event = { 0 };
     event.type = DEVICE_EVENT_TYPE_OTA_FAILED;
@@ -1899,29 +1898,31 @@ static void ota_task(void *arg)
             continue;
         }
         const bool models = offer.target == OTA_MANIFEST_TARGET_MODELS;
+        // An offer refused ahead of the first byte leaves the panel to check-ins (KEHOACH 7.7).
         if (!models && offer.target != OTA_MANIFEST_TARGET_FIRMWARE) {
-            ota_refused(&offer, "ASSETS has no path yet", UI_KIOSK_UPDATE_WHY_OTHER);
+            ota_refused(&offer, "ASSETS has no path yet");
             continue;
         }
         if (offer.has_min_fw_version && !fw_at_least(offer.min_fw_version)) {
-            ota_refused(&offer, "this build is older than the image asks for", UI_KIOSK_UPDATE_WHY_OTHER);
+            ota_refused(&offer, "this build is older than the image asks for");
             continue;
         }
         // Rebooting to try models would also reboot a firmware nobody confirmed yet (KEHOACH 7.7).
         if (models && net_ota_on_trial()) {
-            ota_refused(&offer, "FIRMWARE_ON_TRIAL", UI_KIOSK_UPDATE_WHY_OTHER);
+            ota_refused(&offer, "FIRMWARE_ON_TRIAL");
             continue;
         }
         const net_ota_image_t image = {
             .url = offer.url,
             .sha256 = offer.sha256,
             .size_bytes = (size_t)offer.size_bytes,
+            .origin = CONFIG_NET_PROVISION_API_URL,
         };
         char why[NET_OTA_WHY_CAP] = { 0 };
         // Vetted while the link is still up: a manifest refused on arithmetic
         // does not get to cost the broker connection.
         if (net_ota_check(&image, models, why, sizeof(why)) != ESP_OK) {
-            ota_refused(&offer, why, why_shown(net_ota_fault()));
+            ota_refused(&offer, why);
             continue;
         }
         ESP_LOGW(TAG, "ota %s: %s, %lld bytes", offer.release_id, offer.version,
@@ -1941,7 +1942,8 @@ static void ota_task(void *arg)
                      esp_err_to_name(took));
             // The link comes back so the failure can be reported at all.
             start_broker();
-            ota_refused(&offer, why, why_shown(net_ota_fault()));
+            ui_kiosk_set_update(UI_KIOSK_UPDATE_FAILED, 0, offer.version, why_shown(net_ota_fault()));
+            ota_refused(&offer, why);
             continue;
         }
         if (!models) {

@@ -15,9 +15,10 @@ extern "C" {
 
 /** One image on offer, already lifted out of the MQTT manifest by the caller. */
 typedef struct {
-    const char *url;                      // https only, refused otherwise
+    const char *url;                      // https, under origin's /releases/
     const char *sha256;                    // 64 lowercase hex, of the whole image
     size_t size_bytes;                     // refused when the body does not match
+    const char *origin;                    // the api trusted, scheme://host[:port]
 } net_ota_image_t;
 
 #define NET_OTA_WHY_CAP 64

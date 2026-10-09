@@ -25,6 +25,7 @@ static atomic_int s_phase;
 static atomic_int s_fault;
 
 #define HTTPS_PREFIX "https://"
+#define RELEASES_PATH "/releases/"
 #define SHA256_HEX_LEN 64
 #define SHA256_BYTES 32
 #define CHUNK_BYTES 2048
@@ -45,6 +46,20 @@ static bool hex_digest(const char *text)
         }
     }
     return true;
+}
+
+// The api serves every image under its own releases path, and the sha256 rides in the
+// same offer, so an image from any other origin proves nothing (KEHOACH 7.7).
+static bool from_origin(const char *url, const char *origin)
+{
+    if (origin == NULL || origin[0] == '\0') {
+        return false;
+    }
+    size_t len = strlen(origin);
+    while (len > 0 && origin[len - 1] == '/') {
+        --len;
+    }
+    return strncmp(url, origin, len) == 0 && strncmp(url + len, RELEASES_PATH, strlen(RELEASES_PATH)) == 0;
 }
 
 static void to_hex(const uint8_t *raw, char *out)
@@ -96,6 +111,10 @@ static esp_err_t vet(const net_ota_image_t *image, const esp_partition_t *slot, 
     }
     if (strncmp(image->url, HTTPS_PREFIX, strlen(HTTPS_PREFIX)) != 0) {
         say(why, cap, "url is not https");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!from_origin(image->url, image->origin)) {
+        say(why, cap, "url is not the api's");
         return ESP_ERR_INVALID_ARG;
     }
     if (!hex_digest(image->sha256)) {
