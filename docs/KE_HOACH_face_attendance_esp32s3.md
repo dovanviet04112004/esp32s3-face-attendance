@@ -254,7 +254,7 @@ dùng chung một cấu hình, vì model học phân bố nào thì lúc chạy 
 | Cỡ khung | HVGA 480×320 | đo trên board: cạnh mặt `≈ 47,7 / d` px với `d` mét, nên recognition còn pixel thật tới **0,42 m** (§3 lớp 2). VGA 640×480 nới lên 0,56 m nhưng gấp đôi số pixel đọc, fps tụt dưới sàn 12 của E7-T11 |
 | Định dạng | RGB565 | ảnh chỉ bị nén **một lần** ở khâu crop, khớp lịch sử nén của tập train |
 | XCLK | 27 MHz | 14,19 fps, đủ trên sàn 12 fps của E7-T11 |
-| Frame buffer | 3, ở PSRAM, `CAMERA_GRAB_LATEST` | preview giữ một khung gần trọn một chu kỳ; hai cái thì sensor không còn chỗ đáp |
+| Frame buffer | 4, ở PSRAM, `CAMERA_GRAB_LATEST` | preview giữ một khung qua lúc blit, `ai_task` giữ một khung tới 2 s; cái thứ tư để sensor không phải chờ khung được trả (§6.3) |
 | `vflip` / `hmirror` | 1 / 1 | module gắn lens phía trên đầu nối nên khung ra ngược; gương là thứ người dùng chờ đợi ở kiosk |
 | Phơi sáng | **thủ công, đo vùng giữa khung** | xem dưới |
 | Gain | cố định 8 | gain cao đẻ nhiễu hạt, mà nhiễu hạt chính là thứ nhánh anti-spoof đọc nhầm thành kết cấu da |
@@ -3066,7 +3066,7 @@ firmware/
 │
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
-│   ├── fonts/{gen_font.py, kiosk_ui_{15,20,24,28}.{c,h}}  # 4bpp khử răng cưa, sinh từ Ubuntu Sans
+│   ├── fonts/{gen_font.py, kiosk_ui_{15,20,24,28}.{c,h}}  # 4bpp khử răng cưa, sinh từ MiSans Latin
 │   ├── icons/  ├── sounds/{ok.wav, denied.wav, spoof.wav}
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
@@ -3136,7 +3136,7 @@ Quy tắc header:
 | L2 | `sys_time` | C | `common`, `lwip`, `bsp_board` |
 | L3 | `ai_engine` | C++ | `common`, `sys_storage`, `esp-tflite-micro`, `esp-dl` |
 | L3 | `svc_facedb` | C++ | `common`, `sys_storage` |
-| L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_https_ota` / `esp_http_client`; `net_provision` thêm `sys_time` để đặt giờ từ header `Date` |
+| L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_http_client` + `app_update` / `esp_http_client`; `net_provision` thêm `sys_time` để đặt giờ từ header `Date` |
 | L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
 | L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
@@ -4592,15 +4592,16 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 
 | Queue | Job | Ai đẩy vào | Vì sao không làm đồng bộ |
 |---|---|---|---|
-| `image` | resize + upload ảnh chấm công lên MinIO | `mqtt/` khi nhận bản ghi | Ảnh vài trăm KB, không để kiosk chờ |
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
 | `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; `notice-sweep`: mỗi lượt quét của §9.21.4 theo lịch của nó; `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
 | `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
-| `ota` | rollout theo lô, theo dõi từng thiết bị | `models/` | Chạy hàng giờ, phải resume được |
+| `payroll` | `run`: tính một lượt lương của kỳ; `deliver`: gửi một phiếu lương, `jobId` theo phiếu nên gửi lại không ra hai thư | `payroll/` khi chạy kỳ và khi gửi phiếu | Một kỳ ba mươi nghìn phiếu, tính và gửi đều không vừa trong một request (§9.9) |
+| `leave` | `leave-year`: mở số dư phép năm mới cho mọi người, chuyển phần được mang sang | lịch lặp 00:05 ngày 1/1 theo `APP_TIMEZONE` của `leave/` | Không ai bấm lúc giao thừa; mở lại năm đã mở thì không ghi gì |
 
-Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`. Job `image` và `ota` bắt buộc
-**idempotent**: BullMQ giao ít nhất một lần, chạy lại phải ra cùng kết quả.
+Mọi job đặt `attempts` + `backoff` số mũ và `removeOnComplete`, và job nào cũng phải
+**idempotent**: BullMQ giao ít nhất một lần, chạy lại phải ra cùng kết quả. Ảnh chấm công chưa có
+hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó đi bằng lời mời theo từng máy (§7.7).
 
 **Bảng dữ liệu chính (Prisma)**
 
@@ -5074,7 +5075,7 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | Service | Image | Cổng | Ghi chú |
 |---|---|---|---|
 | `traefik` | traefik:v3 | 80, 443, 8883 | TLS tự động, reverse proxy, TCP passthrough cho MQTTS. Tài khoản ACME không kèm email: file cấu hình tĩnh không thay biến môi trường, và Let's Encrypt đã thôi gửi mail nhắc hết hạn từ 06/2025 |
-| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathPrefix(/mqtt)`: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4). Volume `releases` giữ file các bản phát hành (§7.7) |
+| `api` | `ghcr.io/dovanviet04112004/cckiosk-api:<sha>` — build trên GitHub Actions; máy dev build từ `backend/` | 3000 (nội bộ) | NestJS. Router Traefik của nó là `Host(api) && !PathRegexp((?i)^/mqtt)`, không phân biệt hoa thường: `/mqtt/auth` chỉ để EMQX gọi trong mạng compose (§7.4). Volume `releases` giữ file các bản phát hành (§7.7) |
 | `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, `zstd`, `rclone`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
