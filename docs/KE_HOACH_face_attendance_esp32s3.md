@@ -111,6 +111,14 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 > tiếp** với bảng trong bài báo CDCN++ hay MiniFASNet, và không có giao thức OULU P1–P4.
 > Báo cáo phải ghi đúng như vậy, không được trình bày như thể đã chạy trên benchmark chuẩn.
 
+**Trục thời gian rPPG (§3) dùng lại hai bộ video có sẵn, không tải thêm bộ nào.** UniqueData
+cho cả hai phía: 29 video người thật và 30 clip phát lại. Axon chỉ cho phía tấn công — ảnh in
+khoét lỗ, mặt nạ giấy 3D, giấy bọc, mặt nạ đeo, phát lại — vì thư mục `Selfies` của nó là ảnh
+tĩnh. Không bộ nào mang nhịp tim đáp án: code được kiểm bằng cách đối chiếu với bản cài đặt
+của rPPG-Toolbox trên cùng video, còn nhịp tim thật chỉ đo ở board, bằng máy đo kẹp ngón.
+UBFC-rPPG có đáp án nhưng Dataset 2 là video không nén cỡ 70–140 GB, vượt chỗ trống của
+`cold_drive`, nên không nằm trong kế hoạch.
+
 **`ml/bench/live_demo.py` là công cụ nhìn, không phải phép đo.** Nó chạy đủ chuỗi
 detect → align → spoof → recog trên webcam của máy host để thấy pipeline hoạt động ở thời
 gian thực, kèm nút đăng ký mặt ngay trên trang phục vụ. Webcam host **không phải OV5640**:
@@ -173,6 +181,10 @@ Hai bộ trọng số nhập mang theo nghĩa vụ ghi nguồn của chính chú
 MobileFaceNet-ECA của FRBench có code MIT, nên `model/mobilefacenet_eca.py` giữ thông báo bản quyền
 MIT của kho gốc; trọng số train trên MS1M nên chỉ dùng cho nghiên cứu, cùng hạng với MS1MV3 mà các
 run tự train dùng. Báo cáo ĐATN ghi rõ nhánh nào tự train, nhánh nào nhập trọng số, và nhập từ đâu.
+
+rPPG-Toolbox mang Responsible AI License, nên nó chỉ chạy **ngoài repo** làm thước đối chiếu:
+repo không import, không chép code của nó. GREEN, CHROM và POS trong `tasks/rppg/` viết lại từ
+công thức của bài báo gốc (Verkruysse 2008, de Haan 2013, Wang 2017), không mang trọng số nào.
 
 ---
 
@@ -283,8 +295,10 @@ nên chỉ dùng nếu đo thấy cách này vẫn trôi quá biên.
 Hai thanh ghi lọc vằn ràng buộc **AEC của chính sensor**, mà cấu hình này lại tắt AEC đi.
 Nên chúng chỉ có tác dụng nếu sau này bật AEC trở lại; còn ở chế độ thủ công, trách nhiệm
 chống nhấp nháy nằm ở bộ điều khiển của mình: thời gian phơi phải là bội số của nửa chu kỳ
-lưới (10 ms ở 50 Hz), và phần lẻ bù bằng gain. 🔬 Chưa cài — thấy sọc trôi dưới đèn huỳnh
-quang thì đây là chỗ sửa, không phải hai thanh ghi trên.
+lưới (10 ms ở 50 Hz), và phần lẻ bù bằng gain. `drv_camera_expose()` làm đúng việc đó: lúc
+khởi động đo chu kỳ khung để suy ra độ dài một dòng, rồi chỉ đặt phơi sáng theo số nguyên nửa
+chu kỳ, phần còn thiếu đưa sang gain. Thấy sọc trôi dưới đèn huỳnh quang thì chỗ soát là phép
+đo chu kỳ ấy, không phải hai thanh ghi trên.
 
 **Preview không nằm trên đường dữ liệu của model.** Model đọc thẳng khung 480×320 gốc;
 màn chỉ lấy lát giữa 213×320 trải kín 320×480. Preview vì thế thấy **hẹp hơn** model, tức
@@ -1453,6 +1467,59 @@ dữ liệu train tương ứng là chốt bằng may rủi: điểm tốt lên 
 silicone vừa đắt vừa dễ bị nhìn thấy — rủi ro còn lại này nhận là nhận, không vá bằng
 augmentation bịa ra.
 
+#### Trục thời gian: rPPG đo trên PC trước, firmware chỉ mở khi qua cổng
+
+Nhánh chống giả quyết trên **một khung**, và hai lỗ của nó đã đo được (`measurements/antispoof`
+§41.8, ngưỡng 0,12): ảnh in cỡ vừa lọt 12/12, ảnh in khoét lỗ lọt 52%, mặt nạ giấy 3D lọt 83%,
+mặt nạ latex lọt 99%. Board chưa có lấy một khung giấy nào, nên lỗ thứ nhất chưa từng được đo bằng
+chính OV5640. File nghiên cứu (`docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` §10) để ngỏ đúng
+một trục chưa kiểm: trục thời gian.
+
+rPPG là một điểm trên trục ấy: da người sống đổi màu theo nhịp tim, cỡ 0,1–1% ở kênh lục 🔬, còn
+giấy và mặt nạ thì không. Nó **bổ sung** chứ không thay nhánh hiện có: video phát lại một khuôn
+mặt thật vẫn mang mạch thật, nên đòn màn hình vẫn do model một khung chặn (25/25 khung board).
+
+| Quyết định | Chốt | Vì sao |
+|---|---|---|
+| Model | **không có**; GREEN, CHROM, POS viết lại từ bài báo gốc | không trọng số, không train; thứ duy nhất học từ dữ liệu là một ngưỡng SNR |
+| Vùng da | trán và hai má, đặt theo 5 landmark của nhánh detect; giữ nguyên giữa hai lần dò, 270 ms dò lại một lần như board | đặt theo hộp thì lệch khi đầu xoay; dò mỗi khung là thứ board không làm được |
+| Mỗi khung | trung bình R, G, B của từng vùng — ba số một vùng, khung bỏ đi | board lấy được ở luồng preview 14,18 fps, không cần `ai_task` |
+| Tín hiệu | trong 0,7–4 Hz: SNR là năng lượng quanh đỉnh và hoạ âm bậc hai (±0,1 Hz) chia phần còn lại; nhịp là đỉnh | chỉ cần trung bình và FFT thực, thứ esp-dsp có sẵn, nên bản C sau này kiểm được bằng golden |
+| Đối chiếu | POS của rPPG-Toolbox chạy ngoài repo trên cùng video (§1.4) | không bộ video nào có nhịp tim đáp án; hai bản cài đặt độc lập ra cùng nhịp thì code đúng |
+
+**Đường board là mô phỏng, không thay được board.** Mỗi video đi hai đường: nguyên bản, và đường
+board — mặt thu về 100 px (thêm 80 và 120 px, tức 0,6 / 0,48 / 0,4 m theo `≈ 47,7 / d`), cộng nhiễu
+σ = 0,3 mức đo trên mảng trần phẳng của khung `live1309_005`, lượng tử RGB565 5/6/5, lấy lại 14,19
+fps bằng khung gần nhất. Đường này chỉ quyết định có đáng thu trên board không; kết luận cuối là số
+đo trên board, vì mô phỏng đường chụp từng dẫn tới kết luận sai (§6 file nghiên cứu).
+
+**Giao thức, chốt trước khi đo:**
+- 29 video người thật chia đôi **theo người** vào `dev` và `test` (`splits/rppg/v1/`).
+- Ngưỡng SNR chọn **chỉ trên phía thật của `dev`**, sao cho 5% cửa sổ người thật bị chặn.
+- Tỉ lệ giả lọt đo trên **mọi** clip tấn công ở đúng ngưỡng ấy, tách ba lớp: giấy (khoét lỗ,
+  mặt nạ giấy 3D, giấy bọc), mặt nạ đeo (silicone, latex, vải), phát lại (UniqueData, Axon).
+- Cửa sổ T = 2, 3, 4, 6, 8 s, trượt 1 s; bỏ 20% hai đầu clip vì trình phát vẽ nút ▶ lên mặt (§1.2).
+  Báo kèm AUC.
+- **Cổng mở task phần cứng**: trên đường board 100 px có một T ≤ 6 s mà giấy lọt ≤ 10% và người
+  thật của `test` bị chặn ≤ 10%. Phát lại và mặt nạ chỉ ghi số, không làm cổng.
+
+Qua cổng thì E8 mở việc thu trên board: mỗi khung gửi thời điểm, trung bình ba vùng, phơi sáng và
+gain qua USB, mỗi người 30 s kèm máy đo kẹp ngón. Trượt ngay ở đường nguyên bản thì video điện
+thoại đã nén H.264 và cầm tay không đủ để kết luận; bước kế vẫn là thu trên board, quyết cùng chủ repo.
+
+**Năm điều board phải xử lý khi tới bước đó**, ghi ở đây để không phải phát hiện lại:
+1. Vòng phơi sáng (§2.1) chỉnh theo nấc 10 ms, mỗi nấc lớn hơn mạch hàng chục lần: trong cửa sổ
+   đo phải ghi lại từng nấc hoặc đóng băng vòng.
+2. Firmware không đặt cân bằng trắng nên OV5640 để AWB tự động; CHROM và POS đọc sắc độ, nên AWB
+   phải khoá trong cửa sổ.
+3. Phơi sáng đã theo bội 10 ms, nhưng phần nhấp nháy 100 Hz còn sót gập về |100 − 7 × 14,186| ≈ 0,70
+   Hz, sát mép dưới dải mạch; một vùng tường làm đối chứng phải không có đỉnh.
+4. Mỗi lượt ghi bản chấm công xuống flash làm rơi một khung (đo 18/09), nên chuỗi phải mang thời
+   điểm của từng khung, không suy từ số thứ tự.
+5. Một lượt quẹt bây giờ cho kết quả sau khoảng 1,6 s, còn cửa sổ đủ dài có thể là 4–6 s. Chọn chỉ
+   bật khi model một khung nghi ngờ, gắn cờ mà không chặn, hay luôn chờ — quyết sau khi có đường
+   cong theo T.
+
 #### Một view: crop mặt 1,0×, ô vuông trượt cho lọt khung
 
 Anti-spoof đọc **một** crop: ô vuông cạnh bằng cạnh dài của hộp mặt, đặt quanh tâm mặt,
@@ -2322,7 +2389,7 @@ esp32s3-face-attendance/
     ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
     │                 ├ notifications.md                          # số dòng trước và sau đổi lược đồ, thời gian
     │                 │                                           #   chốt kỳ, đối soát — §9.21.4
-    │                 └ {antispoof,detection,recognition}/        # số theo nhánh model
+    │                 └ {antispoof,detection,recognition,rppg}/   # số theo nhánh; rppg: trục thời gian (§3)
     └── thesis/                                  # bản báo cáo ĐATN
 ```
 
@@ -2595,6 +2662,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   │                                             #   Sinh lai bang 03_prepare_depth.sh (§3)
 │   └── antispoof/depth_model/*.onnx              # ★ bo uoc luong do sau, KHONG commit (§6);
 │                                                 #   nguon + sha256 ghi o manifest
+│   ├── rppg/traces/<duong>/<bo>/<clip>.npz       # ★ chuoi thoi diem + trung binh R,G,B moi vung da,
+│   │                                             #   trich mot lan cho moi duong (nguyen ban, board_80,
+│   │                                             #   board_100, board_120), cham nhieu lan (§3)
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
 │   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
@@ -2614,6 +2684,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── antispoof/v2_upstream_lcc_synth/{lcc_{train,val,test}_ids.txt, synth_{train,test}_ids.txt, SPLIT.md}
 │   │                                             #   hai bộ trộn thêm từ 11/09 (§1.2); tên ảnh chọn đúng luật của xdomain_crop.py
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
+│   ├── rppg/v1/{dev_live.txt, test_live.txt, SPLIT.md}   # nguoi that UniqueData chia doi theo nguoi (§3)
 │   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}
 │
 └── cache/                                    # LMDB/npy cache của DataLoader — xoá lúc nào cũng được
@@ -2656,7 +2727,8 @@ ml/
 │   ├── common/{paths.yaml, hardware.yaml}
 │   ├── detection/{yunet.yaml, quant.yaml}
 │   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, minifasnet_distill.yaml}  # v2: trọng số nhập; distill: student w32 (ADR-0003)
-│   └── recognition/{mobilefacenet.yaml, mobilefacenet_eca.yaml}  # eca: trọng số nhập FRBench, chạy ESP-DL
+│   ├── recognition/{mobilefacenet.yaml, mobilefacenet_eca.yaml}  # eca: trọng số nhập FRBench, chạy ESP-DL
+│   └── rppg/rppg.yaml                     # vùng da, dải tần, cửa sổ T, đường mô phỏng board (§3)
 │
 ├── src/facepipe/
 │   ├── core/                              # ── HẠ TẦNG TRAIN: 3 nhánh cùng import ──
@@ -2739,25 +2811,37 @@ ml/
 │   │   │   │                              #   trọng số, kiểm parity với ONNX gốc trước khi ghi (§3)
 │   │   │   └── eval.py                    # ACER, HTER cross-dataset, ROC tập tự thu
 │   │   │
-│   │   └── recognition/
+│   │   ├── recognition/
+│   │   │   ├── README.md
+│   │   │   ├── model/
+│   │   │   │   ├── mobilefacenet.py
+│   │   │   │   ├── mobilefacenet_eca.py   # ★ kiến trúc FRBench, tên thuộc tính giữ nguyên để nạp
+│   │   │   │   │                          #   thẳng state_dict; ECA nhân broadcast, không Expand (§3)
+│   │   │   │   └── blocks.py              # ConvBnAct(relu), giữ CLE 48/48 cặp conv
+│   │   │   ├── losses/
+│   │   │   │   └── arcface.py             # margin loss trên nhãn thật
+│   │   │   ├── postproc/
+│   │   │   │   ├── align.py               # ★ ai_engine/src/recognition/align.cpp
+│   │   │   │   ├── l2norm.py              # ★ ai_engine/src/recognition/l2norm.cpp
+│   │   │   │   ├── cosine.py              # ★ svc_facedb/src/embedding_index.cpp
+│   │   │   │   └── emit_golden.py         # → contracts/golden/recognition/{align,l2norm,cosine}/
+│   │   │   ├── data.py                    # webdataset Glint360K + sampler theo ID
+│   │   │   ├── quant.py
+│   │   │   ├── train.py
+│   │   │   ├── import_frbench.py          # ★ .pth FRBench → run đúng cấu trúc §4.2, kiểm parity (§3)
+│   │   │   └── eval.py                    # LFW/CFP-FP/AgeDB + TAR@FAR tập nhân viên
+│   │   │
+│   │   └── rppg/                          # trục thời gian của chống giả (§3): không model, nên không
+│   │       │                              #   model/ · losses/ · train.py · quant.py
 │   │       ├── README.md
-│   │       ├── model/
-│   │       │   ├── mobilefacenet.py
-│   │       │   ├── mobilefacenet_eca.py   # ★ kiến trúc FRBench, tên thuộc tính giữ nguyên để nạp
-│   │       │   │                          #   thẳng state_dict; ECA nhân broadcast, không Expand (§3)
-│   │       │   └── blocks.py              # ConvBnAct(relu), giữ CLE 48/48 cặp conv
-│   │       ├── losses/
-│   │       │   └── arcface.py             # margin loss trên nhãn thật
-│   │       ├── postproc/
-│   │       │   ├── align.py               # ★ ai_engine/src/recognition/align.cpp
-│   │       │   ├── l2norm.py              # ★ ai_engine/src/recognition/l2norm.cpp
-│   │       │   ├── cosine.py              # ★ svc_facedb/src/embedding_index.cpp
-│   │       │   └── emit_golden.py         # → contracts/golden/recognition/{align,l2norm,cosine}/
-│   │       ├── data.py                    # webdataset Glint360K + sampler theo ID
-│   │       ├── quant.py
-│   │       ├── train.py
-│   │       ├── import_frbench.py          # ★ .pth FRBench → run đúng cấu trúc §4.2, kiểm parity (§3)
-│   │       └── eval.py                    # LFW/CFP-FP/AgeDB + TAR@FAR tập nhân viên
+│   │       ├── data.py                    # clip và nhãn lớp: UniqueData hai phía, Axon phía tấn công
+│   │       ├── roi.py                     # 5 landmark → trán, hai má; trung bình R,G,B mỗi vùng
+│   │       ├── board_path.py              # mặt về 80/100/120 px, nhiễu σ đo được, RGB565, 14,19 fps
+│   │       ├── traces.py                  # video → interim/rppg/traces/, detector dò 270 ms một lần
+│   │       ├── pulse.py                   # GREEN · CHROM · POS từ chuỗi trung bình
+│   │       ├── spectrum.py                # FFT thực, SNR đỉnh + hoạ âm, nhịp/phút
+│   │       ├── make_split.py              # người thật chia đôi theo người → splits/rppg/v1/
+│   │       └── eval.py                    # ngưỡng từ dev, AUC, giả lọt / thật bị chặn theo lớp và theo T
 │   │
 │   ├── compress/
 │   │   └── quant/{fold_bn.py, cle.py, bias_correction.py, ptq_tflite.py,
@@ -2819,6 +2903,9 @@ ml/
 │   │      thêm hậu tố giờ của run: `model_fp32_0944.onnx`, `minifasnet_int8_0944.tflite`.
 │   ├── antispoof/                         # ↑ y hệt khuôn trên
 │   ├── recognition/                       # ↑ y hệt khuôn trên
+│   ├── rppg/eval/<YYYYMMDD-HHMM>_<gitsha7>/{config.resolved.yaml, windows.csv, summary.json}
+│   │                                      # mỗi lần chấm một thư mục bất biến; số giữ lại chép sang
+│   │                                      #   docs/measurements/rppg/
 │   └── device/                            # kết quả đo trên board, dùng chung 3 nhánh
 │       ├── <YYYYMMDD>_<fwsha7>/{arena.csv, latency_per_op.csv, accuracy.json}
 │       └── locks/                         # lock thí nghiệm nhiều nhánh (§6.2.2): bộ TFLM đối chứng,
@@ -2833,6 +2920,7 @@ ml/
     ├── test_core_{config,registry,run_dir,trainer,isolation}.py
     ├── test_prepare.py                      # bộ chuyển raw → interim
     ├── test_export_espdl.py                 # pack/lock EDL2, gập Linear+BN1d, op check ESP-DL
+    ├── test_rppg.py                         # sóng 1,2 Hz tổng hợp → 72 bpm qua cả RGB565; vùng da; split
     └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
 ```
 
