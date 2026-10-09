@@ -18,6 +18,7 @@ thực thi**.
 | Detection | WIDER FACE + nhãn RetinaFace | COCO json, 2 file | `detection/v1` | ✅ |
 | Anti-spoof | CelebA-Spoof parquet + 6 bộ khác miền | 525.864 record + LCC-FASD 18.827 + SynthASpoof 103.797 | `antispoof/v1_upstream` + `v2_upstream_lcc_synth` | ✅ |
 | Recognition | MS1MV3 RecordIO + 6 benchmark `.bin` | 518 shard webdataset | `recognition/v1_identity_disjoint` | ✅ |
+| rPPG (trục thời gian) | video UniqueData + AxonData ở trên | chuỗi màu 179 clip × 4 đường, 5,9 MB | `rppg/v1` | không train, chỉ chọn một ngưỡng |
 | Thiết bị (chung 3 nhánh) | — | — | `device/v1` trống | ❌ chưa có ảnh OV5640 |
 
 Tổng dung lượng `raw/` **223 GB**, nằm trên ổ `E:`, vào repo bằng symlink (§2). Chỉ
@@ -170,6 +171,22 @@ lúc đó; giải nén sớm là chiếm chỗ mà không dùng.
 | UniqueData replay | `data/videos.tar.gz` |
 | AxonData | 9 thư mục video theo kiểu tấn công, kèm `Selfies/` live đối chứng |
 
+### 3.5 rPPG — `tasks/rppg/traces.py`
+
+Không ghi ảnh nào: mỗi khung chỉ để lại trung bình R, G, B của trán và hai má (KẾ HOẠCH §3, *Trục
+thời gian*). Video đọc qua `antispoof.xdomain.unique_pair` và `antispoof.xdomain.axon_masks` của
+`paths.yaml`; kết quả ở `interim/rppg/traces/<đường>/<bộ>/<clip>.npz`, một file cho mỗi đường
+(nguyên bản, board 80 / 100 / 120 px).
+
+| Bộ | Clip | Ghi chú |
+|---|---|---|
+| UniqueData người thật | 29 | bỏ 1 clip `.3gp`: chỉ đọc `.mp4` và `.mov` |
+| UniqueData phát lại | 30 | |
+| AxonData | 120 | 8 thư mục tấn công; `Selfies/` là ảnh tĩnh nên không dùng |
+
+179 clip × 4 đường = 716 file, **5,9 MB** trên `E:`. Trích hết mất ~19 phút CPU 2 luồng; chạy lại
+thì bỏ qua clip đã có, `--overwrite` để trích lại.
+
 ---
 
 ## 4. interim → splits
@@ -258,6 +275,17 @@ Trống. Cần ≥2.000 ảnh chụp bằng chính OV5640 trên board (E3-T7). K
 còn lại thành `test_device`.
 
 Đây là mắt xích đang chặn nhiều thứ nhất — xem §6.
+
+### 4.5 `rppg/v1`
+
+| File | Số clip | sha256 |
+|---|---|---|
+| `dev_live.txt` | 14 | `4261702a…` |
+| `test_live.txt` | 15 | `7cd07b49…` |
+
+Chỉ người thật được chia, **theo `worker_id`**, seed 42: ngưỡng SNR chọn trên `dev`, còn mọi clip
+tấn công đều chấm ở chính ngưỡng ấy nên không cần chia. Sinh bằng
+`python -m facepipe.data.make_split --task rppg --source data/interim/antispoof/unique_pair`.
 
 ---
 
