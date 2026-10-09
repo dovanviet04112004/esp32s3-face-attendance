@@ -79,7 +79,7 @@ E1 nền repo ──► E2 ml/core ──► E3 dữ liệu
 |---|---|---|---|
 | ~~E3-T1~~ | `scripts/00_fetch_raw.sh` + `manifest.yaml` cho từng dataset **Soát 01/10: xong** — f53c59e8, e5a271b6; 12 manifest đủ trường. | 8 manifest có url, sha256, ngày tải, license | E2-T1 |
 | ~~E3-T2~~ | `data/prepare/widerface_to_coco.py` — box + 5 landmark → COCO json **Soát 01/10: xong** — 18a255af, 52ca4278; 16.106 ảnh có nhãn, WIDER_test không có nhãn nên không tính. | `interim/detection/widerface_coco/` có 32.203 ảnh | E3-T1 |
-| E3-T3 | `data/prepare/celeba_spoof_parquet.py` + `depth_gt.py` **Soát 01/10, còn nợ:** shard hai tỉ lệ đã có (26ec3f1a, 74a2643e) nhưng chưa có `depth_gt.py`; chỉ cần khi train lại student chống giả. | Shard crop 128×128 hai tỉ lệ + depth map GT cho ảnh live | E3-T1 |
+| ~~E3-T3~~ | `data/prepare/celeba_spoof_parquet.py` + `depth_gt.py` **Bỏ 16/09:** shard hai tỉ lệ xong (26ec3f1a, 74a2643e); nhãn độ sâu viết thành `depth_maps.py` + `03_prepare_depth.sh` (819c1df1), làm tệ đi so với đối chứng (file nghiên cứu §16.6) nên gỡ ở 80426387. | Shard crop 128×128 hai tỉ lệ + depth map GT cho ảnh live | E3-T1 |
 | ~~E3-T4~~ | `data/prepare/glint360k_to_wds.py` — **bỏ (soát 01/10)**: mirror Glint360K vốn là webdataset; recog train trên MS1MV3 rồi deploy trọng số FRBench; Glint360K đã xoá khỏi `E:` ngày 27/09, manifest còn sha256 để tải lại. | Webdataset shard đọc được | E3-T1 |
 | ~~E3-T5~~ | `data/make_split.py` + sinh split cho 3 nhánh, kèm `SPLIT.md` **Soát 01/10: xong** — 1f762d5b, 2e9879b4; `SPLIT.md` có seed và sha256 ở cả ba nhánh. | Split commit vào git, có seed và sha256 | E3-T2..T4 |
 | ~~E3-T6~~ | `tests/test_splits.py` — kiểm identity-disjoint và calib ∩ test = ∅ **Soát 01/10: xong** — 2063507a, 9c55ce97. | Test đỏ khi cố tình trộn | E3-T5 |
