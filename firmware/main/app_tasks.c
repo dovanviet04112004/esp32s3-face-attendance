@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ai_engine.h"
+#include "app_boot.h"
 #include "app_config.h"
 #include "app_events.h"
 #include "app_wiring.h"
@@ -1299,6 +1300,10 @@ static void sync_task(void *arg)
     booted.severity = DEVICE_EVENT_SEVERITY_INFO;
     snprintf(booted.note, sizeof(booted.note), "boot %" PRIu32, sys_storage_boot_count());
     note_event(&booted);
+    const esp_err_t models = app_boot_models_error();
+    if (models != ESP_OK) {
+        note_fault(DEVICE_EVENT_TYPE_MODEL_LOAD_FAILED, models, "models would not load");
+    }
     report_update_outcome();
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;

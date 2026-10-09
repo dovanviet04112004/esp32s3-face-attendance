@@ -31,6 +31,7 @@
 #include "ui_kiosk.h"
 
 static const char *TAG = "app_boot";
+static esp_err_t models_error = ESP_OK;
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_SEED_VER "seed_ver"
@@ -98,7 +99,7 @@ static void load_models(void)
     if (trial != OTA_MODELS_ON_TRIAL) {
         // Nothing to go back to, so the kiosk says so and carries on blind
         // rather than rebooting into the same wall.
-        ESP_ERROR_CHECK(loaded);
+        models_error = loaded;
         return;
     }
     sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
@@ -299,6 +300,11 @@ static void start_vision(EventGroupHandle_t flags)
     ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f, face %d px",
              thresholds.detect_min_score, thresholds.live_min_score, thresholds.match_min_score,
              thresholds.face_min_px);
+}
+
+esp_err_t app_boot_models_error(void)
+{
+    return models_error;
 }
 
 esp_err_t app_boot(void)
