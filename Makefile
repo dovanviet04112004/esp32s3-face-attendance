@@ -44,6 +44,9 @@ fw_idf = cd firmware && idf.py -B $(fw_dir_$(1)) -D SDKCONFIG=$(fw_cfg_$(1)) \
 fw_fresh = @for f in $(FW_BASE) $(fw_set_$(1)); do \
   [ firmware/$$f -nt firmware/$(fw_cfg_$(1)) ] && rm -f firmware/$(fw_cfg_$(1)); done; true
 fw_profile = $(if $(fw_dir_$(PROFILE)),,$(error PROFILE must be dev, bench, prod or fleet))
+JOBS ?= 4
+# idf.py takes no -j, and ninja's default of cores + 2 has crashed this WSL: configure, then ninja.
+fw_build = $(call fw_idf,$(1)) reconfigure && ninja -C $(fw_dir_$(1)) -j$(JOBS)
 
 need = $(if $($(1)),,$(error $(1) is missing: $(2)))
 
@@ -155,19 +158,19 @@ fw-secrets:
 
 fw-dev: idf ## Build the dev profile in firmware/build
 	$(call fw_fresh,dev)
-	$(call fw_idf,dev) build
+	$(call fw_build,dev)
 
 fw-bench: idf ## Build the bench profile in firmware/build_bench
 	$(call fw_fresh,bench)
-	$(call fw_idf,bench) build
+	$(call fw_build,bench)
 
 fw-prod: idf fw-secrets ## Build the prod profile in firmware/build_prod, from a fresh sdkconfig
 	rm -f firmware/$(fw_cfg_prod)
-	$(call fw_idf,prod) build
+	$(call fw_build,prod)
 
 fw-fleet: idf fw-secrets ## Build the release image as CI does: FLEET_PROFILE plus sdkconfig.fleet
 	rm -f firmware/$(fw_cfg_fleet)
-	$(call fw_idf,fleet) build
+	$(call fw_build,fleet)
 
 fw-size: idf ## Size report of a built profile (PROFILE=dev|bench|prod|fleet)
 	$(fw_profile)
@@ -175,6 +178,7 @@ fw-size: idf ## Size report of a built profile (PROFILE=dev|bench|prod|fleet)
 
 flash: idf ## Flash a built profile and open the monitor (PROFILE=dev|bench|prod|fleet)
 	$(fw_profile)
+	cd firmware && ninja -C $(fw_dir_$(PROFILE)) -j$(JOBS)
 	$(call fw_idf,$(PROFILE)) $(PORT_FLAG) flash monitor
 
 monitor: idf ## Open the serial monitor
@@ -182,11 +186,11 @@ monitor: idf ## Open the serial monitor
 
 fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/test_apps/*)
 	$(call need,APP,the folder of an IDF test app)
-	cd $(APP) && idf.py build
+	cd $(APP) && idf.py reconfigure && ninja -C build -j$(JOBS)
 
 fw-app-flash: idf ## Flash a built test app and open the monitor (APP= as for fw-app)
 	$(call need,APP,the folder of an IDF test app)
-	cd $(APP) && idf.py $(PORT_FLAG) flash monitor
+	cd $(APP) && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash monitor
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
