@@ -4331,17 +4331,21 @@ Case cần mắt hoặc ngón tay người gắn thêm tag `[manual]`. `app_main
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.dev"  build
 
 # bench — đo số cho E8, phải giống prod về tốc độ nhưng còn profiler
-idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.bench" build
+idf.py -B build_bench -D SDKCONFIG=build_bench/sdkconfig \
+       -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.bench" build
 
 # prod  — bản ship và bản lấy số cuối cho báo cáo
 idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.prod;sdkconfig.secrets" build
 ```
 
-**`prod` dựng trong thư mục của riêng nó.** IDF chỉ lấy `SDKCONFIG_DEFAULTS` cho những khoá
-**chưa có** trong `sdkconfig`, nên dựng `prod` đè lên `sdkconfig` của một lần `dev` là giữ
-nguyên `CONFIG_APP_CONSOLE=y` — một bản ship mang console ghi được mọi khoá NVS qua USB. Thư
-mục và `sdkconfig` riêng thì mỗi lần dựng `prod` đều bắt đầu từ đúng bốn file defaults.
+**Mỗi profile dựng trong thư mục của riêng nó**: `dev` ở `build/` với `firmware/sdkconfig`,
+`bench` ở `build_bench/`, `prod` ở `build_prod/`, bản phát cho đội (§7.7) ở `build_release/`
+như job release của CI. IDF chỉ lấy `SDKCONFIG_DEFAULTS` cho những khoá **chưa có** trong
+`sdkconfig`, nên dựng một profile đè lên `sdkconfig` của profile khác là giữ nguyên khoá của
+profile kia: `bench` sau một lần `dev` vẫn chạy `-Og` với gdbstub, `prod` vẫn mang
+`CONFIG_APP_CONSOLE=y`. Cũng vì thế `make` bỏ `sdkconfig` của một profile khi một file defaults
+của nó mới hơn nó, còn `prod` và bản phát thì lần nào cũng bắt đầu từ đúng các file defaults.
 
 **`sdkconfig.secrets` là file duy nhất mang bí mật vào firmware**, và nó gitignore. Nó giữ đúng
 một dòng `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN="…"`. `dev` và `bench` nối nó vào khi có, nên
