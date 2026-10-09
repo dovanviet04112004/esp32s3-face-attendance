@@ -4,7 +4,7 @@ SHELL := /bin/bash
         gen check lint fmt typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack \
-        idf fw-fresh-secrets fw-dev fw-bench fw-prod fw-size flash monitor \
+        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-app fw-app-flash \
         usb-list usb-attach usb-detach \
         be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
         up down ml-docker ml-clean
@@ -16,10 +16,34 @@ ML_PY := $(CURDIR)/ml/.venv/bin/python
 TORCH ?= cu130
 ML_EXTRAS := --extra $(TORCH) --extra export --extra espdl --extra bench --extra eval
 USBIPD ?= usbipd.exe
-SDKCONFIG_BASE := sdkconfig.defaults;sdkconfig.defaults.esp32s3
-# The batch token rides in only when the builder holds it (KEHOACH 4.5.9).
-SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),;sdkconfig.secrets)
 PORT_FLAG := $(if $(PORT),-p $(PORT))
+# Each firmware profile builds in its own folder from its own sdkconfig (KEHOACH 4.5.9).
+PROFILE ?= dev
+# The release job's profile while the repo variable is unset (KEHOACH 7.7).
+FLEET_PROFILE ?= dev
+FW_BASE := sdkconfig.defaults sdkconfig.defaults.esp32s3
+# The batch token rides in only when the builder holds it (KEHOACH 4.5.9).
+FW_SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),sdkconfig.secrets)
+fw_dir_dev := build
+fw_dir_bench := build_bench
+fw_dir_prod := build_prod
+fw_dir_fleet := build_release
+fw_cfg_dev := sdkconfig
+fw_cfg_bench := build_bench/sdkconfig
+fw_cfg_prod := build_prod/sdkconfig
+fw_cfg_fleet := build_release/sdkconfig
+fw_set_dev := sdkconfig.dev $(FW_SECRETS)
+fw_set_bench := sdkconfig.bench $(FW_SECRETS)
+fw_set_prod := sdkconfig.prod sdkconfig.secrets
+fw_set_fleet := sdkconfig.$(FLEET_PROFILE) sdkconfig.fleet sdkconfig.secrets
+empty :=
+space := $(empty) $(empty)
+fw_idf = cd firmware && idf.py -B $(fw_dir_$(1)) -D SDKCONFIG=$(fw_cfg_$(1)) \
+  -D SDKCONFIG_DEFAULTS="$(subst $(space),;,$(strip $(FW_BASE) $(fw_set_$(1))))"
+# Defaults only fill the keys an sdkconfig lacks, so one older than any of its defaults goes.
+fw_fresh = @for f in $(FW_BASE) $(fw_set_$(1)); do \
+  [ firmware/$$f -nt firmware/$(fw_cfg_$(1)) ] && rm -f firmware/$(fw_cfg_$(1)); done; true
+fw_profile = $(if $(fw_dir_$(PROFILE)),,$(error PROFILE must be dev, bench, prod or fleet))
 
 need = $(if $($(1)),,$(error $(1) is missing: $(2)))
 
@@ -125,32 +149,44 @@ pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 idf:
 	@command -v idf.py >/dev/null || { echo "idf.py not found: source \$$IDF_PATH/export.sh"; exit 1; }
 
-# Defaults only fill keys sdkconfig lacks, so a token added later needs a fresh one.
-fw-fresh-secrets:
-	@if [ -f firmware/sdkconfig.secrets ] && [ firmware/sdkconfig.secrets -nt firmware/sdkconfig ]; then \
-	  rm -f firmware/sdkconfig; fi
-
-fw-dev: idf fw-fresh-secrets ## Build the dev profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" build
-
-fw-bench: idf fw-fresh-secrets ## Build the bench profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.bench$(SECRETS)" build
-
-fw-prod: idf ## Build the prod profile in build_prod, from its own sdkconfig
+fw-secrets:
 	@test -f firmware/sdkconfig.secrets || { \
 	  echo "firmware/sdkconfig.secrets is missing: this kiosk could never register"; exit 1; }
-	rm -f firmware/build_prod/sdkconfig
-	cd firmware && idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
-	  -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.prod;sdkconfig.secrets" build
 
-fw-size: idf ## Size report of the last dev or bench build
-	cd firmware && idf.py size
+fw-dev: idf ## Build the dev profile in firmware/build
+	$(call fw_fresh,dev)
+	$(call fw_idf,dev) build
 
-flash: idf fw-fresh-secrets ## Flash the dev profile and open the monitor
-	cd firmware && idf.py $(PORT_FLAG) -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" flash monitor
+fw-bench: idf ## Build the bench profile in firmware/build_bench
+	$(call fw_fresh,bench)
+	$(call fw_idf,bench) build
+
+fw-prod: idf fw-secrets ## Build the prod profile in firmware/build_prod, from a fresh sdkconfig
+	rm -f firmware/$(fw_cfg_prod)
+	$(call fw_idf,prod) build
+
+fw-fleet: idf fw-secrets ## Build the release image as CI does: FLEET_PROFILE plus sdkconfig.fleet
+	rm -f firmware/$(fw_cfg_fleet)
+	$(call fw_idf,fleet) build
+
+fw-size: idf ## Size report of a built profile (PROFILE=dev|bench|prod|fleet)
+	$(fw_profile)
+	$(call fw_idf,$(PROFILE)) size
+
+flash: idf ## Flash a built profile and open the monitor (PROFILE=dev|bench|prod|fleet)
+	$(fw_profile)
+	$(call fw_idf,$(PROFILE)) $(PORT_FLAG) flash monitor
 
 monitor: idf ## Open the serial monitor
 	cd firmware && idf.py $(PORT_FLAG) monitor
+
+fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/test_apps/*)
+	$(call need,APP,the folder of an IDF test app)
+	cd $(APP) && idf.py build
+
+fw-app-flash: idf ## Flash a built test app and open the monitor (APP= as for fw-app)
+	$(call need,APP,the folder of an IDF test app)
+	cd $(APP) && idf.py $(PORT_FLAG) flash monitor
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
