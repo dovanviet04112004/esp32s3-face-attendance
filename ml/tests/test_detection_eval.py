@@ -8,11 +8,17 @@ import numpy as np
 import pytest
 
 from facepipe.tasks.detection.eval import (
+    ALL_FACES,
     SETTINGS,
+    Detections,
+    LandmarkGroundTruth,
     WiderGroundTruth,
     evaluate,
     image_evaluation,
     iou_against,
+    landmark_error,
+    landmark_truth,
+    match_faces,
     normalize_scores,
     normalized_mean_error,
     voc_ap,
@@ -34,6 +40,32 @@ def synthetic(keep_all: bool = True) -> WiderGroundTruth:
     ]
     keep = [np.array([0, 1]), np.array([0])] if keep_all else [np.array([0]), np.array([0])]
     return WiderGroundTruth(names=["a.jpg", "b.jpg"], boxes=boxes, keep={s: keep for s in SETTINGS})
+
+
+def points_in(x: float, y: float, w: float, h: float) -> list[list[float]]:
+    fractions = [(0.3, 0.4), (0.7, 0.4), (0.5, 0.6), (0.35, 0.8), (0.65, 0.8)]
+    return [[x + fx * w, y + fy * h] for fx, fy in fractions]
+
+
+def annotation(xywh: list[float], points: list[list[float]] | None = None) -> dict:
+    """One face as widerface_to_coco writes it; without points all five sit at -1."""
+    if points is None:
+        return {"bbox": xywh, "keypoints": [-1.0, -1.0, 0.0] * 5, "num_keypoints": 0}
+    keypoints = [value for point in points for value in (*point, 2.0)]
+    return {"bbox": xywh, "keypoints": keypoints, "num_keypoints": 5}
+
+
+def one_image(*faces: dict) -> LandmarkGroundTruth:
+    return landmark_truth([("a.jpg", list(faces))])
+
+
+def detections(boxes: list[list[float]], points: list[list[list[float]]]) -> Detections:
+    xywh = np.array(boxes, dtype=float).reshape(-1, 4)
+    return Detections(
+        boxes=np.concatenate([xywh[:, :2], xywh[:, :2] + xywh[:, 2:]], axis=1),
+        scores=np.ones(len(xywh)),
+        landmarks=np.array(points, dtype=float).reshape(-1, 5, 2),
+    )
 
 
 def test_overlap_of_a_box_with_itself_is_one() -> None:
@@ -133,6 +165,90 @@ def test_landmark_error_scales_with_face_size() -> None:
     small = normalized_mean_error(predicted, target, np.array([[0.0, 0.0, 10.0, 10.0]]))
     large = normalized_mean_error(predicted, target, np.array([[0.0, 0.0, 100.0, 100.0]]))
     assert small > large
+
+
+def test_a_face_takes_the_prediction_it_overlaps_most() -> None:
+    faces = np.array([box(0, 0, 20, 20)], dtype=float)
+    predicted = np.array([box(3, 3, 20, 20), box(1, 1, 20, 20)], dtype=float)
+    assert match_faces(faces, predicted).tolist() == [1]
+
+
+def test_a_face_overlapped_under_half_is_missed() -> None:
+    faces = np.array([box(0, 0, 20, 20)], dtype=float)
+    assert match_faces(faces, np.array([box(10, 0, 20, 20)], dtype=float)).tolist() == [-1]
+
+
+def test_one_prediction_is_matched_to_one_face_only() -> None:
+    faces = np.array([box(0, 0, 20, 20), box(3, 0, 20, 20)], dtype=float)
+    assert match_faces(faces, np.array([box(1, 0, 20, 20)], dtype=float)).tolist() == [0, -1]
+
+
+def test_no_prediction_leaves_every_face_unmatched() -> None:
+    faces = np.array([box(0, 0, 20, 20), box(40, 0, 20, 20)], dtype=float)
+    assert match_faces(faces, np.zeros((0, 4))).tolist() == [-1, -1]
+
+
+def test_a_point_left_at_minus_one_makes_the_face_incomplete() -> None:
+    partial = points_in(40, 0, 20, 20)
+    partial[2] = [-1.0, -1.0]
+    truth = one_image(
+        annotation(box(0, 0, 20, 20), points_in(0, 0, 20, 20)),
+        annotation(box(40, 0, 20, 20), partial),
+        annotation(box(80, 0, 20, 20)),
+    )
+    assert truth.complete[0].tolist() == [True, False, False]
+
+
+def test_faces_without_five_points_are_neither_matched_nor_missed() -> None:
+    truth = one_image(
+        annotation(box(0, 0, 20, 20), points_in(0, 0, 20, 20)),
+        annotation(box(40, 0, 20, 20)),
+        annotation(box(80, 0, 20, 20)),
+    )
+    found = detections(
+        [box(0, 0, 20, 20), box(40, 0, 20, 20)],
+        [points_in(0, 0, 20, 20), points_in(0, 0, 1, 1)],
+    )
+    score = landmark_error({"a.jpg": found}, truth)[ALL_FACES]
+    assert (score.matched, score.missed, score.skipped) == (1, 0, 2)
+    assert score.nmse == pytest.approx(0.0)
+
+
+def test_a_labelled_face_nothing_found_is_missed() -> None:
+    truth = one_image(annotation(box(0, 0, 20, 20), points_in(0, 0, 20, 20)))
+    score = landmark_error({}, truth)[ALL_FACES]
+    assert (score.matched, score.missed, score.skipped) == (0, 1, 0)
+    assert np.isnan(score.nmse)
+
+
+def test_a_box_on_an_unlabelled_face_is_not_credited_to_its_neighbour() -> None:
+    truth = one_image(
+        annotation(box(0, 0, 20, 20), points_in(0, 0, 20, 20)),
+        annotation(box(3, 0, 20, 20)),
+    )
+    found = detections([box(3, 0, 20, 20)], [points_in(0, 0, 20, 20)])
+    score = landmark_error({"a.jpg": found}, truth)[ALL_FACES]
+    assert (score.matched, score.missed, score.skipped) == (0, 1, 1)
+
+
+def test_the_error_is_read_from_the_prediction_matched_to_the_face() -> None:
+    target = points_in(0, 0, 10, 10)
+    truth = one_image(annotation(box(0, 0, 10, 10), target))
+    shifted = [[x + 1.0, y] for x, y in target]
+    found = detections([box(200, 200, 10, 10), box(0, 0, 10, 10)], [points_in(0, 0, 1, 1), shifted])
+    assert landmark_error({"a.jpg": found}, truth)[ALL_FACES].nmse == pytest.approx(0.1)
+
+
+def test_a_face_outside_the_subset_is_not_counted() -> None:
+    truth = one_image(
+        annotation(box(0, 0, 20, 20), points_in(0, 0, 20, 20)),
+        annotation(box(40, 0, 20, 20), points_in(40, 0, 20, 20)),
+    )
+    truth.keep["first"] = [np.array([0])]
+    found = detections([box(0, 0, 20, 20)], [points_in(0, 0, 20, 20)])
+    scores = landmark_error({"a.jpg": found}, truth, (ALL_FACES, "first"))
+    assert (scores[ALL_FACES].matched, scores[ALL_FACES].missed) == (1, 1)
+    assert (scores["first"].matched, scores["first"].missed) == (1, 0)
 
 
 @pytest.mark.skipif(not GROUND_TRUTH.exists(), reason="WIDER scoring kit not fetched")

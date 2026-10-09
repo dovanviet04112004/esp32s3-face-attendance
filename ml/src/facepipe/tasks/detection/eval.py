@@ -1,4 +1,4 @@
-"""WIDER FACE average precision, and landmark error on device captures.
+"""WIDER FACE average precision, and the five-point landmark NMSE.
 
 AP follows the authors' evaluation.m, not a COCO-style mAP, and the gate is the
 served-size column rather than Easy, Medium or Hard (KEHOACH 3, layer 2). Scores are
@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 SETTINGS = ("easy", "medium", "hard")
+ALL_FACES = "all"
 # Letterboxed from the 480x320 AI frame by 0.3333, so 38 px here is 113 px there:
 # under it the aligned crop is upsampled to reach recognition (KEHOACH 3, layer 2).
 SERVICE_FACE_PX = 38.0
@@ -260,6 +261,110 @@ def normalized_mean_error(predicted: np.ndarray, target: np.ndarray, boxes: np.n
     return float((distance / np.maximum(scale[:, None], 1e-9)).mean())
 
 
+@dataclass
+class LandmarkGroundTruth(WiderGroundTruth):
+    """WIDER boxes with their five labelled points, and which faces carry all five."""
+
+    landmarks: list[np.ndarray]
+    complete: list[np.ndarray]
+
+
+@dataclass
+class LandmarkScore:
+    """One subset's NMSE, with its faces counted as matched, missed or skipped."""
+
+    nmse: float
+    matched: int
+    missed: int
+    skipped: int
+
+
+def landmark_truth(records: list[tuple[str, list[dict]]]) -> LandmarkGroundTruth:
+    """Boxes as xywh and (N, 5, 2) points per image, from a split's COCO records.
+
+    A face is complete only when every point is visible and neither coordinate is
+    the -1 the RetinaFace labels write for a point nobody annotated.
+    """
+    from .model.head import LANDMARK_COUNT
+
+    unlabelled = [-1.0, -1.0, 0.0] * LANDMARK_COUNT
+    truth = LandmarkGroundTruth(names=[], boxes=[], keep={ALL_FACES: []}, landmarks=[], complete=[])
+    for name, faces in records:
+        rows = [face.get("keypoints") or unlabelled for face in faces]
+        keypoints = np.asarray(rows, dtype=np.float64).reshape(-1, LANDMARK_COUNT, 3)
+        present = (keypoints[..., 2] > 0) & (keypoints[..., :2] >= 0).all(axis=-1)
+        boxes = [face["bbox"] for face in faces]
+        truth.names.append(name)
+        truth.boxes.append(np.asarray(boxes, dtype=np.float64).reshape(-1, 4))
+        truth.keep[ALL_FACES].append(np.arange(len(faces)))
+        truth.landmarks.append(keypoints[..., :2])
+        truth.complete.append(present.all(axis=1))
+    return truth
+
+
+def match_faces(boxes: np.ndarray, predicted: np.ndarray, iou: float = IOU_THRESHOLD) -> np.ndarray:
+    """Index of the prediction each face is matched to, -1 for none; both sides xywh.
+
+    Pairs are taken by overlap, highest first, so a prediction serves one face only.
+    """
+    matched = np.full(len(boxes), -1, dtype=np.int64)
+    if not len(boxes) or not len(predicted):
+        return matched
+    overlaps = np.stack([iou_against(boxes, row) for row in predicted], axis=1)
+    faces, rows = np.nonzero(overlaps >= iou)
+    taken = np.zeros(len(predicted), dtype=bool)
+    for pair in np.argsort(-overlaps[faces, rows], kind="stable"):
+        face, row = faces[pair], rows[pair]
+        if matched[face] < 0 and not taken[row]:
+            matched[face] = row
+            taken[row] = True
+    return matched
+
+
+def face_errors(found: Detections, boxes: np.ndarray, points: np.ndarray, iou: float) -> np.ndarray:
+    """NMSE of each face against the prediction matched to it, nan where none is."""
+    chosen = match_faces(boxes, found.xywh_with_score()[:, :4], iou)
+    errors = np.full(len(boxes), np.nan)
+    for face in np.nonzero(chosen >= 0)[0]:
+        x, y, width, height = boxes[face]
+        errors[face] = normalized_mean_error(
+            found.landmarks[chosen[face]][None],
+            points[face][None],
+            np.array([[x, y, x + width, y + height]]),
+        )
+    return errors
+
+
+def landmark_error(
+    detected: dict[str, Detections],
+    truth: LandmarkGroundTruth,
+    settings: tuple[str, ...] = (ALL_FACES,),
+    iou: float = IOU_THRESHOLD,
+) -> dict[str, LandmarkScore]:
+    """NMSE per subset, over the faces carrying all five points that a prediction found.
+
+    Every face takes part in the matching, so a box on an unlabelled face is never
+    credited to the labelled face beside it.
+    """
+    errors = [
+        face_errors(detected.get(name, empty_detections()), boxes, points, iou)
+        for name, boxes, points in zip(truth.names, truth.boxes, truth.landmarks, strict=True)
+    ]
+    results: dict[str, LandmarkScore] = {}
+    for setting in settings:
+        scored: list[np.ndarray] = []
+        missed = skipped = 0
+        for keep, complete, error in zip(truth.keep[setting], truth.complete, errors, strict=True):
+            found = ~np.isnan(error[keep])
+            scored.append(error[keep][complete[keep] & found])
+            missed += int((complete[keep] & ~found).sum())
+            skipped += int((~complete[keep]).sum())
+        values = np.concatenate(scored) if scored else np.zeros(0)
+        nmse = float(values.mean()) if values.size else float("nan")
+        results[setting] = LandmarkScore(nmse, int(values.size), missed, skipped)
+    return results
+
+
 def average_precision(
     predictions: list[np.ndarray], truth: list[np.ndarray], iou: float = IOU_THRESHOLD
 ) -> float:
@@ -448,10 +553,41 @@ def export_spec(run: Path, model: torch.nn.Module | None = None):
     return cfg, traced, (torch.zeros(1, 3, height, width),), ["image"], outputs
 
 
+def report_landmarks(run: Path, min_face_px: float, device: torch.device) -> None:
+    """Print a run's NMSE on its held-out split, over every face and the served ones."""
+    from .data import WiderFaceDataset
+
+    cfg, model = load_run(run)
+    input_hw = tuple(cfg.model.input_hw)
+    images = Path(cfg.data.params["images"])
+    held_out = Path(cfg.data.split_files[1])
+    dataset = WiderFaceDataset(
+        Path(cfg.data.params["coco"]), images, held_out, input_hw, train=False
+    )
+    truth = landmark_truth(dataset.records)
+    detected = predict_images(model.to(device), truth.names, images, input_hw, device)
+
+    served = f"ge{min_face_px:g}px"
+    truth.keep[served] = size_subset(truth, images, input_hw, min_face_px)
+    print(f"{held_out.name}: {len(truth)} images")
+    for setting, score in landmark_error(detected, truth, (ALL_FACES, served)).items():
+        print(
+            f"{setting:8s} NMSE {score.nmse:.4f}  matched {score.matched}"
+            f"  missed {score.missed}  skipped {score.skipped}"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", type=Path, default=None, help="run a checkpoint over the images")
     parser.add_argument("--predictions", type=Path, default=None, help="score a saved npz instead")
+    parser.add_argument(
+        "--landmarks",
+        type=Path,
+        default=None,
+        metavar="RUN",
+        help="score NMSE of RUN's best.pth on its held-out split, at its own input size",
+    )
     parser.add_argument(
         "--images", type=Path, default=Path("data/raw/detection/widerface/WIDER_val/images")
     )
@@ -466,8 +602,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args(argv)
 
-    if (args.ckpt is None) == (args.predictions is None):
-        parser.error("pass exactly one of --ckpt and --predictions")
+    if sum(mode is not None for mode in (args.ckpt, args.predictions, args.landmarks)) != 1:
+        parser.error("pass exactly one of --ckpt, --predictions and --landmarks")
+    if args.landmarks is not None:
+        report_landmarks(args.landmarks, args.min_face_px, torch.device(args.device))
+        return 0
 
     truth = load_ground_truth(args.ground_truth)
     if args.predictions is not None:
