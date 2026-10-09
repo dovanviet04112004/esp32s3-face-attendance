@@ -1,12 +1,14 @@
 # rPPG trên PC — trục thời gian của chống giả
 
-Số đo của KẾ HOẠCH §3 (*Trục thời gian*) và các task E6-T11..T14. Mọi phép đo ở đây chạy trên
-video có sẵn (UniqueData, Axon) và đường board **mô phỏng**; chưa có số nào từ OV5640.
+Số đo của các task E6-T11..T14, và là căn cứ để KẾ HOẠCH §3 (*Trục thời gian*) **không dùng
+rPPG**. Mọi phép đo ở đây chạy trên video có sẵn (UniqueData, Axon) và đường board **mô phỏng**;
+không có số nào từ OV5640. Code không còn trong repo: tái lập bằng `git checkout 16945bfb`, rồi
+`make rppg`.
 
 ## 1. Đối chiếu POS với rPPG-Toolbox — E6-T13, 09/10/2026
 
 **Cách đo.** POS của rPPG-Toolbox (`ubicomplab/rPPG-Toolbox`, commit `b7500b848f84ad7f86e277b4612563b69f4f88f9`)
-chạy **ngoài repo** vì license (§1.4 KẾ HOẠCH): `np.mat` gán bằng `np.asmatrix` vì NumPy 2 đã bỏ nó,
+chạy **ngoài repo** vì mang Responsible AI License: `np.mat` gán bằng `np.asmatrix` vì NumPy 2 đã bỏ nó,
 và `utils.py` chỉ nạp nguyên văn hàm `detrend` (phần còn lại kéo theo skimage, sklearn). Hai bản
 nhận **cùng chuỗi màu, cùng cửa sổ 6 s** trượt 1 s, trên 20 clip người thật của UniqueData đủ dài
 sau khi bỏ 20% hai đầu (48 cửa sổ, đường nguyên bản). Nhịp của cả hai đọc bằng **cùng bộ tìm
@@ -49,8 +51,9 @@ SNR 2,7 dB.
 
 **Trượt cổng.** Trên đường board 100 px không có T ≤ 6 s nào vừa giữ giấy lọt ≤ 10% vừa giữ người
 thật `test` bị chặn ≤ 10%. Ở những dòng chặn người thật ≤ 10%, giấy lọt thấp nhất vẫn là **84,6%**
-(GREEN, 3 s). Trượt ngay từ đường nguyên bản, nên theo giao thức (KẾ HOẠCH §3) bộ video này **chưa
-đủ để kết luận** về rPPG trên OV5640: E8 không mở, thu trên board hay không do chủ repo quyết.
+(GREEN, 3 s). Trượt ngay từ đường nguyên bản, nên theo giao thức chốt trước (KẾ HOẠCH §3 ở
+`16945bfb`) bộ video này **chưa đủ để kết luận** về rPPG trên OV5640: E8 không mở. Chủ repo chốt
+không thu tiếp trên board, vì luồng chấm công chỉ cho 1–2 s (điểm 5 bên dưới).
 
 **Dữ liệu.** 179 clip đi qua bốn đường (nguyên bản, board 80 / 100 / 120 px), ra 28.407 cửa sổ.
 
@@ -121,7 +124,7 @@ mọi cửa sổ chấm được đều qua.
 
 **Lần chạy đầu** (`20261009-1613_12923a8`) cũng trượt, nhưng số của nó bỏ đi: 6.269 cửa sổ ở T = 2–3 s
 mang SNR +∞ nên tấn công tự lọt, và 63 cửa sổ mang −∞ vì nội suy parabol đẩy đỉnh ra khỏi dải.
-Commit `05e3e46e` sửa cả hai. Luật tính cửa sổ không chấm được (KẾ HOẠCH §3) viết **sau** lần chạy
+Commit `05e3e46e` sửa cả hai. Luật tính cửa sổ không chấm được (KẾ HOẠCH §3 ở `16945bfb`) viết **sau** lần chạy
 đó, nhưng kết luận trượt không dựa vào luật ấy: ở T = 4 và 6 s không có cửa sổ nào như vậy.
 
 **Vì sao trượt** — năm phép kiểm ngoài giao thức:
