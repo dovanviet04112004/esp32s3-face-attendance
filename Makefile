@@ -203,9 +203,10 @@ monitor: idf ## Open the serial monitor
 	cd firmware && idf.py $(PORT_FLAG) monitor
 
 # idf.py monitor refuses a stdin that is no terminal, so script lends it one.
-fw-log: idf ## Reset the board and print its console for LOG_S seconds (30), no terminal needed
+fw-log: idf ## Reset the board and print its console for LOG_S seconds (30); APP= for a test app
 	$(fw_profile)
-	-timeout $(LOG_S) script -qfec "cd firmware && idf.py -B $(fw_dir_$(PROFILE)) $(PORT_FLAG) monitor" /dev/null
+	-timeout $(LOG_S) script -qfec "cd $(if $(APP),$(APP) && idf.py,firmware && idf.py -B $(fw_dir_$(PROFILE))) \
+	  $(PORT_FLAG) monitor" /dev/null
 
 fw-part-read: idf ## Save partition PART of the board into the file OUT (PORT=)
 	$(call need,PART,a partition name such as models_0)
@@ -225,9 +226,9 @@ fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/t
 	$(call need,APP,the folder of an IDF test app)
 	cd $(APP) && idf.py reconfigure && ninja -C build -j$(JOBS)
 
-fw-app-flash: idf ## Flash a built test app and open the monitor (APP= as for fw-app)
+fw-app-flash: idf ## Flash a built test app, then the monitor (APP= as for fw-app, MONITOR= skips it)
 	$(call need,APP,the folder of an IDF test app)
-	cd $(APP) && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash monitor
+	cd $(APP) && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash $(MONITOR)
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
