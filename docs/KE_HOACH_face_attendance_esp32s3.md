@@ -1484,7 +1484,7 @@ mặt thật vẫn mang mạch thật, nên đòn màn hình vẫn do model mộ
 | Model | **không có**; GREEN, CHROM, POS viết lại từ bài báo gốc | không trọng số, không train; thứ duy nhất học từ dữ liệu là một ngưỡng SNR |
 | Vùng da | trán và hai má, đặt theo 5 landmark của nhánh detect; giữ nguyên giữa hai lần dò, 270 ms dò lại một lần như board | đặt theo hộp thì lệch khi đầu xoay; dò mỗi khung là thứ board không làm được |
 | Mỗi khung | trung bình R, G, B của từng vùng — ba số một vùng, khung bỏ đi | board lấy được ở luồng preview 14,18 fps, không cần `ai_task` |
-| Tín hiệu | trong 0,7–4 Hz: SNR là năng lượng quanh đỉnh và hoạ âm bậc hai (±0,1 Hz) chia phần còn lại; nhịp là đỉnh | chỉ cần trung bình và FFT thực, thứ esp-dsp có sẵn, nên bản C sau này kiểm được bằng golden |
+| Tín hiệu | trong 0,7–4 Hz: SNR là năng lượng quanh đỉnh và hoạ âm bậc hai chia phần còn lại, khung ±0,1 Hz nhưng không hẹp hơn thuỳ chính ±2/T của cửa sổ Hann; nhịp là đỉnh nội suy parabol | chỉ cần trung bình và FFT thực, thứ esp-dsp có sẵn, nên bản C sau này kiểm được bằng golden. Khung cố định ±0,1 Hz đếm chính mạch của cửa sổ ngắn sang phía nhiễu: sóng sạch 8 s chỉ còn 1,6–5,6 dB |
 | Đối chiếu | POS của rPPG-Toolbox chạy ngoài repo trên cùng video (§1.4) | không bộ video nào có nhịp tim đáp án; hai bản cài đặt độc lập ra cùng nhịp thì code đúng |
 
 **Đường board là mô phỏng, không thay được board.** Mỗi video đi hai đường: nguyên bản, và đường
@@ -2765,7 +2765,7 @@ ml/
 │   │   │                                  #   bộ ước lượng chỉ trả về một mặt phẳng nghiêng.
 │   │   │                                  #   Lưu kèm độ tin cậy từng nhãn; ~10% mặt thật
 │   │   │                                  #   lệch hẳn khỏi hình chuẩn và phải bị che lúc train
-│   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
+│   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256; --task rppg chia người thật
 │   │   └── loaders.py
 │   │
 │   ├── tasks/                             # ── BA NHÁNH, MỖI NHÁNH MỘT THƯ MỤC ĐỘC LẬP ──
@@ -2834,13 +2834,13 @@ ml/
 │   │   └── rppg/                          # trục thời gian của chống giả (§3): không model, nên không
 │   │       │                              #   model/ · losses/ · train.py · quant.py
 │   │       ├── README.md
+│   │       ├── config.py                  # schema của rppg.yaml, gõ sai khoá là lỗi lúc nạp
 │   │       ├── data.py                    # clip và nhãn lớp: UniqueData hai phía, Axon phía tấn công
 │   │       ├── roi.py                     # 5 landmark → trán, hai má; trung bình R,G,B mỗi vùng
 │   │       ├── board_path.py              # mặt về 80/100/120 px, nhiễu σ đo được, RGB565, 14,19 fps
 │   │       ├── traces.py                  # video → interim/rppg/traces/, detector dò 270 ms một lần
 │   │       ├── pulse.py                   # GREEN · CHROM · POS từ chuỗi trung bình
 │   │       ├── spectrum.py                # FFT thực, SNR đỉnh + hoạ âm, nhịp/phút
-│   │       ├── make_split.py              # người thật chia đôi theo người → splits/rppg/v1/
 │   │       └── eval.py                    # ngưỡng từ dev, AUC, giả lọt / thật bị chặn theo lớp và theo T
 │   │
 │   ├── compress/
