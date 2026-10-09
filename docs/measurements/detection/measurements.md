@@ -259,3 +259,41 @@ nhưng mọi số conf đo bằng app chưa gọi `expose()` đều là chặn d
 Ngưỡng tin cậy **0,30** đo ở §5 là giá trị đề nghị, không phải hằng số trong code: theo
 §4.9 nó nằm ở NVS trên kiosk và đổi được bằng `SET_CONFIG`, khai ở
 `contracts/schema/device_cmd.schema.json` dưới khoá `detectThreshold`.
+
+---
+
+## 10. NMSE landmark trên `landmark_val` — 09/10
+
+Run đang deploy theo `contracts/models.lock.json`, `detection/20260831-1616_cc931df_36fbea`
+(v2), checkpoint `best.pth` **FP32**, trọng số EMA, chạy trên GPU. Tập đo là
+`data/splits/detection/v1/landmark_val.txt`: **1.262 ảnh WIDER train** giữ ngoài tập train
+(sha256 `906bd7ac…`, khớp `split.lock` của run); box và 5 landmark lấy từ
+`data/interim/detection/widerface_coco/train.json`, file mà split được cắt ra.
+
+```bash
+make eval-det ARGS="--landmarks artifacts/detection/runs/20260831-1616_cc931df_36fbea --device cuda"
+```
+
+Ảnh đi đúng đường của AP ở §2: `predict_images()`, letterbox về 160×120 của run, conf 0,02,
+NMS 0,3. Mỗi mặt nhãn khớp với dự đoán có IoU cao nhất, tối thiểu 0,5, và một dự đoán chỉ khớp
+một mặt. Mọi mặt đều tham gia khớp, nhưng chỉ mặt **đủ 5 landmark** được chấm; mặt có điểm
+`-1` bị bỏ qua. NMSE là khoảng cách từ điểm dự đoán tới điểm nhãn chia cho √(w·h) của hộp
+nhãn, trung bình trên 5 điểm của mọi mặt khớp.
+
+| Mặt | Tổng | Đủ 5 landmark | Khớp | Trượt | NMSE |
+|---|---|---|---|---|---|
+| mọi cỡ | 15.524 | 7.991 | 2.381 | 5.610 | 0,1271 |
+| **≥ 38 px** ở đầu vào (cùng định nghĩa cột cổng ở §2) | 115 | 114 | **113** | **1** | **0,0546** |
+
+Dòng "mọi cỡ" gồm cả vệt vài pixel mà 160×120 không với tới (§3): 70% mặt có landmark bị trượt,
+và 2.268 mặt khớp dưới 38 px có NMSE ≈ 0,131 (suy từ hai dòng trên). Ở miền phục vụ, detector
+bắt 113/114 mặt và NMSE là **5,46%, vượt ngưỡng 5% của E4-T6 0,46 điểm phần trăm**, trên 113
+mặt — mẫu nhỏ, chưa đo phân bố hay sai số từng điểm.
+
+Ba điều kiện của phép đo: model là FP32, trên board chạy INT8 ESP-DL; khớp trên mọi dự đoán từ
+conf 0,02 chứ không từ sàn `detect_min` 350‰ của kiosk; và `best.pth` được chọn theo val AP
+trên chính `landmark_val` (`train.py` lấy `split_files[1]` làm tập val), nên landmark của tập
+này chưa từng được train nhưng box của nó đã chọn epoch.
+
+**Đây là ảnh WIDER, không phải khung OV5640**, nên số này không đóng cổng E4-T6: cổng đo trên
+ảnh board, và khung board chưa có nhãn 5 landmark.
