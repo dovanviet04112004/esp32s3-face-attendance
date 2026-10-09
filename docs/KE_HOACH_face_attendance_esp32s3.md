@@ -1501,6 +1501,9 @@ fps bằng khung gần nhất. Đường này chỉ quyết định có đáng t
   mặt nạ giấy 3D, giấy bọc), mặt nạ đeo (silicone, latex, vải), phát lại (UniqueData, Axon).
 - Cửa sổ T = 2, 3, 4, 6, 8 s, trượt 1 s; bỏ 20% hai đầu clip vì trình phát vẽ nút ▶ lên mặt (§1.2).
   Báo kèm AUC.
+- Cửa sổ mà khung quanh đỉnh và hoạ âm phủ kín dải thì không còn phần nào làm nhiễu, SNR không
+  xác định. Cửa sổ ấy tính là **không thấy mạch** ở cả hai phía: người thật bị chặn, kể cả lúc chọn
+  ngưỡng trên `dev`, còn tấn công không lọt. Số cửa sổ như vậy ghi kèm từng dòng.
 - **Cổng mở task phần cứng**: trên đường board 100 px có một T ≤ 6 s mà giấy lọt ≤ 10% và người
   thật của `test` bị chặn ≤ 10%. Phát lại và mặt nạ chỉ ghi số, không làm cổng.
 
