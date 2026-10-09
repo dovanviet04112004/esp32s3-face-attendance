@@ -1,92 +1,213 @@
 .DEFAULT_GOAL := help
-.PHONY: help gen lint check test fw-fresh-secrets \
-        train-det train-spoof train-recog quantize export golden pack \
-        fw-dev fw-bench fw-prod flash monitor \
-        be-dev fe-dev up down
+SHELL := /bin/bash
+.PHONY: help setup ml-sync be-install fe-install \
+        gen check lint fmt typecheck test ml-test ml-cov be-test \
+        data-fetch data-interim data-splits \
+        train-det train-spoof train-recog trainctl quantize export golden pack \
+        rppg rppg-split rppg-traces rppg-eval \
+        idf fw-fresh-secrets fw-dev fw-bench fw-prod fw-size flash monitor \
+        usb-list usb-attach usb-detach \
+        be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
+        up down ml-docker ml-clean
 
+# uv lives in ~/.local/bin, which the login shell here leaves off PATH.
+UV ?= $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
+ML_PY := $(CURDIR)/ml/.venv/bin/python
+# One torch build per box (pyproject): cu130 on the GPU machine, TORCH=cpu elsewhere.
+TORCH ?= cu130
+ML_EXTRAS := --extra $(TORCH) --extra export --extra espdl --extra bench --extra eval
+USBIPD ?= usbipd.exe
 SDKCONFIG_BASE := sdkconfig.defaults;sdkconfig.defaults.esp32s3
 # The batch token rides in only when the builder holds it (KEHOACH 4.5.9).
 SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),;sdkconfig.secrets)
+PORT_FLAG := $(if $(PORT),-p $(PORT))
 
-help:
-	@grep -E '^[a-z0-9-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-	 awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
+need = $(if $($(1)),,$(error $(1) is missing: $(2)))
 
-# contracts
-gen: ## Generate TS DTOs and gen_payload.h from contracts/schema
-	./tools/gen_from_schema.sh
+help: ## List every target
+	@awk 'BEGIN {FS = ":[^#]*## "} /^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} /^[a-z0-9-]+:[^#]*## / {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# checks
-lint: ## check_comments + check_layers + ruff + eslint
+##@ Setup
+setup: ml-sync be-install fe-install ## Install the dependencies of every block
+
+ml-sync: ## Sync ml/.venv to uv.lock with every extra this box uses
+	cd ml && $(UV) sync --frozen $(ML_EXTRAS)
+
+be-install: ## Install backend/ from its lockfile
+	cd backend && npm ci
+
+fe-install: ## Install frontend/ from its lockfile
+	cd frontend && npm ci
+
+##@ Contracts and checks
+gen: ## Generate DTOs and firmware headers from contracts/
+	python3 tools/gen_contracts.py
+
+check: ## Regenerate from contracts/ and fail if a committed file drifted
+	set -o pipefail; python3 tools/gen_contracts.py | xargs git diff --exit-code --
+
+lint: ## Every static check CI runs: the repo tools and ruff
 	python3 tools/check_comments.py
 	python3 tools/check_layers.py
-	cd ml && uv run ruff check .
-	cd backend && npm run lint
-	cd frontend && npm run lint
+	python3 tools/check_schematic.py
+	python3 tools/check_pcb.py
+	python3 tools/check_error_codes.py
+	python3 tools/check_migrations.py
+	python3 tools/check_routes.py
+	python3 tools/gen_sw_words.py --check
+	python3 tools/check_notice_kinds.py
+	cd ml && $(ML_PY) -m ruff check . && $(ML_PY) -m ruff format --check .
 
-check: gen ## Regenerate and fail if the committed output drifted
-	git diff --exit-code
+fmt: ## Apply ruff fixes and formatting to ml/
+	cd ml && $(ML_PY) -m ruff check --fix . && $(ML_PY) -m ruff format .
 
-test: ## Host-side tests for ml/ and backend/
-	cd ml && uv run pytest
+typecheck: ## tsc over backend/ and frontend/, as CI runs it
+	cd backend && npm run typecheck
+	cd frontend && npm run typecheck
+
+test: ml-test be-test ## Host-side tests of ml/ and backend/
+
+ml-test: ## pytest over ml/
+	cd ml && $(ML_PY) -m pytest
+
+ml-cov: ## pytest with a coverage report of facepipe.core
+	cd ml && $(ML_PY) -m pytest --cov=facepipe.core --cov-report=term-missing
+
+be-test: ## Backend e2e suite, against the Postgres and Redis backend/.env names
 	cd backend && npm test
 
-# ml
-train-det: ## Train the detection branch
-	cd ml && ./scripts/20_train_det.sh
+##@ ML data
+data-fetch: ## Fetch and verify the raw datasets (ARGS=--verify only verifies)
+	cd ml && ./scripts/00_fetch_raw.sh $(ARGS)
 
-train-spoof: ## Train the anti-spoof branch
-	cd ml && ./scripts/21_train_spoof.sh
+data-interim: ## raw to interim (ARGS=<branch> for one, ARGS=--force to redo)
+	cd ml && ./scripts/01_prepare_interim.sh $(ARGS)
 
-train-recog: ## Train the recognition branch
-	cd ml && ./scripts/22_train_recog.sh
+data-splits: ## Split files and SPLIT.md of every branch (ARGS=<branch> for one)
+	cd ml && ./scripts/02_make_splits.sh $(ARGS)
 
-quantize: ## Run the Q0 and Q1 rungs on a run directory
-	cd ml && ./scripts/30_quantize.sh
+##@ ML train, compress, export
+train-det: ## Train detection (ARGS="<config> key=value ...")
+	cd ml && ./scripts/20_train_det.sh $(ARGS)
 
-export: ## ONNX to INT8 TFLite, then update contracts/models.lock.json
-	cd ml && ./scripts/40_export.sh
+train-spoof: ## Train anti-spoof (ARGS="<config> key=value ...")
+	cd ml && ./scripts/21_train_spoof.sh $(ARGS)
 
-golden: ## Emit golden vectors into contracts/golden/
-	cd ml && ./scripts/41_emit_golden.sh
+train-recog: ## Train recognition (ARGS="<config> key=value ...")
+	cd ml && ./scripts/22_train_recog.sh $(ARGS)
 
-pack: ## Pack the three .tflite into models.bin and write the partition
-	cd ml && ./scripts/50_pack_and_flash.sh
+trainctl: ## Start, pause, resume or check a branch's training (ARGS="check detection")
+	cd ml && ./scripts/trainctl.sh $(ARGS)
 
-# firmware build profiles
+quantize: ## Q0 and Q1 rungs, TFLite and ESP-DL, of RUN="<run directory> ..."
+	$(call need,RUN,make quantize RUN=artifacts/<branch>/runs/<run>)
+	cd ml && ./scripts/30_quantize.sh $(RUN)
+
+export: ## Deploy one exported model and lock it (BRANCH MODEL RUN_ID ARENA_BYTES)
+	$(call need,BRANCH,detection | antispoof | recognition)
+	$(call need,MODEL,the exported .tflite or .espdl)
+	$(call need,RUN_ID,<branch>/<run directory name>)
+	$(call need,ARENA_BYTES,measured arena of a .tflite; 0 for .espdl)
+	$(ML_PY) -m facepipe.export.update_lock --branch $(BRANCH) --model $(MODEL) \
+	  --run-id $(RUN_ID) --arena-bytes $(ARENA_BYTES)
+
+golden: ## Golden vectors of the three branches into contracts/golden/
+	$(ML_PY) -m facepipe.tasks.detection.postproc.emit_golden
+	$(ML_PY) -m facepipe.tasks.antispoof.postproc.emit_golden
+	$(ML_PY) -m facepipe.tasks.recognition.postproc.emit_golden
+
+pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
+	cd ml && ./scripts/50_pack_and_flash.sh $(if $(PORT),--port $(PORT))
+
+##@ rPPG on PC (KEHOACH 3)
+rppg: rppg-split rppg-traces rppg-eval ## The whole measurement, in order
+
+rppg-split: ## Halve the UniqueData live clips by worker into splits/rppg/v1
+	cd ml && ./scripts/02_make_splits.sh rppg
+
+rppg-traces: ## Colour traces of every clip on all four paths (ARGS=--overwrite)
+	cd ml && $(ML_PY) -m facepipe.tasks.rppg.traces $(ARGS)
+
+rppg-eval: ## Liveness from pulse SNR into artifacts/rppg/eval/<time>_<sha>/
+	cd ml && $(ML_PY) -m facepipe.tasks.rppg.eval $(ARGS)
+
+##@ Firmware (source $IDF_PATH/export.sh first; PORT=/dev/ttyACM0 picks the port)
+idf:
+	@command -v idf.py >/dev/null || { echo "idf.py not found: source \$$IDF_PATH/export.sh"; exit 1; }
+
 # Defaults only fill keys sdkconfig lacks, so a token added later needs a fresh one.
 fw-fresh-secrets:
 	@if [ -f firmware/sdkconfig.secrets ] && [ firmware/sdkconfig.secrets -nt firmware/sdkconfig ]; then \
 	  rm -f firmware/sdkconfig; fi
 
-fw-dev: fw-fresh-secrets ## Build the dev profile
+fw-dev: idf fw-fresh-secrets ## Build the dev profile
 	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" build
 
-fw-bench: fw-fresh-secrets ## Build the bench profile
+fw-bench: idf fw-fresh-secrets ## Build the bench profile
 	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.bench$(SECRETS)" build
 
-fw-prod: ## Build the prod profile in build_prod, from its own sdkconfig
+fw-prod: idf ## Build the prod profile in build_prod, from its own sdkconfig
 	@test -f firmware/sdkconfig.secrets || { \
 	  echo "firmware/sdkconfig.secrets is missing: this kiosk could never register"; exit 1; }
 	rm -f firmware/build_prod/sdkconfig
 	cd firmware && idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
 	  -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.prod;sdkconfig.secrets" build
 
-flash: fw-fresh-secrets ## Flash and monitor the dev profile
-	cd firmware && idf.py -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" flash monitor
+fw-size: idf ## Size report of the last dev or bench build
+	cd firmware && idf.py size
 
-monitor: ## Open the serial monitor
-	cd firmware && idf.py monitor
+flash: idf fw-fresh-secrets ## Flash the dev profile and open the monitor
+	cd firmware && idf.py $(PORT_FLAG) -D SDKCONFIG_DEFAULTS="$(SDKCONFIG_BASE);sdkconfig.dev$(SECRETS)" flash monitor
 
-# backend / frontend / deploy
-be-dev: ## Run NestJS in watch mode
+monitor: idf ## Open the serial monitor
+	cd firmware && idf.py $(PORT_FLAG) monitor
+
+##@ Board on WSL (usbipd)
+usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
+	$(USBIPD) list
+
+usb-attach: ## Attach BUSID=<id> to WSL; the busid follows the USB port, read usb-list
+	$(call need,BUSID,make usb-list shows it)
+	$(USBIPD) attach --wsl --busid $(BUSID)
+	@for i in 1 2 3 4 5; do ls /dev/ttyACM* >/dev/null 2>&1 && break; sleep 1; done; ls -l /dev/ttyACM*
+
+usb-detach: ## Hand BUSID=<id> back to Windows
+	$(call need,BUSID,make usb-list shows it)
+	$(USBIPD) detach --busid $(BUSID)
+
+##@ Backend and frontend
+be-dev: ## NestJS in watch mode
 	cd backend && npm run start:dev
 
-fe-dev: ## Run the Next.js dev server
+be-build: ## Build the API into backend/dist
+	cd backend && npm run build
+
+be-migrate: ## Create and apply a Prisma migration on the dev database
+	cd backend && npm run prisma:migrate
+
+be-seed: ## Seed the database backend/.env names
+	cd backend && npm run prisma:seed
+
+be-demo: ## WIPE the database backend/.env names, then load a 5,000-person demo company
+	cd backend && npm run prisma:demo
+
+fe-dev: ## Next.js dev server
 	cd frontend && npm run dev
 
-up: ## Bring the docker stack up
+fe-build: ## Production build of the dashboard
+	cd frontend && npm run build
+
+##@ Docker
+up: ## Bring the deploy/ stack up
 	cd deploy && docker compose up -d
 
-down: ## Tear the docker stack down
+down: ## Tear the deploy/ stack down
 	cd deploy && docker compose down
+
+ml-docker: ## Build the training image facepipe:dev
+	cd ml && docker build -t facepipe:dev .
+
+##@ Housekeeping
+ml-clean: ## Drop ml/ caches; artifacts and data stay
+	cd ml && rm -rf .pytest_cache .ruff_cache .coverage
+	cd ml && find src tests -name __pycache__ -type d -prune -exec rm -rf {} +
