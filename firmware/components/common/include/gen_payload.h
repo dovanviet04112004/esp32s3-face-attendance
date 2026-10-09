@@ -511,6 +511,7 @@ static inline bool device_event_severity_parse(const char *s, device_event_sever
 
 typedef struct {
     char device_id[33];
+    int64_t seq;
     int64_t ts;
     device_event_type_t type;
     char cmd_id[37];
@@ -519,6 +520,7 @@ typedef struct {
     uint32_t employee_id;
     float liveness_score;
     int64_t error_code;
+    bool has_seq;
     bool has_cmd_id;
     bool has_message;
     bool has_employee_id;
@@ -536,6 +538,11 @@ static inline bool device_event_from_json(const cJSON *root, device_event_t *out
         strncpy(out->device_id, item->valuestring, sizeof(out->device_id) - 1);
     } else {
         return false;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "seq");
+    if (cJSON_IsNumber(item)) {
+        out->seq = (int64_t) item->valuedouble;
+        out->has_seq = true;
     }
     item = cJSON_GetObjectItemCaseSensitive(root, "ts");
     if (cJSON_IsNumber(item)) {
@@ -589,6 +596,9 @@ static inline cJSON *device_event_to_json(const device_event_t *in)
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
     cJSON_AddStringToObject(root, "deviceId", in->device_id);
+    if (in->has_seq) {
+        cJSON_AddNumberToObject(root, "seq", (double) in->seq);
+    }
     cJSON_AddNumberToObject(root, "ts", (double) in->ts);
     cJSON_AddStringToObject(root, "type", device_event_type_str(in->type));
     if (in->has_cmd_id) {

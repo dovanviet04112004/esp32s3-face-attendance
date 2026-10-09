@@ -7,6 +7,8 @@ import { z } from "zod";
 /** Anything the kiosk wants the server to know about that is not an attendance punch: spoof attempts, hardware faults, doors opened by hand. */
 export interface DeviceEvent {
   deviceId: string;
+  /** This kiosk's event counter: only goes up and is never reused, reboots included. Dedup key with deviceId; an event without it is stored but never deduplicated. */
+  seq?: number;
   /** Epoch milliseconds UTC. */
   ts: number;
   type: "SPOOF_DETECTED" | "UNKNOWN_FACE" | "QUALITY_REJECTED" | "DOOR_OPENED_MANUALLY" | "DOOR_FAULT" | "CAMERA_FAULT" | "TOF_FAULT" | "LCD_FAULT" | "AUDIO_FAULT" | "STORAGE_FAULT" | "FACEDB_CORRUPT" | "MODEL_LOAD_FAILED" | "OTA_FAILED" | "OTA_ROLLED_BACK" | "TIME_UNSYNCED" | "BOOTED" | "COMMAND_DONE" | "COMMAND_REJECTED" | "ROSTER_REJECTED";
@@ -24,6 +26,7 @@ export interface DeviceEvent {
 
 export const deviceEventSchema = z.strictObject({
   deviceId: z.string().regex(new RegExp("^[A-Za-z0-9_-]{4,32}$")),
+  seq: z.number().int().min(0).optional(),
   ts: z.number().int().min(0),
   type: z.enum(["SPOOF_DETECTED", "UNKNOWN_FACE", "QUALITY_REJECTED", "DOOR_OPENED_MANUALLY", "DOOR_FAULT", "CAMERA_FAULT", "TOF_FAULT", "LCD_FAULT", "AUDIO_FAULT", "STORAGE_FAULT", "FACEDB_CORRUPT", "MODEL_LOAD_FAILED", "OTA_FAILED", "OTA_ROLLED_BACK", "TIME_UNSYNCED", "BOOTED", "COMMAND_DONE", "COMMAND_REJECTED", "ROSTER_REJECTED"]),
   cmdId: z.string().max(36).optional(),
