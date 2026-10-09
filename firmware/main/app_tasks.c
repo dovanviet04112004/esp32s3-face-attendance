@@ -595,38 +595,46 @@ static void publish_event(device_event_type_t type, device_event_severity_t seve
     send_event(&event, cmd_id);
 }
 
+// Too big for a task stack and too cold for internal RAM; each field has one task (KEHOACH 6.4).
+typedef struct {
+    char report[ENROLL_REPORT_CAP];       // sync_task: an enrol report as JSON
+    enroll_payload_t wire;                // sync_task: that report ahead of printing
+    svc_facedb_unreported_t next;         // sync_task: the sample being reported
+    app_roster_t handed;                  // ui_task: a capture on its way to sync_task
+} scratch_t;
+static scratch_t *s_scratch;
+
 // The server owns identity, so a face captured here has to reach it or the
 // person exists on one machine and nowhere else (KEHOACH 7.5).
 static esp_err_t report_sample(const svc_facedb_unreported_t *sample)
 {
-    // One caller, and 900 bytes of base64 has no business on a 5 KB stack.
-    static char payload[ENROLL_REPORT_CAP];
-    static enroll_payload_t wire;
-    memset(&wire, 0, sizeof(wire));
-    wire.op = ENROLL_PAYLOAD_OP_UPSERT;
-    wire.employee_id = sample->employee_id;
-    wire.template_idx = sample->template_idx;
-    wire.updated_at = sample->session_ms;
-    wire.scale = sample->scale;
-    wire.has_scale = true;
-    wire.quality = sample->quality;
-    wire.has_quality = true;
-    if (sys_storage_device_id(wire.device_id, sizeof(wire.device_id)) == ESP_OK) {
-        wire.has_device_id = true;
+    char *payload = s_scratch->report;
+    enroll_payload_t *wire = &s_scratch->wire;
+    memset(wire, 0, sizeof(*wire));
+    wire->op = ENROLL_PAYLOAD_OP_UPSERT;
+    wire->employee_id = sample->employee_id;
+    wire->template_idx = sample->template_idx;
+    wire->updated_at = sample->session_ms;
+    wire->scale = sample->scale;
+    wire->has_scale = true;
+    wire->quality = sample->quality;
+    wire->has_quality = true;
+    if (sys_storage_device_id(wire->device_id, sizeof(wire->device_id)) == ESP_OK) {
+        wire->has_device_id = true;
     }
-    strlcpy(wire.full_name, sample->name, sizeof(wire.full_name));
-    wire.has_full_name = true;
-    embedding_version(wire.embedding_version, sizeof(wire.embedding_version));
-    wire.has_embedding_version = true;
+    strlcpy(wire->full_name, sample->name, sizeof(wire->full_name));
+    wire->has_full_name = true;
+    embedding_version(wire->embedding_version, sizeof(wire->embedding_version));
+    wire->has_embedding_version = true;
     size_t wrote = 0;
-    if (mbedtls_base64_encode((unsigned char *)wire.embedding, sizeof(wire.embedding), &wrote,
+    if (mbedtls_base64_encode((unsigned char *)wire->embedding, sizeof(wire->embedding), &wrote,
                               (const unsigned char *)sample->embedding,
                               sizeof(sample->embedding)) != 0) {
         return ESP_ERR_INVALID_SIZE;
     }
-    wire.has_embedding = true;
-    cJSON *root = enroll_payload_to_json(&wire);
-    const bool printed = root != NULL && cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
+    wire->has_embedding = true;
+    cJSON *root = enroll_payload_to_json(wire);
+    const bool printed = root != NULL && cJSON_PrintPreallocated(root, payload, sizeof(s_scratch->report), 0);
     cJSON_Delete(root);
     if (!printed) {
         ESP_LOGW(TAG, "enrol report will not fit %d B", ENROLL_REPORT_CAP);
@@ -716,22 +724,22 @@ static void report_unbuilt(const svc_facedb_unreported_t *sample, esp_err_t err)
 
 static void drain_reports(void)
 {
-    static svc_facedb_unreported_t next;
+    svc_facedb_unreported_t *next = &s_scratch->next;
     bool moved = false;
     for (int sent = 0; sent < REPORTS_PER_DRAIN && net_mqtt_is_up(); ++sent) {
-        if (svc_facedb_next_unreported(&next) != ESP_OK) {
+        if (svc_facedb_next_unreported(next) != ESP_OK) {
             break;
         }
-        const esp_err_t said = report_sample(&next);
+        const esp_err_t said = report_sample(next);
         // The sample keeps its flag: only the broker's ack may clear it (KEHOACH 7.5).
         if (said == ESP_ERR_INVALID_SIZE) {
-            report_unbuilt(&next, said);
+            report_unbuilt(next, said);
         }
         if (said != ESP_OK) {
             break;
         }
-        svc_facedb_mark_reported(next.employee_id, next.template_idx, next.session_ms);
-        svc_facedb_keep_session(next.employee_id, next.session_ms);
+        svc_facedb_mark_reported(next->employee_id, next->template_idx, next->session_ms);
+        svc_facedb_keep_session(next->employee_id, next->session_ms);
         moved = true;
     }
     if (moved) {
@@ -1808,13 +1816,13 @@ static void show_people(void)
 static void hand_roster(const app_wiring_t *wiring, app_roster_source_t source, int op,
                         uint32_t employee_id, const char *name)
 {
-    static app_roster_t handed;
-    memset(&handed, 0, sizeof(handed));
-    handed.source = (uint8_t)source;
-    handed.op = op;
-    handed.employee_id = employee_id;
-    strlcpy(handed.name, name != NULL ? name : "", sizeof(handed.name));
-    if (xQueueSend(wiring->roster, &handed, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
+    app_roster_t *handed = &s_scratch->handed;
+    memset(handed, 0, sizeof(*handed));
+    handed->source = (uint8_t)source;
+    handed->op = op;
+    handed->employee_id = employee_id;
+    strlcpy(handed->name, name != NULL ? name : "", sizeof(handed->name));
+    if (xQueueSend(wiring->roster, handed, pdMS_TO_TICKS(ROSTER_OFFER_WAIT_MS)) != pdTRUE) {
         note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, ESP_ERR_TIMEOUT, "roster request dropped");
     }
 }
@@ -2541,7 +2549,8 @@ esp_err_t app_tasks_start(void)
     }
     stay_awake("boot");
     s_pending = heap_caps_calloc(1, sizeof(*s_pending), MALLOC_CAP_SPIRAM);
-    if (s_pending == NULL) {
+    s_scratch = heap_caps_calloc(1, sizeof(*s_scratch), MALLOC_CAP_SPIRAM);
+    if (s_pending == NULL || s_scratch == NULL) {
         return ESP_ERR_NO_MEM;
     }
     // Core 1 stays clear for ai_task, whose one Invoke holds a core for

@@ -45,7 +45,7 @@ static uint32_t s_disconnects;
 static uint32_t s_retry_ms = RETRY_FLOOR_MS;
 // The event loop, the retry timer and the task calling in all reach these, under s_lock.
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
-static storage_wifi_saved_t s_saved;
+static storage_wifi_saved_t *s_saved;      // and s_written, its NVS image, in PSRAM (KEHOACH 6.4)
 static char s_target[NET_WIFI_SSID_CAP];  // the network the station is set to, empty for none
 static int s_fails;                       // retries since the last address
 static bool s_joining;
@@ -53,7 +53,7 @@ static bool s_picking;
 static uint8_t s_reason;                  // wifi_err_reason_t of the last disconnect
 static wifi_ap_record_t *s_picked;        // NET_WIFI_SCAN_CAP records in PSRAM (KEHOACH 6.4)
 static wifi_ap_record_t *s_swept;
-static storage_wifi_saved_t s_written;
+static storage_wifi_saved_t *s_written;
 
 static int find(const storage_wifi_saved_t *saved, const char *ssid)
 {
@@ -92,18 +92,18 @@ static void drop(storage_wifi_saved_t *saved, int at)
 static esp_err_t write_saved(void)
 {
     portENTER_CRITICAL(&s_lock);
-    s_written = s_saved;
+    *s_written = *s_saved;
     portEXIT_CRITICAL(&s_lock);
-    return sys_storage_set_blob(STORAGE_NS_WIFI, NVS_SAVED, &s_written, sizeof(s_written));
+    return sys_storage_set_blob(STORAGE_NS_WIFI, NVS_SAVED, s_written, sizeof(*s_written));
 }
 
 // The console and older firmware keep one network in ssid/pass; it joins the list as the newest.
 static void load_saved(void)
 {
-    if (sys_storage_get_blob(STORAGE_NS_WIFI, NVS_SAVED, &s_saved, sizeof(s_saved)) != ESP_OK ||
-        s_saved.magic != STORAGE_WIFI_SAVED_MAGIC || s_saved.count > STORAGE_WIFI_SAVED_CAP) {
-        memset(&s_saved, 0, sizeof(s_saved));
-        s_saved.magic = STORAGE_WIFI_SAVED_MAGIC;
+    if (sys_storage_get_blob(STORAGE_NS_WIFI, NVS_SAVED, s_saved, sizeof(*s_saved)) != ESP_OK ||
+        s_saved->magic != STORAGE_WIFI_SAVED_MAGIC || s_saved->count > STORAGE_WIFI_SAVED_CAP) {
+        memset(s_saved, 0, sizeof(*s_saved));
+        s_saved->magic = STORAGE_WIFI_SAVED_MAGIC;
     }
     char ssid[NET_WIFI_SSID_CAP] = { 0 };
     char pass[NET_WIFI_PASS_CAP] = { 0 };
@@ -114,7 +114,7 @@ static void load_saved(void)
     if (sys_storage_get_str(STORAGE_NS_WIFI, NVS_PASS, pass, sizeof(pass)) != ESP_OK) {
         pass[0] = '\0';
     }
-    promote(&s_saved, ssid, pass);
+    promote(s_saved, ssid, pass);
     if (write_saved() == ESP_OK) {
         sys_storage_erase_key(STORAGE_NS_WIFI, NVS_SSID);
         sys_storage_erase_key(STORAGE_NS_WIFI, NVS_PASS);
@@ -149,7 +149,7 @@ static void retry_now(void *arg)
     }
     portENTER_CRITICAL(&s_lock);
     const bool aimed = !s_joining && s_target[0] != '\0';
-    const bool pick = aimed && s_fails >= FAILS_BEFORE_PICK && s_saved.count > 0;
+    const bool pick = aimed && s_fails >= FAILS_BEFORE_PICK && s_saved->count > 0;
     s_picking = pick;
     portEXIT_CRITICAL(&s_lock);
     if (!aimed) {
@@ -177,9 +177,9 @@ static void pick_strongest(void)
     int best_rssi = INT_MIN;
     portENTER_CRITICAL(&s_lock);
     for (uint16_t i = 0; i < heard; ++i) {
-        const int at = find(&s_saved, (const char *)s_picked[i].ssid);
+        const int at = find(s_saved, (const char *)s_picked[i].ssid);
         if (at >= 0 && s_picked[i].rssi > best_rssi) {
-            best = s_saved.net[at];
+            best = s_saved->net[at];
             best_rssi = s_picked[i].rssi;
         }
     }
@@ -279,7 +279,13 @@ esp_err_t net_wifi_start(void)
     if (s_swept == NULL) {
         s_swept = heap_caps_calloc(NET_WIFI_SCAN_CAP, sizeof(wifi_ap_record_t), MALLOC_CAP_SPIRAM);
     }
-    if (s_picked == NULL || s_swept == NULL) {
+    if (s_saved == NULL) {
+        s_saved = heap_caps_calloc(1, sizeof(*s_saved), MALLOC_CAP_SPIRAM);
+    }
+    if (s_written == NULL) {
+        s_written = heap_caps_calloc(1, sizeof(*s_written), MALLOC_CAP_SPIRAM);
+    }
+    if (s_picked == NULL || s_swept == NULL || s_saved == NULL || s_written == NULL) {
         return ESP_ERR_NO_MEM;
     }
     load_saved();
@@ -307,17 +313,17 @@ esp_err_t net_wifi_start(void)
     // driver keeps nothing of its own across a reboot.
     APP_RETURN_ON_ERR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "storage");
     APP_RETURN_ON_ERR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
-    if (s_saved.count > 0) {
-        APP_RETURN_ON_ERR(aim(&s_saved.net[0]), TAG, "config");
+    if (s_saved->count > 0) {
+        APP_RETURN_ON_ERR(aim(&s_saved->net[0]), TAG, "config");
     }
     // The station runs with no network too, or the screen could neither scan nor join (KEHOACH 7.3).
     APP_RETURN_ON_ERR(esp_wifi_start(), TAG, "start");
-    if (s_saved.count == 0) {
+    if (s_saved->count == 0) {
         ESP_LOGW(TAG, "no saved network: the station waits for one from the screen");
         return ESP_ERR_NOT_FOUND;
     }
-    ESP_LOGI(TAG, "station up for %s, %u network(s) saved", s_saved.net[0].ssid,
-             (unsigned)s_saved.count);
+    ESP_LOGI(TAG, "station up for %s, %u network(s) saved", s_saved->net[0].ssid,
+             (unsigned)s_saved->count);
     return ESP_OK;
 }
 
@@ -383,7 +389,7 @@ size_t net_wifi_scan(net_wifi_ap_t *out, size_t cap)
         out[kept].rssi_dbm = s_swept[i].rssi;
         out[kept].open = s_swept[i].authmode == WIFI_AUTH_OPEN;
         portENTER_CRITICAL(&s_lock);
-        out[kept].saved = find(&s_saved, ssid) >= 0;
+        out[kept].saved = find(s_saved, ssid) >= 0;
         portEXIT_CRITICAL(&s_lock);
         ++kept;
     }
@@ -420,9 +426,9 @@ static void return_to_saved(bool hunt)
 {
     storage_wifi_net_t back = { 0 };
     portENTER_CRITICAL(&s_lock);
-    const bool any = s_saved.count > 0;
+    const bool any = s_saved->count > 0;
     if (any) {
-        back = s_saved.net[0];
+        back = s_saved->net[0];
     } else {
         s_target[0] = '\0';
     }
@@ -452,10 +458,10 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms,
     storage_wifi_net_t chosen = { 0 };
     strlcpy(chosen.ssid, ssid, sizeof(chosen.ssid));
     portENTER_CRITICAL(&s_lock);
-    const int at = find(&s_saved, ssid);
+    const int at = find(s_saved, ssid);
     // A saved network rejoins without anyone retyping its passphrase, which never leaves this layer.
     if (pass == NULL && at >= 0) {
-        strlcpy(chosen.pass, s_saved.net[at].pass, sizeof(chosen.pass));
+        strlcpy(chosen.pass, s_saved->net[at].pass, sizeof(chosen.pass));
     }
     s_joining = pass != NULL || at >= 0;
     portEXIT_CRITICAL(&s_lock);
@@ -482,7 +488,7 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms,
     s_joining = false;
     const uint8_t reason = s_reason;
     if (joined) {
-        promote(&s_saved, chosen.ssid, chosen.pass);
+        promote(s_saved, chosen.ssid, chosen.pass);
     }
     portEXIT_CRITICAL(&s_lock);
     if (joined) {
@@ -509,10 +515,10 @@ esp_err_t net_wifi_forget(const char *ssid)
         return ESP_ERR_INVALID_STATE;
     }
     portENTER_CRITICAL(&s_lock);
-    const int at = find(&s_saved, ssid);
+    const int at = find(s_saved, ssid);
     const bool current = at >= 0 && strcmp(s_target, ssid) == 0;
     if (at >= 0) {
-        drop(&s_saved, at);
+        drop(s_saved, at);
     }
     portEXIT_CRITICAL(&s_lock);
     if (at < 0) {
@@ -528,13 +534,13 @@ esp_err_t net_wifi_forget(const char *ssid)
 
 size_t net_wifi_saved(char (*out)[NET_WIFI_SSID_CAP], size_t cap)
 {
-    if (out == NULL) {
+    if (out == NULL || s_saved == NULL) {
         return 0;
     }
     portENTER_CRITICAL(&s_lock);
-    const size_t count = s_saved.count < cap ? s_saved.count : cap;
+    const size_t count = s_saved->count < cap ? s_saved->count : cap;
     for (size_t i = 0; i < count; ++i) {
-        strlcpy(out[i], s_saved.net[i].ssid, NET_WIFI_SSID_CAP);
+        strlcpy(out[i], s_saved->net[i].ssid, NET_WIFI_SSID_CAP);
     }
     portEXIT_CRITICAL(&s_lock);
     return count;
