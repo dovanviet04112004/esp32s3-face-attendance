@@ -4,7 +4,7 @@ SHELL := /bin/bash
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack \
-        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-app fw-app-flash \
+        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
         usb-list usb-attach usb-detach \
         be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
         up down ml-docker ml-clean
@@ -47,6 +47,11 @@ fw_profile = $(if $(fw_dir_$(PROFILE)),,$(error PROFILE must be dev, bench, prod
 JOBS ?= 4
 # idf.py takes no -j, and ninja's default of cores + 2 has crashed this WSL: configure, then ninja.
 fw_build = $(call fw_idf,$(1)) reconfigure && ninja -C $(fw_dir_$(1)) -j$(JOBS)
+MONITOR ?= monitor
+LOG_S ?= 30
+# Partitions are found in the table the board holds, unless PART_TABLE names a csv.
+parttool = python $(IDF_PATH)/components/partition_table/parttool.py $(if $(PORT),--port $(PORT)) \
+  $(if $(PART_TABLE),--partition-table-file $(PART_TABLE))
 
 need = $(if $($(1)),,$(error $(1) is missing: $(2)))
 
@@ -180,13 +185,32 @@ fw-size: idf ## Size report of a built profile (PROFILE=dev|bench|prod|fleet)
 	$(fw_profile)
 	$(call fw_idf,$(PROFILE)) size
 
-flash: idf ## Flash a built profile and open the monitor (PROFILE=dev|bench|prod|fleet)
+flash: idf ## Flash a built profile, then the monitor (PROFILE=dev|bench|prod|fleet, MONITOR= skips it)
 	$(fw_profile)
 	cd firmware && ninja -C $(fw_dir_$(PROFILE)) -j$(JOBS)
-	$(call fw_idf,$(PROFILE)) $(PORT_FLAG) flash monitor
+	$(call fw_idf,$(PROFILE)) $(PORT_FLAG) flash $(MONITOR)
 
 monitor: idf ## Open the serial monitor
 	cd firmware && idf.py $(PORT_FLAG) monitor
+
+# idf.py monitor refuses a stdin that is no terminal, so script lends it one.
+fw-log: idf ## Reset the board and print its console for LOG_S seconds (30), no terminal needed
+	$(fw_profile)
+	-timeout $(LOG_S) script -qfec "cd firmware && idf.py -B $(fw_dir_$(PROFILE)) $(PORT_FLAG) monitor" /dev/null
+
+fw-part-read: idf ## Save partition PART of the board into the file OUT (PORT=)
+	$(call need,PART,a partition name such as models_0)
+	$(call need,OUT,the file to write)
+	$(parttool) read_partition --partition-name $(PART) --output $(OUT)
+
+fw-part-write: idf ## Write the file IN into partition PART of the board
+	$(call need,PART,a partition name such as models_0)
+	$(call need,IN,the file to write from)
+	$(parttool) write_partition --partition-name $(PART) --input $(IN)
+
+fw-part-erase: idf ## Erase partition PART of the board
+	$(call need,PART,a partition name such as models_0)
+	$(parttool) erase_partition --partition-name $(PART)
 
 fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/test_apps/*)
 	$(call need,APP,the folder of an IDF test app)
