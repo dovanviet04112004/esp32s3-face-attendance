@@ -18,6 +18,7 @@ const NO_EMPLOYEE = 0;
 const FIRST_TEMPLATE = 0;
 // First key of pg_advisory_xact_lock, so one person's captures are taken one at a time.
 const CAPTURE_LOCK = 75;
+const NOT_FOUND = "P2025";
 const SCRUB_LOCK_WAIT_MS = 5000;
 
 type Named = { fullName: string; code: string; embeddingVersion: string | null };
@@ -31,6 +32,10 @@ type Erased<T> = { widen: string[] } | { widen: null; value: T; doors: Door[] };
 type Run = { from: number; endedAt: number; heard?: number };
 
 // A kiosk refuses a template of another recognition model; a side that cannot say is taken to match (KEHOACH 7.5).
+function isCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
 function otherModel(kiosk: string | null, held: string | null): boolean {
   return kiosk !== null && held !== null && kiosk !== held;
 }
@@ -223,10 +228,14 @@ export class EnrollmentService {
   async revoke(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.device(deviceId);
     return this.tell(deviceId, async (tx) => ({
-      value: await tx.deviceEnrollment.update({
-        where: { deviceId_employeeId: { deviceId, employeeId } },
-        data: { state: "REVOKED" },
-      }),
+      value: await tx.deviceEnrollment
+        .update({
+          where: { deviceId_employeeId: { deviceId, employeeId } },
+          data: { state: "REVOKED" },
+        })
+        .catch((error: unknown) => {
+          throw isCode(error, NOT_FOUND) ? new NotFoundException("ENROLLMENT_NOT_FOUND") : error;
+        }),
       builds: [(version, to) => this.dropAll(employeeId, version, to)],
     }));
   }

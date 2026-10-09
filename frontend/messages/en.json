@@ -1462,6 +1462,7 @@
     "DEVICE_ID_MALFORMED": "A device ID is 4–32 letters, digits, hyphens or underscores.",
     "DEVICE_TOKEN_REJECTED": "This machine's ticket was revoked or has expired.",
     "DEVICE_NOT_FOUND": "No such device.",
+    "ENROLLMENT_NOT_FOUND": "This person is not assigned to this kiosk.",
     "DEVICE_CLAIM_MISMATCH": "That code does not match the one on the kiosk's screen.",
     "DEVICE_CLAIM_LOCKED": "Too many wrong tries. Wait for the kiosk to show a new code, then try again.",
     "DEVICE_CLAIM_MISSING": "This machine has not sent a claim code yet. Wait for it to register again.",

@@ -223,6 +223,18 @@ describe("enrollment (e2e)", () => {
     assert.equal(now.rosterVersion, before.rosterVersion + 1);
   });
 
+  it("answers ENROLLMENT_NOT_FOUND for a person the kiosk was never given", async () => {
+    const before = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    const res = await request(http)
+      .delete(`/enrollments/${DEVICE_ID}/${2_000_000_000}`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 404);
+    assert.equal(res.body.message, "ENROLLMENT_NOT_FOUND");
+
+    const now = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(now.rosterVersion, before.rosterVersion, "a refused withdrawal moved the roster");
+  });
+
   it("counts every enrolment when six land at once", async () => {
     const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     const made = await Promise.all(
