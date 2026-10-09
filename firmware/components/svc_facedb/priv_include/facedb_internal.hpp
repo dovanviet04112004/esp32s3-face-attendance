@@ -107,12 +107,13 @@ public:
     esp_err_t mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms) noexcept;
     esp_err_t templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
                       size_t cap, float *scale, uint8_t *quality) noexcept;
-    size_t people(svc_facedb_person_t *out, size_t cap) noexcept;
+    size_t people(svc_facedb_person_t *out, size_t cap, size_t first, size_t *total) noexcept;
     esp_err_t persist() noexcept;
     size_t active() const noexcept { return active_; }
 
 private:
     esp_err_t load() noexcept;
+    bool appears_before(size_t index, uint32_t employee_id) const noexcept;
     void compact() noexcept;
     void seal(size_t index) noexcept;
     void seal_header() noexcept;

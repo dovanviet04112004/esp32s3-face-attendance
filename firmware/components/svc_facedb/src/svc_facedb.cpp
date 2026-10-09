@@ -56,9 +56,9 @@ esp_err_t svc_facedb_model_tag(uint8_t *out)
     return s_db.model_tag(out);
 }
 
-size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap)
+size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap, size_t first, size_t *total)
 {
-    return s_db.people(out, cap);
+    return s_db.people(out, cap, first, total);
 }
 
 esp_err_t svc_facedb_remove(uint32_t employee_id)

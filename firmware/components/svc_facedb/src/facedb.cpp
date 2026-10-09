@@ -455,35 +455,54 @@ esp_err_t FaceDb::templet(uint32_t employee_id, uint16_t template_idx, int8_t *e
     return ESP_ERR_NOT_FOUND;
 }
 
-size_t FaceDb::people(svc_facedb_person_t *out, size_t cap) noexcept
+// A person is listed at their first live sample; a later one adds nobody.
+bool FaceDb::appears_before(size_t index, uint32_t employee_id) const noexcept
+{
+    for (size_t j = 0; j < index; ++j) {
+        const storage_face_record_t *rec = table_.record(j);
+        if (live(*rec) && rec->employee_id == employee_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t FaceDb::people(svc_facedb_person_t *out, size_t cap, size_t first, size_t *total) noexcept
 {
     app::LockGuard lock(mutex_, kLockMs);
+    if (total != nullptr) {
+        *total = 0;
+    }
     if (!lock.held() || out == nullptr) {
         return 0;
     }
+    size_t seen = 0;
     size_t kept = 0;
     for (size_t i = 0; i < table_.count(); ++i) {
         const storage_face_record_t *rec = table_.record(i);
-        if (!live(*rec)) {
+        if (!live(*rec) || appears_before(i, rec->employee_id)) {
             continue;
         }
-        size_t at = kept;
-        for (size_t j = 0; j < kept; ++j) {
-            if (out[j].employee_id == rec->employee_id) {
-                at = j;
-                break;
-            }
-        }
-        if (at == kept) {
-            if (kept == cap) {
-                break;
-            }
-            out[at].employee_id = rec->employee_id;
-            out[at].templates = 0;
-            strlcpy(out[at].name, rec->name, sizeof(out[at].name));
+        if (seen >= first && kept < cap) {
+            out[kept].employee_id = rec->employee_id;
+            out[kept].templates = 0;
+            strlcpy(out[kept].name, rec->name, sizeof(out[kept].name));
             ++kept;
         }
-        ++out[at].templates;
+        ++seen;
+    }
+    // A person's samples can sit anywhere in the table, so the page is counted over all of it.
+    for (size_t i = 0; i < table_.count(); ++i) {
+        const storage_face_record_t *rec = table_.record(i);
+        for (size_t j = 0; j < kept && live(*rec); ++j) {
+            if (out[j].employee_id == rec->employee_id) {
+                ++out[j].templates;
+                break;
+            }
+        }
+    }
+    if (total != nullptr) {
+        *total = seen;
     }
     return kept;
 }

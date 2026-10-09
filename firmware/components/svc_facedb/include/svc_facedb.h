@@ -89,11 +89,12 @@ typedef struct {
     char name[STORAGE_NAME_CAP];
 } svc_facedb_person_t;
 
-/** Fill out with the people in the table, one entry each.
+/** Fill out with one page of the people in the table, in the order each first appears.
  *  @ctx task | blocking | takes m_facedb
+ *  @param first people to skip; total, when not NULL, gets how many people there are
  *  @ret how many it wrote, never more than cap
  */
-size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap);
+size_t svc_facedb_people(svc_facedb_person_t *out, size_t cap, size_t first, size_t *total);
 
 /** Soft-delete every template of one employee.
  *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
