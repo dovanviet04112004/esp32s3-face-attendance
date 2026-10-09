@@ -6,7 +6,7 @@ SHELL := /bin/bash
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
         usb-list usb-attach usb-detach \
-        be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
+        be-dev be-build be-prisma be-migrate be-seed be-demo fe-dev fe-build \
         up down ml-docker ml-clean
 
 # uv lives in ~/.local/bin, which the login shell here leaves off PATH.
@@ -248,6 +248,9 @@ be-dev: ## NestJS in watch mode
 
 be-build: ## Build the API into backend/dist
 	cd backend && npm run build
+
+be-prisma: ## Regenerate the Prisma client from backend/prisma/schema.prisma (touches no database)
+	cd backend && npm run prisma:generate
 
 be-migrate: ## Create and apply a Prisma migration on the dev database
 	cd backend && npm run prisma:migrate
