@@ -69,6 +69,11 @@
   }
 }
 
+/* A field's list is no wider than the field; a toolbar filter's rows carry a mark that lets it outgrow its button (KEHOACH 4.7). */
+[data-base-ui-portal] > [data-side] > [data-side]:has([role="listbox"]):not(:has([data-filter-option])) {
+  max-width: var(--anchor-width);
+}
+
 /* LayerDialog's phone sheet is the card holding Base UI's drawer content; its last button clears the home bar. */
 @media (width < 40rem) {
   [data-swipe-direction] > :has(> [data-drawer-content]) {

@@ -146,7 +146,8 @@ function fold(text: string): string {
 function Counted({ label, count }: { label: string; count: number | undefined }) {
   const format = useFormatter();
   return (
-    <span className="flex w-full min-w-0 flex-1 items-center justify-between gap-6">
+    // The mark lets globals.css size this list past its toolbar button, which only fits "Mọi người" (KEHOACH 4.7).
+    <span data-filter-option="" className="flex w-full min-w-0 flex-1 items-center justify-between gap-6">
       <span className="truncate">{label}</span>
       {count === undefined ? null : <span className="shrink-0 text-kumo-subtle tabular-nums">{format.number(count)}</span>}
     </span>
@@ -205,13 +206,11 @@ function FilterControl({ filter, inSheet }: { filter: Filter; inSheet: boolean }
     : { "aria-label": filter.label, render: <Toolbar.Button className={kToolbarTrigger} /> };
   return (
     <Select {...placement} value={filter.value} onValueChange={(next) => filter.onChange(String(next ?? ""))} items={filter.items}>
-      {filter.counts
-        ? Object.entries(filter.items).map(([value, label]) => (
-            <Select.Option key={value} value={value} className="[&>:first-child]:flex-1">
-              <Counted label={label} count={filter.counts?.[value]} />
-            </Select.Option>
-          ))
-        : undefined}
+      {Object.entries(filter.items).map(([value, label]) => (
+        <Select.Option key={value} value={value} className="[&>:first-child]:flex-1">
+          <Counted label={label} count={filter.counts?.[value]} />
+        </Select.Option>
+      ))}
     </Select>
   );
 }
