@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-.PHONY: help setup ml-sync be-install fe-install \
+.PHONY: help setup ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack \
@@ -31,6 +31,9 @@ setup: ml-sync be-install fe-install ## Install the dependencies of every block
 
 ml-sync: ## Sync ml/.venv to uv.lock with every extra this box uses
 	cd ml && $(UV) sync --frozen $(ML_EXTRAS)
+
+ml-lock: ## Re-resolve ml/uv.lock after editing ml/pyproject.toml
+	cd ml && $(UV) lock
 
 be-install: ## Install backend/ from its lockfile
 	cd backend && npm ci
