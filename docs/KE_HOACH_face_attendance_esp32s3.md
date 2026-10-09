@@ -4965,6 +4965,14 @@ nửa số lỗi rơi vào câu chung chung "Không xong được".
 dưới `pointer: coarse`, chứ không nâng cho tất cả. Nâng tất cả thì mọi bảng dày thêm gần một phần
 năm trên màn hình người dùng đang dùng chuột, đổi lấy một lợi ích họ không nhận được.
 
+**Danh sách của một ô rộng đúng bằng ô ấy.** `Select` và `Combobox` của Kumo mở danh sách rộng ít
+nhất bằng ô, nhiều nhất tới mép cửa sổ, nên một dòng dài — tên phòng ban kèm mã, câu báo danh mục
+còn trống — đẩy danh sách lòi sang cột bên cạnh và ra ngoài hộp thoại. Kumo không cho đặt lớp lên
+danh sách của `Select`, nên `globals.css` chặn bề rộng ấy một lần cho mọi danh sách mở từ một ô:
+không rộng hơn ô, dòng dài thì xuống dòng hoặc cắt bằng dấu ba chấm trong đó. Danh sách của một bộ
+lọc trên thanh công cụ (§9.12) thì được rộng hơn nút mở nó, vì nút ấy chỉ vừa chữ "Mọi người" còn
+danh sách phải đọc được tên phòng ban kèm số đếm; mỗi dòng của nó mang dấu riêng để luật chừa ra.
+
 **Bản ghi chấm công có đường đọc riêng, không chỉ có bản tổng hợp.** `GET /reports/attendance`
 trả số lượt theo người — đủ cho biểu đồ và bảng công, **không đủ để tra một lượt**. Nên
 `attendance` của backend có controller riêng trả chính các bản ghi, lọc theo người, theo máy và
@@ -7991,7 +7999,8 @@ hỏi; không có nút *Lọc* trừ khi truy vấn nặng. Lựa chọn của b
 tràn là nó chui xuống dưới cột phải hay đè lên nút bên cạnh, và bấm vào bộ lọc thành bấm vào thứ
 nằm trên. Thanh tự chọn dạng rộng nhất còn vừa: một dải chứa ô tìm và mọi bộ lọc; không vừa thì ô
 tìm một hàng, các bộ lọc một dải ở hàng dưới; vẫn không vừa thì ô tìm và nút *Bộ lọc* mở tấm trượt
-như trên điện thoại. Nút một bộ lọc rộng tối đa 240 px, giá trị dài cắt bằng dấu ba chấm.
+như trên điện thoại. Nút một bộ lọc rộng tối đa 240 px, giá trị dài cắt bằng dấu ba chấm; danh
+sách nó mở được rộng hơn nút, còn danh sách của một ô trong biểu mẫu thì rộng đúng bằng ô (§4.7).
 
 **Biểu mẫu nói rõ ô nào bắt buộc, và nói vì sao.** Theo quy ước của Kumo: ô bắt buộc không gắn
 dấu, ô không bắt buộc hiện "(không bắt buộc)" — qua `ui/optional.tsx`, vì `required={false}` của
