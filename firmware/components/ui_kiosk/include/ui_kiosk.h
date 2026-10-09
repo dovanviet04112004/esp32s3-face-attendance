@@ -123,7 +123,7 @@ typedef struct {
 } ui_kiosk_fact_t;
 
 /** Hand the device page what main knows without reading flash.
- *  @ctx ui_task | non-blocking | copied, at most UI_KIOSK_FACTS
+ *  @ctx any | non-blocking | copied, at most UI_KIOSK_FACTS; ui_task takes it on its next tick
  */
 void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count);
 
@@ -251,8 +251,8 @@ void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count, int first, 
  */
 int ui_kiosk_pending_first(void);
 
-/** True when the enrol screen has opened and wants that list refreshed.
- *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
+/** True when the enrol screen has opened or turned a page and wants that list refreshed.
+ *  @ctx any | non-blocking | one shot: the request clears as it is taken
  */
 bool ui_kiosk_take_pending_request(void);
 
@@ -381,7 +381,7 @@ void ui_kiosk_set_people(const ui_kiosk_person_t *people, int count, int first, 
 int ui_kiosk_people_first(void);
 
 /** True while a screen is collecting faces rather than checking anyone in.
- *  @ctx ai_task | non-blocking
+ *  @ctx any | non-blocking | follows the screen within one ui_task tick
  */
 bool ui_kiosk_enrolling(void);
 

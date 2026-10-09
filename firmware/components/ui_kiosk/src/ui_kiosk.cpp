@@ -77,6 +77,68 @@ uint32_t s_update_serial;
 uint32_t s_update_taken;
 std::atomic<uint8_t> s_update_state{ UI_KIOSK_UPDATE_NONE };
 int64_t s_update_left_ms;
+std::atomic<bool> s_enrolling{ false };
+
+// Another task's value reaches ui_task whole: edited and read under one spinlock, taken by serial (KEHOACH 5.3).
+template <typename T>
+class Mailbox {
+public:
+    // ui_task hears of an edit only when the value's bytes moved.
+    template <typename Change>
+    void edit(Change change) noexcept
+    {
+        portENTER_CRITICAL(&lock_);
+        change(held_);
+        const uint32_t print = fingerprint(held_);
+        if (print != print_) {
+            print_ = print;
+            ++serial_;
+        }
+        portEXIT_CRITICAL(&lock_);
+    }
+
+    template <typename Use>
+    bool take(Use use) noexcept
+    {
+        portENTER_CRITICAL(&lock_);
+        const bool fresh = serial_ != taken_;
+        if (fresh) {
+            use(static_cast<const T &>(held_));
+            taken_ = serial_;
+        }
+        portEXIT_CRITICAL(&lock_);
+        return fresh;
+    }
+
+private:
+    static uint32_t fingerprint(const T &value) noexcept
+    {
+        const uint8_t *byte = reinterpret_cast<const uint8_t *>(&value);
+        uint32_t print = 2166136261u;
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            print = (print ^ byte[i]) * 16777619u;
+        }
+        return print;
+    }
+
+    portMUX_TYPE lock_ = portMUX_INITIALIZER_UNLOCKED;
+    T held_ = {};
+    uint32_t print_ = 0;
+    uint32_t serial_ = 0;
+    uint32_t taken_ = 0;
+};
+
+struct PendingPage {
+    int count;
+    int first;
+    int total;
+    ui_kiosk_pending_t row[UI_KIOSK_PENDING_ROWS];
+};
+
+Mailbox<ui::Facts> s_facts_box;
+Mailbox<ui_kiosk_net_t> s_net_box;
+Mailbox<ui::Ticket> s_ticket_box;
+Mailbox<PendingPage> s_pending_box;
 
 bool covering(ui_kiosk_update_t state)
 {
@@ -228,6 +290,30 @@ void take_verdict(int64_t dt_ms)
     if (s_clear_in_ms <= 0 && s_seen.verdict > APP_UI_SCANNING) {
         s_clear_in_ms = -1;
         s_seen.verdict = APP_UI_IDLE;
+        s_dirty = true;
+    }
+}
+
+void take_mail()
+{
+    const ui::ScreenId at = ui::manager().at();
+    if (s_facts_box.take([](const ui::Facts &held) { ui::facts() = held; }) && at == ui::ScreenId::Device) {
+        s_dirty = true;
+    }
+    if (s_net_box.take([](const ui_kiosk_net_t &held) { ui::net() = held; })) {
+        s_dirty = true;
+    }
+    if (s_ticket_box.take([](const ui::Ticket &held) { ui::ticket() = held; })) {
+        s_dirty = true;
+    }
+    const bool paged = s_pending_box.take([](const PendingPage &held) {
+        ui::Pending &shown = ui::pending();
+        shown.count = held.count;
+        shown.first = held.first;
+        shown.total = held.total;
+        memcpy(shown.row, held.row, sizeof(shown.row));
+    });
+    if (paged && at == ui::ScreenId::Enrol) {
         s_dirty = true;
     }
 }
@@ -409,12 +495,14 @@ void ui_kiosk_tick(uint32_t dt_ms)
     settle_stage(dt_ms);
     take_verdict(dt_ms);
     take_update(dt_ms);
+    take_mail();
     s_dirty = ui::manager().current()->tick(dt_ms, s_seen) || s_dirty;
     if (ui::manager().at() != was_on) {
         s_wait_fresh = true;
         s_fresh_from_ms = now_ms() + kFreshPressMs;
         s_touched_ms = now_ms();
     }
+    s_enrolling.store(ui::manager().at() == ui::ScreenId::Capture, std::memory_order_release);
     if (!s_dirty) {
         return;
     }
@@ -462,11 +550,7 @@ bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *na
 
 bool ui_kiosk_take_people_request(void)
 {
-    if (!s_ready || !ui::people().wanted) {
-        return false;
-    }
-    ui::people().wanted = false;
-    return true;
+    return s_ready && ui::people().wanted.exchange(false);
 }
 
 void ui_kiosk_refresh_people(void)
@@ -568,7 +652,7 @@ void ui_kiosk_wifi_forgotten(bool forgotten)
 
 bool ui_kiosk_enrolling(void)
 {
-    return s_ready && ui::manager().at() == ui::ScreenId::Capture;
+    return s_enrolling.load(std::memory_order_acquire);
 }
 
 bool ui_kiosk_enrol_complete(void)
@@ -601,12 +685,15 @@ void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count)
     if (!s_ready || facts == NULL) {
         return;
     }
-    const int kept = count < UI_KIOSK_FACTS ? count : UI_KIOSK_FACTS;
-    ui::facts().count = kept > 0 ? kept : 0;
-    if (kept > 0) {
-        memcpy(ui::facts().row, facts, sizeof(ui_kiosk_fact_t) * (size_t)kept);
-    }
-    s_dirty = true;
+    const int kept = count < 0 ? 0 : (count < UI_KIOSK_FACTS ? count : UI_KIOSK_FACTS);
+    s_facts_box.edit([&](ui::Facts &held) {
+        memset(&held, 0, sizeof(held));
+        held.count = kept;
+        for (int i = 0; i < kept; ++i) {
+            held.row[i].kind = facts[i].kind;
+            strlcpy(held.row[i].value, facts[i].value, sizeof(held.row[i].value));
+        }
+    });
 }
 
 void ui_kiosk_set_recognition(bool on)
@@ -622,10 +709,18 @@ void ui_kiosk_set_net(const ui_kiosk_net_t *net)
     if (!s_ready || net == NULL) {
         return;
     }
-    if (memcmp(&ui::net(), net, sizeof(*net)) != 0) {
-        ui::net() = *net;
-        s_dirty = true;
-    }
+    s_net_box.edit([&](ui_kiosk_net_t &held) {
+        // The fan draws bands, so a signal that stays inside one is not worth a repaint.
+        const bool same_band = held.joined && net->joined &&
+                               ui::signal_level(held.rssi_dbm) == ui::signal_level(net->rssi_dbm);
+        const int rssi_dbm = same_band ? held.rssi_dbm : net->rssi_dbm;
+        memset(&held, 0, sizeof(held));
+        held.joined = net->joined;
+        strlcpy(held.ssid, net->ssid, sizeof(held.ssid));
+        held.rssi_dbm = rssi_dbm;
+        held.broker = net->broker;
+        held.clock_trusted = net->clock_trusted;
+    });
 }
 
 void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const char *claim)
@@ -633,15 +728,15 @@ void ui_kiosk_set_ticket(ui_kiosk_ticket_t state, const char *device_id, const c
     if (!s_ready) {
         return;
     }
-    ui::Ticket &held = ui::ticket();
-    held.state = state;
-    if (device_id != nullptr) {
-        strlcpy(held.device_id, device_id, sizeof(held.device_id));
-    }
-    if (claim != nullptr) {
-        strlcpy(held.claim, claim, sizeof(held.claim));
-    }
-    s_dirty = true;
+    s_ticket_box.edit([&](ui::Ticket &held) {
+        held.state = state;
+        if (device_id != nullptr) {
+            strlcpy(held.device_id, device_id, sizeof(held.device_id));
+        }
+        if (claim != nullptr) {
+            strlcpy(held.claim, claim, sizeof(held.claim));
+        }
+    });
 }
 
 void ui_kiosk_set_update(ui_kiosk_update_t state, uint8_t percent, const char *version,
@@ -744,28 +839,28 @@ void ui_kiosk_set_pending(const ui_kiosk_pending_t *rows, int count, int first, 
     if (!s_ready) {
         return;
     }
-    const int kept = count < UI_KIOSK_PENDING_ROWS ? count : UI_KIOSK_PENDING_ROWS;
-    ui::pending().count = kept > 0 ? kept : 0;
-    ui::pending().first = first > 0 ? first : 0;
-    ui::pending().total = total > 0 ? total : 0;
-    if (rows != NULL && kept > 0) {
-        memcpy(ui::pending().row, rows, sizeof(ui_kiosk_pending_t) * (size_t)kept);
-    }
-    s_dirty = true;
+    const int kept = rows == NULL || count < 0 ? 0 : (count < UI_KIOSK_PENDING_ROWS ? count : UI_KIOSK_PENDING_ROWS);
+    s_pending_box.edit([&](PendingPage &held) {
+        memset(&held, 0, sizeof(held));
+        held.count = kept;
+        held.first = first > 0 ? first : 0;
+        held.total = total > 0 ? total : 0;
+        for (int i = 0; i < kept; ++i) {
+            held.row[i].employee_id = rows[i].employee_id;
+            strlcpy(held.row[i].name, rows[i].name, sizeof(held.row[i].name));
+            held.row[i].retake = rows[i].retake;
+        }
+    });
 }
 
 int ui_kiosk_pending_first(void)
 {
-    return s_ready ? ui::pending().asked : 0;
+    return s_ready ? ui::pending().asked.load() : 0;
 }
 
 bool ui_kiosk_take_pending_request(void)
 {
-    if (!s_ready || !ui::pending().wanted) {
-        return false;
-    }
-    ui::pending().wanted = false;
-    return true;
+    return s_ready && ui::pending().wanted.exchange(false);
 }
 
 void ui_kiosk_shown(uint32_t serial)

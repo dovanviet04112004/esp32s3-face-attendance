@@ -657,7 +657,7 @@ static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
     return false;
 }
 
-// ui_task and sync_task both offer the list, so the rows are built on the caller's stack.
+// Only sync_task reads and writes s_pending; the screen gets a copy (KEHOACH 5.3).
 static void offer_pending(void)
 {
     ui_kiosk_pending_t shown[UI_KIOSK_PENDING_ROWS];
@@ -1330,6 +1330,9 @@ static void sync_task(void *arg)
         }
         settle_this_build(wiring, esp_timer_get_time() / 1000);
         take_wifi();
+        if (ui_kiosk_take_pending_request()) {
+            offer_pending();
+        }
         take_commands(wiring, door);
         take_roster(wiring);
         take_events(wiring);
@@ -2170,9 +2173,6 @@ static void ui_task(void *arg)
         take_language();
         if (ui_kiosk_take_people_request()) {
             show_people();
-        }
-        if (ui_kiosk_take_pending_request()) {
-            offer_pending();
         }
         uint32_t employee_id = 0;
         uint16_t template_idx = 0;

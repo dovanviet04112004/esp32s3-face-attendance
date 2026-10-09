@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <atomic>
+
 #include <stdint.h>
 
 #include "app_events.h"
@@ -113,6 +115,9 @@ Restart &vision_reset() noexcept;
 /** Where the radio stands, as the settings row shows it. */
 ui_kiosk_net_t &net() noexcept;
 
+/** The bars of a phone's Wi-Fi fan for a signal, 1 to 4 (KEHOACH 7.6). */
+int signal_level(int rssi_dbm) noexcept;
+
 /** Where the kiosk stands with the server, and the id an admin matches it by. */
 struct Ticket {
     ui_kiosk_ticket_t state;
@@ -151,7 +156,7 @@ bool &recognition() noexcept;
 
 /** What the people screen shows, handed down by main (KEHOACH 4.5.4 rule 2). */
 struct People {
-    bool wanted;
+    std::atomic<bool> wanted;             // any task may ask, ui_task answers
     int count;
     int first;                            // where the rows held start in the whole table
     int total;
@@ -163,11 +168,11 @@ People &people() noexcept;
 
 /** The employees the server assigned but nobody has enrolled yet (KEHOACH 7.5). */
 struct Pending {
-    bool wanted;
+    std::atomic<bool> wanted;             // ui_task asks, sync_task answers
     int count;
     int first;                            // where the rows held start in the whole list
     int total;
-    int asked;                            // the first row the screen wants next
+    std::atomic<int> asked;               // the first row the screen wants next
     ui_kiosk_pending_t row[UI_KIOSK_PENDING_ROWS];
 };
 

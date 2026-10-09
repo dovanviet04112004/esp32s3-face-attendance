@@ -10,6 +10,18 @@
 
 namespace ui {
 
+// Bands, not decibels: the reader already knows this shape from a phone.
+int signal_level(int rssi_dbm) noexcept
+{
+    if (rssi_dbm >= -55) {
+        return 4;
+    }
+    if (rssi_dbm >= -67) {
+        return 3;
+    }
+    return rssi_dbm >= -78 ? 2 : 1;
+}
+
 namespace {
 
 using theme::Font;
@@ -211,18 +223,6 @@ void clock_text(char *out, size_t cap)
     struct tm parts;
     localtime_r(&now, &parts);
     snprintf(out, cap, "%02d:%02d", parts.tm_hour, parts.tm_min);
-}
-
-// Bands, not decibels: the reader already knows this shape from a phone.
-int signal_level(int rssi_dbm)
-{
-    if (rssi_dbm >= -55) {
-        return 4;
-    }
-    if (rssi_dbm >= -67) {
-        return 3;
-    }
-    return rssi_dbm >= -78 ? 2 : 1;
 }
 
 // Bars say the radio holds a network; the mark beside them says the broker does not (KEHOACH 4.5.5h.1).
@@ -617,8 +617,9 @@ public:
     {
         const bool on_menu = inside(x, y, APP_LCD_H_RES - kMenuBox, 0, kMenuBox, theme::kBarH);
         if (down) {
+            const bool was = held_;
             held_ = on_menu;
-            return true;
+            return held_ != was;
         }
         const bool fire = held_ && on_menu;
         held_ = false;
@@ -734,8 +735,9 @@ public:
     {
         const int hit = row_at(x, y);
         if (down) {
+            const int was = held_;
             held_ = hit;
-            return true;
+            return held_ != was;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
@@ -802,18 +804,15 @@ public:
     {
         // A drag stays with the slider it began on, wherever the finger drifts.
         if (down && (held_ == kBright || held_ == kVolume)) {
-            drag(held_, x);
-            return true;
+            return drag(held_, x);
         }
         if (down && on_slider(x, y, kBright)) {
-            drag(kBright, x);
             held_ = kBright;
-            return true;
+            return drag(kBright, x);
         }
         if (down && on_slider(x, y, kVolume)) {
-            drag(kVolume, x);
             held_ = kVolume;
-            return true;
+            return drag(kVolume, x);
         }
         if (down) {
             held_ = row_at(x, y);
@@ -932,14 +931,20 @@ private:
         language_changed() = true;
     }
 
-    static void drag(int which, int x) noexcept
+    // Only a level that moved is worth a repaint: each one rewrites the whole panel.
+    static bool drag(int which, int x) noexcept
     {
         Level &level = which == kBright ? s_brightness : s_volume;
         const int percent = widgets::slider_percent(x, theme::kGutter, theme::kContentW);
         const int floor = which == kBright ? CONFIG_UI_MIN_BRIGHTNESS : 0;
-        level.percent = (uint8_t)(percent < floor ? floor : percent);
+        const uint8_t next = (uint8_t)(percent < floor ? floor : percent);
+        if (next == level.percent) {
+            return false;
+        }
+        level.percent = next;
         level.changed = true;
         level.settled = false;
+        return true;
     }
 
     // The hardware hears every touch, NVS hears only the last (KEHOACH 4.5.5h.4).
@@ -962,8 +967,9 @@ public:
     {
         const bool hit = widgets::on_back(x, y);
         if (down) {
+            const int was = held_;
             held_ = hit;
-            return true;
+            return held_ != was;
         }
         const bool fire = held_ && hit;
         held_ = false;
@@ -1020,8 +1026,9 @@ public:
     {
         const int hit = widgets::on_back(x, y) ? kBack : pager().hit(x, y);
         if (down) {
+            const int was = held_;
             held_ = hit;
-            return true;
+            return held_ != was;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
@@ -1095,8 +1102,9 @@ public:
         const bool on_right = failed_ && inside(x, y, theme::kGutter + half + theme::kGapM, kFootY,
                                                 half, theme::kButtonH);
         if (down) {
+            const int was = held_;
             held_ = on_left ? 1 : (on_right ? 2 : 0);
-            return true;
+            return held_ != was;
         }
         const int fired = (held_ == 1 && on_left) ? 1 : ((held_ == 2 && on_right) ? 2 : 0);
         held_ = 0;
@@ -1446,8 +1454,9 @@ public:
     {
         const int hit = widgets::on_back(x, y) ? kBack : pager().hit(x, y);
         if (down) {
+            const int was = held_;
             held_ = hit == kBack || hit == kPrev || hit == kNext ? hit : kNothing;
-            return true;
+            return held_ != was;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
@@ -1543,8 +1552,9 @@ public:
     {
         const int hit = hit_at(x, y);
         if (down) {
+            const int was = held_;
             held_ = hit;
-            return true;
+            return held_ != was;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
