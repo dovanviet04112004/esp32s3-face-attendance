@@ -1484,8 +1484,9 @@ mặt thật vẫn mang mạch thật, nên đòn màn hình vẫn do model mộ
 | Model | **không có**; GREEN, CHROM, POS viết lại từ bài báo gốc | không trọng số, không train; thứ duy nhất học từ dữ liệu là một ngưỡng SNR |
 | Vùng da | trán và hai má, đặt theo 5 landmark của nhánh detect; giữ nguyên giữa hai lần dò, 270 ms dò lại một lần như board | đặt theo hộp thì lệch khi đầu xoay; dò mỗi khung là thứ board không làm được |
 | Mỗi khung | trung bình R, G, B của từng vùng — ba số một vùng, khung bỏ đi | board lấy được ở luồng preview 14,18 fps, không cần `ai_task` |
-| Tín hiệu | trong 0,7–4 Hz: SNR là năng lượng quanh đỉnh và hoạ âm bậc hai chia phần còn lại, khung ±0,1 Hz nhưng không hẹp hơn thuỳ chính ±2/T của cửa sổ Hann; nhịp là đỉnh nội suy parabol | chỉ cần trung bình và FFT thực, thứ esp-dsp có sẵn, nên bản C sau này kiểm được bằng golden. Khung cố định ±0,1 Hz đếm chính mạch của cửa sổ ngắn sang phía nhiễu: sóng sạch 8 s chỉ còn 1,6–5,6 dB |
-| Đối chiếu | POS của rPPG-Toolbox chạy ngoài repo trên cùng video (§1.4) | không bộ video nào có nhịp tim đáp án; hai bản cài đặt độc lập ra cùng nhịp thì code đúng |
+| Lọc | Butterworth bậc 1, dải 0,75–3 Hz (45–180 bpm) — **một biquad**, chạy xuôi rồi ngược trên cửa sổ | dải và bậc của chính POS trong rPPG-Toolbox. Sườn thoải dìm cử động và nhịp thở sát mép dưới; bộ cắt thẳng 0,7–4 Hz giữ chúng nguyên vẹn nên đỉnh giả ~50 bpm thắng mạch (`measurements/rppg` §1). esp-dsp có sẵn biquad |
+| Tín hiệu | SNR là năng lượng quanh đỉnh và hoạ âm bậc hai chia phần còn lại của dải, khung ±0,1 Hz nhưng không hẹp hơn thuỳ chính ±2/T của cửa sổ Hann; nhịp là đỉnh nội suy parabol | chỉ cần trung bình và FFT thực, nên bản C sau này kiểm được bằng golden. Khung cố định ±0,1 Hz đếm chính mạch của cửa sổ ngắn sang phía nhiễu: sóng sạch 8 s chỉ còn 1,6–5,6 dB |
+| Đối chiếu | POS của rPPG-Toolbox (commit `b7500b84`) chạy ngoài repo trên cùng cửa sổ (§1.4) | không bộ video nào có nhịp tim đáp án; hai bản cài đặt độc lập ra cùng nhịp thì code đúng. Đạt 95,8% cửa sổ 6 s lệch ≤ 3 bpm; lõi POS trùng tuyệt đối khi qua cùng bộ lọc |
 
 **Đường board là mô phỏng, không thay được board.** Mỗi video đi hai đường: nguyên bản, và đường
 board — mặt thu về 100 px (thêm 80 và 120 px, tức 0,6 / 0,48 / 0,4 m theo `≈ 47,7 / d`), cộng nhiễu
@@ -1513,7 +1514,7 @@ thoại đã nén H.264 và cầm tay không đủ để kết luận; bước k
 2. Firmware không đặt cân bằng trắng nên OV5640 để AWB tự động; CHROM và POS đọc sắc độ, nên AWB
    phải khoá trong cửa sổ.
 3. Phơi sáng đã theo bội 10 ms, nhưng phần nhấp nháy 100 Hz còn sót gập về |100 − 7 × 14,186| ≈ 0,70
-   Hz, sát mép dưới dải mạch; một vùng tường làm đối chứng phải không có đỉnh.
+   Hz, ngay dưới mép 0,75 Hz mà bộ lọc bậc 1 chỉ giảm nhẹ; một vùng tường làm đối chứng phải không có đỉnh.
 4. Mỗi lượt ghi bản chấm công xuống flash làm rơi một khung (đo 18/09), nên chuỗi phải mang thời
    điểm của từng khung, không suy từ số thứ tự.
 5. Một lượt quẹt bây giờ cho kết quả sau khoảng 1,6 s, còn cửa sổ đủ dài có thể là 4–6 s. Chọn chỉ
