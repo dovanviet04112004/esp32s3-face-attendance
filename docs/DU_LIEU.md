@@ -291,7 +291,7 @@ tấn công đều chấm ở chính ngưỡng ấy nên không cần chia. Sinh
 
 ## 5. Cái gì được kiểm tự động
 
-`ml/tests/` — 112 test, chạy bằng `uv run pytest`.
+`ml/tests/` — 356 test, chạy bằng `make ml-test`.
 
 | File test | Chốt điều gì |
 |---|---|
@@ -325,18 +325,17 @@ INT8 phải calibrate bằng ảnh dataset — khác phân bố cảm biến, v�
 ## 7. Lệnh tái lập
 
 ```bash
-cd ml
-./scripts/00_fetch_raw.sh          # raw/      — cần HF_TOKEN trong ml/.env
-./scripts/01_prepare_interim.sh    # interim/  — chạy vài giờ, dừng giữa chừng chạy lại được
-./scripts/02_make_splits.sh        # splits/   — vài phút
+make data-fetch      # raw/      — cần HF_TOKEN trong ml/.env
+make data-interim    # interim/  — chạy vài giờ, dừng giữa chừng chạy lại được
+make data-splits     # splits/   — vài phút, gồm cả rppg/v1
 ```
 
-Cả ba script bỏ qua phần đã xong, nên chạy lại không mất công. `01` thêm `--force` thì xoá
+Cả ba bỏ qua phần đã xong, nên chạy lại không mất công. `make data-interim ARGS=--force` thì xoá
 sạch đầu ra rồi làm lại; xoá là bắt buộc vì lần chạy sau có thể sinh ít shard hơn lần trước,
 và shard thừa còn sót lại sẽ bị loader đọc như dữ liệu thật.
 
 Kiểm mà không tải — cũng là cách dựng lại symlink sau khi clone:
 
 ```bash
-./scripts/00_fetch_raw.sh --verify
+make data-fetch ARGS=--verify
 ```

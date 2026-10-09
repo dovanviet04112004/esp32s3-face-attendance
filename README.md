@@ -45,14 +45,20 @@ PCF8574 cho các đường điều khiển chậm. Bảng đấu nối từng ch
 
 ## Lệnh hay dùng
 
+Mọi lệnh đi qua `Makefile` ở gốc, file duy nhất. Lệnh chưa có target thì thêm target rồi mới chạy.
+
 ```bash
-make help          # liệt kê toàn bộ target
-make gen           # sinh DTO TypeScript + gen_payload.h từ contracts/schema
-make lint          # check_comments + check_layers + ruff + eslint
-make train-det     # train nhánh detection
-make fw-dev        # build firmware profile dev
-make flash         # nạp và mở monitor
-make up            # dựng hạ tầng docker
+make help                    # liệt kê toàn bộ target, theo nhóm
+make ml-sync                 # venv ml/ đủ extra (TORCH=cpu trên máy không GPU)
+make gen                     # sinh DTO TypeScript + header firmware từ contracts/
+make lint                    # mọi kiểm tra tĩnh CI chạy: tools/ và ruff
+make ml-test                 # pytest của ml/
+make train-det ARGS="<config> key=value"
+make rppg                    # chia split, trích chuỗi màu, chấm liveness rPPG
+make usb-list                # board trên USB; make usb-attach BUSID=<id> gắn vào WSL
+make fw-dev                  # build firmware profile dev
+make flash PORT=/dev/ttyACM0 # nạp và mở monitor
+make up                      # dựng hạ tầng docker
 ```
 
 ## Trạng thái
