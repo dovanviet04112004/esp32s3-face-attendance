@@ -54,7 +54,6 @@ make gen                     # sinh DTO TypeScript + header firmware từ contra
 make lint                    # mọi kiểm tra tĩnh CI chạy: tools/ và ruff
 make ml-test                 # pytest của ml/
 make train-det ARGS="<config> key=value"
-make rppg                    # chia split, trích chuỗi màu, chấm liveness rPPG
 make usb-list                # board trên USB; make usb-attach BUSID=<id> gắn vào WSL
 make fw-dev                  # build firmware profile dev
 make flash PORT=/dev/ttyACM0 # nạp và mở monitor

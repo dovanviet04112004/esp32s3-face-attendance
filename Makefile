@@ -4,7 +4,6 @@ SHELL := /bin/bash
         gen check lint fmt typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack \
-        rppg rppg-split rppg-traces rppg-eval \
         idf fw-fresh-secrets fw-dev fw-bench fw-prod fw-size flash monitor \
         usb-list usb-attach usb-detach \
         be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
@@ -118,18 +117,6 @@ golden: ## Golden vectors of the three branches into contracts/golden/
 
 pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 	cd ml && ./scripts/50_pack_and_flash.sh $(if $(PORT),--port $(PORT))
-
-##@ rPPG on PC (KEHOACH 3)
-rppg: rppg-split rppg-traces rppg-eval ## The whole measurement, in order
-
-rppg-split: ## Halve the UniqueData live clips by worker into splits/rppg/v1
-	cd ml && ./scripts/02_make_splits.sh rppg
-
-rppg-traces: ## Colour traces of every clip on all four paths (ARGS=--overwrite)
-	cd ml && $(ML_PY) -m facepipe.tasks.rppg.traces $(ARGS)
-
-rppg-eval: ## Liveness from pulse SNR into artifacts/rppg/eval/<time>_<sha>/
-	cd ml && $(ML_PY) -m facepipe.tasks.rppg.eval $(ARGS)
 
 ##@ Firmware (source $IDF_PATH/export.sh first; PORT=/dev/ttyACM0 picks the port)
 idf:
