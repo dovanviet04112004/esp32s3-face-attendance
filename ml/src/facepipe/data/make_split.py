@@ -27,6 +27,7 @@ TASK_VERSIONS = {
     "antispoof": "v2_upstream_lcc_synth",
     "recognition": "v1_identity_disjoint",
     "device": "v1",
+    "rppg": "v1",
 }
 
 
@@ -149,6 +150,21 @@ def build_identity_disjoint(
     return dict(zip(names, parts, strict=True))
 
 
+def build_rppg(unique_root: Path, seed: int) -> dict[str, list[str]]:
+    """UniqueData live clips halved by worker, so no one sits on both sides (KEHOACH 3).
+
+    Attacks are not split: the threshold is read off dev live windows alone.
+    """
+    from facepipe.tasks.rppg.data import unique_clips
+
+    live = [clip for clip in unique_clips(unique_root) if clip.kind == "live"]
+    dev_people, test_people = partition([clip.person for clip in live], (0.5, 0.5), seed)
+    return {
+        "dev_live.txt": sorted(clip.name for clip in live if clip.person in dev_people),
+        "test_live.txt": sorted(clip.name for clip in live if clip.person in test_people),
+    }
+
+
 def build_device(
     manifest: Path, seed: int, calib_per_branch: int = CALIB_PER_BRANCH
 ) -> dict[str, list[str]]:
@@ -268,6 +284,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         rule = f"identity-disjoint, seed={args.seed}, ti le 90/10 theo person_id"
         disjoint = [("train_ids.txt", "val_ids.txt")]
+    elif args.task == "rppg":
+        parts = build_rppg(args.source, args.seed)
+        rule = (
+            f"clip nguoi that UniqueData chia doi theo worker_id, seed={args.seed}; "
+            "clip tan cong khong chia, cham het o nguong lay tu dev"
+        )
+        disjoint = [("dev_live.txt", "test_live.txt")]
     else:
         parts = build_device(args.source, args.seed, args.calib_per_branch)
         rule = (
