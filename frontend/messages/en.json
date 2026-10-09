@@ -2512,6 +2512,11 @@
     "home": "Go to home",
     "reference": "Reference: {digest}"
   },
+  "notFound": {
+    "title": "This page does not exist",
+    "lead": "The link is wrong or the page has moved. Go home to carry on.",
+    "home": "Go to home"
+  },
   "importFaults": {
     "FILE_EMPTY": "The file is empty.",
     "COLUMN_UNKNOWN": "This column is not in the template.",

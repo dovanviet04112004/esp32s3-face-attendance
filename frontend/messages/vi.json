@@ -2512,6 +2512,11 @@
     "home": "Về trang chủ",
     "reference": "Mã tham chiếu: {digest}"
   },
+  "notFound": {
+    "title": "Không có trang này",
+    "lead": "Đường dẫn sai hoặc trang đã chuyển chỗ. Về trang chủ để đi tiếp.",
+    "home": "Về trang chủ"
+  },
   "importFaults": {
     "FILE_EMPTY": "Tệp trống.",
     "COLUMN_UNKNOWN": "Cột này không có trong file mẫu.",
