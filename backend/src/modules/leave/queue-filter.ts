@@ -14,7 +14,7 @@ export const THE_DESK: Role[] = ["ADMIN", "HR"];
 
 /** Who decides each desk queue. The lists, the badge and the notices read this one table. */
 export const QUEUE_DESKS: Record<
-  "certificates" | "profileChanges" | "disputes" | "dependents" | "advancesToDecide" | "advancesToPay",
+  "certificates" | "profileChanges" | "disputes" | "dependents" | "advancesToDecide" | "advancesToPay" | "punches",
   Role[]
 > = {
   certificates: ["ADMIN", "HR", "PAYROLL"],
@@ -23,6 +23,7 @@ export const QUEUE_DESKS: Record<
   dependents: ["ADMIN", "PAYROLL"],
   advancesToDecide: THE_DESK,
   advancesToPay: ["ADMIN", "PAYROLL"],
+  punches: ["ADMIN", "HR"],
 };
 
 export const PERSON_VIEW = {

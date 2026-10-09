@@ -1,4 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, AttendanceRecord as Punch, PunchHold } from "@prisma/client";
 
@@ -6,13 +14,17 @@ import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AuditService } from "../audit/audit.service.js";
 import { DevicesService, EARLIEST_BELIEVABLE_MS } from "../devices/devices.service.js";
+import { filedBetween, PERSON_VIEW, personWhere, QUEUE_DESKS, waitedDays } from "../leave/queue-filter.js";
+import { AudienceService } from "../notifications/audience.service.js";
 import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
-import type { ListAttendanceDto } from "./dto/attendance.dto.js";
+import { PUNCH_ID, type DecidePunchesDto, type ListAttendanceDto, type ListHeldDto } from "./dto/attendance.dto.js";
 
 const FOREIGN_KEY_VIOLATION = "P2003";
 const kDayMs = 86_400_000;
@@ -26,6 +38,16 @@ export function isQuestionable(ts: Date, receivedAt: Date): boolean {
 
 /** What became of one punch; a held one is stored, and counts only once HR accepts it (KEHOACH 9.8). */
 export type PunchOutcome = "stored" | "held" | "duplicate" | "unknown-employee" | "while-revoked" | "not-on-device";
+
+/** A held punch as the review queue lists it, with whose it is and how long it has waited. */
+export type HeldPunch = Prisma.AttendanceRecordGetPayload<{ include: { employee: typeof PERSON_VIEW } }> & {
+  waitedDays: number;
+};
+
+export interface DecidePunchesResult {
+  decided: string[];
+  skipped: { id: string; code: string }[];
+}
 
 /** How many punches a person's range holds, and how many of them carry each flag. */
 export interface PunchCounts {
@@ -56,8 +78,118 @@ export class AttendanceService {
     private readonly devices: DevicesService,
     private readonly scope: ScopeService,
     private readonly timesheet: TimesheetService,
+    private readonly audience: AudienceService,
+    private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** The held punches waiting on this viewer, oldest receipt first unless asked otherwise (KEHOACH 9.8). */
+  async held(viewer: Viewer, query: ListHeldDto): Promise<Page<HeldPunch>> {
+    const mine = this.audience.punchesWaitingOn(viewer);
+    if (mine === null) {
+      return { rows: [], total: 0, totalIsExact: true, next: null };
+    }
+    const person = await personWhere(this.db, query);
+    const where: Prisma.AttendanceRecordWhereInput = {
+      AND: [
+        mine,
+        filedBetween("receivedAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+        ...(person ? [{ employee: person }] : []),
+      ],
+    };
+    const order = query.order ?? "asc";
+    const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const at = after ? new Date(after.sortValue) : null;
+    if (at !== null && Number.isNaN(at.getTime())) {
+      throw new BadRequestException("CURSOR_INVALID");
+    }
+    const past = order === "asc" ? "gt" : "lt";
+    const resumed: Prisma.AttendanceRecordWhereInput =
+      at && after
+        ? {
+            AND: [
+              where,
+              { receivedAt: { [order === "asc" ? "gte" : "lte"]: at } },
+              { OR: [{ receivedAt: { [past]: at } }, { receivedAt: at, id: { [past]: BigInt(after.id) } }] },
+            ],
+          }
+        : where;
+    const [rows, found] = await this.db.$transaction([
+      this.db.attendanceRecord.findMany({
+        where: resumed,
+        include: { employee: PERSON_VIEW },
+        orderBy: [{ receivedAt: order }, { id: order }],
+        skip: after ? 0 : query.skip,
+        take: query.take,
+      }),
+      this.db.attendanceRecord.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    const now = new Date();
+    return {
+      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.receivedAt ?? row.createdAt, now) })),
+      ...countedTo(found),
+      next: nextCursor(rows, query.take, (row) => row.receivedAt ?? row.createdAt),
+    };
+  }
+
+  /** Let one held punch count, or turn it down for good; a punch that counts builds its day again. */
+  async decide(viewer: Viewer, id: string, approve: boolean, note?: string): Promise<Punch> {
+    if (!QUEUE_DESKS.punches.includes(viewer.role)) {
+      throw new ForbiddenException("HR_ONLY");
+    }
+    const reason = note?.trim() || null;
+    if (!approve && reason === null) {
+      throw new BadRequestException("DECISION_NOTE_REQUIRED");
+    }
+    const held = PUNCH_ID.test(id) ? await this.db.attendanceRecord.findUnique({ where: { id: BigInt(id) } }) : null;
+    if (held === null || held.review === null) {
+      throw new NotFoundException("PUNCH_NOT_FOUND");
+    }
+    refuseOwn(viewer, held.employeeId);
+    const decided = {
+      review: approve ? ("ACCEPTED" as const) : ("REJECTED" as const),
+      reviewedById: viewer.userId,
+      reviewedAt: new Date(),
+      reviewNote: reason,
+    };
+    // Moves the punch out of PENDING only if nobody else has; a second reviewer loses.
+    const claimed = await this.db.attendanceRecord.updateMany({ where: { id: held.id, review: "PENDING" }, data: decided });
+    if (claimed.count !== 1) {
+      throw new ConflictException("PUNCH_ALREADY_DECIDED");
+    }
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: approve ? AUDIT_ACTIONS.PUNCH_ACCEPT : AUDIT_ACTIONS.PUNCH_REJECT,
+      subject: AUDIT_SUBJECTS.PUNCH,
+      subjectId: id,
+      meta: { employeeId: held.employeeId, deviceId: held.deviceId, hold: held.hold, ts: held.ts.toISOString(), note: reason },
+    });
+    const day = localDay(held.ts, this.config.get("APP_TIMEZONE", { infer: true }));
+    if (approve && !held.questionableTime && day < this.timesheet.today()) {
+      await this.timesheet.scheduleRebuild(held.employeeId, day);
+    }
+    return { ...held, ...decided };
+  }
+
+  /** Several at once, each through the rules of one decision; a refused row is reported, not fatal. */
+  async decideMany(viewer: Viewer, body: DecidePunchesDto): Promise<DecidePunchesResult> {
+    if (!body.approve && !body.note?.trim()) {
+      throw new BadRequestException("DECISION_NOTE_REQUIRED");
+    }
+    const result: DecidePunchesResult = { decided: [], skipped: [] };
+    for (const id of new Set(body.ids)) {
+      try {
+        await this.decide(viewer, id, body.approve, body.note);
+        result.decided.push(id);
+      } catch (fell) {
+        if (!(fell instanceof HttpException)) {
+          throw fell;
+        }
+        result.skipped.push({ id, code: fell.message });
+      }
+    }
+    return result;
+  }
 
   /** One page of punches, newest first, narrowed by the filters the caller sends. */
   async list(query: ListAttendanceDto, viewer: Viewer): Promise<Page<Punch>> {

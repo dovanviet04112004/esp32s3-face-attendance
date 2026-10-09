@@ -1,8 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
+
+/** A punch id as the API carries it: a BIGINT in decimal. */
+export const PUNCH_ID = /^\d{1,19}$/;
+export const DECIDE_PUNCHES_MAX = 100;
+const NOTE_MAX = 500;
 
 export class ListAttendanceDto extends PaginationDto {
   @ApiPropertyOptional({ description: "Only this employee's punches" })
@@ -172,4 +190,61 @@ export class PunchCountsView {
   @ApiProperty({ example: 4, description: "Of those, stamped by a clock that had not synced" }) clockUnsynced!: number;
   @ApiProperty({ example: 1, description: "Questionable punches heard inside the range" }) questionableTime!: number;
   @ApiProperty({ example: 2, description: "Of the punches captured inside the range, those waiting for HR" }) held!: number;
+}
+
+/** The punches held for review that wait on the viewer; from and to bound the day the server heard them (KEHOACH 9.8). */
+export class ListHeldDto extends QueueQueryDto {}
+
+export class DecidePunchDto {
+  @ApiProperty({ example: true, description: "True lets the punch count, false turns it down for good" })
+  @IsBoolean()
+  approve!: boolean;
+
+  @ApiPropertyOptional({
+    maxLength: NOTE_MAX,
+    example: "Máy mất mạng cả tuần, lượt thật",
+    description: "Why; required to turn down",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTE_MAX)
+  note?: string;
+}
+
+export class DecidePunchesDto extends DecidePunchDto {
+  @ApiProperty({
+    type: [String],
+    maxItems: DECIDE_PUNCHES_MAX,
+    example: ["1842", "1843"],
+    description: "Punch ids, decimal strings; a repeated id counts once",
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DECIDE_PUNCHES_MAX)
+  @IsString({ each: true })
+  @Matches(PUNCH_ID, { each: true })
+  ids!: string[];
+}
+
+export class HeldPunchView extends PunchView {
+  @ApiProperty({ type: PersonView, description: "Whose punch it is" }) employee!: PersonView;
+  @ApiProperty({ example: 3, description: "Whole days since the server heard it" }) waitedDays!: number;
+}
+
+export class HeldPageView extends PageMeta {
+  @ApiProperty({ type: [HeldPunchView], description: "Oldest receipt first unless asked otherwise" })
+  rows!: HeldPunchView[];
+}
+
+export class PunchSkippedView {
+  @ApiProperty({ example: "1843", description: "Punch id left undecided" }) id!: string;
+  @ApiProperty({ example: "PUNCH_ALREADY_DECIDED", description: "The error code a single decision would have answered" })
+  code!: string;
+}
+
+export class DecidePunchesView {
+  @ApiProperty({ type: [String], example: ["1842"], description: "Punch ids decided, in the order sent" })
+  decided!: string[];
+  @ApiProperty({ type: [PunchSkippedView], description: "Punch ids passed over, each with its reason" })
+  skipped!: PunchSkippedView[];
 }

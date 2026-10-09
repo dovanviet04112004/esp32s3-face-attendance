@@ -16,6 +16,7 @@ export const AUDIT_SUBJECTS = {
   CHECKLIST_TEMPLATE: "checklistTemplate",
   DOCUMENT: "document",
   DEVICE: "device",
+  PUNCH: "punch",
   RELEASE: "release",
   EXPORT: "export",
   ROUTE: "route",
@@ -117,6 +118,9 @@ export const AUDIT_ACTIONS = {
   CERTIFICATE_CANCEL: "certificate.cancel",
   NOTICE_RESOLVE: "notice.resolve",
   CERTIFICATE_READ: "certificate.read",
+
+  PUNCH_ACCEPT: "punch.accept",
+  PUNCH_REJECT: "punch.reject",
 
   PROFILE_ASK: "profile.ask",
   PROFILE_APPROVE: "profile.approve",

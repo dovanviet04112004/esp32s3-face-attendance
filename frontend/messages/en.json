@@ -1511,6 +1511,8 @@
     "PROFILE_FIELD_EMPTY": "A box is still empty. A bank change needs both the bank and the account number.",
     "PROFILE_NOT_YOURS": "This request is not yours.",
     "PROFILE_NO_CHANGE": "The new value matches what the record already holds.",
+    "PUNCH_ALREADY_DECIDED": "Someone has already decided this punch.",
+    "PUNCH_NOT_FOUND": "That held punch could not be found.",
     "REFRESH_REPLAYED": "The session has expired. Sign in again.",
     "RELEASE_EMPTY": "The release file is empty.",
     "RELEASE_NOT_FOUND": "No such release.",

@@ -118,6 +118,7 @@ export interface InboxCounts {
   dependents: number;
   advancesToDecide: number;
   advancesToPay: number;
+  punches: number;
 }
 
 export interface DecideManyResult {
@@ -633,7 +634,8 @@ export class LeaveService {
   /** The numbers on the inbox tabs and the sidebar badge, from the same rules as each list. */
   async counts(viewer: Viewer): Promise<InboxCounts> {
     const take = COUNT_CEILING;
-    const [requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay] =
+    const punchWhere = this.audience.punchesWaitingOn(viewer);
+    const [requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay, punches] =
       await Promise.all([
         this.audience.waitingOn(viewer, "REQUESTS").then((where) => (where ? this.db.request.count({ where, take }) : 0)),
         this.audience.waitingOn(viewer, "DISPUTES").then((where) => (where ? this.db.payslipDispute.count({ where, take }) : 0)),
@@ -648,8 +650,9 @@ export class LeaveService {
         this.audience
           .waitingOn(viewer, "ADVANCES_TO_PAY")
           .then((where) => (where ? this.db.salaryAdvance.count({ where, take }) : 0)),
+        punchWhere ? this.db.attendanceRecord.count({ where: punchWhere, take }) : Promise.resolve(0),
       ]);
-    return { requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay };
+    return { requests, disputes, certificates, profileChanges, dependents, advancesToDecide, advancesToPay, punches };
   }
 
   /** The ledger: every state in the viewer's tree, newest first unless asked otherwise (KEHOACH 9.15). */

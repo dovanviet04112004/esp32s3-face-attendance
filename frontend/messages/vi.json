@@ -1511,6 +1511,8 @@
     "PROFILE_FIELD_EMPTY": "Còn ô chưa điền. Đổi tài khoản phải có cả tên ngân hàng và số tài khoản.",
     "PROFILE_NOT_YOURS": "Đơn này không phải của bạn.",
     "PROFILE_NO_CHANGE": "Giá trị mới trùng với giá trị đang lưu.",
+    "PUNCH_ALREADY_DECIDED": "Lượt chấm công này đã có người duyệt rồi.",
+    "PUNCH_NOT_FOUND": "Không tìm thấy lượt chấm công chờ duyệt này.",
     "REFRESH_REPLAYED": "Phiên đăng nhập đã hết hiệu lực, đăng nhập lại.",
     "RELEASE_EMPTY": "Tệp phát hành rỗng.",
     "RELEASE_NOT_FOUND": "Không tìm thấy bản phát hành này.",

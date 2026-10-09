@@ -483,6 +483,12 @@ export class InboxCountsView {
     description: "Approved advances waiting to be paid out; 0 for a role that does not pay them",
   })
   advancesToPay!: number;
+
+  @ApiProperty({
+    example: 2,
+    description: "Punches held for review before they count; 0 for a role that does not review them",
+  })
+  punches!: number;
 }
 
 export class SkippedView {

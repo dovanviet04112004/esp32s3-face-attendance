@@ -106,6 +106,16 @@ export class AudienceService {
     return waiting[queue as Exclude<InboxQueue, "REQUESTS">] as QueueWhere[Q];
   }
 
+  /** Held punches waiting on this viewer; the queue has no notice items, so it rings no bell (KEHOACH 9.8).
+   *  @ctx any | non-blocking
+   */
+  punchesWaitingOn(viewer: Viewer): Prisma.AttendanceRecordWhereInput | null {
+    if (!QUEUE_DESKS.punches.includes(viewer.role) || isUnlinkedDesk(viewer)) {
+      return null;
+    }
+    return { review: "PENDING", ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }) };
+  }
+
   /** A desk list of waiting rows narrowed to what waits on the viewer; other lists keep the viewer's scope.
    *  @ctx any | the inbox tabs read their rows through this, so the tabs and the bell agree
    */
