@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 
 const DEVICE = "e2e-reg-door";
 const STRANGER = "e2e-reg-thief";
@@ -67,6 +68,20 @@ describe("device registration (e2e)", () => {
 
   async function held(id: string): Promise<{ status: string; tokenHash: string | null } | null> {
     return db.device.findUnique({ where: { id }, select: { status: true, tokenHash: true } });
+  }
+
+  // The machines whose broker session the run asked to close, in order.
+  async function closing(run: () => Promise<request.Response>): Promise<{ res: request.Response; closed: string[] }> {
+    const closed: string[] = [];
+    const spy = mock.method(app.get(MqttService), "closeSession", async (deviceId: string) => {
+      closed.push(deviceId);
+      return true;
+    });
+    try {
+      return { res: await run(), closed };
+    } finally {
+      spy.mock.restore();
+    }
   }
 
   before(async () => {
@@ -151,12 +166,13 @@ describe("device registration (e2e)", () => {
     assert.equal(approved.status, 201, JSON.stringify(approved.body));
     assert.equal(approved.body.claimHash, undefined, "the approval answer leaked the code hash");
 
-    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE);
+    const { res, closed } = await closing(() => register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE));
     assert.equal(res.status, 200);
     const answer = res.body as Answer;
     assert.ok(answer.token, "an approved machine was not given its token");
     assert.equal(claimsOf(answer.token).deviceId, DEVICE, "the token names another machine");
     assert.ok((answer.expiresInDays ?? 0) > 0);
+    assert.deepEqual(closed, [DEVICE], "a session opened with an older ticket outlived the new one");
 
     const row = await held(DEVICE);
     assert.equal(row?.status, "APPROVED");
@@ -164,7 +180,7 @@ describe("device registration (e2e)", () => {
   });
 
   it("sends a machine that asks again while holding a token back for approval", async () => {
-    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap });
+    const { res, closed } = await closing(() => register({ deviceId: DEVICE, bootstrapToken: bootstrap }));
     assert.equal(res.status, 202, "a second ask handed out another token");
     paced(res);
     assert.equal((res.body as Answer).token, undefined);
@@ -173,6 +189,19 @@ describe("device registration (e2e)", () => {
       { status: "PENDING", tokenHash: null },
       "the machine kept its standing although its storage is gone",
     );
+    assert.deepEqual(closed, [DEVICE], "the session of the lost ticket stayed open");
+  });
+
+  it("hands the token only to the machine showing the code a person typed", async () => {
+    assert.equal((await approve(DEVICE, FIRST_CODE)).status, 201);
+    const racer = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, SECOND_CODE);
+    paced(racer);
+    assert.equal((racer.body as Answer).token, undefined, "a caller with another code took the ticket");
+    assert.deepEqual(await held(DEVICE), { status: "APPROVED", tokenHash: null });
+
+    const owner = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, FIRST_CODE);
+    assert.equal(owner.status, 200, "the machine whose code was typed could not collect its ticket");
+    assert.ok((owner.body as Answer).token);
   });
 
   it("takes a revoked machine back into the queue, not straight back in", async () => {

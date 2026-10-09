@@ -158,6 +158,8 @@ export class DevicesService {
           claimFailures: 0,
         },
       });
+      // A session the lost ticket opened would be heard again the moment a person approves (KEHOACH 7.3).
+      await this.broker.closeSession(held.id);
       await this.note(AUDIT_ACTIONS.DEVICE_RESET, held.id, { from: "APPROVED" });
       this.log.warn(`${held.id} registered again while approved, sent back for approval`);
       this.changed(held.id, "PENDING");
@@ -165,7 +167,8 @@ export class DevicesService {
       return waiting;
     }
     if (held.status === "APPROVED") {
-      return this.issue(held, body.fwVersion);
+      // Only the machine showing the code a person typed collects the ticket (KEHOACH 7.3).
+      return held.claimHash !== null && sameSecret(claim, held.claimHash) ? this.issue(held, body.fwVersion) : waiting;
     }
     if (held.status === "REVOKED") {
       await this.db.device.update({
@@ -219,9 +222,12 @@ export class DevicesService {
       data: {
         tokenHash: deviceFingerprint(token),
         prevTokenHash: null,
+        claimHash: null,
         ...(fwVersion ? { fwVersion } : {}),
       },
     });
+    // A session opened with a ticket that has since died is not heard once the machine is back (KEHOACH 7.3).
+    await this.broker.closeSession(device.id);
     this.log.log(`${device.id} collected its token`);
     return this.handed(device.id, token, {});
   }
@@ -358,7 +364,6 @@ export class DevicesService {
         status: "APPROVED",
         approvedAt: now,
         ...(closesSpan ? { readmittedAt: now } : {}),
-        claimHash: null,
         claimFailures: 0,
       },
       select: SHOWN,
