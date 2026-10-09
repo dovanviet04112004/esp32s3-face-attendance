@@ -47,6 +47,21 @@ def test_every_method_reads_72_bpm_from_a_half_percent_pulse(method: str) -> Non
     assert snr > rate_and_snr(skin_series(8.0, 0.0), method)[1] + 5.0
 
 
+def test_a_window_with_no_band_left_for_noise_has_no_snr() -> None:
+    bpm, snr = rate_and_snr(skin_series(2.0, 0.005), "pos")
+    assert np.isfinite(bpm)
+    assert np.isnan(snr)
+
+
+def test_a_band_edge_maximum_on_a_slope_moves_at_most_half_a_bin() -> None:
+    freqs = np.arange(0.0, 5.0, 0.01)
+    power = np.exp(-freqs - 1e-3 * freqs**2)
+    edge = freqs[freqs >= CFG.band_hz[0]][0]
+    bpm, snr = peak_snr(freqs, power, CFG.band_hz, CFG.peak_halfwidth_hz)
+    assert abs(bpm / 60.0 - edge) <= 0.005 + 1e-12
+    assert np.isfinite(snr)
+
+
 @pytest.mark.parametrize("method", ["green", "chrom", "pos"])
 def test_the_pulse_survives_board_noise_and_rgb565(method: str) -> None:
     rng = np.random.default_rng(1)
@@ -216,3 +231,27 @@ def test_threshold_comes_from_dev_live_and_rates_follow_it() -> None:
     assert line["apcer_paper"] == pytest.approx(1 / 3)
     assert gate([line]) == []
     assert auc(np.array([3.0, 4.0]), np.array([1.0, 4.0])) == pytest.approx(0.625)
+
+
+def test_an_unscored_window_is_blocked_when_live_and_held_back_when_an_attack() -> None:
+    def row(kind: str, split: str, snr: float) -> dict:
+        return {
+            "path": "board_100",
+            "method": "pos",
+            "T": 2.0,
+            "kind": kind,
+            "split": split,
+            "snr_db": snr,
+            "clip": "c",
+        }
+
+    rows = [row("live", "dev", s) for s in [5.0, 6.0, 7.0, 8.0, 9.0] * 4]
+    rows += [row("live", "test", s) for s in (np.nan, 8.0)]
+    rows += [row("paper", "attack", s) for s in (np.nan, 9.5)]
+    line = summarise(rows, CFG)[0]
+    assert line["unscored_windows"] == 2
+    assert line["bpcer_test"] == pytest.approx(0.5)
+    assert line["apcer_paper"] == pytest.approx(0.5)
+    assert np.isfinite(line["auc_paper"])
+    rows += [row("live", "dev", np.nan)] * 2
+    assert summarise(rows, CFG)[0]["threshold_db"] == float("-inf")

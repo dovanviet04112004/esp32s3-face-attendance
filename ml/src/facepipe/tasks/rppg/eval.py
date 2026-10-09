@@ -11,6 +11,7 @@ import argparse
 import csv
 import json
 import subprocess
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +82,29 @@ def split_of(name: str, dev: set[str], test: set[str]) -> str:
     return "dev" if name in dev else "test" if name in test else "unsplit"
 
 
+def threshold_for(dev: np.ndarray, target: float) -> float:
+    """SNR blocking `target` of the dev live windows, an unscored (NaN) one counting as blocked."""
+    scored = dev[~np.isnan(dev)]
+    blocked = float(np.isnan(dev).mean())
+    if not len(scored) or blocked >= target:
+        return float("-inf")
+    return float(np.quantile(scored, (target - blocked) / (1.0 - blocked)))
+
+
+def shows_pulse(snr: np.ndarray, threshold: float) -> np.ndarray:
+    """Windows at or above the threshold; an unscored one never is (KEHOACH 3)."""
+    return ~np.isnan(snr) & (snr >= threshold)
+
+
+def ranked(snr: np.ndarray) -> np.ndarray:
+    """SNRs ready to rank, an unscored window below every scored one."""
+    return np.where(np.isnan(snr), -np.inf, snr)
+
+
+def snrs(rows: list[dict], keep: Callable[[dict], bool]) -> np.ndarray:
+    return np.array([r["snr_db"] for r in rows if keep(r)], dtype=np.float64)
+
+
 def summarise(rows: list[dict], cfg: RppgConfig) -> list[dict]:
     """One line per (path, method, T): threshold from dev live, then the rates it gives."""
     groups: dict[tuple[str, str, float], list[dict]] = {}
@@ -88,31 +112,30 @@ def summarise(rows: list[dict], cfg: RppgConfig) -> list[dict]:
         groups.setdefault((row["path"], row["method"], row["T"]), []).append(row)
     out = []
     for (path_name, method, seconds), members in sorted(groups.items()):
-        dev = np.array(
-            [r["snr_db"] for r in members if r["kind"] == "live" and r["split"] == "dev"]
-        )
-        test = np.array(
-            [r["snr_db"] for r in members if r["kind"] == "live" and r["split"] == "test"]
-        )
-        live = np.array([r["snr_db"] for r in members if r["kind"] == "live"])
+        dev = snrs(members, lambda r: r["kind"] == "live" and r["split"] == "dev")
+        test = snrs(members, lambda r: r["kind"] == "live" and r["split"] == "test")
+        live = snrs(members, lambda r: r["kind"] == "live")
         if not len(dev):
             continue
-        threshold = float(np.quantile(dev, cfg.target_bpcer))
+        threshold = threshold_for(dev, cfg.target_bpcer)
         line = {
             "path": path_name,
             "method": method,
             "T": seconds,
             "threshold_db": threshold,
             "live_windows": {"dev": len(dev), "test": len(test)},
-            "bpcer_test": float((test < threshold).mean()) if len(test) else float("nan"),
+            "unscored_windows": int(np.isnan(snrs(members, lambda r: True)).sum()),
+            "bpcer_test": float((~shows_pulse(test, threshold)).mean())
+            if len(test)
+            else float("nan"),
         }
         for kind in ATTACK_KINDS:
-            attack = np.array([r["snr_db"] for r in members if r["kind"] == kind])
+            attack = snrs(members, lambda r, kind=kind: r["kind"] == kind)
             line[f"{kind}_windows"] = len(attack)
             line[f"apcer_{kind}"] = (
-                float((attack >= threshold).mean()) if len(attack) else float("nan")
+                float(shows_pulse(attack, threshold).mean()) if len(attack) else float("nan")
             )
-            line[f"auc_{kind}"] = auc(live, attack)
+            line[f"auc_{kind}"] = auc(ranked(live), ranked(attack))
         out.append(line)
     return out
 
@@ -195,13 +218,16 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps({"summary": summary, "gate_passes": passing}, indent=1), encoding="utf-8"
     )
 
-    print("| path | method | T | thr dB | BPCER test | APCER paper | mask | replay | AUC paper |")
-    print("|---|---|---|---|---|---|---|---|---|")
+    print(
+        "| path | method | T | thr dB | unscored | BPCER test | APCER paper | mask | replay "
+        "| AUC paper |"
+    )
+    print("|---|---|---|---|---|---|---|---|---|---|")
     for line in summary:
         print(
             f"| {line['path']} | {line['method']} | {line['T']:g} | {line['threshold_db']:.2f} | "
-            f"{line['bpcer_test']:.3f} | {line['apcer_paper']:.3f} | {line['apcer_mask']:.3f} | "
-            f"{line['apcer_replay']:.3f} | {line['auc_paper']:.3f} |"
+            f"{line['unscored_windows']} | {line['bpcer_test']:.3f} | {line['apcer_paper']:.3f} | "
+            f"{line['apcer_mask']:.3f} | {line['apcer_replay']:.3f} | {line['auc_paper']:.3f} |"
         )
     verdict = "PASS" if passing else "FAIL"
     print(f"gate ({GATE_PATH}, T <= {GATE_MAX_T:g} s): {verdict}, {len(passing)} line(s)")

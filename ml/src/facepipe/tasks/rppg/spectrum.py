@@ -26,7 +26,8 @@ def refined_peak(freqs: np.ndarray, power: np.ndarray, index: int) -> float:
         return float(freqs[index])
     left, centre, right = np.log(np.maximum(power[index - 1 : index + 2], 1e-300))
     curve = left - 2.0 * centre + right
-    shift = 0.5 * (left - right) / curve if curve < 0 else 0.0
+    # A band-edge maximum can sit on a slope; a true vertex lies within half a bin.
+    shift = float(np.clip(0.5 * (left - right) / curve, -0.5, 0.5)) if curve < 0 else 0.0
     return float(freqs[index] + shift * (freqs[1] - freqs[0]))
 
 
@@ -37,6 +38,7 @@ def peak_snr(
 
     de Haan & Jeanne 2013 with the peak standing in for the unknown true rate: power
     within `halfwidth` of the peak and of its second harmonic, over the rest of the band.
+    NaN when no rest is left: the window cannot be scored (KEHOACH 3).
     """
     inside = (freqs >= band[0]) & (freqs <= band[1])
     if not inside.any() or power[inside].sum() <= 0:
@@ -47,5 +49,5 @@ def peak_snr(
     signal = power[inside & near].sum()
     noise = power[inside & ~near].sum()
     if noise <= 0:
-        return peak * 60.0, float("inf")
+        return peak * 60.0, float("nan")
     return peak * 60.0, float(10.0 * np.log10(signal / noise))
