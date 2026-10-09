@@ -1,0 +1,37 @@
+# The rPPG measurement on PC (KEHOACH 3, temporal axis). Every number here is a
+# setting of the measurement, not a threshold the board runs.
+
+# The board's detector finishes about every 270 ms; the box is held in between.
+detector_period_s: 0.27
+# Fraction dropped at each end of a clip: players paint a play button over the
+# first frames and leave the last ones black (KEHOACH 1.2).
+edge: 0.2
+
+# Skin regions placed from the eye midpoint, in units of the eye distance;
+# x grows to the right of the image and y downwards.
+regions:
+  forehead: {centre: [0.0, -0.75], size: [1.0, 0.5]}
+  left_cheek: {centre: [-0.55, 0.6], size: [0.5, 0.4]}
+  right_cheek: {centre: [0.55, 0.6], size: [0.5, 0.4]}
+
+# The simulated board path: 14.19 fps, RGB565, and per-pixel noise of 0.3 levels
+# measured on a flat ceiling patch of live1309_005.
+board_fps: 14.186
+board_noise_lsb: 0.3
+# Face widths for 0.6, 0.48 and 0.4 m, from the measured 47.7 / d px.
+board_paths:
+  board_80: {face_px: 80}
+  board_100: {face_px: 100}
+  board_120: {face_px: 120}
+
+band_hz: [0.7, 4.0]
+# Power within this of the peak counts as pulse, widened to the Hann main lobe (2/T)
+# when a short window smears the peak further.
+peak_halfwidth_hz: 0.1
+pos_window_s: 1.6
+methods: [green, chrom, pos]
+windows_s: [2, 3, 4, 6, 8]
+stride_s: 1.0
+nfft: 1024
+target_bpcer: 0.05
+seed: 42

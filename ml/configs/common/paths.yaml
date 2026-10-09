@@ -46,3 +46,8 @@ recognition:
 device:
   ov5640: data/raw/device/ov5640
   manifest: data/raw/device/ov5640/manifest.csv
+
+rppg:
+  # Faces come from antispoof.detector above, the checkpoint the board runs.
+  traces: data/interim/rppg/traces
+  eval: artifacts/rppg/eval
