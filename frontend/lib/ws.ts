@@ -79,6 +79,7 @@ const SPILLS: Record<string, string[]> = {
   "payslip-disputes": ["payslips", "requests"],
   dependents: ["tax-year", "requests"],
   "profile-changes": ["employees", "requests"],
+  attendance: ["requests", "timesheet"],
   advances: ["requests"],
   certificates: ["requests"],
   employees: ["search"],
@@ -140,6 +141,10 @@ function listed(feed: FeedName, body: Record<string, unknown>): feed is ListedFe
 }
 
 function staleKeys(feed: FeedName, body: Record<string, unknown>): string[] {
+  // A punch held for review lands in the inbox, so its counts move too (KEHOACH 9.8).
+  if (feed === "attendance" && body.held === true) {
+    return [...REFRESH.attendance, "requests"];
+  }
   if (feed !== "change" || !Array.isArray(body.resources)) {
     return REFRESH[feed];
   }

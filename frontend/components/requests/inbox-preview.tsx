@@ -7,6 +7,7 @@ import {
   CertificateIcon,
   CheckCircleIcon,
   CheckIcon,
+  ClockCountdownIcon,
   CoinsIcon,
   FileTextIcon,
   HandCoinsIcon,
@@ -40,6 +41,7 @@ const QUEUE_ORDER: Queue[] = [
   "disputes",
   "certificates",
   "profileChanges",
+  "punches",
   "dependents",
   "advancesToDecide",
   "advancesToPay",
@@ -53,6 +55,7 @@ const QUEUE_ICON: Record<Queue, IconType> = {
   dependents: UsersThreeIcon,
   advancesToDecide: HandCoinsIcon,
   advancesToPay: CoinsIcon,
+  punches: ClockCountdownIcon,
 };
 
 const QUEUE_LABEL = {
@@ -63,6 +66,7 @@ const QUEUE_LABEL = {
   dependents: "queueDependents",
   advancesToDecide: "queueAdvances",
   advancesToPay: "queueToPay",
+  punches: "queuePunches",
 } as const satisfies Record<Queue, string>;
 
 interface Decision {

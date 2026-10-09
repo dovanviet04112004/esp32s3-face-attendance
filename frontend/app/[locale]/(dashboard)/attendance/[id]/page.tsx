@@ -35,6 +35,7 @@ interface Punch {
   clockUnsynced: boolean;
   questionableTime?: boolean;
   receivedAt?: string | null;
+  review?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
 }
 
 interface Employee {
@@ -49,6 +50,7 @@ interface Counts {
   capturedOffline: number;
   clockUnsynced: number;
   questionableTime?: number;
+  held?: number;
 }
 
 interface Kiosk {
@@ -56,10 +58,15 @@ interface Kiosk {
   name: string | null;
 }
 
-type Flag = "" | "capturedOffline" | "clockUnsynced" | "questionableTime";
-const FLAGS: Flag[] = ["capturedOffline", "clockUnsynced", "questionableTime"];
+type Flag = "" | "capturedOffline" | "clockUnsynced" | "questionableTime" | "held";
+const FLAGS: Flag[] = ["capturedOffline", "clockUnsynced", "questionableTime", "held"];
 
 const PAGE = 200;
+
+// Held for review or turned down: either way the punch has not counted (KEHOACH 9.8).
+function reviewed(row: { review?: string | null }): boolean {
+  return row.review === "PENDING" || row.review === "REJECTED";
+}
 const MONTH = /^(\d{4})-(\d{2})$/;
 // The kiosk picker is open to the enrolment desk only; everyone else reads the machine id.
 const KIOSK_READERS = new Set(["ADMIN", "HR"]);
@@ -157,8 +164,10 @@ function PunchHistory() {
       header: t("flags"),
       priority: 2,
       cell: (row) =>
-        row.doorOpened || row.capturedOffline || row.clockUnsynced || row.questionableTime ? (
+        row.doorOpened || row.capturedOffline || row.clockUnsynced || row.questionableTime || reviewed(row) ? (
           <span className="flex flex-wrap gap-1">
+            {row.review === "PENDING" ? <StatePill tone="waiting">{t("flagHeld")}</StatePill> : null}
+            {row.review === "REJECTED" ? <StatePill tone="bad">{t("flagRejected")}</StatePill> : null}
             {row.questionableTime ? <StatePill tone="bad">{t("flagQuestionable")}</StatePill> : null}
             {row.clockUnsynced ? <StatePill tone="waiting">{t("flagClock")}</StatePill> : null}
             {row.capturedOffline ? <StatePill>{t("flagOffline")}</StatePill> : null}
@@ -201,12 +210,14 @@ function PunchHistory() {
                 capturedOffline: t("offlinePunches"),
                 clockUnsynced: t("clockOff"),
                 questionableTime: t("questionablePunches"),
+                held: t("heldPunches"),
               },
               counts: {
                 "": counts.data?.all,
                 capturedOffline: counts.data?.capturedOffline,
                 clockUnsynced: counts.data?.clockUnsynced,
                 questionableTime: counts.data?.questionableTime,
+                held: counts.data?.held,
               },
             },
           ]}

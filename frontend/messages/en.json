@@ -599,7 +599,10 @@
     "flagAll": "Every punch",
     "flagQuestionable": "questionable time",
     "questionablePunches": "Questionable-time punches",
-    "heardAt": "Server heard it {at}"
+    "heardAt": "Server heard it {at}",
+    "flagHeld": "awaiting review",
+    "flagRejected": "turned down",
+    "heldPunches": "Punches awaiting review"
   },
   "devices": {
     "title": "Devices",
@@ -1037,7 +1040,28 @@
     "balanceCarriedOut": "Carried into the next year",
     "leftInYear": "{days} of {year} left once approved",
     "filedDone": "Request filed",
-    "calendarDaysAll": "Every calendar day counts, weekends and holidays included."
+    "calendarDaysAll": "Every calendar day counts, weekends and holidays included.",
+    "queuePunches": "Punches",
+    "punchTitle": "Punch awaiting review",
+    "punchWho": "Employee",
+    "punchAt": "Punched at",
+    "punchHeard": "Server heard it",
+    "punchDevice": "Kiosk",
+    "punchHold": "Why it waits",
+    "holdLATE": "Sent too late",
+    "holdCLOSED_PERIOD": "In a locked period",
+    "holdLATELead": "This punch reached the server later than allowed after it was taken, so it has not counted yet.",
+    "holdCLOSED_PERIODLead": "This punch's day is in a locked pay period. Accepting it corrects the timesheet only; the payslip already issued stays as it is, and any difference is settled through a pay dispute.",
+    "punchApprove": "Count it",
+    "punchAcceptedOf": "{name, select, none {Punch counted} other {Counted {name}'s punch}}",
+    "punchRejectedOf": "{name, select, none {Punch turned down} other {Turned down {name}'s punch}}",
+    "punchBulkApprove": "Count {count, number}",
+    "punchBulkReject": "Turn down {count, number}",
+    "punchBulkApproveTitle": "Count the {count, number} chosen punches?",
+    "punchBulkRejectTitle": "Turn down the {count, number} chosen punches?",
+    "punchBulkApproveLead": "Each punch counts as it would if accepted on its own, and its day is built again. Your own punches and ones somebody else has decided are passed over.",
+    "punchBulkRejectLead": "The same reason goes on every punch, and a punch turned down never counts. Your own punches and ones somebody else has decided are passed over.",
+    "punchBulkDone": "Decided {decided, number} {decided, plural, one {punch} other {punches}}{skipped, plural, =0 {} other {, passed over #}}"
   },
   "me": {
     "title": "My page",

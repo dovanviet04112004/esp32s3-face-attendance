@@ -43,6 +43,7 @@ const QUEUE_ORDER: Queue[] = [
   "disputes",
   "certificates",
   "profileChanges",
+  "punches",
   "dependents",
   "advancesToDecide",
   "advancesToPay",
@@ -138,6 +139,17 @@ interface Dependent extends Decision {
   state?: "PENDING" | "ACTIVE" | "REJECTED" | "ENDED";
   decidedAt?: string | null;
   decisionNote?: string | null;
+}
+
+interface HeldPunch {
+  id: string;
+  deviceId: string;
+  ts: string;
+  direction: "IN" | "OUT";
+  receivedAt: string | null;
+  hold: "LATE" | "CLOSED_PERIOD";
+  waitedDays: number;
+  employee: Who;
 }
 
 interface Verdict {
@@ -646,6 +658,172 @@ function RequestsQueue({ params, filtered, openId, onOpened }: QueueProps) {
               }}
             >
               {bulk?.approve ? t("bulkApprove", { count: bulk.ids.length }) : t("bulkReject", { count: bulk?.ids.length ?? 0 })}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+    </>
+  );
+}
+
+// Punches stored but held back from the timesheet until someone at the HR desk decides them (KEHOACH 9.8).
+function PunchesQueue({ params, filtered }: QueueProps) {
+  const t = useTranslations("requests");
+  const a = useTranslations("attendance");
+  const common = useTranslations("common");
+  const errors = useTranslations("errors");
+  const format = useFormatter();
+  const notify = useNotify();
+  const faultOf = useFault();
+  const cache = useQueryClient();
+  const asked = useQueue<HeldPunch>(["attendance", "held"], "/attendance/held", params);
+  const { rows, paging } = usePaging(asked);
+  const [open, setOpen] = useState<HeldPunch | null>(null);
+  const [bulk, setBulk] = useState<{ approve: boolean; ids: string[] } | null>(null);
+  const [reason, setReason] = useState("");
+  const [bulkFault, setBulkFault] = useState<string | null>(null);
+  const stamp = (iso: string | null) => (iso ? format.dateTime(new Date(iso), "medium") : common("empty"));
+
+  const decide = useSheetMutation<Verdict>(
+    "attendance",
+    (value: { approve: boolean; name: string }) =>
+      value.approve ? t("punchAcceptedOf", { name: value.name }) : t("punchRejectedOf", { name: value.name }),
+    (value: Verdict) =>
+      api.post(`/attendance/held/${value.id}/decide`, { approve: value.approve, note: value.note || undefined }),
+    () => setOpen(null),
+  );
+
+  const many = useMutation({
+    mutationFn: async (value: { approve: boolean; ids: string[]; note: string }) =>
+      (await api.post<{ decided: string[]; skipped: { id: string; code: string }[] }>("/attendance/held/decide-many", {
+        ids: value.ids,
+        approve: value.approve,
+        note: value.note || undefined,
+      })).data,
+    onSuccess: (result) => {
+      const first = result.skipped[0]?.code ?? "";
+      notify.done(
+        t("punchBulkDone", { decided: result.decided.length, skipped: result.skipped.length }),
+        first && errors.has(first as "SELF_DECISION") ? errors(first as "SELF_DECISION") : undefined,
+      );
+      setBulk(null);
+      setReason("");
+      void cache.invalidateQueries({ queryKey: ["attendance"] });
+      void cache.invalidateQueries({ queryKey: COUNTS_KEY });
+    },
+    onError: (fell: unknown) => setBulkFault(faultOf(fell)),
+  });
+
+  const columns: Column<HeldPunch>[] = [
+    ...personColumns<HeldPunch>(t("punchWho"), t("department"), common("empty")),
+    {
+      id: "punch",
+      header: t("punchAt"),
+      card: (row) => stamp(row.ts),
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{stamp(row.ts)}</span>,
+    },
+    { id: "hold", header: t("punchHold"), cell: (row) => <StatePill tone="waiting">{t(`hold${row.hold}`)}</StatePill> },
+    {
+      id: "heard",
+      header: t("punchHeard"),
+      priority: 2,
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{stamp(row.receivedAt)}</span>,
+    },
+    { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row) => <Waited count={row.waitedDays} /> },
+  ];
+
+  return (
+    <>
+      <DataTable
+        id="inbox-punches"
+        columns={columns}
+        rows={rows}
+        keyOf={(row) => row.id}
+        pending={asked.isPending}
+        failed={asked.isError}
+        onRetry={() => void asked.refetch()}
+        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        emptyHint={filtered ? t("registerNoMatchHint") : undefined}
+        cardLead="person"
+        cardTrailing="waited"
+        paging={paging}
+        selectable
+        bulk={(chosen) => (
+          <>
+            <Button variant="secondary" size="sm" icon={CheckIcon} onClick={() => setBulk({ approve: true, ids: chosen.map((one) => one.id) })}>
+              {t("punchBulkApprove", { count: chosen.length })}
+            </Button>
+            <Button
+              variant="secondary-destructive"
+              size="sm"
+              icon={XIcon}
+              onClick={() => {
+                setReason("");
+                setBulk({ approve: false, ids: chosen.map((one) => one.id) });
+              }}
+            >
+              {t("punchBulkReject", { count: chosen.length })}
+            </Button>
+          </>
+        )}
+        onRowClick={(row) => {
+          decide.clear();
+          setOpen(row);
+        }}
+      />
+
+      <DecisionSheet
+        key={open?.id ?? "none"}
+        open={open !== null}
+        onOpenChange={(next) => !next && setOpen(null)}
+        person={open?.employee ?? null}
+        title={t("punchTitle")}
+        approveLabel={t("punchApprove")}
+        busy={decide.mutation.isPending}
+        fault={decide.fault}
+        onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee.fullName })}
+        onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee.fullName })}
+      >
+        {open ? (
+          <div className="flex flex-col gap-4">
+            <Facts
+              rows={[
+                [t("punchAt"), `${stamp(open.ts)} · ${a(`direction${open.direction}`)}`],
+                [t("punchDevice"), open.deviceId],
+                [t("punchHeard"), stamp(open.receivedAt)],
+                [t("punchHold"), t(`hold${open.hold}`)],
+              ]}
+            />
+            <p className="text-kumo-subtle">{t(`hold${open.hold}Lead`)}</p>
+          </div>
+        ) : null}
+      </DecisionSheet>
+
+      <LayerDialog.Alert open={bulk !== null} onOpenChange={(next) => !next && setBulk(null)} dismissDisabled={many.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>
+            {bulk?.approve ? t("punchBulkApproveTitle", { count: bulk.ids.length }) : t("punchBulkRejectTitle", { count: bulk?.ids.length ?? 0 })}
+          </LayerDialog.Title>
+          <LayerDialog.Description>{bulk?.approve ? t("punchBulkApproveLead") : t("punchBulkRejectLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            {bulk && !bulk.approve ? (
+              <Textarea label={t("rejectReason")} rows={3} maxLength={500} value={reason} onValueChange={setReason} />
+            ) : null}
+            {bulkFault ? <p className="mt-2 text-kumo-danger">{bulkFault}</p> : null}
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("back")}>
+            <LayerDialog.Actions.Primary
+              variant={bulk?.approve ? "primary" : "destructive"}
+              loading={many.isPending}
+              disabled={bulk !== null && !bulk.approve && reason.trim() === ""}
+              onClick={() => {
+                setBulkFault(null);
+                if (bulk) {
+                  many.mutate({ approve: bulk.approve, ids: bulk.ids, note: reason.trim() });
+                }
+              }}
+            >
+              {bulk?.approve ? t("punchBulkApprove", { count: bulk.ids.length }) : t("punchBulkReject", { count: bulk?.ids.length ?? 0 })}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
@@ -1250,6 +1428,7 @@ function Inbox() {
     dependents: t("queueDependents"),
     advancesToDecide: t("queueAdvances"),
     advancesToPay: t("queueToPay"),
+    punches: t("queuePunches"),
   };
   const visible = QUEUE_ORDER.filter((one) => role !== null && QUEUE_ROLES[one].includes(role));
   const busiest = visible.find((one) => (counts.data?.[one] ?? 0) > 0) ?? visible[0];
@@ -1334,6 +1513,7 @@ function Inbox() {
         {tab === "advancesToDecide" ? <AdvancesQueue params={params} filtered={filtered} paying={false} {...link} /> : null}
         {tab === "advancesToPay" ? <AdvancesQueue params={params} filtered={filtered} paying {...link} /> : null}
         {tab === "dependents" ? <DependentsQueue params={params} filtered={filtered} {...link} /> : null}
+        {tab === "punches" ? <PunchesQueue params={params} filtered={filtered} {...link} /> : null}
       </PageLayout>
     </>
   );

@@ -35,6 +35,7 @@ interface Punch {
   capturedOffline: boolean;
   clockUnsynced: boolean;
   questionableTime?: boolean;
+  review?: "PENDING" | "ACCEPTED" | "REJECTED" | null;
 }
 
 interface PlannedDay {
@@ -428,6 +429,8 @@ function MyAttendance() {
                       ) : null}
                     </span>
                     <span className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      {one.review === "PENDING" ? <StatePill tone="waiting">{a("flagHeld")}</StatePill> : null}
+                      {one.review === "REJECTED" ? <StatePill tone="bad">{a("flagRejected")}</StatePill> : null}
                       {one.questionableTime ? <StatePill tone="bad">{a("flagQuestionable")}</StatePill> : null}
                       {one.clockUnsynced ? <StatePill tone="waiting">{a("flagClock")}</StatePill> : null}
                       {one.capturedOffline ? <StatePill>{a("flagOffline")}</StatePill> : null}

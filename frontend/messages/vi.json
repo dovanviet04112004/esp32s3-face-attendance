@@ -599,7 +599,10 @@
     "flagAll": "Mọi lượt",
     "flagQuestionable": "giờ nghi vấn",
     "questionablePunches": "Lượt giờ nghi vấn",
-    "heardAt": "Máy chủ nhận lúc {at}"
+    "heardAt": "Máy chủ nhận lúc {at}",
+    "flagHeld": "chờ duyệt",
+    "flagRejected": "bị từ chối",
+    "heldPunches": "Lượt chờ duyệt"
   },
   "devices": {
     "title": "Thiết bị",
@@ -1037,7 +1040,28 @@
     "balanceCarriedOut": "Đã chuyển sang năm sau",
     "leftInYear": "còn {days} của {year} sau khi duyệt",
     "filedDone": "Đã gửi đơn",
-    "calendarDaysAll": "Tính mọi ngày lịch, kể cả thứ Bảy, Chủ nhật và ngày lễ."
+    "calendarDaysAll": "Tính mọi ngày lịch, kể cả thứ Bảy, Chủ nhật và ngày lễ.",
+    "queuePunches": "Lượt chấm công",
+    "punchTitle": "Lượt chấm công chờ duyệt",
+    "punchWho": "Nhân viên",
+    "punchAt": "Giờ quẹt",
+    "punchHeard": "Máy chủ nhận",
+    "punchDevice": "Máy",
+    "punchHold": "Lý do giữ",
+    "holdLATE": "Gửi trễ quá hạn",
+    "holdCLOSED_PERIOD": "Rơi vào kỳ đã chốt",
+    "holdLATELead": "Lượt này tới máy chủ trễ hơn hạn cho phép kể từ giờ quẹt, nên chưa tự vào bảng công.",
+    "holdCLOSED_PERIODLead": "Ngày của lượt này thuộc kỳ lương đã chốt. Duyệt chỉ sửa bảng công; phiếu lương đã phát giữ nguyên, khoản chênh nếu có đi qua khiếu nại lương.",
+    "punchApprove": "Cho tính công",
+    "punchAcceptedOf": "{name, select, none {Đã cho tính lượt chấm công} other {Đã cho tính lượt của {name}}}",
+    "punchRejectedOf": "{name, select, none {Đã từ chối lượt chấm công} other {Đã từ chối lượt của {name}}}",
+    "punchBulkApprove": "Cho tính {count, number} lượt",
+    "punchBulkReject": "Từ chối {count, number} lượt",
+    "punchBulkApproveTitle": "Cho tính {count, number} lượt đã chọn?",
+    "punchBulkRejectTitle": "Từ chối {count, number} lượt đã chọn?",
+    "punchBulkApproveLead": "Mỗi lượt được tính như khi duyệt riêng, và ngày của nó được dựng lại. Lượt của chính bạn hoặc lượt đã có người khác quyết sẽ được bỏ qua.",
+    "punchBulkRejectLead": "Cùng một lý do ghi vào từng lượt, và lượt bị từ chối không bao giờ được tính. Lượt của chính bạn hoặc lượt đã có người khác quyết sẽ được bỏ qua.",
+    "punchBulkDone": "Đã quyết {decided, number} lượt{skipped, plural, =0 {} other {, bỏ qua #}}"
   },
   "me": {
     "title": "Trang của tôi",

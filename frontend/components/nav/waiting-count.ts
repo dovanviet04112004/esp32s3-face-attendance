@@ -12,6 +12,7 @@ export const DEPENDENT_DECIDERS: Role[] = ["ADMIN", "PAYROLL"];
 export const DISPUTE_ANSWERERS: Role[] = ["ADMIN", "PAYROLL"];
 export const LETTER_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 export const PROFILE_DESK: Role[] = ["ADMIN", "HR"];
+export const PUNCH_REVIEWERS: Role[] = ["ADMIN", "HR"];
 
 export const WAITING_POLL_MS = 60_000;
 
@@ -23,6 +24,7 @@ export interface InboxCounts {
   dependents: number;
   advancesToDecide: number;
   advancesToPay: number;
+  punches: number;
 }
 
 export type Queue = keyof InboxCounts;
@@ -35,6 +37,7 @@ export const QUEUE_ROLES: Record<Queue, Role[]> = {
   dependents: DEPENDENT_DECIDERS,
   advancesToDecide: ADVANCE_DECIDERS,
   advancesToPay: ADVANCE_PAYERS,
+  punches: PUNCH_REVIEWERS,
 };
 
 // Under "requests", so a decision anywhere in the inbox that drops that key takes the badge with it.
