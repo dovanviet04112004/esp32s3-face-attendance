@@ -14,7 +14,6 @@ constexpr int kTrackH = 8;
 constexpr int kKnobR = 13;
 constexpr int kBackBox = 40;
 constexpr int kBackX = 8;
-constexpr int kKeyRadius = 8;
 constexpr int kLabelFloor = 72;
 constexpr int kSegmentW = 80;
 constexpr int kSegmentH = 32;
@@ -435,7 +434,7 @@ void key_cap(Canvas &to, int x, int y, int w, int h, const char *label, Icon gly
 {
     const uint8_t face = down ? DRV_LCD_ACCENT : (muted ? DRV_LCD_SURFACE : DRV_LCD_SURFACE_HI);
     const uint8_t ink = DRV_LCD_INK;
-    to.card(x, y, w, h, kKeyRadius, face);
+    to.card(x, y, w, h, theme::kKeyRadius, face);
     if (glyph != Icon::None) {
         const int box = h * 2 / 3;
         icon(to, x + (w - box) / 2, y + (h - box) / 2, box, glyph, ink);

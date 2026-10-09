@@ -28,7 +28,8 @@ constexpr int kGapL = 24;
 constexpr int kRadius = 18;
 constexpr int kRadiusS = 12;
 constexpr int kBarH = 40;                 // status strip across the top
-constexpr int kRowH = 64;                 // one settings or list row
+constexpr int kRowH = 58;                 // one settings or list row
+constexpr int kKeyRadius = 8;
 constexpr int kButtonH = 56;
 constexpr int kTouchMin = 44;             // no target smaller than a fingertip
 

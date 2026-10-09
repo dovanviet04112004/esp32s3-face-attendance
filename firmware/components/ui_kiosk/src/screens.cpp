@@ -17,7 +17,6 @@ using theme::Stack;
 
 constexpr int kHeadH = 44;
 constexpr int kContentY = theme::kBarH + kHeadH + theme::kGapL;
-constexpr int kRowH = 58;
 constexpr int kFactH = 42;
 constexpr int kFootY = APP_LCD_V_RES - theme::kButtonH - theme::kGutter;
 constexpr int kListEnd = APP_LCD_V_RES - theme::kGutter;
@@ -40,7 +39,6 @@ constexpr int kBandH = 96;
 constexpr int kBandY = APP_LCD_V_RES - kBandH - theme::kGutter;
 constexpr int kMenuBox = 44;
 constexpr int kRingR = 20;
-constexpr int kKeyRadius = 8;
 
 constexpr int kSamples = 3;
 constexpr int64_t kSampleGapMs = 400;
@@ -275,7 +273,7 @@ struct Pager {
     int cap;                              // rows main hands down at most
 
     // The whole list fits without a pager; past that the pager takes the foot of the panel.
-    bool paged() const noexcept { return total > list_fits(total, kRowH, kListEnd); }
+    bool paged() const noexcept { return total > list_fits(total, theme::kRowH, kListEnd); }
 
     static int caption_y() noexcept { return kFootY - theme::kGapS - theme::line_height(Font::Caption); }
     static int half_w() noexcept { return (theme::kContentW - theme::kGapM) / 2; }
@@ -284,14 +282,14 @@ struct Pager {
     int size() const noexcept
     {
         const int bottom = paged() ? caption_y() - theme::kGapS : kListEnd;
-        const int fits = list_fits(cap, kRowH, bottom);
+        const int fits = list_fits(cap, theme::kRowH, bottom);
         return fits > 0 ? fits : 1;
     }
 
     int rows() const noexcept { return count < size() ? count : size(); }
     bool can_go_back() const noexcept { return first > 0; }
     bool can_go_on() const noexcept { return first + rows() < total; }
-    int row_y(int i) const noexcept { return kContentY + i * kRowH; }
+    int row_y(int i) const noexcept { return kContentY + i * theme::kRowH; }
 
     int hit(int x, int y) const noexcept
     {
@@ -302,7 +300,7 @@ struct Pager {
             return can_go_on() ? kNext : kNothing;
         }
         for (int i = 0; i < rows(); ++i) {
-            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
+            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, theme::kRowH)) {
                 return i;
             }
         }
@@ -468,7 +466,7 @@ void keyboard(Canvas &to, int layer, int held, const char *enter)
                      held == kLayer, true);
     widgets::key_cap(to, space_x(), row4, space_w(), kKeyH, "", widgets::Icon::None,
                      held == kSpace, false);
-    to.card(enter_x(), row4, kEnterKey, kKeyH, kKeyRadius,
+    to.card(enter_x(), row4, kEnterKey, kKeyH, theme::kKeyRadius,
             held == kOk ? DRV_LCD_SURFACE_HI : DRV_LCD_ACCENT);
     to.text(Font::Body, enter_x(), Canvas::centre_y(Font::Body, row4, kKeyH), kEnterKey, enter,
             DRV_LCD_INK, Align::Centre);
@@ -755,15 +753,15 @@ public:
     {
         (void)seen;
         page(to, text(StrId::MenuTitle), false);
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRows * kRowH);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRows * theme::kRowH);
         for (int i = 0; i < kRows; ++i) {
-            const int y = kContentY + i * kRowH;
+            const int y = kContentY + i * theme::kRowH;
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
             const widgets::Row what = { text(kLabels[i]), nullptr, kIcons[i], kTints[i],
                                         DRV_LCD_INK, -1,          widgets::Icon::None };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, what, held_ == i);
         }
         widgets::button(to, theme::kGutter, kFootY, theme::kContentW, theme::kButtonH, text(StrId::MenuClose),
                         DRV_LCD_SURFACE, DRV_LCD_ACCENT, held_ == kBack);
@@ -784,7 +782,7 @@ private:
             return kBack;
         }
         for (int i = 0; i < kRows; ++i) {
-            if (inside(x, y, theme::kGutter, kContentY + i * kRowH, theme::kContentW, kRowH)) {
+            if (inside(x, y, theme::kGutter, kContentY + i * theme::kRowH, theme::kContentW, theme::kRowH)) {
                 return i;
             }
         }
@@ -847,18 +845,18 @@ public:
     {
         (void)seen;
         page(to, text(StrId::MenuSettings), true);
-        widgets::card(to, theme::kGutter, lang_y(), theme::kContentW, 2 * kRowH);
-        widgets::segment_row(to, theme::kGutter, lang_y(), theme::kContentW, kRowH,
+        widgets::card(to, theme::kGutter, lang_y(), theme::kContentW, 2 * theme::kRowH);
+        widgets::segment_row(to, theme::kGutter, lang_y(), theme::kContentW, theme::kRowH,
                              widgets::Icon::Globe, DRV_LCD_ACCENT, text(StrId::SettingsLanguage),
                              language_badge(Lang::Vi), language_badge(Lang::En),
                              language() == Lang::En, held_ == kLanguage);
         widgets::divider(to, theme::kGutter, device_y(), theme::kContentW);
         const widgets::Row me = { text(StrId::SettingsDevice), nullptr, widgets::Icon::Device,
                                   DRV_LCD_DIM,        DRV_LCD_INK, -1, widgets::Icon::None };
-        widgets::row(to, theme::kGutter, device_y(), theme::kContentW, kRowH, me,
+        widgets::row(to, theme::kGutter, device_y(), theme::kContentW, theme::kRowH, me,
                      held_ == kDevice);
 
-        widgets::card(to, theme::kGutter, wifi_y(), theme::kContentW, kRowH);
+        widgets::card(to, theme::kGutter, wifi_y(), theme::kContentW, theme::kRowH);
         const widgets::Row net = { text(StrId::WifiTitle),
                                    s_net.joined ? s_net.ssid : text(StrId::SettingsNotJoined),
                                    widgets::Icon::Wifi,
@@ -866,16 +864,16 @@ public:
                                    DRV_LCD_INK,
                                    -1,
                                    widgets::Icon::None };
-        widgets::row(to, theme::kGutter, wifi_y(), theme::kContentW, kRowH, net, held_ == kWifi);
+        widgets::row(to, theme::kGutter, wifi_y(), theme::kContentW, theme::kRowH, net, held_ == kWifi);
 
         widgets::group_label(to, theme::kGutter, label_y(), theme::kContentW,
                              text(StrId::SettingsDisplay));
-        widgets::card(to, theme::kGutter, slider_y(0), theme::kContentW, 2 * kRowH);
-        widgets::slider_row(to, theme::kGutter, slider_y(0), theme::kContentW, kRowH,
+        widgets::card(to, theme::kGutter, slider_y(0), theme::kContentW, 2 * theme::kRowH);
+        widgets::slider_row(to, theme::kGutter, slider_y(0), theme::kContentW, theme::kRowH,
                             widgets::Icon::Brightness, DRV_LCD_WARN, s_brightness.percent,
                             DRV_LCD_ACCENT);
         widgets::divider(to, theme::kGutter, slider_y(1), theme::kContentW);
-        widgets::slider_row(to, theme::kGutter, slider_y(1), theme::kContentW, kRowH,
+        widgets::slider_row(to, theme::kGutter, slider_y(1), theme::kContentW, theme::kRowH,
                             widgets::Icon::Volume, DRV_LCD_OK, s_volume.percent, DRV_LCD_ACCENT);
     }
 
@@ -887,14 +885,14 @@ private:
     static constexpr int kVolume = 4;
 
     static int lang_y() noexcept { return kContentY; }
-    static int device_y() noexcept { return lang_y() + kRowH; }
+    static int device_y() noexcept { return lang_y() + theme::kRowH; }
     // Four rows and two sliders leave 25 px under the last card at kGapM, and
     // none at kGapL, so the cards sit a notch closer here than elsewhere.
-    static int wifi_y() noexcept { return device_y() + kRowH + theme::kGapM; }
-    static int label_y() noexcept { return wifi_y() + kRowH + theme::kGapM; }
+    static int wifi_y() noexcept { return device_y() + theme::kRowH + theme::kGapM; }
+    static int label_y() noexcept { return wifi_y() + theme::kRowH + theme::kGapM; }
     static int slider_y(int i) noexcept
     {
-        return label_y() + theme::line_height(Font::Caption) + theme::kGapS + i * kRowH;
+        return label_y() + theme::line_height(Font::Caption) + theme::kGapS + i * theme::kRowH;
     }
 
     // The icon tile is no part of the track, so a tap on it sets nothing.
@@ -902,7 +900,7 @@ private:
     {
         const int at = slider_y(which == kBright ? 0 : 1);
         const int grip = widgets::slider_grip_x(theme::kGutter);
-        return inside(x, y, grip, at, theme::kGutter + theme::kContentW - grip, kRowH);
+        return inside(x, y, grip, at, theme::kGutter + theme::kContentW - grip, theme::kRowH);
     }
 
     static int row_at(int x, int y) noexcept
@@ -910,13 +908,13 @@ private:
         if (widgets::on_back(x, y)) {
             return kBack;
         }
-        if (inside(x, y, theme::kGutter, lang_y(), theme::kContentW, kRowH)) {
+        if (inside(x, y, theme::kGutter, lang_y(), theme::kContentW, theme::kRowH)) {
             return kLanguage;
         }
-        if (inside(x, y, theme::kGutter, device_y(), theme::kContentW, kRowH)) {
+        if (inside(x, y, theme::kGutter, device_y(), theme::kContentW, theme::kRowH)) {
             return kDevice;
         }
-        if (inside(x, y, theme::kGutter, wifi_y(), theme::kContentW, kRowH)) {
+        if (inside(x, y, theme::kGutter, wifi_y(), theme::kContentW, theme::kRowH)) {
             return kWifi;
         }
         return kNothing;
@@ -1053,14 +1051,14 @@ public:
         const Pager list = pager();
         const int count = list.rows();
         if (count == 0) {
-            widgets::card(to, theme::kGutter, kContentY, theme::kContentW, kRowH);
-            to.text(Font::Body, theme::kGutter, Canvas::centre_y(Font::Body, kContentY, kRowH),
+            widgets::card(to, theme::kGutter, kContentY, theme::kContentW, theme::kRowH);
+            to.text(Font::Body, theme::kGutter, Canvas::centre_y(Font::Body, kContentY, theme::kRowH),
                     theme::kContentW, text(StrId::EnrolNobody), DRV_LCD_INK, Align::Centre);
-            to.text(Font::Caption, theme::kGutter, kContentY + kRowH + theme::kGapM,
+            to.text(Font::Caption, theme::kGutter, kContentY + theme::kRowH + theme::kGapM,
                     theme::kContentW, text(StrId::EnrolNobodyHint), DRV_LCD_DIM, Align::Centre);
             return;
         }
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * theme::kRowH);
         for (int i = 0; i < count; ++i) {
             const int y = list.row_y(i);
             if (i > 0) {
@@ -1071,7 +1069,7 @@ public:
             const widgets::Row what = { s_pending.row[i].name, tail,
                                         widgets::Icon::PersonAdd, DRV_LCD_ACCENT,
                                         DRV_LCD_INK, -1, widgets::Icon::None, true };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, what, held_ == i);
         }
         list.paint(to, held_);
     }
@@ -1473,7 +1471,7 @@ public:
                     DRV_LCD_DIM, Align::Centre);
             return;
         }
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * theme::kRowH);
         for (int i = 0; i < count; ++i) {
             const ui_kiosk_person_t &who = people().row[i];
             const int y = list.row_y(i);
@@ -1490,7 +1488,7 @@ public:
                                         -1,
                                         widgets::Icon::None,
                                         true };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, false);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, what, false);
         }
         list.paint(to, held_);
     }
@@ -1614,14 +1612,14 @@ private:
         to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, line, tone, Align::Centre);
     }
 
-    static int row_y(int i) noexcept { return kContentY + i * kRowH; }
+    static int row_y(int i) noexcept { return kContentY + i * theme::kRowH; }
 
     static bool here(const char *ssid) noexcept { return s_net.joined && strcmp(ssid, s_net.ssid) == 0; }
 
     // The last row the panel holds is the way into the saved networks.
     int list_rows() const noexcept
     {
-        const int fits = list_fits(UI_KIOSK_WIFI_ROWS + 1, kRowH, kListEnd) - 1;
+        const int fits = list_fits(UI_KIOSK_WIFI_ROWS + 1, theme::kRowH, kListEnd) - 1;
         return list_.count < fits ? list_.count : (fits > 0 ? fits : 0);
     }
 
@@ -1631,18 +1629,18 @@ private:
     }
 
     int info_rows() const noexcept { return info_.here ? 3 : 1; }
-    int forget_y() const noexcept { return kContentY + info_rows() * kRowH + theme::kGapL; }
+    int forget_y() const noexcept { return kContentY + info_rows() * theme::kRowH + theme::kGapL; }
 
     int saved_rows() const noexcept
     {
-        const int fits = list_fits(saved_.count, kRowH, kListEnd);
+        const int fits = list_fits(saved_.count, theme::kRowH, kListEnd);
         return saved_.count < fits ? saved_.count : fits;
     }
 
     static int row_hit(int x, int y, int rows) noexcept
     {
         for (int i = 0; i < rows; ++i) {
-            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
+            if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, theme::kRowH)) {
                 return i;
             }
         }
@@ -1664,7 +1662,7 @@ private:
             case Step::Saved:
                 return row_hit(x, y, saved_rows());
             case Step::Choosing:
-                if (inside(x, y, theme::kGutter, saved_row_y(), theme::kContentW, kRowH)) {
+                if (inside(x, y, theme::kGutter, saved_row_y(), theme::kContentW, theme::kRowH)) {
                     return kSavedRow;
                 }
                 return row_hit(x, y, list_rows());
@@ -1895,7 +1893,7 @@ private:
             note(to, text(StrId::WifiNone), DRV_LCD_DIM);
         }
         widgets::card(to, theme::kGutter, rows > 0 ? kContentY : saved_row_y(), theme::kContentW,
-                      (rows + 1) * kRowH);
+                      (rows + 1) * theme::kRowH);
         for (int i = 0; i < rows; ++i) {
             const ui_kiosk_ap_t &ap = list_.row[i];
             const int y = row_y(i);
@@ -1914,7 +1912,7 @@ private:
             const widgets::Icon trail = ap.open ? widgets::Icon::None : widgets::Icon::Lock;
             const widgets::Row what = { ap.ssid, state, widgets::Icon::None, 0, ink, signal_level(ap.rssi_dbm), trail,
                                         true };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, what, held_ == i);
         }
         const int y = saved_row_y();
         if (rows > 0) {
@@ -1922,16 +1920,16 @@ private:
         }
         const widgets::Row saved = { text(StrId::WifiSavedNetworks), nullptr, widgets::Icon::List, DRV_LCD_DIM,
                                      DRV_LCD_INK, -1, widgets::Icon::None };
-        widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, saved, held_ == kSavedRow);
+        widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, saved, held_ == kSavedRow);
     }
 
     void paint_info(Canvas &to) const noexcept
     {
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, info_rows() * kRowH);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, info_rows() * theme::kRowH);
         if (!info_.here) {
             const widgets::Row away = { text(StrId::WifiNotHere), nullptr, widgets::Icon::Wifi, DRV_LCD_DIM,
                                         DRV_LCD_INK, -1, widgets::Icon::None };
-            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, kRowH, away, false);
+            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, theme::kRowH, away, false);
         } else {
             char dbm[16];
             snprintf(dbm, sizeof(dbm), text(StrId::WifiDbmFmt), info_.rssi_dbm);
@@ -1941,11 +1939,11 @@ private:
                                            DRV_LCD_INK, -1, widgets::Icon::None, true };
             const widgets::Row lock = { text(StrId::WifiSecurity), security_text(info_.security), widgets::Icon::Lock,
                                         DRV_LCD_DIM, DRV_LCD_INK, -1, widgets::Icon::None, true };
-            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, kRowH, signal, false);
+            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, theme::kRowH, signal, false);
             widgets::divider(to, theme::kGutter, row_y(1), theme::kContentW);
-            widgets::row(to, theme::kGutter, row_y(1), theme::kContentW, kRowH, address, false);
+            widgets::row(to, theme::kGutter, row_y(1), theme::kContentW, theme::kRowH, address, false);
             widgets::divider(to, theme::kGutter, row_y(2), theme::kContentW);
-            widgets::row(to, theme::kGutter, row_y(2), theme::kContentW, kRowH, lock, false);
+            widgets::row(to, theme::kGutter, row_y(2), theme::kContentW, theme::kRowH, lock, false);
         }
         widgets::button(to, theme::kGutter, forget_y(), theme::kContentW, theme::kButtonH,
                         text(armed_ ? StrId::WifiForgetConfirm : StrId::WifiForget), DRV_LCD_DANGER, DRV_LCD_INK,
@@ -1959,7 +1957,7 @@ private:
             note(to, text(StrId::WifiNoneSaved), DRV_LCD_DIM);
             return;
         }
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, rows * kRowH);
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, rows * theme::kRowH);
         for (int i = 0; i < rows; ++i) {
             const int y = row_y(i);
             if (i > 0) {
@@ -1970,7 +1968,7 @@ private:
                                         widgets::Icon::Wifi, DRV_LCD_ACCENT,
                                         (uint8_t)(now_here ? DRV_LCD_ACCENT : DRV_LCD_INK), -1,
                                         widgets::Icon::None, true };
-            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+            widgets::row(to, theme::kGutter, y, theme::kContentW, theme::kRowH, what, held_ == i);
         }
     }
 
