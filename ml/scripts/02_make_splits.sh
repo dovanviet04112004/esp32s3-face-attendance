@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./scripts/02_make_splits.sh              # every branch that has data
-#   ./scripts/02_make_splits.sh recognition  # one branch
+#   ./scripts/02_make_splits.sh recognition  # one branch, or rppg for the pulse split
 #   ./scripts/02_make_splits.sh --seed 7     # a different draw
 
 set -euo pipefail
@@ -96,8 +96,17 @@ split_antispoof() {
         --task antispoof --source "${xdomain}" --seed "${SEED}" --split-root "${SPLITS}"
 }
 
+split_rppg() {
+    local unique="${INTERIM}/antispoof/unique_pair"
+    [[ -d "${unique}" ]] || { warn "rppg: ${unique} absent, run 01 first"; return 1; }
+    log "rppg: live clips halved by worker"
+    "${PY}" -m facepipe.data.make_split \
+        --task rppg --source "${unique}" --seed "${SEED}" --split-root "${SPLITS}"
+}
+
 wanted detection   && split_detection
 wanted antispoof   && split_antispoof
 wanted recognition && split_recognition
 wanted device      && split_device
+wanted rppg        && split_rppg
 log "splits written under data/splits; commit them"
