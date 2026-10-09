@@ -1886,6 +1886,12 @@ có thể** lách bằng phong cách — thấy phong cách pool-live thì xuấ
 pool-spoof thì xuất 0. Thứ ngăn nó là phía mặt thật: 441 ô phải khớp một hình khối **cụ thể,
 đổi theo từng ảnh**, không đoán bừa được. Đó là ép gián tiếp, không phải khoá chặt.
 
+**Kết quả: làm tệ đi, không dùng** (file nghiên cứu §16.6). Hai run cùng 36 shard CelebA, cùng
+5 epoch, cùng seed, chỉ khác `depth_weight`: ở epoch 3 bản có độ sâu loại oan 10 mặt thật,
+đối chứng loại 6, và đối chứng thắng trên mọi thước. Đầu phụ có học — mất mát của nó tụt từ
+0,3334, đúng nghiệm "đoán phẳng hết", xuống 0,2438 rồi chững — nhưng thân model không dùng tới.
+Vì thế repo không giữ bộ sinh nhãn độ sâu.
+
 #### SSDG: ép mặt thật giống nhau giữa các miền, thả cho tấn công tách ra
 
 Ba mảnh, tất cả chỉ sống lúc train và **biến mất khi xuất**: eval trả về đúng một tensor logit
@@ -2611,11 +2617,6 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
 │   │                                             #   ★ hop mat cat bang nhanh detect,
 │   │                                             #     KHONG dung cot Bbox cua dataset (§3)
-│   ├── antispoof/depth_maps/<folder>/shard_*.npz # ★ nhan do sau 21x21, float16, khoa theo
-│   │                                             #   (shard, chi so ban ghi). Gia mac dinh 0.
-│   │                                             #   Sinh lai bang 03_prepare_depth.sh (§3)
-│   └── antispoof/depth_model/*.onnx              # ★ bo uoc luong do sau, KHONG commit (§6);
-│                                                 #   nguon + sha256 ghi o manifest
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
 │   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
@@ -2690,10 +2691,8 @@ ml/
 │   │   ├── run_dir.py                     # ★ tạo thư mục run, ghi config.resolved + env + split.lock
 │   │   ├── scheduler.py  ├── metrics.py  ├── logger.py  └── seed.py
 │   │
-│   ├── data/
-│   │   ├── datasets/{widerface.py, celeba_spoof.py, xdomain_spoof.py,
-│   │   │             recognition_wds.py, ov5640_device.py}
-│   │   ├── transforms/{det.py, spoof.py, recog.py, sensor_sim.py}
+│   ├── data/                              # dataset của từng nhánh nằm ở tasks/<nhánh>/data.py
+│   │   ├── transforms/sensor_sim.py
 │   │   ├── prepare/                       # ★ raw → interim → processed
 │   │   │   ├── widerface_to_coco.py
 │   │   │   ├── celeba_spoof_parquet.py    # mirror CelebA-Spoof là parquet, không phải bbox.json
@@ -2706,15 +2705,8 @@ ml/
 │   │   │   │                              #   khong the co anh moi voi nhan cu
 │   │   │   ├── xdomain_crop.py            # bốn bộ khác miền → shard, mặt do nhánh detect tìm
 │   │   │   │                              #   crop mà kiosk không tự tạo ra được thì không phải phép thử công bằng
-│   │   │   ├── device_index.py            # quét ov5640/images → manifest.csv
-│   │   │   └── depth_maps.py              # ★ nhãn độ sâu 21×21 cho nhánh antispoof (§3).
-│   │   │                                  #   Chạy bộ ước lượng trên view WIDE rồi cắt về
-│   │   │                                  #   face_in_wide: view TIGHT không còn nền nên
-│   │   │                                  #   bộ ước lượng chỉ trả về một mặt phẳng nghiêng.
-│   │   │                                  #   Lưu kèm độ tin cậy từng nhãn; ~10% mặt thật
-│   │   │                                  #   lệch hẳn khỏi hình chuẩn và phải bị che lúc train
-│   │   ├── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
-│   │   └── loaders.py
+│   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
+│   │   └── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │
 │   ├── tasks/                             # ── BA NHÁNH, MỖI NHÁNH MỘT THƯ MỤC ĐỘC LẬP ──
 │   │   │   Cùng khuôn: README · model/ · losses/ · postproc/
@@ -2807,9 +2799,6 @@ ml/
 │   ├── 00_fetch_raw.sh          ├── 01_prepare_interim.sh   ├── 02_make_splits.sh
 │   │                            #   ★ 01 nhanh antispoof can checkpoint detection
 │   │                            #     da train: cat mat bang detect, khong bang Bbox (§3)
-│   ├── 03_prepare_depth.sh      # ★ chi nhanh antispoof: tai bo uoc luong do sau, chay tren
-│   │                            #   crop cua pool, ghi interim/antispoof/depth_maps/.
-│   │                            #   Chay sau 01, truoc 21_train_spoof.sh (§3)
 │   ├── 20_train_det.sh ├── 21_train_spoof.sh ├── 22_train_recog.sh
 │   ├── 30_quantize.sh
 │   ├── 50_pack_and_flash.sh     # xuất model và golden là module Python, gọi qua
