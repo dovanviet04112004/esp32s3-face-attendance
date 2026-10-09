@@ -4661,10 +4661,10 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
-| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
+| `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
-| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), photoUrl |
+| `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. `url` để trống từ §7.7 và bỏ ở lần phát hành sau, theo luật nở rồi co (§9.22.3) |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
@@ -5409,7 +5409,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
-| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
+| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất, tuổi tối đa của một lượt chấm công được tự tính (`PUNCH_REVIEW_AFTER_DAYS`, 7 ngày, §9.8) | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
 | Nhịp và ngưỡng của thông báo: giữ tin bao lâu, gom đẩy cho bàn bao lâu, giữ chỗ *tôi nhận việc này* bao lâu, kiosk mất kết nối bao lâu thì báo, bao nhiêu lượt giả mạo hay mặt lạ trong bao lâu thì thành một loạt, lượt đối soát chạy lúc nào | biến môi trường `NOTICE_KEEP_DAYS` (180 ngày), `NOTICE_PUSH_GATHER_SECONDS` (120), `NOTICE_CLAIM_HOURS` (24), `KIOSK_OFFLINE_ALERT_MINUTES` (60), `KIOSK_SPOOF_BURST` (5), `KIOSK_UNKNOWN_BURST` (20), `KIOSK_BURST_WINDOW_MINUTES` (10), `NOTICE_RECONCILE_CRON` (`0 * * * *`; rỗng là tắt, và rỗng là mặc định khi `NODE_ENV=test`, vì bộ e2e tự gọi lượt đối soát), khai ở `.env.example` | `config/env.schema.ts` — thoả thuận vận hành của từng công ty, cùng loại với hạn trả lời khiếu nại (§9.21.4) |
 | Mốc nhắc, giờ gửi gom và khoảng yên của từng loại thông báo | `backend/src/modules/notifications/notice-kinds.ts` | import — cùng bảng tra nói ai nhận và khi nào việc đóng (§9.21.4), nên phía vẽ không giữ bản thứ hai của mốc nào |
 | Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
@@ -6895,11 +6895,13 @@ khỏi flash gửi được mà không cần chạm màn (E13-T3). Nên **không
 ở cửa nào**: chỉ `HR` và `ADMIN`, đã qua xác minh hai bước (§7.2), bấm trên trang nhân viên, và
 trang ấy dùng được trên điện thoại khi người bấm đứng ngay cạnh máy (§9.21).
 
-Gỡ trên dashboard chuyển cặp máy–người sang `REVOKED`, rồi lệnh xoá chảy xuống theo đúng đường hội
-tụ, kèm một dòng audit mang người bấm. Mẫu trên server **không** bị xoá, vì cửa khác còn dùng; xoá
-sinh trắc học của một người trên mọi máy là việc khác, cũng làm từ dashboard (§9.19). Một kiosk còn
-chạy firmware có nút xoá mà gửi `DELETE_EMPLOYEE` lên thì server không gỡ ai: nó đẩy cho đúng cửa
-ấy thứ nó đang giữ cho cặp đó (bước 4 dưới đây), nên người bị xoá ở máy được trả lại.
+Gỡ trên dashboard chuyển cặp máy–người sang `REVOKED` và ghi lúc gỡ vào `revokedAt`, rồi lệnh xoá
+chảy xuống theo đúng đường hội tụ, kèm một dòng audit mang người bấm. Lúc gỡ là mốc server dùng
+để nhận hay bỏ những lượt chấm công cửa ấy còn gửi lên cho người đó (§9.8). Mẫu trên server
+**không** bị xoá, vì cửa khác còn dùng; xoá sinh trắc học của một người trên mọi máy là việc khác,
+cũng làm từ dashboard (§9.19). Một kiosk còn chạy firmware có nút xoá mà gửi `DELETE_EMPLOYEE` lên
+thì server không gỡ ai: nó đẩy cho đúng cửa ấy thứ nó đang giữ cho cặp đó (bước 4 dưới đây), nên
+người bị xoá ở máy được trả lại.
 
 Cái giá nói rõ: hết đường chụp lại tại chỗ lúc mất mạng, và chụp lại cần một người có quyền bấm.
 Thứ còn hở là **lần chụp đầu**: người đang nằm trong danh sách chờ thì ai đứng trước máy cũng chụp
@@ -7723,8 +7725,11 @@ khai trên loại, không theo thứ tự mã.
 nháp, xem, sửa, chạy lại. Chỉ khi kỳ `LOCKED` thì phiếu mới là bản chính thức.
 
 **Chốt kỳ đóng băng đầu vào.** Sau khi `LOCKED`, một lượt chấm công gửi muộn hoặc một đơn nghỉ
-duyệt muộn **không** đổi phiếu đã phát. Nó vào kỳ sau như một khoản truy lĩnh. Không có luật này
-thì con số đã gửi cho nhân viên có thể tự đổi sau lưng họ.
+duyệt muộn **không** đổi phiếu đã phát. Lượt chấm công cho một ngày của kỳ đã chốt không tự vào
+bảng công mà chờ HR duyệt (§9.8); duyệt rồi nó chỉ sửa bảng công của ngày ấy. Khoản chênh, nếu có,
+vào kỳ sau như một khoản truy lĩnh (`RetroAdjustment`), và đường sinh ra khoản ấy là khiếu nại
+phiếu lương (§9.17 mục 11), không phải lần duyệt. Không có luật này thì con số đã gửi cho nhân viên
+có thể tự đổi sau lưng họ.
 
 **Nơi nhận tiền cũng là đầu vào.** Lúc chốt, `Payslip` chép `bankName` và `bankAccount` của
 người đó vào chính nó, và file trả ngân hàng đọc bản chép ấy chứ không đọc hồ sơ nhân viên.
@@ -7838,6 +7843,41 @@ quá hai phút. Lượt giờ nghi vấn vào ngoại lệ hôm nay theo **lúc 
 đứng trước "chưa quẹt" hay "quẹt muộn" vì đồng hồ hỏng thường là chính nguyên nhân; bộ lọc của nó
 trên danh sách lượt quẹt đọc khoảng ngày theo lúc tới; bảng tổng tháng và số đếm hôm nay không tính
 nó.
+
+**Lượt chấm công chỉ được nhận từ cửa đang giữ người ấy.** Vé của một kiosk (§7.3) là thứ duy nhất
+server dựa vào để tin một lượt quẹt, và chừng nào E13-T3 chưa mã hoá flash thì vé ấy đọc trộm được.
+Kẻ cầm một vé lọt ra ghi được lượt cho bất kỳ ai, vào ngày bất kỳ. Lớp chặn đầu là cặp máy–người
+của §7.5: một lượt chỉ được lưu khi cửa gửi nó đang giữ người ấy, tức cặp ở `ASSIGNED`, `ENROLLED`
+hay `RETAKE`, hoặc ở `REVOKED` mà lúc gỡ (`revokedAt`) đến **sau** giờ của chính lượt ấy — máy mất
+mạng vẫn chấm công thật cho người bị gỡ chừng nào nó chưa nghe lệnh gỡ. `ASSIGNED` được nhận vì
+máy chụp được lúc mất mạng (§7.5), và lượt chấm công đầu tiên có thể tới trước bản báo mẫu. Lượt
+có giờ nghi vấn so lúc gỡ với lúc nhận, vì giờ của nó không nói gì. Lượt không qua thì không lưu
+dòng nào, chỉ để lại một dòng log, như lượt của một máy đã bị thu hồi.
+
+**Lượt quá hạn hay rơi vào kỳ đã chốt được lưu, nhưng chờ HR duyệt mới được tính.** Cặp máy–người
+chặn được người ngoài cửa, không chặn được ngày bịa. Hai loại lượt vì thế mang lý do giữ (`hold`)
+và trạng thái duyệt `PENDING`:
+
+| `hold` | Khi nào | Vì sao |
+|---|---|---|
+| `LATE` | giờ của lượt sớm hơn lúc nhận quá `PUNCH_REVIEW_AFTER_DAYS` (7) ngày | một tuần là mốc §7.5 lấy cho máy mất mạng rồi tự hội tụ, nên một tuần mất mạng vẫn tự vào bảng công; lượt cũ hơn thế hiếm khi thật và đắt nhất khi giả |
+| `CLOSED_PERIOD` | ngày của lượt nằm trong một kỳ lương `LOCKED` hay `PAID` của pháp nhân người ấy, hay kỳ chung cả công ty | chốt kỳ đóng băng đầu vào (§9.6) |
+
+Lượt đang chờ đứng ngoài **mọi** thứ đọc lượt để tính, đúng như lượt giờ nghi vấn: dựng ngày, số
+đếm hôm nay, báo cáo, thông báo đã chấm công cho người ấy. Nó vào hộp chờ duyệt của bàn nhân sự
+thành hàng đợi *Lượt chấm công* (§9.10): mỗi dòng có người, máy, giờ của lượt, lúc nhận và lý do
+giữ, duyệt được từng dòng hay hàng loạt. Hàng đợi này có số đếm trên thanh bên như mọi hàng đợi
+khác nhưng **không gọi chuông theo từng lượt**: lượt bị giữ hiếm khi máy chạy bình thường, còn một vé
+bị lấy bắn được hàng nghìn lượt, và chuông theo từng lượt thì thành một trận lụt đúng lúc cần đọc
+được hộp. Duyệt thì lượt được tính và ngày ấy dựng lại; với kỳ đã chốt, duyệt chỉ sửa bảng công
+(§9.6). Từ chối phải kèm lý do, và lượt ở lại danh sách lượt quẹt với
+nhãn *Bị từ chối*, không bao giờ được tính. Mỗi quyết định ghi một dòng nhật ký mang người duyệt;
+người duyệt không quyết lượt của chính mình, và lượt đã được người khác quyết thì báo lại chứ
+không ghi đè (§9.10). Lượt giờ nghi vấn không bị giữ: nó đã đứng ngoài mọi ngày và đi đường ngoại lệ
+ở trên.
+
+Còn hở, nói rõ: kẻ cầm vé vẫn ghi được lượt cho người đang ở cửa ấy, trong bảy ngày gần nhất, vào kỳ
+chưa chốt. Chỉ E13-T3 đóng được chỗ ấy.
 
 **Bảng công dựng hằng đêm, và dựng lại khi có lượt quẹt trễ.** Job dựng lúc 00:30 theo
 `APP_TIMEZONE` cho ngày hôm qua; một lượt quẹt cho một ngày đã qua, ngày ấy đã dựng hay chưa — kiosk
@@ -7977,9 +8017,10 @@ bị chuyển lần hai. Luồng sự kiện trực tiếp của kiosk ở trang
 giây: *còn gì đang đợi tôi* — và vẫn trả lời được khi hộp có năm nghìn việc. Nên:
 
 - **Mỗi hàng đợi một tab kèm số** — đơn từ, khiếu nại lương, giấy xác nhận, đổi hồ sơ, người
-  phụ thuộc, tạm ứng chờ duyệt, tạm ứng chờ chi — số lấy từ tổng của server, đúng con số trên
-  thanh bên. Tab đang mở nằm trên đường dẫn. Hàng đợi đang trống không hiện tab, trừ khi nó là
-  tab đang mở: bảy tab mà năm tab ghi "0" thì tab có việc bị đẩy khuất khỏi màn 1280 px.
+  phụ thuộc, tạm ứng chờ duyệt, tạm ứng chờ chi, lượt chấm công chờ duyệt (§9.8) — số lấy từ tổng
+  của server, đúng con số trên thanh bên. Tab đang mở nằm trên đường dẫn. Hàng đợi đang trống không
+  hiện tab, trừ khi nó là tab đang mở: tám tab mà sáu tab ghi "0" thì tab có việc bị đẩy khuất khỏi
+  màn 1280 px.
 - **Mỗi tab tìm được theo mã và tên người xin, lọc theo loại, phòng ban (cả nhánh) và khoảng
   ngày**, mặc định cũ nhất lên trước vì việc chờ lâu nhất là việc trễ nhất.
 - **Mỗi dòng đủ ngữ cảnh để quyết**: ai, mã, phòng ban, loại, ngày, mấy ngày, số dư sau khi
