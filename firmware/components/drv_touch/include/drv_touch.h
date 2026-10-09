@@ -44,7 +44,8 @@ bool drv_touch_wait(uint32_t timeout_ms);
 esp_lcd_touch_handle_t drv_touch_handle(void);
 
 /** Reset the controller through RST and check it answers as a GT911 again.
- *  @ctx touch task | blocking ~70 ms | takes m_i2c
+ *  @ctx touch task | blocking ~70 ms | takes m_i2c; RST, INT and the report interrupt
+ *       are restored on every path out, so a failed reset can simply be retried
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without drv_touch_init | ESP_ERR_NOT_FOUND | an i2c error
  */
 esp_err_t drv_touch_restart(void);

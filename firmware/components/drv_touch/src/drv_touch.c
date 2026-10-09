@@ -179,16 +179,39 @@ esp_lcd_touch_handle_t drv_touch_handle(void)
     return s_touch;
 }
 
+// A reset cut short leaves RST low or INT driven, and gpio_config with no interrupt type
+// turns the report interrupt off, which gpio_set_intr_type alone never turns back on.
+static esp_err_t rearm(void)
+{
+    const gpio_config_t input = {
+        .pin_bit_mask = 1ULL << APP_TOUCH_INT_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    const esp_err_t released = drv_ioexp_set(APP_IOEXP_P_TOUCH_RST, true);
+    APP_RETURN_ON_ERR(gpio_config(&input), TAG, "int as input");
+    APP_RETURN_ON_ERR(gpio_set_intr_type(APP_TOUCH_INT_GPIO, s_edge), TAG, "int edge");
+    APP_RETURN_ON_ERR(gpio_intr_enable(APP_TOUCH_INT_GPIO), TAG, "int enable");
+    // A report that fired during the reset belongs to no finger.
+    xSemaphoreTake(s_report, 0);
+    return released;
+}
+
 esp_err_t drv_touch_restart(void)
 {
-    if (s_touch == NULL) {
+    if (s_touch == NULL || s_report == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    // RST drives INT as an output for a moment, so the report line is armed again afterwards.
-    APP_RETURN_ON_ERR(select_address(), TAG, "address select");
-    APP_RETURN_ON_ERR(bsp_i2c_lock(TOUCH_LOCK_MS), TAG, "lock");
-    const esp_err_t found = check_product_id();
-    bsp_i2c_unlock();
-    APP_RETURN_ON_ERR(found, TAG, "product id");
-    return gpio_set_intr_type(APP_TOUCH_INT_GPIO, s_edge);
+    esp_err_t found = select_address();
+    if (found == ESP_OK) {
+        found = bsp_i2c_lock(TOUCH_LOCK_MS);
+        if (found == ESP_OK) {
+            found = check_product_id();
+            bsp_i2c_unlock();
+        }
+    }
+    const esp_err_t armed = rearm();
+    APP_RETURN_ON_ERR(found, TAG, "restart");
+    return armed;
 }
