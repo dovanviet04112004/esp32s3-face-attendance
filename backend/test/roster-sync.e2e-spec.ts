@@ -32,6 +32,7 @@ const HELD = "NV9206";
 const FRESH = "NV9207";
 const FOREIGN = "NV9208";
 const NEWCOMERS = [MOVER, HELD, FRESH, FOREIGN];
+const DECOMPOSED = "NV9209";
 const EMBEDDING_BYTES = 512;
 const PUBLISH_MS = 25;
 const AHEAD_BY = 50;
@@ -71,7 +72,7 @@ describe("roster sync across doors (e2e)", () => {
   let employeeId = 0;
 
   async function sweep(): Promise<void> {
-    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS, DECOMPOSED] } } });
     await db.device.deleteMany({
       where: { id: { in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW, DOOR_HOME, DOOR_SAME, DOOR_OTHER, DOOR_BLIND] } },
     });
@@ -363,6 +364,22 @@ describe("roster sync across doors (e2e)", () => {
     assert.deepEqual(await recorded(() => enrollment.converge(DOOR_C, from + 1)), [], "a kiosk still applying the run was sent it again");
     const stalled = await recorded(() => enrollment.converge(DOOR_C, from + 1));
     assert.equal(stalled[0]?.op, "REPLACE_ALL", "a kiosk stuck inside the run was never sent it again");
+  });
+
+  it("sends a name typed decomposed in the precomposed form the kiosk fonts hold", async () => {
+    const typed = "Nguyễn Thị Hằng";
+    const one = await db.employee.create({ data: { code: DECOMPOSED, fullName: typed.normalize("NFD"), active: true } });
+    await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
+    const names: (string | undefined)[] = [];
+    const spy = mock.method(app.get(MqttService), "publishDown", async (_name: string, _to: string, payload: EnrollPayload) => {
+      names.push(payload.fullName);
+    });
+    try {
+      await enrollment.assign(DOOR_C, one.id);
+    } finally {
+      spy.mock.restore();
+    }
+    assert.deepEqual(names, [typed.normalize("NFC")], "the kiosk was sent a name its fonts cannot draw");
   });
 
   it("asks a kiosk on another recognition model for the face again instead of sending one it would refuse", async () => {

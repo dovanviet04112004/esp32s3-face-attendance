@@ -45,6 +45,11 @@ function heldOn(model: string, employeeIds: readonly number[]): Prisma.FaceTempl
   return { employeeId: { in: [...employeeIds] }, employee: { embeddingVersion: model } };
 }
 
+// The kiosk fonts hold precomposed Vietnamese letters only, so a name typed decomposed loses its marks.
+function onGlass(fullName: string): string {
+  return fullName.normalize("NFC");
+}
+
 export interface AssignableDevice {
   id: string;
   name: string | null;
@@ -670,7 +675,7 @@ export class EnrollmentService {
       embedding: openTemplate(held.embedding, this.key()).toString("base64"),
       scale: held.scale,
       embeddingVersion: row.employee.embeddingVersion ?? undefined,
-      fullName: row.employee.fullName,
+      fullName: onGlass(row.employee.fullName),
       rosterVersion: version,
       deviceId,
     };
@@ -682,7 +687,7 @@ export class EnrollmentService {
       employeeId,
       templateIdx: FIRST_TEMPLATE,
       updatedAt: Date.now(),
-      fullName: employee.fullName,
+      fullName: onGlass(employee.fullName),
       employeeCode: employee.code,
       rosterVersion: version,
       deviceId,
