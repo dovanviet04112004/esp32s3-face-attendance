@@ -448,3 +448,35 @@ Task mỏng nhất là `ipc0`, còn 460 B. Cả hai ca của `bench_mem` qua.
 
 Tái lập: `make fw-app APP=firmware/test_apps/bench_mem`, `make fw-app-flash APP=… MONITOR= PORT=…`,
 `make fw-log APP=… LOG_S=170`; log ở `ml/artifacts/device/board_20261009/bench_mem_espdl_tls.log`.
+
+## 12. Bản `fleet` trên kiosk thật, có console — 10/10
+
+Cùng board (`kiosk-2884859fd3c8`), ảnh `fleet` dựng từ b1a5b2fd: ESP-DL, đệm bounce 20 dòng,
+`CONFIG_APP_CONSOLE=y` như bản phát hành hiện tại, Wi-Fi và MQTT/TLS đã lên, một người đứng trước
+camera vài lần. Đọc bằng `make fw-console PROFILE=fleet CMD=heap` ở giây 155:
+
+| Vùng RAM nội | Dài | Trống | Đáy | Khối lớn nhất |
+|---|---:|---:|---:|---:|
+| `0x3fcb7920`, heap chính | 204.272 | 152 | 24 | 32 |
+| `0x3fcbc804`, dự trữ cho DMA và nội | 32.767 | 8.147 | 3.791 | 4.340 |
+| `0x3fce9710` | 22.308 | 8 | 8 | 0 |
+| `0x600fe000`, RTC | 8.168 | 92 | 24 | 16 |
+| **Tổng** | | **8.399** | **3.847** | **4.340** |
+
+PSRAM trống 2.034.524 B, khối lớn nhất 1.933.300 B.
+
+- **Console là thứ hụt đầu tiên.** REPL xin ngăn xếp 8 KB sau mọi task, và với 4,3 KB liền lớn nhất
+  thì `xTaskCreatePinnedToCore` trả lỗi: log `app_console: repl: ESP_FAIL`. Nó hỏng khi đợt Wi-Fi
+  năm mạng (542f2de9) và hộp thư của màn (27a106ca) thêm khoảng 3 KB `.bss`/`.data` nội, và lên lại
+  sau khi bản ghi quét (2.208 B, 292be10a) rồi bộ đệm báo mẫu, mẫu đang báo, lệnh roster và danh
+  sách mạng đã lưu (4.324 B, 67e00e08) sang PSRAM.
+- **Hai đối tượng `Canvas` không sang PSRAM được.** Thử dời 7.704 B biên dòng của chúng sang PSRAM:
+  preview **12,2–12,7 → 10,6–11,1 fps**, blit **43–45 → 48–58 ms**, cùng board, cùng giờ, cả hai lượt
+  đều có người đứng trước camera. Hoàn lại.
+- **Chưa so thẳng được với §11.** §11 là `bench_mem` ở profile `bench` (đáy 29.755 B); bản `fleet`
+  thêm console 8 KB và chạy đủ giao diện. Cần một lượt `bench_mem` dựng theo profile `fleet` để tách
+  phần của console khỏi phần còn lại 🔬.
+
+Tái lập: `make fw-fleet`, `make flash PROFILE=fleet MONITOR= PORT=/dev/ttyACM0`, chờ vài phút rồi
+`make fw-console PROFILE=fleet PORT=/dev/ttyACM0 CMD=heap LOG_S=6`.
+
