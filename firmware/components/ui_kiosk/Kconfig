@@ -7,9 +7,17 @@ menu "Kiosk screen"
             The board button is the fallback path for adding a face, and NVS key
             device/enrol_name overrides this at run time.
 
+    config UI_MIN_BRIGHTNESS
+        int "Lowest backlight percent the slider or a stored value can set"
+        range 1 50
+        default 10
+        help
+            A dark panel cannot be read to turn it back up, so neither the
+            settings slider nor ui/brightness from NVS goes below this.
+
     config UI_SEED_BRIGHTNESS
         int "Backlight percent a kiosk starts life at"
-        range 10 100
+        range UI_MIN_BRIGHTNESS 100
         default 100
         help
             Seeds NVS ui/brightness on first boot, the way svc_vision seeds its

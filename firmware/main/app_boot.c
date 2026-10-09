@@ -201,6 +201,15 @@ static uint32_t setting(const char *ns, const char *key, uint32_t fallback)
     return sys_storage_get_u32(ns, key, &value) == ESP_OK ? value : fallback;
 }
 
+uint8_t app_boot_brightness(void)
+{
+    const uint32_t stored = setting(STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
+    if (stored < CONFIG_UI_MIN_BRIGHTNESS) {
+        return CONFIG_UI_MIN_BRIGHTNESS;
+    }
+    return (uint8_t)(stored > 100 ? 100 : stored);
+}
+
 static svc_vision_thresholds_t vision_thresholds(void)
 {
     svc_vision_thresholds_t thresholds = {
@@ -321,7 +330,7 @@ esp_err_t app_boot(void)
     seed_settings();
     ESP_ERROR_CHECK(bsp_board_init());
     ESP_ERROR_CHECK(drv_lcd_init());
-    const uint8_t lamp = (uint8_t)setting(STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
+    const uint8_t lamp = app_boot_brightness();
     const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME);
     ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
     ESP_ERROR_CHECK(ui_kiosk_init());

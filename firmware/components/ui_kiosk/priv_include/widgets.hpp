@@ -83,6 +83,9 @@ int segment_hit(int x, int row_x, int row_w) noexcept;
 /** Where a touch inside a slider row lands, as a percentage. */
 int slider_percent(int x, int row_x, int row_w) noexcept;
 
+/** The leftmost x a press can take a slider's knob from; the icon tile lies left of it. */
+int slider_grip_x(int row_x) noexcept;
+
 /** A key cap: rounded, with either a label or a glyph centred in it. */
 void key_cap(Canvas &to, int x, int y, int w, int h, const char *label, Icon glyph, bool down,
              bool muted) noexcept;

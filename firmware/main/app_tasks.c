@@ -1987,6 +1987,8 @@ static void ui_task(void *arg)
     uint32_t ticket = 0;
     uint32_t owed_employee = 0;           // a bank to drop once the step in flight is over
     uint16_t owed_bank = 0;
+    // A wake relights the panel at this level, so it starts as the one NVS holds.
+    atomic_store(&s_brightness, app_boot_brightness());
 
     for (;;) {
         const uint32_t tick_ms =

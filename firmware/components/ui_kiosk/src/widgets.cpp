@@ -407,6 +407,11 @@ int segment_hit(int x, int row_x, int row_w) noexcept
     return x < box + kSegmentW / 2 ? 0 : 1;
 }
 
+int slider_grip_x(int row_x) noexcept
+{
+    return row_x + kRowPad + kTile + kRowPad - kKnobR;
+}
+
 int slider_percent(int x, int row_x, int row_w) noexcept
 {
     const int track_x = row_x + kRowPad + kTile + kRowPad;

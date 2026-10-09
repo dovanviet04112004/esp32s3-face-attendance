@@ -679,6 +679,11 @@ public:
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
+        // A drag stays with the slider it began on, wherever the finger drifts.
+        if (down && (held_ == kBright || held_ == kVolume)) {
+            drag(held_, x);
+            return true;
+        }
         if (down && on_slider(x, y, kBright)) {
             drag(kBright, x);
             held_ = kBright;
@@ -769,10 +774,12 @@ private:
         return label_y() + theme::line_height(Font::Caption) + theme::kGapS + i * kRowH;
     }
 
+    // The icon tile is no part of the track, so a tap on it sets nothing.
     static bool on_slider(int x, int y, int which) noexcept
     {
         const int at = slider_y(which == kBright ? 0 : 1);
-        return inside(x, y, theme::kGutter, at, theme::kContentW, kRowH);
+        const int grip = widgets::slider_grip_x(theme::kGutter);
+        return inside(x, y, grip, at, theme::kGutter + theme::kContentW - grip, kRowH);
     }
 
     static int row_at(int x, int y) noexcept
@@ -807,7 +814,9 @@ private:
     static void drag(int which, int x) noexcept
     {
         Level &level = which == kBright ? s_brightness : s_volume;
-        level.percent = (uint8_t)widgets::slider_percent(x, theme::kGutter, theme::kContentW);
+        const int percent = widgets::slider_percent(x, theme::kGutter, theme::kContentW);
+        const int floor = which == kBright ? CONFIG_UI_MIN_BRIGHTNESS : 0;
+        level.percent = (uint8_t)(percent < floor ? floor : percent);
         level.changed = true;
         level.settled = false;
     }
