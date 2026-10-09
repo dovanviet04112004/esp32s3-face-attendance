@@ -247,6 +247,13 @@ fw-log: idf ## Print the board's console for LOG_S seconds (30), reset first unl
 	-timeout $(LOG_S) script -qfec "cd $(if $(APP),$(APP) && idf.py,firmware && idf.py -B $(fw_dir_$(PROFILE))) \
 	  $(PORT_FLAG) monitor $(if $(NORESET),--no-reset)" /dev/null
 
+# The monitor forwards what script feeds it, so the command goes in once the console is listening.
+fw-console: idf ## Type CMD into the running board's console and print LOG_S seconds of the reply (PORT=)
+	$(call need,CMD,a console command such as heap)
+	$(fw_profile)
+	-(sleep 3; printf '%s\r' '$(CMD)'; sleep $(LOG_S)) | timeout $$(($(LOG_S) + 6)) script -qfec \
+	  "cd firmware && idf.py -B $(fw_dir_$(PROFILE)) $(PORT_FLAG) monitor --no-reset" /dev/null
+
 fw-part-read: idf ## Save partition PART of the board into the file OUT (PORT=)
 	$(call need,PART,a partition name such as models_0)
 	$(call need,OUT,the file to write)
