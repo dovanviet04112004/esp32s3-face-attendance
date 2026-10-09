@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "freertos/FreeRTOS.h"
 #include "strings.hpp"
 #include "widgets.hpp"
 
@@ -87,9 +88,15 @@ constexpr int kLayer = 102;
 constexpr int kSpace = 103;
 constexpr int kOk = 104;
 
-constexpr const char *kLayers[3] = { "qwertyuiopasdfghjklzxcvbnm",
+// Lower, upper, digits with the common marks, then the rest of printable ASCII (KEHOACH 7.6).
+constexpr const char *kLayers[4] = { "qwertyuiopasdfghjklzxcvbnm",
                                      "QWERTYUIOPASDFGHJKLZXCVBNM",
-                                     "1234567890@#$_&-+()*\"\':;!?" };
+                                     "1234567890@#$_&-+()*\"\':;!?",
+                                     "[]{}#%^*+=_\\|~<>.,?!'/`$&@" };
+constexpr int kLower = 0;
+constexpr int kUpper = 1;
+constexpr int kSymbols = 2;
+constexpr int kMoreSymbols = 3;
 
 int key_row(int i)
 {
@@ -113,11 +120,6 @@ int key_x(int i)
     const int span = kWideKey + kKeyGap + 7 * kKeyW + 6 * kKeyGap + kKeyGap + kWideKey;
     const int left = (APP_LCD_H_RES - span) / 2;
     return left + kWideKey + kKeyGap + (i - 19) * (kKeyW + kKeyGap);
-}
-
-bool above_keys(int y)
-{
-    return y < kFieldY;
 }
 
 int bottom_row_y()
@@ -161,8 +163,30 @@ ScreenManager s_manager;
 EnrolRequest s_request;
 People s_people_list;
 Pending s_pending;
-Networks s_networks;
-JoinRequest s_join;
+// sync_task writes the answers and ui_task reads them, neither past a copy (KEHOACH 7.6).
+portMUX_TYPE s_wifi_lock = portMUX_INITIALIZER_UNLOCKED;
+struct WifiDesk {
+    bool scan_wanted;
+    bool swept;                           // a sweep has answered since boot
+    uint32_t sweep_serial;
+    Networks heard;
+    bool join_waiting;
+    JoinRequest join;
+    uint32_t joined_serial;
+    ui_kiosk_wifi_result_t joined;
+    bool info_wanted;
+    char info_ssid[33];
+    uint32_t info_serial;
+    ui_kiosk_wifi_info_t info;
+    bool saved_wanted;
+    uint32_t saved_serial;
+    int saved_count;
+    char saved[UI_KIOSK_WIFI_SAVED_ROWS][33];
+    bool forget_waiting;
+    char forget_ssid[33];
+    uint32_t forgotten_serial;
+    bool forgotten;
+} s_wifi_desk;
 Facts s_facts;
 ui_kiosk_net_t s_net;
 Ticket s_ticket;
@@ -375,13 +399,18 @@ void keyboard(Canvas &to, int layer, int held, const char *enter)
                          held == i, false);
     }
     const int row3 = kKeyTop + 2 * (kKeyH + kKeyVGap);
-    widgets::key_cap(to, shift_x(), row3, kWideKey, kKeyH, layer == 1 ? "abc" : "ABC",
-                     widgets::Icon::None, held == kShift, true);
+    const StrId shift = layer == kLower ? StrId::KeyUpper
+                        : layer == kUpper ? StrId::KeyLower
+                        : layer == kSymbols ? StrId::KeyMoreSymbols
+                                            : StrId::KeyDigits;
+    widgets::key_cap(to, shift_x(), row3, kWideKey, kKeyH, text(shift), widgets::Icon::None,
+                     held == kShift, true);
     widgets::key_cap(to, del_x(), row3, kWideKey, kKeyH, "", widgets::Icon::Backspace,
                      held == kDel, true);
     const int row4 = bottom_row_y();
-    widgets::key_cap(to, shift_x(), row4, kLayerKey, kKeyH, layer == 2 ? "abc" : "?123",
-                     widgets::Icon::None, held == kLayer, true);
+    widgets::key_cap(to, shift_x(), row4, kLayerKey, kKeyH,
+                     text(layer >= kSymbols ? StrId::KeyLower : StrId::KeySymbols), widgets::Icon::None,
+                     held == kLayer, true);
     widgets::key_cap(to, space_x(), row4, space_w(), kKeyH, "", widgets::Icon::None,
                      held == kSpace, false);
     to.card(enter_x(), row4, kEnterKey, kKeyH, kKeyRadius,
@@ -417,13 +446,32 @@ int key_hit(int x, int y)
     return kNothing;
 }
 
-void field(Canvas &to, const char *text, const char *hint)
+// A long entry shows its end, where the typing is, behind a leading ellipsis (KEHOACH 7.6).
+void field(Canvas &to, const char *typed, const char *hint)
 {
     to.card(theme::kGutter, kFieldY, theme::kContentW, kFieldH, theme::kRadiusS, DRV_LCD_SURFACE);
-    const bool empty = text[0] == '\0';
-    to.text(Font::Body, theme::kGutter + theme::kGapM, Canvas::centre_y(Font::Body, kFieldY, kFieldH),
-            theme::kContentW - 2 * theme::kGapM, empty ? hint : text,
-            empty ? DRV_LCD_DIM : DRV_LCD_INK);
+    const int x = theme::kGutter + theme::kGapM;
+    const int y = Canvas::centre_y(Font::Body, kFieldY, kFieldH);
+    const int room = theme::kContentW - 2 * theme::kGapM;
+    if (typed[0] == '\0') {
+        to.text(Font::Body, x, y, room, hint, DRV_LCD_DIM);
+        return;
+    }
+    const char *tail = typed;
+    const int dots = theme::text_width(Font::Body, "…");
+    while (theme::text_width(Font::Body, tail) > room && *tail != '\0') {
+        theme::next_code(&tail);
+    }
+    if (tail == typed) {
+        to.text(Font::Body, x, y, room, typed, DRV_LCD_INK);
+        return;
+    }
+    while (theme::text_width(Font::Body, tail) > room - dots && *tail != '\0') {
+        theme::next_code(&tail);
+    }
+    char shown[UI_KIOSK_WIFI_PASS_CAP + 4];
+    snprintf(shown, sizeof(shown), "…%s", tail);
+    to.text(Font::Body, x, y, room, shown, DRV_LCD_INK);
 }
 
 // Lines about the kiosk itself, not the face, in the gap above the guide (KEHOACH 4.5.5h.1).
@@ -736,7 +784,7 @@ public:
                      held_ == kDevice);
 
         widgets::card(to, theme::kGutter, wifi_y(), theme::kContentW, kRowH);
-        const widgets::Row net = { "Wi-Fi",
+        const widgets::Row net = { text(StrId::WifiTitle),
                                    s_net.joined ? s_net.ssid : text(StrId::SettingsNotJoined),
                                    widgets::Icon::Wifi,
                                    DRV_LCD_ACCENT,
@@ -1373,112 +1421,144 @@ private:
     int held_ = kNothing;
 };
 
+// Works the way a phone's Wi-Fi page does: list, join, info, forget (KEHOACH 7.6).
 class WifiScreen final : public Screen {
 public:
     bool opaque() const noexcept override { return true; }
 
     void on_enter() noexcept override
     {
-        step_ = Step::Looking;
-        networks().wanted = true;
-        networks().fresh = false;
-        typed_[0] = '\0';
-        chosen_ = kNothing;
         held_ = kNothing;
-        busy_ = kNothing;
-        failed_ = kNothing;
-        set_ = 0;
-        idle_ms_ = 0;
+        busy_[0] = '\0';
+        failed_[0] = '\0';
+        chosen_[0] = '\0';
+        typed_[0] = '\0';
+        set_ = kLower;
+        armed_ = false;
+        step_ = list_.count > 0 ? Step::Choosing : Step::Looking;
+        rescan();
     }
 
     bool tick(uint32_t dt_ms, const Sight &seen) noexcept override
     {
         (void)seen;
-        if (step_ == Step::Looking && networks().fresh) {
-            step_ = Step::Choosing;
-            idle_ms_ = 0;
-            return true;
+        bool changed = take_answers();
+        // A sweep lands between touches and outside a join, so no row moves under a finger.
+        if (held_ == kNothing && busy_[0] == '\0' && take_sweep()) {
+            changed = true;
         }
-        if (busy_ != kNothing && join_request().answered) {
-            join_request().answered = false;
-            failed_ = join_request().result == ESP_OK ? kNothing : busy_;
-            busy_ = kNothing;
-            return true;
-        }
-        // A sweep takes the radio off its channel and flaps the broker link, so
-        // only a kiosk still hunting for a network refreshes itself (KEHOACH 7.6).
-        if (step_ != Step::Choosing || busy_ != kNothing || s_net.joined) {
-            return false;
+        if (step_ != Step::Choosing || busy_[0] != '\0' || scanning_) {
+            return changed;
         }
         idle_ms_ += dt_ms;
-        if (idle_ms_ < kRescanMs) {
-            return false;
+        if (idle_ms_ >= kRescanMs) {
+            rescan();
+            changed = true;
         }
-        idle_ms_ = 0;
-        networks().fresh = false;
-        networks().wanted = true;
-        return false;
+        return changed;
     }
 
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        const int hit = widgets::on_back(x, y) || (step_ == Step::Typing && above_keys(y))
-                            ? kBack
-                            : (step_ == Step::Typing ? key_hit(x, y) : row_at(x, y));
+        const int hit = hit_at(x, y);
         if (down) {
             held_ = hit;
             return true;
         }
         const int fire = held_ == hit ? hit : kNothing;
         held_ = kNothing;
+        // One tap arms a forget and the next fires it; any other tap stands it down.
+        if (fire != kForget) {
+            armed_ = false;
+        }
         if (fire == kNothing) {
             return true;
         }
         if (fire == kBack) {
-            if (step_ == Step::Typing) {
-                step_ = Step::Choosing;
-                idle_ms_ = 0;
-            } else {
-                manager().go(ScreenId::Settings);
-            }
+            back();
             return true;
         }
-        return step_ == Step::Typing ? typing(fire) : choosing(fire);
+        switch (step_) {
+            case Step::Typing: return typing(fire);
+            case Step::Info: return info_tap(fire);
+            case Step::Saved: return saved_tap(fire);
+            default: return choosing(fire);
+        }
     }
 
     void paint(Canvas &to, const Sight &seen) noexcept override
     {
         (void)seen;
-        page(to, "Wi-Fi", true);
         switch (step_) {
-            case Step::Typing: paint_keys(to); break;
-            case Step::Looking: note(to, text(StrId::WifiScanning), DRV_LCD_DIM); break;
-            default: paint_list(to); break;
+            case Step::Typing:
+                page(to, text(StrId::WifiTitle), true);
+                paint_keys(to);
+                return;
+            case Step::Info:
+                page(to, info_.ssid, true);
+                paint_info(to);
+                return;
+            case Step::Saved:
+                page(to, text(StrId::WifiSavedNetworks), true);
+                paint_saved(to);
+                return;
+            case Step::Looking:
+                page(to, text(StrId::WifiTitle), true);
+                note(to, text(StrId::WifiScanning), DRV_LCD_DIM);
+                return;
+            default:
+                page(to, text(StrId::WifiTitle), true);
+                paint_list(to);
+                if (scanning_) {
+                    paint_scanning(to);
+                }
+                return;
         }
     }
 
 private:
-    enum class Step : uint8_t { Looking, Choosing, Typing };
+    enum class Step : uint8_t { Looking, Choosing, Typing, Info, Saved };
+    static constexpr int kSavedRow = -20;
+    static constexpr int kForget = -21;
+
+    struct Saved {
+        int count;
+        char names[UI_KIOSK_WIFI_SAVED_ROWS][33];
+    };
 
     static void note(Canvas &to, const char *line, uint8_t tone) noexcept
     {
-        to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, line, tone,
-                Align::Centre);
+        to.text(Font::Body, theme::kGutter, kContentY, theme::kContentW, line, tone, Align::Centre);
     }
 
     static int row_y(int i) noexcept { return kContentY + i * kRowH; }
 
-    static int shown() noexcept { return list_fits(networks().count, kRowH, kListEnd); }
+    static bool here(const char *ssid) noexcept { return s_net.joined && strcmp(ssid, s_net.ssid) == 0; }
 
-    int row_at(int x, int y) const noexcept
+    // The last row the panel holds is the way into the saved networks.
+    int list_rows() const noexcept
     {
-        if (widgets::on_back(x, y)) {
-            return kBack;
-        }
-        if (step_ != Step::Choosing) {
-            return kNothing;
-        }
-        for (int i = 0; i < shown(); ++i) {
+        const int fits = list_fits(UI_KIOSK_WIFI_ROWS + 1, kRowH, kListEnd) - 1;
+        return list_.count < fits ? list_.count : (fits > 0 ? fits : 0);
+    }
+
+    int saved_row_y() const noexcept
+    {
+        return list_.count == 0 ? kContentY + theme::line_height(Font::Body) + theme::kGapL : row_y(list_rows());
+    }
+
+    int info_rows() const noexcept { return info_.here ? 3 : 1; }
+    int forget_y() const noexcept { return kContentY + info_rows() * kRowH + theme::kGapL; }
+
+    int saved_rows() const noexcept
+    {
+        const int fits = list_fits(saved_.count, kRowH, kListEnd);
+        return saved_.count < fits ? saved_.count : fits;
+    }
+
+    static int row_hit(int x, int y, int rows) noexcept
+    {
+        for (int i = 0; i < rows; ++i) {
             if (inside(x, y, theme::kGutter, row_y(i), theme::kContentW, kRowH)) {
                 return i;
             }
@@ -1486,21 +1566,169 @@ private:
         return kNothing;
     }
 
+    // Only the back arrow leaves typing; a touch on the field or its hint keeps the entry.
+    int hit_at(int x, int y) const noexcept
+    {
+        if (widgets::on_back(x, y)) {
+            return kBack;
+        }
+        switch (step_) {
+            case Step::Typing:
+                return y >= kKeyTop - kKeyVGap ? key_hit(x, y) : kNothing;
+            case Step::Info:
+                return inside(x, y, theme::kGutter, forget_y(), theme::kContentW, theme::kButtonH) ? kForget
+                                                                                                   : kNothing;
+            case Step::Saved:
+                return row_hit(x, y, saved_rows());
+            case Step::Choosing:
+                if (inside(x, y, theme::kGutter, saved_row_y(), theme::kContentW, kRowH)) {
+                    return kSavedRow;
+                }
+                return row_hit(x, y, list_rows());
+            default:
+                return kNothing;
+        }
+    }
+
+    void rescan() noexcept
+    {
+        wifi_ask_scan();
+        scanning_ = true;
+        idle_ms_ = 0;
+    }
+
+    bool take_sweep() noexcept
+    {
+        portENTER_CRITICAL(&s_wifi_lock);
+        const bool fresh = s_wifi_desk.sweep_serial != sweep_seen_;
+        if (fresh) {
+            list_ = s_wifi_desk.heard;
+            sweep_seen_ = s_wifi_desk.sweep_serial;
+        }
+        portEXIT_CRITICAL(&s_wifi_lock);
+        if (!fresh) {
+            return false;
+        }
+        scanning_ = false;
+        idle_ms_ = 0;
+        if (step_ == Step::Looking) {
+            step_ = Step::Choosing;
+        }
+        return true;
+    }
+
+    bool take_answers() noexcept
+    {
+        portENTER_CRITICAL(&s_wifi_lock);
+        const bool joined = s_wifi_desk.joined_serial != joined_seen_;
+        const ui_kiosk_wifi_result_t result = s_wifi_desk.joined;
+        joined_seen_ = s_wifi_desk.joined_serial;
+        const bool informed = s_wifi_desk.info_serial != info_seen_;
+        if (informed && strcmp(s_wifi_desk.info.ssid, info_.ssid) == 0) {
+            info_ = s_wifi_desk.info;
+        }
+        info_seen_ = s_wifi_desk.info_serial;
+        const bool listed = s_wifi_desk.saved_serial != saved_seen_;
+        if (listed) {
+            saved_.count = s_wifi_desk.saved_count;
+            memcpy(saved_.names, s_wifi_desk.saved, sizeof(saved_.names));
+        }
+        saved_seen_ = s_wifi_desk.saved_serial;
+        const bool forgot = s_wifi_desk.forgotten_serial != forgotten_seen_;
+        const bool gone = s_wifi_desk.forgotten;
+        forgotten_seen_ = s_wifi_desk.forgotten_serial;
+        portEXIT_CRITICAL(&s_wifi_lock);
+        if (joined) {
+            if (result == UI_KIOSK_WIFI_JOINED) {
+                failed_[0] = '\0';
+            } else {
+                strlcpy(failed_, busy_, sizeof(failed_));
+                failure_ = result;
+            }
+            busy_[0] = '\0';
+            // The joined network moves to the top, and the next sweep says so.
+            rescan();
+        }
+        if (forgot && gone) {
+            step_ = Step::Choosing;
+            rescan();
+        }
+        return joined || informed || listed || forgot;
+    }
+
+    void back() noexcept
+    {
+        if (step_ == Step::Typing || step_ == Step::Saved) {
+            step_ = Step::Choosing;
+            idle_ms_ = 0;
+            return;
+        }
+        if (step_ == Step::Info) {
+            step_ = info_from_;
+            if (step_ == Step::Saved) {
+                wifi_ask_saved();
+            }
+            return;
+        }
+        manager().go(ScreenId::Settings);
+    }
+
+    void open_info(const char *ssid, Step from) noexcept
+    {
+        memset(&info_, 0, sizeof(info_));
+        strlcpy(info_.ssid, ssid, sizeof(info_.ssid));
+        info_from_ = from;
+        armed_ = false;
+        step_ = Step::Info;
+        wifi_ask_info(ssid);
+    }
+
     bool choosing(int fire) noexcept
     {
-        if (fire < 0 || fire >= networks().count || busy_ != kNothing) {
+        if (fire == kSavedRow) {
+            saved_.count = 0;
+            step_ = Step::Saved;
+            wifi_ask_saved();
             return true;
         }
-        chosen_ = fire;
-        failed_ = kNothing;
+        if (fire < 0 || fire >= list_rows() || busy_[0] != '\0') {
+            return true;
+        }
+        const ui_kiosk_ap_t &ap = list_.row[fire];
+        if (here(ap.ssid)) {
+            open_info(ap.ssid, Step::Choosing);
+            return true;
+        }
+        strlcpy(chosen_, ap.ssid, sizeof(chosen_));
         typed_[0] = '\0';
-        // A network already in NVS joins on one touch, the way a phone does.
-        if (networks().row[fire].open || networks().row[fire].saved) {
-            ask_join(networks().row[fire].saved);
+        failed_[0] = '\0';
+        // A network NVS already holds joins on one touch, the way a phone does.
+        if (ap.open || ap.saved) {
+            join(ap.saved);
             return true;
         }
         step_ = Step::Typing;
-        set_ = 0;
+        set_ = kLower;
+        return true;
+    }
+
+    bool saved_tap(int fire) noexcept
+    {
+        if (fire >= 0 && fire < saved_rows()) {
+            open_info(saved_.names[fire], Step::Saved);
+        }
+        return true;
+    }
+
+    bool info_tap(int fire) noexcept
+    {
+        if (fire != kForget) {
+            return true;
+        }
+        if (armed_) {
+            wifi_ask_forget(info_.ssid);
+        }
+        armed_ = !armed_;
         return true;
     }
 
@@ -1514,15 +1742,16 @@ private:
             return true;
         }
         if (fire == kShift) {
-            set_ = set_ == 1 ? 0 : 1;
+            set_ = set_ >= kSymbols ? (set_ == kSymbols ? kMoreSymbols : kSymbols)
+                                    : (set_ == kUpper ? kLower : kUpper);
             return true;
         }
         if (fire == kLayer) {
-            set_ = set_ == 2 ? 0 : 2;
+            set_ = set_ >= kSymbols ? kLower : kSymbols;
             return true;
         }
         if (fire == kOk) {
-            ask_join(false);
+            join(false);
             return true;
         }
         if (at + 1 >= sizeof(typed_)) {
@@ -1533,71 +1762,162 @@ private:
         return true;
     }
 
-    void ask_join(bool stored) noexcept
+    void join(bool stored) noexcept
     {
-        strlcpy(join_request().ssid, networks().row[chosen_].ssid, sizeof(join_request().ssid));
-        strlcpy(join_request().pass, typed_, sizeof(join_request().pass));
-        join_request().stored = stored;
-        join_request().answered = false;
-        join_request().waiting = true;
-        busy_ = chosen_;
-        failed_ = kNothing;
+        JoinRequest ask = {};
+        ask.stored = stored;
+        strlcpy(ask.ssid, chosen_, sizeof(ask.ssid));
+        strlcpy(ask.pass, typed_, sizeof(ask.pass));
+        wifi_ask_join(ask);
+        strlcpy(busy_, chosen_, sizeof(busy_));
+        failed_[0] = '\0';
         step_ = Step::Choosing;
         idle_ms_ = 0;
     }
 
-    void paint_list(Canvas &to) noexcept
+    static const char *failure_text(ui_kiosk_wifi_result_t why) noexcept
     {
-        const int count = shown();
-        if (networks().count == 0) {
-            note(to, text(StrId::WifiNone), DRV_LCD_DIM);
-            return;
+        switch (why) {
+            case UI_KIOSK_WIFI_WRONG_PASSWORD: return text(StrId::WifiWrongPass);
+            case UI_KIOSK_WIFI_NOT_FOUND: return text(StrId::WifiNotFound);
+            case UI_KIOSK_WIFI_TIMED_OUT: return text(StrId::WifiTimedOut);
+            default: return text(StrId::WifiJoinFailed);
         }
-        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, count * kRowH);
-        for (int i = 0; i < count; ++i) {
-            const ui_kiosk_ap_t &ap = networks().row[i];
+    }
+
+    static const char *security_text(ui_kiosk_wifi_sec_t security) noexcept
+    {
+        switch (security) {
+            case UI_KIOSK_WIFI_SEC_OPEN: return text(StrId::WifiSecOpen);
+            case UI_KIOSK_WIFI_SEC_WEP: return text(StrId::WifiSecWep);
+            case UI_KIOSK_WIFI_SEC_WPA: return text(StrId::WifiSecWpa);
+            case UI_KIOSK_WIFI_SEC_WPA2: return text(StrId::WifiSecWpa2);
+            case UI_KIOSK_WIFI_SEC_WPA3: return text(StrId::WifiSecWpa3);
+            default: return text(StrId::WifiSecOther);
+        }
+    }
+
+    void paint_scanning(Canvas &to) const noexcept
+    {
+        const char *line = text(StrId::WifiScanning);
+        const int w = theme::text_width(Font::Caption, line);
+        to.text(Font::Caption, APP_LCD_H_RES - theme::kGutter - w,
+                Canvas::centre_y(Font::Caption, theme::kBarH, kHeadH), w, line, DRV_LCD_DIM);
+    }
+
+    void paint_list(Canvas &to) const noexcept
+    {
+        const int rows = list_rows();
+        if (list_.count == 0) {
+            note(to, text(StrId::WifiNone), DRV_LCD_DIM);
+        }
+        widgets::card(to, theme::kGutter, rows > 0 ? kContentY : saved_row_y(), theme::kContentW,
+                      (rows + 1) * kRowH);
+        for (int i = 0; i < rows; ++i) {
+            const ui_kiosk_ap_t &ap = list_.row[i];
             const int y = row_y(i);
             if (i > 0) {
                 widgets::divider(to, theme::kGutter, y, theme::kContentW);
             }
-            const bool here = s_net.joined && strcmp(ap.ssid, s_net.ssid) == 0;
-            const char *state =
-                i == busy_ ? text(StrId::WifiJoining)
-                           : (i == failed_ ? text(StrId::WifiWrongPass)
-                                           : (here ? text(StrId::WifiJoined)
-                                                   : (ap.saved ? text(StrId::WifiSaved)
-                                                               : nullptr)));
-            const widgets::Row what = { ap.ssid,
-                                        state,
-                                        widgets::Icon::None,
-                                        0,
-                                        (uint8_t)(i == failed_ ? DRV_LCD_DANGER
-                                                               : (here ? DRV_LCD_ACCENT
-                                                                       : DRV_LCD_INK)),
-                                        signal_level(ap.rssi_dbm),
-                                        // A row already saying where it stands
-                                        // has no room left to say it is locked.
-                                        (ap.open || state != nullptr) ? widgets::Icon::None
-                                                                      : widgets::Icon::Lock };
+            const bool now_here = here(ap.ssid);
+            const bool trying = strcmp(ap.ssid, busy_) == 0;
+            const bool refused = strcmp(ap.ssid, failed_) == 0;
+            const char *state = trying    ? text(StrId::WifiJoining)
+                                : refused ? failure_text(failure_)
+                                : now_here ? text(StrId::WifiJoined)
+                                : ap.saved ? text(StrId::WifiSaved)
+                                           : nullptr;
+            const uint8_t ink = refused ? DRV_LCD_WARN : (now_here ? DRV_LCD_ACCENT : DRV_LCD_INK);
+            // A row already saying where it stands has no room left to say it is locked.
+            const widgets::Icon trail = ap.open || state != nullptr ? widgets::Icon::None : widgets::Icon::Lock;
+            const widgets::Row what = { ap.ssid, state, widgets::Icon::None, 0, ink, signal_level(ap.rssi_dbm), trail,
+                                        true };
+            widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
+        }
+        const int y = saved_row_y();
+        if (rows > 0) {
+            widgets::divider(to, theme::kGutter, y, theme::kContentW);
+        }
+        const widgets::Row saved = { text(StrId::WifiSavedNetworks), nullptr, widgets::Icon::List, DRV_LCD_DIM,
+                                     DRV_LCD_INK, -1, widgets::Icon::None };
+        widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, saved, held_ == kSavedRow);
+    }
+
+    void paint_info(Canvas &to) const noexcept
+    {
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, info_rows() * kRowH);
+        if (!info_.here) {
+            const widgets::Row away = { text(StrId::WifiNotHere), nullptr, widgets::Icon::Wifi, DRV_LCD_DIM,
+                                        DRV_LCD_INK, -1, widgets::Icon::None };
+            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, kRowH, away, false);
+        } else {
+            char dbm[16];
+            snprintf(dbm, sizeof(dbm), text(StrId::WifiDbmFmt), info_.rssi_dbm);
+            const widgets::Row signal = { text(StrId::WifiSignal), dbm, widgets::Icon::None, 0, DRV_LCD_INK,
+                                          signal_level(info_.rssi_dbm), widgets::Icon::None, true };
+            const widgets::Row address = { text(StrId::WifiAddress), info_.ip, widgets::Icon::Globe, DRV_LCD_DIM,
+                                           DRV_LCD_INK, -1, widgets::Icon::None, true };
+            const widgets::Row lock = { text(StrId::WifiSecurity), security_text(info_.security), widgets::Icon::Lock,
+                                        DRV_LCD_DIM, DRV_LCD_INK, -1, widgets::Icon::None, true };
+            widgets::row(to, theme::kGutter, row_y(0), theme::kContentW, kRowH, signal, false);
+            widgets::divider(to, theme::kGutter, row_y(1), theme::kContentW);
+            widgets::row(to, theme::kGutter, row_y(1), theme::kContentW, kRowH, address, false);
+            widgets::divider(to, theme::kGutter, row_y(2), theme::kContentW);
+            widgets::row(to, theme::kGutter, row_y(2), theme::kContentW, kRowH, lock, false);
+        }
+        widgets::button(to, theme::kGutter, forget_y(), theme::kContentW, theme::kButtonH,
+                        text(armed_ ? StrId::WifiForgetConfirm : StrId::WifiForget), DRV_LCD_DANGER, DRV_LCD_INK,
+                        held_ == kForget);
+    }
+
+    void paint_saved(Canvas &to) const noexcept
+    {
+        const int rows = saved_rows();
+        if (rows == 0) {
+            note(to, text(StrId::WifiNoneSaved), DRV_LCD_DIM);
+            return;
+        }
+        widgets::card(to, theme::kGutter, kContentY, theme::kContentW, rows * kRowH);
+        for (int i = 0; i < rows; ++i) {
+            const int y = row_y(i);
+            if (i > 0) {
+                widgets::divider(to, theme::kGutter, y, theme::kContentW);
+            }
+            const bool now_here = here(saved_.names[i]);
+            const widgets::Row what = { saved_.names[i], now_here ? text(StrId::WifiJoined) : nullptr,
+                                        widgets::Icon::Wifi, DRV_LCD_ACCENT,
+                                        (uint8_t)(now_here ? DRV_LCD_ACCENT : DRV_LCD_INK), -1,
+                                        widgets::Icon::None, true };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
         }
     }
 
     void paint_keys(Canvas &to) noexcept
     {
-        to.text(Font::Caption, theme::kGutter, kFieldHintY, theme::kContentW,
-                networks().row[chosen_].ssid, DRV_LCD_DIM);
+        to.text(Font::Caption, theme::kGutter, kFieldHintY, theme::kContentW, chosen_, DRV_LCD_DIM);
         field(to, typed_, text(StrId::WifiPassword));
         keyboard(to, set_, held_, text(StrId::WifiJoin));
     }
 
     Step step_ = Step::Looking;
+    Step info_from_ = Step::Choosing;
+    Networks list_ = {};                  // what the panel shows, a copy of the last sweep taken
+    Saved saved_ = {};
+    ui_kiosk_wifi_info_t info_ = {};
+    ui_kiosk_wifi_result_t failure_ = UI_KIOSK_WIFI_JOINED;
     int held_ = kNothing;
-    int chosen_ = kNothing;
-    int busy_ = kNothing;                 // row the radio is joining
-    int failed_ = kNothing;
-    int set_ = 0;
+    int set_ = kLower;
+    bool armed_ = false;
+    bool scanning_ = false;
     int64_t idle_ms_ = 0;
+    uint32_t sweep_seen_ = 0;
+    uint32_t joined_seen_ = 0;
+    uint32_t info_seen_ = 0;
+    uint32_t saved_seen_ = 0;
+    uint32_t forgotten_seen_ = 0;
+    char chosen_[33] = {};                // the network typed for, by name
+    char busy_[33] = {};                  // the network the radio is joining
+    char failed_[33] = {};                // the network that refused the last join
     char typed_[UI_KIOSK_WIFI_PASS_CAP] = {};
 };
 
@@ -1708,14 +2028,148 @@ ScreenManager &manager() noexcept
     return s_manager;
 }
 
-Networks &networks() noexcept
+void wifi_ask_scan() noexcept
 {
-    return s_networks;
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.scan_wanted = true;
+    portEXIT_CRITICAL(&s_wifi_lock);
 }
 
-JoinRequest &join_request() noexcept
+bool wifi_take_scan() noexcept
 {
-    return s_join;
+    portENTER_CRITICAL(&s_wifi_lock);
+    const bool wanted = s_wifi_desk.scan_wanted;
+    s_wifi_desk.scan_wanted = false;
+    portEXIT_CRITICAL(&s_wifi_lock);
+    return wanted;
+}
+
+void wifi_stage_networks(const ui_kiosk_ap_t *found, int count) noexcept
+{
+    const int kept = found == nullptr || count < 0 ? 0 : (count < UI_KIOSK_WIFI_ROWS ? count : UI_KIOSK_WIFI_ROWS);
+    portENTER_CRITICAL(&s_wifi_lock);
+    // A sweep that heard nothing while the last one heard plenty is a busy radio, not an empty room.
+    if (kept > 0 || !s_wifi_desk.swept) {
+        s_wifi_desk.heard.count = kept;
+        for (int i = 0; i < kept; ++i) {
+            s_wifi_desk.heard.row[i] = found[i];
+        }
+    }
+    s_wifi_desk.swept = true;
+    ++s_wifi_desk.sweep_serial;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+void wifi_ask_join(const JoinRequest &join) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.join = join;
+    s_wifi_desk.join_waiting = true;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+bool wifi_take_join(JoinRequest *out) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    const bool waiting = s_wifi_desk.join_waiting;
+    if (waiting) {
+        *out = s_wifi_desk.join;
+        s_wifi_desk.join_waiting = false;
+    }
+    portEXIT_CRITICAL(&s_wifi_lock);
+    return waiting;
+}
+
+void wifi_stage_joined(ui_kiosk_wifi_result_t result) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.joined = result;
+    ++s_wifi_desk.joined_serial;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+void wifi_ask_info(const char *ssid) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    strlcpy(s_wifi_desk.info_ssid, ssid, sizeof(s_wifi_desk.info_ssid));
+    s_wifi_desk.info_wanted = true;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+bool wifi_take_info_request(char *ssid, size_t cap) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    const bool wanted = s_wifi_desk.info_wanted;
+    if (wanted) {
+        strlcpy(ssid, s_wifi_desk.info_ssid, cap);
+        s_wifi_desk.info_wanted = false;
+    }
+    portEXIT_CRITICAL(&s_wifi_lock);
+    return wanted;
+}
+
+void wifi_stage_info(const ui_kiosk_wifi_info_t &info) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.info = info;
+    ++s_wifi_desk.info_serial;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+void wifi_ask_saved() noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.saved_wanted = true;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+bool wifi_take_saved_request() noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    const bool wanted = s_wifi_desk.saved_wanted;
+    s_wifi_desk.saved_wanted = false;
+    portEXIT_CRITICAL(&s_wifi_lock);
+    return wanted;
+}
+
+void wifi_stage_saved(const char (*names)[33], int count) noexcept
+{
+    const int kept = count < 0 ? 0 : (count < UI_KIOSK_WIFI_SAVED_ROWS ? count : UI_KIOSK_WIFI_SAVED_ROWS);
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.saved_count = kept;
+    for (int i = 0; i < kept; ++i) {
+        strlcpy(s_wifi_desk.saved[i], names[i], sizeof(s_wifi_desk.saved[i]));
+    }
+    ++s_wifi_desk.saved_serial;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+void wifi_ask_forget(const char *ssid) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    strlcpy(s_wifi_desk.forget_ssid, ssid, sizeof(s_wifi_desk.forget_ssid));
+    s_wifi_desk.forget_waiting = true;
+    portEXIT_CRITICAL(&s_wifi_lock);
+}
+
+bool wifi_take_forget(char *ssid, size_t cap) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    const bool waiting = s_wifi_desk.forget_waiting;
+    if (waiting) {
+        strlcpy(ssid, s_wifi_desk.forget_ssid, cap);
+        s_wifi_desk.forget_waiting = false;
+    }
+    portEXIT_CRITICAL(&s_wifi_lock);
+    return waiting;
+}
+
+void wifi_stage_forgotten(bool forgotten) noexcept
+{
+    portENTER_CRITICAL(&s_wifi_lock);
+    s_wifi_desk.forgotten = forgotten;
+    ++s_wifi_desk.forgotten_serial;
+    portEXIT_CRITICAL(&s_wifi_lock);
 }
 
 EnrolRequest &enrol_request() noexcept

@@ -293,10 +293,70 @@ void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count);
 bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap,
                              bool *stored);
 
+/** How a join ended, as the Wi-Fi screen words it (KEHOACH 7.6). */
+typedef enum {
+    UI_KIOSK_WIFI_JOINED = 0,
+    UI_KIOSK_WIFI_WRONG_PASSWORD,
+    UI_KIOSK_WIFI_NOT_FOUND,
+    UI_KIOSK_WIFI_TIMED_OUT,
+    UI_KIOSK_WIFI_FAILED,
+} ui_kiosk_wifi_result_t;
+
 /** Tell the screen how the join went.
  *  @ctx any | non-blocking
  */
-void ui_kiosk_wifi_joined(esp_err_t result);
+void ui_kiosk_wifi_joined(ui_kiosk_wifi_result_t result);
+
+/** Security of a network, as the info page names it. */
+typedef enum {
+    UI_KIOSK_WIFI_SEC_OPEN = 0,
+    UI_KIOSK_WIFI_SEC_WEP,
+    UI_KIOSK_WIFI_SEC_WPA,
+    UI_KIOSK_WIFI_SEC_WPA2,
+    UI_KIOSK_WIFI_SEC_WPA3,
+    UI_KIOSK_WIFI_SEC_OTHER,
+} ui_kiosk_wifi_sec_t;
+
+/** What the info page of one network shows; only the name when it is not the one in use. */
+typedef struct {
+    char ssid[33];
+    bool here;                            // the station is on it
+    int rssi_dbm;
+    char ip[16];
+    ui_kiosk_wifi_sec_t security;
+} ui_kiosk_wifi_info_t;
+
+/** Take the network whose info page just opened, so main can describe it.
+ *  @ctx any | non-blocking | one shot | ssid copied, at least 33 bytes
+ */
+bool ui_kiosk_take_wifi_info_request(char *ssid, size_t cap);
+
+/** Hand the info page what main found out about its network.
+ *  @ctx any | non-blocking | copied
+ */
+void ui_kiosk_set_wifi_info(const ui_kiosk_wifi_info_t *info);
+
+#define UI_KIOSK_WIFI_SAVED_ROWS 5
+
+/** True when the saved networks page opened and wants the list.
+ *  @ctx any | non-blocking | one shot
+ */
+bool ui_kiosk_take_wifi_saved_request(void);
+
+/** Hand the saved networks page the names NVS holds, most recent first.
+ *  @ctx any | non-blocking | copied, at most UI_KIOSK_WIFI_SAVED_ROWS
+ */
+void ui_kiosk_set_wifi_saved(const char (*names)[33], int count);
+
+/** Take the network the operator asked to forget, after the second tap.
+ *  @ctx any | non-blocking | one shot | ssid copied, at least 33 bytes
+ */
+bool ui_kiosk_take_wifi_forget(char *ssid, size_t cap);
+
+/** Tell the info page the network is gone, so it returns to the list.
+ *  @ctx any | non-blocking
+ */
+void ui_kiosk_wifi_forgotten(bool forgotten);
 
 /** Hand the people screen one page of the face table (KEHOACH 4.5.5h.3).
  *  @ctx ui_task | non-blocking | copied, the caller keeps its own array

@@ -459,54 +459,75 @@ int ui_kiosk_people_first(void)
 
 bool ui_kiosk_take_wifi_scan(void)
 {
-    if (!s_ready || !ui::networks().wanted) {
-        return false;
-    }
-    ui::networks().wanted = false;
-    return true;
+    return s_ready && ui::wifi_take_scan();
 }
 
 void ui_kiosk_set_networks(const ui_kiosk_ap_t *found, int count)
 {
-    if (!s_ready) {
-        return;
+    if (s_ready) {
+        ui::wifi_stage_networks(found, count);
     }
-    const int kept = count < UI_KIOSK_WIFI_ROWS ? count : UI_KIOSK_WIFI_ROWS;
-    // A sweep that heard nothing while the last one heard plenty is the radio
-    // being busy, not a room that emptied, so the list it replaces stands.
-    if (kept > 0 && found != nullptr) {
-        ui::networks().count = kept;
-        memcpy(ui::networks().row, found, sizeof(ui_kiosk_ap_t) * (size_t)kept);
-    } else if (!ui::networks().fresh) {
-        ui::networks().count = 0;
-    }
-    ui::networks().fresh = true;
-    s_dirty = true;
 }
 
 bool ui_kiosk_take_wifi_join(char *ssid, size_t ssid_cap, char *pass, size_t pass_cap,
                              bool *stored)
 {
-    if (!s_ready || ssid == nullptr || pass == nullptr || !ui::join_request().waiting) {
+    if (!s_ready || ssid == nullptr || pass == nullptr) {
         return false;
     }
-    strlcpy(ssid, ui::join_request().ssid, ssid_cap);
-    strlcpy(pass, ui::join_request().pass, pass_cap);
-    if (stored != nullptr) {
-        *stored = ui::join_request().stored;
+    ui::JoinRequest join;
+    if (!ui::wifi_take_join(&join)) {
+        return false;
     }
-    ui::join_request().waiting = false;
+    strlcpy(ssid, join.ssid, ssid_cap);
+    strlcpy(pass, join.pass, pass_cap);
+    if (stored != nullptr) {
+        *stored = join.stored;
+    }
     return true;
 }
 
-void ui_kiosk_wifi_joined(esp_err_t result)
+void ui_kiosk_wifi_joined(ui_kiosk_wifi_result_t result)
 {
-    if (!s_ready) {
-        return;
+    if (s_ready) {
+        ui::wifi_stage_joined(result);
     }
-    ui::join_request().result = result;
-    ui::join_request().answered = true;
-    s_dirty = true;
+}
+
+bool ui_kiosk_take_wifi_info_request(char *ssid, size_t cap)
+{
+    return s_ready && ssid != nullptr && ui::wifi_take_info_request(ssid, cap);
+}
+
+void ui_kiosk_set_wifi_info(const ui_kiosk_wifi_info_t *info)
+{
+    if (s_ready && info != nullptr) {
+        ui::wifi_stage_info(*info);
+    }
+}
+
+bool ui_kiosk_take_wifi_saved_request(void)
+{
+    return s_ready && ui::wifi_take_saved_request();
+}
+
+void ui_kiosk_set_wifi_saved(const char (*names)[33], int count)
+{
+    if (s_ready && names != nullptr) {
+        ui::wifi_stage_saved(names, count);
+    }
+}
+
+bool ui_kiosk_take_wifi_forget(char *ssid, size_t cap)
+{
+    return s_ready && ssid != nullptr && ui::wifi_take_forget(ssid, cap);
+}
+
+void ui_kiosk_wifi_forgotten(bool forgotten)
+{
+    if (s_ready) {
+        ui::wifi_stage_forgotten(forgotten);
+    }
 }
 
 bool ui_kiosk_enrolling(void)

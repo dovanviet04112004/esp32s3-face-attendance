@@ -77,7 +77,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REST_ALL_MS 60000
 #define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
-#define WIFI_NVS_SSID "ssid"
 #define UI_NVS_BRIGHTNESS "brightness"
 #define UI_NVS_VOLUME "volume"
 #define UI_NVS_LANGUAGE "lang"
@@ -952,34 +951,111 @@ static void take_roster(const app_wiring_t *wiring)
     }
 }
 
+// Phone order: the network in use, then the saved ones, then the rest by signal (KEHOACH 7.6).
+static int network_rank(const net_wifi_ap_t *ap, const char *here)
+{
+    return strcmp(ap->ssid, here) == 0 ? 0 : (ap->saved ? 1 : 2);
+}
+
+static void offer_networks(void)
+{
+    static net_wifi_ap_t heard[UI_KIOSK_WIFI_ROWS];
+    const size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
+    char here[NET_WIFI_SSID_CAP] = { 0 };
+    net_wifi_ssid(here, sizeof(here));
+    // Two shapes on purpose: the screen has no business knowing the radio.
+    ui_kiosk_ap_t shown[UI_KIOSK_WIFI_ROWS];
+    size_t kept = 0;
+    for (int rank = 0; rank <= 2; ++rank) {
+        for (size_t i = 0; i < count; ++i) {
+            if (network_rank(&heard[i], here) != rank) {
+                continue;
+            }
+            strlcpy(shown[kept].ssid, heard[i].ssid, sizeof(shown[kept].ssid));
+            shown[kept].rssi_dbm = heard[i].rssi_dbm;
+            shown[kept].open = heard[i].open;
+            shown[kept].saved = heard[i].saved;
+            ++kept;
+        }
+    }
+    ui_kiosk_set_networks(shown, (int)kept);
+}
+
+static ui_kiosk_wifi_result_t join_result(esp_err_t joined, net_wifi_fail_t why)
+{
+    if (joined == ESP_OK) {
+        return UI_KIOSK_WIFI_JOINED;
+    }
+    switch (why) {
+    case NET_WIFI_FAIL_PASSWORD: return UI_KIOSK_WIFI_WRONG_PASSWORD;
+    case NET_WIFI_FAIL_NOT_FOUND: return UI_KIOSK_WIFI_NOT_FOUND;
+    case NET_WIFI_FAIL_TIMEOUT: return UI_KIOSK_WIFI_TIMED_OUT;
+    default: return UI_KIOSK_WIFI_FAILED;
+    }
+}
+
+static ui_kiosk_wifi_sec_t security_shown(net_wifi_security_t security)
+{
+    switch (security) {
+    case NET_WIFI_SECURITY_OPEN: return UI_KIOSK_WIFI_SEC_OPEN;
+    case NET_WIFI_SECURITY_WEP: return UI_KIOSK_WIFI_SEC_WEP;
+    case NET_WIFI_SECURITY_WPA: return UI_KIOSK_WIFI_SEC_WPA;
+    case NET_WIFI_SECURITY_WPA2: return UI_KIOSK_WIFI_SEC_WPA2;
+    case NET_WIFI_SECURITY_WPA3: return UI_KIOSK_WIFI_SEC_WPA3;
+    default: return UI_KIOSK_WIFI_SEC_OTHER;
+    }
+}
+
+static void describe_network(const char *ssid)
+{
+    ui_kiosk_wifi_info_t shown = { 0 };
+    strlcpy(shown.ssid, ssid, sizeof(shown.ssid));
+    net_wifi_info_t info = { 0 };
+    if (net_wifi_info(&info) == ESP_OK && strcmp(info.ssid, ssid) == 0) {
+        shown.here = true;
+        shown.rssi_dbm = info.rssi_dbm;
+        strlcpy(shown.ip, info.ip, sizeof(shown.ip));
+        shown.security = security_shown(info.security);
+    }
+    ui_kiosk_set_wifi_info(&shown);
+}
+
+static void offer_saved(void)
+{
+    char names[UI_KIOSK_WIFI_SAVED_ROWS][NET_WIFI_SSID_CAP];
+    const size_t count = net_wifi_saved(names, UI_KIOSK_WIFI_SAVED_ROWS);
+    ui_kiosk_set_wifi_saved((const char (*)[33])names, (int)count);
+}
+
 // Sweeping the channels blocks for seconds and drops the link while it runs,
 // so it belongs on the lowest-priority task rather than the one that repaints.
 static void take_wifi(void)
 {
     if (ui_kiosk_take_wifi_scan()) {
-        net_wifi_ap_t heard[UI_KIOSK_WIFI_ROWS];
-        const size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
-        // Two shapes on purpose: the screen has no business knowing the radio.
-        ui_kiosk_ap_t shown[UI_KIOSK_WIFI_ROWS];
-        char known[NET_WIFI_SSID_CAP] = { 0 };
-        sys_storage_get_str(STORAGE_NS_WIFI, WIFI_NVS_SSID, known, sizeof(known));
-        for (size_t i = 0; i < count; ++i) {
-            strlcpy(shown[i].ssid, heard[i].ssid, sizeof(shown[i].ssid));
-            shown[i].rssi_dbm = heard[i].rssi_dbm;
-            shown[i].open = heard[i].open;
-            shown[i].saved = known[0] != '\0' && strcmp(known, heard[i].ssid) == 0;
-        }
-        ui_kiosk_set_networks(shown, (int)count);
+        offer_networks();
     }
     char ssid[NET_WIFI_SSID_CAP] = { 0 };
+    if (ui_kiosk_take_wifi_info_request(ssid, sizeof(ssid))) {
+        describe_network(ssid);
+    }
+    if (ui_kiosk_take_wifi_saved_request()) {
+        offer_saved();
+    }
+    if (ui_kiosk_take_wifi_forget(ssid, sizeof(ssid))) {
+        const esp_err_t gone = net_wifi_forget(ssid);
+        ESP_LOGW(TAG, "forget %s: %s", ssid, esp_err_to_name(gone));
+        ui_kiosk_wifi_forgotten(gone == ESP_OK);
+        offer_saved();
+    }
     char pass[NET_WIFI_PASS_CAP] = { 0 };
     bool stored = false;
     if (!ui_kiosk_take_wifi_join(ssid, sizeof(ssid), pass, sizeof(pass), &stored)) {
         return;
     }
-    const esp_err_t joined = net_wifi_join(ssid, stored ? NULL : pass, WIFI_JOIN_WAIT_MS);
-    ESP_LOGI(TAG, "join %s: %s", ssid, esp_err_to_name(joined));
-    ui_kiosk_wifi_joined(joined);
+    net_wifi_fail_t why = NET_WIFI_FAIL_NONE;
+    const esp_err_t joined = net_wifi_join(ssid, stored ? NULL : pass, WIFI_JOIN_WAIT_MS, &why);
+    ESP_LOGI(TAG, "join %s: %s (why %d)", ssid, esp_err_to_name(joined), (int)why);
+    ui_kiosk_wifi_joined(join_result(joined, why));
 }
 
 // A kiosk has something to say at boot while the broker answers seconds later,

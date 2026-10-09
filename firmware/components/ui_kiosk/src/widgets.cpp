@@ -336,7 +336,8 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
     int right = x + w - kRowPad;
     const int line = Canvas::centre_y(theme::Font::Body, y, h);
     int room = right - pen;
-    if (what.value != nullptr) {
+    const bool stacked = what.stacked && what.value != nullptr;
+    if (what.value != nullptr && !stacked) {
         // A label that already fits keeps its width; only a long one gives way,
         // and never below what still reads as a name.
         const int wide = theme::text_width(theme::Font::Body, what.value);
@@ -355,6 +356,13 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
         right -= box;
         icon(to, right, y + (h - box) / 2, box, what.trail, DRV_LCD_DIM);
         room = right - pen - theme::kGapS;
+    }
+    if (stacked) {
+        const int body = theme::line_height(theme::Font::Body);
+        const int top = y + (h - body - theme::line_height(theme::Font::Caption)) / 2;
+        to.text(theme::Font::Body, pen, top, room, what.label, what.label_colour);
+        to.text(theme::Font::Caption, pen, top + body, room, what.value, DRV_LCD_DIM);
+        return;
     }
     to.text(theme::Font::Body, pen, line, room, what.label, what.label_colour);
 }

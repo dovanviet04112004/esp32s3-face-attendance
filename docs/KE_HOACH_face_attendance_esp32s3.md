@@ -6727,9 +6727,9 @@ bộ hẹn giờ khác của máy.
 **Trang thông tin của một mạng.** Chạm mạng đang nối, hay một dòng trong **Mạng đã lưu**, mở trang
 của mạng ấy: cường độ sóng (vạch kèm dBm), địa chỉ IP, kiểu bảo mật, và nút **Quên mạng**. Quên là
 xoá mạng ấy khỏi danh sách cùng mật khẩu của nó, nên nó đi bằng hai lần chạm: lần đầu nút đổi thành
-"Chạm lần nữa để quên", chạm chỗ khác thì thôi. Quên mạng đang nối thì máy ngắt ngay và tự nối mạng
-đã lưu khác có sóng; không còn mạng nào thì máy đứng ở trạng thái chưa nối, chấm công vẫn ghi
-offline. Chủ repo chốt 09/10 cho quên cả mạng đang nối dù menu không khoá (§7.5): ai đứng trước máy
+"Chạm lại để quên", chạm chỗ khác thì thôi. Quên mạng đang nối thì máy ngắt ngay, quét một lượt
+không chặn và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy; không còn mạng nào thì máy đứng ở
+trạng thái chưa nối, chấm công vẫn ghi offline. Chủ repo chốt 09/10 cho quên cả mạng đang nối dù menu không khoá (§7.5): ai đứng trước máy
 cũng làm được kiosk mất mạng tới khi có người gõ lại mật khẩu.
 
 **Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây

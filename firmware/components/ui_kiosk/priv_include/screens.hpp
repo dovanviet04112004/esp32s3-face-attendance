@@ -172,25 +172,33 @@ Pending &pending() noexcept;
 
 /** What the wifi screen shows and what it wants, handed down by main. */
 struct Networks {
-    bool wanted;
-    bool fresh;
     int count;
     ui_kiosk_ap_t row[UI_KIOSK_WIFI_ROWS];
 };
 
-Networks &networks() noexcept;
-
 /** Where the wifi screen leaves the network the operator picked. */
 struct JoinRequest {
-    bool waiting;
-    bool answered;
     bool stored;                          // join on the passphrase already in NVS
-    esp_err_t result;
     char ssid[33];
     char pass[UI_KIOSK_WIFI_PASS_CAP];
 };
 
-JoinRequest &join_request() noexcept;
+// sync_task answers the wifi screen through these, under one spinlock (KEHOACH 7.6).
+void wifi_ask_scan() noexcept;
+bool wifi_take_scan() noexcept;
+void wifi_stage_networks(const ui_kiosk_ap_t *found, int count) noexcept;
+void wifi_ask_join(const JoinRequest &join) noexcept;
+bool wifi_take_join(JoinRequest *out) noexcept;
+void wifi_stage_joined(ui_kiosk_wifi_result_t result) noexcept;
+void wifi_ask_info(const char *ssid) noexcept;
+bool wifi_take_info_request(char *ssid, size_t cap) noexcept;
+void wifi_stage_info(const ui_kiosk_wifi_info_t &info) noexcept;
+void wifi_ask_saved() noexcept;
+bool wifi_take_saved_request() noexcept;
+void wifi_stage_saved(const char (*names)[33], int count) noexcept;
+void wifi_ask_forget(const char *ssid) noexcept;
+bool wifi_take_forget(char *ssid, size_t cap) noexcept;
+void wifi_stage_forgotten(bool forgotten) noexcept;
 
 /** The guide frame the scan screen draws, x1, y1, x2, y2 in panel pixels. */
 void guide_box(int16_t out[4]) noexcept;

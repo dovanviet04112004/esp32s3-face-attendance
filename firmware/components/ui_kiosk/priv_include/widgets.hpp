@@ -60,6 +60,7 @@ struct Row {
     uint8_t label_colour;
     int bars;                             // 0..4 draws a fan, below 0 the tile
     Icon trail;                           // sits left of the value, None for none
+    bool stacked = false;                 // value under the label, which keeps the width
 };
 
 void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) noexcept;

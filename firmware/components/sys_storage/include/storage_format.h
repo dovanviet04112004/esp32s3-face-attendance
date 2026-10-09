@@ -115,6 +115,10 @@ typedef struct __attribute__((packed)) {
 
 #define STORAGE_PENDING_MAGIC 0x32444E50u    // 'PND2'
 #define STORAGE_PENDING_CAP 64
+#define STORAGE_WIFI_SAVED_MAGIC 0x31534657u // 'WFS1'
+#define STORAGE_WIFI_SAVED_CAP 5
+#define STORAGE_WIFI_SSID_CAP 33
+#define STORAGE_WIFI_PASS_CAP 65
 
 /** One person this kiosk is to capture, as the server named them (KEHOACH 7.5).
  */
@@ -131,6 +135,21 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved[3];
     storage_pending_row_t row[STORAGE_PENDING_CAP];
 } storage_pending_t;
+
+/** One network this kiosk has joined: its name and passphrase, empty for an open one. */
+typedef struct __attribute__((packed)) {
+    char ssid[STORAGE_WIFI_SSID_CAP];     // UTF-8, terminated
+    char pass[STORAGE_WIFI_PASS_CAP];     // terminated, empty when open
+} storage_wifi_net_t;
+
+/** NVS wifi/saved: the networks to rejoin, most recently joined first (KEHOACH 6.2.1, 7.6).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint8_t count;
+    uint8_t reserved[3];
+    storage_wifi_net_t net[STORAGE_WIFI_SAVED_CAP];
+} storage_wifi_saved_t;
 
 /** How far the uplink has got through the log. Only an acked record moves it,
  *  so a power cut costs a resend and never a record (KEHOACH 6.2.5).
@@ -160,6 +179,8 @@ static_assert(offsetof(storage_face_record_t, crc32) == 572, "face crc offset dr
 
 static_assert(sizeof(storage_pending_row_t) == 36, "pending row must match KEHOACH 6.2.1");
 static_assert(sizeof(storage_pending_t) == 2312, "pending blob must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_wifi_net_t) == 98, "saved network must match KEHOACH 6.2.1");
+static_assert(sizeof(storage_wifi_saved_t) == 498, "saved networks blob must match KEHOACH 6.2.1");
 
 static_assert(sizeof(storage_attend_record_t) == 48, "attend record must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_attend_record_t, ts_ms) == 16, "attend ts offset drifted");
