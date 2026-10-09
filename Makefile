@@ -242,10 +242,10 @@ monitor: idf ## Open the serial monitor
 	cd firmware && idf.py $(PORT_FLAG) monitor
 
 # idf.py monitor refuses a stdin that is no terminal, so script lends it one.
-fw-log: idf ## Reset the board and print its console for LOG_S seconds (30); APP= for a test app
+fw-log: idf ## Print the board's console for LOG_S seconds (30), reset first unless NORESET=1; APP= for a test app
 	$(fw_profile)
 	-timeout $(LOG_S) script -qfec "cd $(if $(APP),$(APP) && idf.py,firmware && idf.py -B $(fw_dir_$(PROFILE))) \
-	  $(PORT_FLAG) monitor" /dev/null
+	  $(PORT_FLAG) monitor $(if $(NORESET),--no-reset)" /dev/null
 
 fw-part-read: idf ## Save partition PART of the board into the file OUT (PORT=)
 	$(call need,PART,a partition name such as models_0)
