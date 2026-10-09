@@ -2020,7 +2020,7 @@ public:
         }
         if (failed) {
             to.text(Font::Strong, theme::kGutter, stack.take(theme::line_height(Font::Strong)),
-                    theme::kContentW, why(), DRV_LCD_DANGER, Align::Centre);
+                    theme::kContentW, why(), DRV_LCD_WARN, Align::Centre);
             snprintf(line, sizeof(line), text(StrId::UpdateResumeFmt), (unsigned)s_update.resume_s);
             to.text(Font::Body, theme::kGutter, stack.take(theme::line_height(Font::Body)),
                     theme::kContentW, line, DRV_LCD_DIM, Align::Centre);
