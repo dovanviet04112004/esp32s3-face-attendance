@@ -6209,7 +6209,7 @@ vùng riêng chưa ai từng xin. Nên "còn 40 KB" không có nghĩa là xin đ
 **Đồng bộ lại không rơi lệnh có giá bằng PSRAM, không bằng RAM nội** (E10-T23): hàng đợi roster
 603 KB, bộ ghép tin MQTT bị chia mảnh 4 KB và danh sách chờ 2,3 KB đều nằm ở PSRAM, tức khoảng
 610 KB lấy từ đáy 5.070 KB; RAM nội lại nhẹ đi khoảng 3,7 KB vì hàng đợi bốn chỗ cũ nằm ở heap
-nội. 🔬 Đáy PSRAM sau đổi chưa đo trên board.
+nội. Đáy PSRAM đo 09/10, có phiên TLS, là 2.046 KB: thấp hơn ngày 23/09 649 KB (`measurements/ram.md` §11).
 
 **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
 mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
@@ -6220,8 +6220,8 @@ thay vì hạ `MBEDTLS_SSL_IN_CONTENT_LEN` hay bật đệm động vì cả hai
 RAM nội** — chỉ giảm bớt phần ăn — trong khi cách này đưa hẳn sang nơi còn 5 MB và trả lại
 nguyên vẹn lưới an toàn 32 KB của DMA. Hạ ngưỡng còn thêm một rủi ro không đáng: bản tin bắt tay
 lớn hơn đệm là **hỏng tay bắt**, mà kích thước chuỗi chứng thư thì do broker quyết. Cái giá là
-bắt tay chạy trên PSRAM nên chậm hơn, 🔬 chưa đo — bắt tay chỉ xảy ra lúc nối lại, không phải
-mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được và SNTP vẫn chỉnh được giờ.
+bắt tay chạy trên PSRAM nên chậm hơn: đo 09/10, từ lúc quay số tới lúc broker trả lời mất 1,2 s, chưa
+có số bắt tay trong RAM nội để so — mà bắt tay chỉ xảy ra lúc nối lại, không phải mỗi bản ghi. Nghiệm trên board sau khi gạt: Wi-Fi vẫn nối được và SNTP vẫn chỉnh được giờ.
 
 **ESP-DL đè thêm lên đúng chỗ chật ấy, và phải trả lại bằng PSRAM.** Đo trên file map của ảnh
 kiosk: thư viện chiếm tĩnh **10,8 KB IRAM + 4,5 KB `.bss`**; trừ phần tĩnh TFLM không còn link, DIRAM
@@ -6238,8 +6238,9 @@ lwIP và các driver sang PSRAM.
 Cổng của E9-T31: kiosk ESP-DL chạy 10 phút có Wi-Fi + MQTT/TLS phải giữ **đáy RAM nội ≥ 24 KB**
 và không một dòng `alloc failed`. Guard không đỡ được `malloc(MALLOC_CAP_INTERNAL)` tường minh
 nếu ESP-DL tự gọi lúc `run()`; đáy đo được trên kiosk là thứ phủ quyết. `bench_mem` với Wi-Fi,
-chưa có phiên TLS, giữ 38.067 B; phiên TLS thật đo trên build mặc định 🔬, trượt cổng thì revert
-cả lock contract lẫn mặc định `AI_RUNTIME`.
+chưa có phiên TLS, giữ 38.067 B; có phiên TLS thật (09/10) giữ 29.755 B qua 1,5 phút
+(`measurements/ram.md` §11), lượt đủ 10 phút còn nợ 🔬. Trượt cổng thì revert cả lock contract lẫn
+mặc định `AI_RUNTIME`.
 
 ---
 
