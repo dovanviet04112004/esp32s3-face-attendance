@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 .PHONY: help setup ml-sync ml-lock be-install fe-install \
-        gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test \
+        gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
@@ -16,6 +16,11 @@ ML_PY := $(CURDIR)/ml/.venv/bin/python
 TORCH ?= cu130
 ML_EXTRAS := --extra $(TORCH) --extra export --extra espdl --extra bench --extra eval
 USBIPD ?= usbipd.exe
+# WSL here has no docker of its own; Docker Desktop's client stands in.
+DOCKER ?= $(or $(shell command -v docker 2>/dev/null),/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe)
+# The e2e clone stays outside the tree: the repo's backend/.env would otherwise reach the suites.
+E2E_DIR ?= $(HOME)/.cache/kiosk-e2e
+CONC ?= 3
 PORT_FLAG := $(if $(PORT),-p $(PORT))
 # Each firmware profile builds in its own folder from its own sdkconfig (KEHOACH 4.5.9).
 PROFILE ?= dev
@@ -113,6 +118,40 @@ ml-cov: ## pytest with a coverage report of facepipe.core
 
 be-test: ## Backend e2e suite, against the Postgres and Redis backend/.env names
 	cd backend && npm test
+
+be-e2e: ## Backend e2e as CI runs it: throwaway stack, clean clone plus the working diff (SPECS="x.e2e-spec ...", CONC=3)
+	@mkdir -p "$(dir $(E2E_DIR))"
+	@set -euo pipefail; exec 9>"$(E2E_DIR).lock"; flock 9; \
+	d="$(DOCKER)"; clone="$(E2E_DIR)"; repo="$(CURDIR)"; \
+	stop() { "$$d" rm -f ci-e2e-pg ci-e2e-redis ci-e2e-emqx >/dev/null 2>&1 || true; }; trap stop EXIT; stop; \
+	"$$d" run -d --rm --name ci-e2e-pg -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=attendance_ci \
+	  -p 55462:5432 postgres:16-alpine >/dev/null; \
+	"$$d" run -d --rm --name ci-e2e-redis -p 56392:6379 redis:7-alpine >/dev/null; \
+	"$$d" run -d --rm --name ci-e2e-emqx -p 51892:1883 -p 58092:18083 emqx/emqx:6.3.1 >/dev/null; \
+	rm -rf "$$clone"; git clone -q --no-hardlinks "$$repo" "$$clone"; \
+	git diff HEAD | (cd "$$clone" && git apply --allow-empty); \
+	git ls-files --others --exclude-standard -- backend contracts | while read -r f; do \
+	  mkdir -p "$$clone/$$(dirname "$$f")"; cp "$$f" "$$clone/$$f"; done; \
+	cd "$$clone/backend"; cp -al "$$repo/backend/node_modules" node_modules; rm -rf node_modules/.prisma; \
+	sed -i 's|:18083|:58092|g' test/*.ts; \
+	export NODE_ENV=test DATABASE_URL=postgresql://ci:ci@localhost:55462/attendance_ci REDIS_URL=redis://localhost:56392 \
+	  JWT_ACCESS_SECRET=ci-only-access-secret-0123456789abcdef JWT_REFRESH_SECRET=ci-only-refresh-secret-0123456789abcdef \
+	  JWT_DEVICE_SECRET=ci-only-device-secret-0123456789abcdef DEVICE_BOOTSTRAP_TOKEN=ci-only-bootstrap-token \
+	  TEMPLATE_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= SEED_ADMIN_PASSWORD=ci-only-admin-password \
+	  CORS_ORIGIN=http://localhost:3001 APP_PUBLIC_URL=http://localhost:3001 \
+	  MQTT_URL=mqtt://localhost:51892 MQTT_USERNAME=ci MQTT_PASSWORD=ci \
+	  EMQX_API_URL=http://localhost:58092/api/v5 EMQX_API_PASSWORD=public \
+	  LOGIN_ATTEMPTS_PER_MINUTE=100000 API_REQUESTS_PER_MINUTE=100000 HEAVY_REQUESTS_PER_MINUTE=100000 \
+	  SEARCH_REQUESTS_PER_MINUTE=100000 DEVICE_REGISTER_ATTEMPTS_PER_MINUTE=100000 FORGOT_ATTEMPTS_PER_HOUR=100000 \
+	  LOGIN_IP_MISSES=100000 LOGIN_LOCK_AFTER=100 MAIL_HOST=127.0.0.1 MAIL_PORT=2525 MAIL_FROM=no-reply@example.com; \
+	for i in $$(seq 60); do "$$d" exec ci-e2e-pg pg_isready -q -U ci && break; sleep 1; done; \
+	for i in $$(seq 60); do (echo >/dev/tcp/127.0.0.1/55462) 2>/dev/null && (echo >/dev/tcp/127.0.0.1/56392) 2>/dev/null && break; sleep 1; done; \
+	npx prisma generate >/dev/null; npx prisma migrate deploy >/dev/null; npx prisma db seed >/dev/null; \
+	rm -rf dist-test; npx tsc -p tsconfig.json --outDir dist-test; \
+	for i in $$(seq 60); do curl -s -o /dev/null http://localhost:58092/ && break; sleep 2; done; \
+	if [ -n "$(SPECS)" ]; then node --test --test-concurrency=1 $(foreach s,$(SPECS),dist-test/test/$(s).js); \
+	else node --test --test-concurrency=$(CONC) 'dist-test/test/**/*.e2e-spec.js' && \
+	  node --test --test-concurrency=1 'dist-test/test/**/*.e2e-alone-spec.js'; fi
 
 ##@ ML data
 data-fetch: ## Fetch and verify the raw datasets (ARGS=--verify only verifies)
