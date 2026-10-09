@@ -405,8 +405,8 @@ static net_wifi_fail_t failure_of(EventBits_t bits, uint8_t reason)
     }
 }
 
-// The station goes back to the network it trusts, not the one that just refused it.
-static void return_to_saved(void)
+// Back to the network last joined, or with hunt to the strongest saved one in range (KEHOACH 7.6).
+static void return_to_saved(bool hunt)
 {
     storage_wifi_net_t back = { 0 };
     portENTER_CRITICAL(&s_lock);
@@ -416,6 +416,9 @@ static void return_to_saved(void)
     } else {
         s_target[0] = '\0';
     }
+    if (any && hunt) {
+        s_fails = FAILS_BEFORE_PICK;
+    }
     portEXIT_CRITICAL(&s_lock);
     esp_wifi_disconnect();
     if (!any) {
@@ -423,7 +426,7 @@ static void return_to_saved(void)
         esp_wifi_set_config(WIFI_IF_STA, &none);
         return;
     }
-    if (aim(&back) != ESP_OK || esp_wifi_connect() != ESP_OK) {
+    if (aim(&back) != ESP_OK || hunt || esp_wifi_connect() != ESP_OK) {
         retry_later();
     }
 }
@@ -483,13 +486,16 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms,
         *why = err != ESP_OK ? NET_WIFI_FAIL_OTHER : failure_of(bits, reason);
     }
     ESP_LOGW(TAG, "%s refused us, reason %u, nothing written", ssid, (unsigned)reason);
-    return_to_saved();
+    return_to_saved(false);
     return ESP_FAIL;
 }
 
 esp_err_t net_wifi_forget(const char *ssid)
 {
-    if (ssid == NULL || s_state == NULL) {
+    if (ssid == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_state == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
     portENTER_CRITICAL(&s_lock);
@@ -505,7 +511,7 @@ esp_err_t net_wifi_forget(const char *ssid)
     APP_RETURN_ON_ERR(write_saved(), TAG, "saved");
     ESP_LOGW(TAG, "forgot %s%s", ssid, current ? ", the network in use" : "");
     if (current) {
-        return_to_saved();
+        return_to_saved(true);
     }
     return ESP_OK;
 }

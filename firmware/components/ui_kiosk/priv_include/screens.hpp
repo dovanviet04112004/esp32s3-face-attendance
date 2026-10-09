@@ -179,7 +179,7 @@ struct Networks {
 /** Where the wifi screen leaves the network the operator picked. */
 struct JoinRequest {
     bool stored;                          // join on the passphrase already in NVS
-    char ssid[33];
+    char ssid[UI_KIOSK_SSID_CAP];
     char pass[UI_KIOSK_WIFI_PASS_CAP];
 };
 
@@ -195,7 +195,7 @@ bool wifi_take_info_request(char *ssid, size_t cap) noexcept;
 void wifi_stage_info(const ui_kiosk_wifi_info_t &info) noexcept;
 void wifi_ask_saved() noexcept;
 bool wifi_take_saved_request() noexcept;
-void wifi_stage_saved(const char (*names)[33], int count) noexcept;
+void wifi_stage_saved(const char (*names)[UI_KIOSK_SSID_CAP], int count) noexcept;
 void wifi_ask_forget(const char *ssid) noexcept;
 bool wifi_take_forget(char *ssid, size_t cap) noexcept;
 void wifi_stage_forgotten(bool forgotten) noexcept;

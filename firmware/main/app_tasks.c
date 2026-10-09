@@ -957,12 +957,30 @@ static int network_rank(const net_wifi_ap_t *ap, const char *here)
     return strcmp(ap->ssid, here) == 0 ? 0 : (ap->saved ? 1 : 2);
 }
 
+static bool heard_name(const net_wifi_ap_t *heard, size_t count, const char *ssid)
+{
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(heard[i].ssid, ssid) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void offer_networks(void)
 {
     static net_wifi_ap_t heard[UI_KIOSK_WIFI_ROWS];
-    const size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
-    char here[NET_WIFI_SSID_CAP] = { 0 };
-    net_wifi_ssid(here, sizeof(here));
+    size_t count = net_wifi_scan(heard, UI_KIOSK_WIFI_ROWS);
+    net_wifi_info_t on = { 0 };
+    // A sweep keeps only the strongest records, which can leave out the network in use.
+    if (count > 0 && net_wifi_info(&on) == ESP_OK && !heard_name(heard, count, on.ssid)) {
+        const size_t at = count < UI_KIOSK_WIFI_ROWS ? count++ : count - 1;
+        strlcpy(heard[at].ssid, on.ssid, sizeof(heard[at].ssid));
+        heard[at].rssi_dbm = on.rssi_dbm;
+        heard[at].open = on.security == NET_WIFI_SECURITY_OPEN;
+        heard[at].saved = true;
+    }
+    const char *here = on.ssid;
     // Two shapes on purpose: the screen has no business knowing the radio.
     ui_kiosk_ap_t shown[UI_KIOSK_WIFI_ROWS];
     size_t kept = 0;
@@ -1024,7 +1042,7 @@ static void offer_saved(void)
 {
     char names[UI_KIOSK_WIFI_SAVED_ROWS][NET_WIFI_SSID_CAP];
     const size_t count = net_wifi_saved(names, UI_KIOSK_WIFI_SAVED_ROWS);
-    ui_kiosk_set_wifi_saved((const char (*)[33])names, (int)count);
+    ui_kiosk_set_wifi_saved((const char (*)[UI_KIOSK_SSID_CAP])names, (int)count);
 }
 
 // Sweeping the channels blocks for seconds and drops the link while it runs,

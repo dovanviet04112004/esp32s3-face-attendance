@@ -126,10 +126,13 @@ typedef struct {
  */
 void ui_kiosk_set_facts(const ui_kiosk_fact_t *facts, int count);
 
+#define UI_KIOSK_SSID_CAP STORAGE_WIFI_SSID_CAP
+#define UI_KIOSK_IP_CAP 16                // a dotted quad and its terminator
+
 /** What the settings page says on its Wi-Fi row. */
 typedef struct {
     bool joined;
-    char ssid[33];
+    char ssid[UI_KIOSK_SSID_CAP];
     int rssi_dbm;
 } ui_kiosk_net_t;
 
@@ -256,14 +259,14 @@ typedef struct {
 
 /** One network the radio heard, as the settings screen shows it. */
 typedef struct {
-    char ssid[33];
+    char ssid[UI_KIOSK_SSID_CAP];
     int rssi_dbm;
     bool open;
     bool saved;                           // credentials for it are already in NVS
 } ui_kiosk_ap_t;
 
 #define UI_KIOSK_WIFI_ROWS 8
-#define UI_KIOSK_WIFI_PASS_CAP 65
+#define UI_KIOSK_WIFI_PASS_CAP STORAGE_WIFI_PASS_CAP
 
 /** True when a screen has opened that needs the list refreshed.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
@@ -319,15 +322,15 @@ typedef enum {
 
 /** What the info page of one network shows; only the name when it is not the one in use. */
 typedef struct {
-    char ssid[33];
+    char ssid[UI_KIOSK_SSID_CAP];
     bool here;                            // the station is on it
     int rssi_dbm;
-    char ip[16];
+    char ip[UI_KIOSK_IP_CAP];
     ui_kiosk_wifi_sec_t security;
 } ui_kiosk_wifi_info_t;
 
 /** Take the network whose info page just opened, so main can describe it.
- *  @ctx any | non-blocking | one shot | ssid copied, at least 33 bytes
+ *  @ctx any | non-blocking | one shot | ssid copied, at least UI_KIOSK_SSID_CAP bytes
  */
 bool ui_kiosk_take_wifi_info_request(char *ssid, size_t cap);
 
@@ -346,10 +349,10 @@ bool ui_kiosk_take_wifi_saved_request(void);
 /** Hand the saved networks page the names NVS holds, most recent first.
  *  @ctx any | non-blocking | copied, at most UI_KIOSK_WIFI_SAVED_ROWS
  */
-void ui_kiosk_set_wifi_saved(const char (*names)[33], int count);
+void ui_kiosk_set_wifi_saved(const char (*names)[UI_KIOSK_SSID_CAP], int count);
 
 /** Take the network the operator asked to forget, after the second tap.
- *  @ctx any | non-blocking | one shot | ssid copied, at least 33 bytes
+ *  @ctx any | non-blocking | one shot | ssid copied, at least UI_KIOSK_SSID_CAP bytes
  */
 bool ui_kiosk_take_wifi_forget(char *ssid, size_t cap);
 

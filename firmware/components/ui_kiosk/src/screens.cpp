@@ -175,15 +175,15 @@ struct WifiDesk {
     uint32_t joined_serial;
     ui_kiosk_wifi_result_t joined;
     bool info_wanted;
-    char info_ssid[33];
+    char info_ssid[UI_KIOSK_SSID_CAP];
     uint32_t info_serial;
     ui_kiosk_wifi_info_t info;
     bool saved_wanted;
     uint32_t saved_serial;
     int saved_count;
-    char saved[UI_KIOSK_WIFI_SAVED_ROWS][33];
+    char saved[UI_KIOSK_WIFI_SAVED_ROWS][UI_KIOSK_SSID_CAP];
     bool forget_waiting;
-    char forget_ssid[33];
+    char forget_ssid[UI_KIOSK_SSID_CAP];
     uint32_t forgotten_serial;
     bool forgotten;
 } s_wifi_desk;
@@ -1435,7 +1435,7 @@ public:
         typed_[0] = '\0';
         set_ = kLower;
         armed_ = false;
-        step_ = list_.count > 0 ? Step::Choosing : Step::Looking;
+        step_ = sweep_seen_ != 0 ? Step::Choosing : Step::Looking;
         rescan();
     }
 
@@ -1504,7 +1504,7 @@ public:
                 return;
             case Step::Looking:
                 page(to, text(StrId::WifiTitle), true);
-                note(to, text(StrId::WifiScanning), DRV_LCD_DIM);
+                note(to, text(StrId::WifiLooking), DRV_LCD_DIM);
                 return;
             default:
                 page(to, text(StrId::WifiTitle), true);
@@ -1523,7 +1523,7 @@ private:
 
     struct Saved {
         int count;
-        char names[UI_KIOSK_WIFI_SAVED_ROWS][33];
+        char names[UI_KIOSK_WIFI_SAVED_ROWS][UI_KIOSK_SSID_CAP];
     };
 
     static void note(Canvas &to, const char *line, uint8_t tone) noexcept
@@ -1828,8 +1828,7 @@ private:
                                 : ap.saved ? text(StrId::WifiSaved)
                                            : nullptr;
             const uint8_t ink = refused ? DRV_LCD_WARN : (now_here ? DRV_LCD_ACCENT : DRV_LCD_INK);
-            // A row already saying where it stands has no room left to say it is locked.
-            const widgets::Icon trail = ap.open || state != nullptr ? widgets::Icon::None : widgets::Icon::Lock;
+            const widgets::Icon trail = ap.open ? widgets::Icon::None : widgets::Icon::Lock;
             const widgets::Row what = { ap.ssid, state, widgets::Icon::None, 0, ink, signal_level(ap.rssi_dbm), trail,
                                         true };
             widgets::row(to, theme::kGutter, y, theme::kContentW, kRowH, what, held_ == i);
@@ -1915,9 +1914,9 @@ private:
     uint32_t info_seen_ = 0;
     uint32_t saved_seen_ = 0;
     uint32_t forgotten_seen_ = 0;
-    char chosen_[33] = {};                // the network typed for, by name
-    char busy_[33] = {};                  // the network the radio is joining
-    char failed_[33] = {};                // the network that refused the last join
+    char chosen_[UI_KIOSK_SSID_CAP] = {};                // the network typed for, by name
+    char busy_[UI_KIOSK_SSID_CAP] = {};                  // the network the radio is joining
+    char failed_[UI_KIOSK_SSID_CAP] = {};                // the network that refused the last join
     char typed_[UI_KIOSK_WIFI_PASS_CAP] = {};
 };
 
@@ -2132,7 +2131,7 @@ bool wifi_take_saved_request() noexcept
     return wanted;
 }
 
-void wifi_stage_saved(const char (*names)[33], int count) noexcept
+void wifi_stage_saved(const char (*names)[UI_KIOSK_SSID_CAP], int count) noexcept
 {
     const int kept = count < 0 ? 0 : (count < UI_KIOSK_WIFI_SAVED_ROWS ? count : UI_KIOSK_WIFI_SAVED_ROWS);
     portENTER_CRITICAL(&s_wifi_lock);

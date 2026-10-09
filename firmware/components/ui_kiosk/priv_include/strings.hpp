@@ -117,6 +117,7 @@ enum class StrId : uint16_t {
     WifiTimedOut,
     WifiJoinFailed,
     WifiDbmFmt,                           // takes the signal in dBm
+    WifiLooking,
     KeyUpper,
     KeyLower,
     KeySymbols,

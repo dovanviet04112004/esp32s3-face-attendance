@@ -117,6 +117,7 @@ constexpr Entry kRows[] = {
     { StrId::WifiTimedOut, "Hết giờ, thử lại", "Timed out" },
     { StrId::WifiJoinFailed, "Không nối được", "Could not join" },
     { StrId::WifiDbmFmt, "%d dBm", "%d dBm" },
+    { StrId::WifiLooking, "Đang tìm mạng…", "Looking for networks…" },
     { StrId::KeyUpper, "ABC", "ABC" },
     { StrId::KeyLower, "abc", "abc" },
     { StrId::KeySymbols, "?123", "?123" },

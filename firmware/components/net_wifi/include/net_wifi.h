@@ -75,7 +75,8 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms,
 
 /** Drop a network and its passphrase from wifi/saved; the one in use goes at once.
  *  @ctx task | blocking | writes NVS; the station then looks for another saved network
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND for a network not saved | ESP_ERR_INVALID_STATE without start
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND for a network not saved | ESP_ERR_INVALID_ARG
+ *       | ESP_ERR_INVALID_STATE without start
  */
 esp_err_t net_wifi_forget(const char *ssid);
 

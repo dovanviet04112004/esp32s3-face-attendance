@@ -511,7 +511,7 @@ bool ui_kiosk_take_wifi_saved_request(void)
     return s_ready && ui::wifi_take_saved_request();
 }
 
-void ui_kiosk_set_wifi_saved(const char (*names)[33], int count)
+void ui_kiosk_set_wifi_saved(const char (*names)[UI_KIOSK_SSID_CAP], int count)
 {
     if (s_ready && names != nullptr) {
         ui::wifi_stage_saved(names, count);
