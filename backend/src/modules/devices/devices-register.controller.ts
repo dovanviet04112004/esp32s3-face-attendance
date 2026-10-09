@@ -40,9 +40,17 @@ export class DevicesRegisterController {
   @Post("register")
   @RateBucket(THROTTLE.deviceRegister)
   @NotAudited()
-  @ApiOperation({ summary: "A kiosk with an empty NVS asking to be let in" })
-  @ApiAcceptedResponse({ type: DeviceWaitingView, description: "Waiting for a person to approve it" })
-  @ApiOkResponse({ type: DeviceTokenView, description: "Approved; carries the device token" })
+  @ApiOperation({
+    summary: "A kiosk with an empty NVS asking to be let in",
+    description:
+      "Approval alone hands out no token: it goes only to a request carrying the claim code the admin matched, " +
+      "and issuing it ends any broker session the kiosk still holds.",
+  })
+  @ApiAcceptedResponse({
+    type: DeviceWaitingView,
+    description: "Waiting for a person to approve it, or approved for a claim code this request did not carry",
+  })
+  @ApiOkResponse({ type: DeviceTokenView, description: "Approved for this claim code; carries the device token" })
   async register(
     @Body() body: RegisterDeviceDto,
     @Res({ passthrough: true }) res: Response,
