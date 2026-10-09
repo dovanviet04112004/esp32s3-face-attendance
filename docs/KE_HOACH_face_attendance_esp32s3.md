@@ -4604,7 +4604,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
-| `DeviceEvent` | id, deviceId, type, severity, employeeId, livenessScore, cmdId, note, ts |
+| `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
 | `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. `url` để trống từ §7.7 và bỏ ở lần phát hành sau, theo luật nở rồi co (§9.22.3) |
@@ -4634,6 +4634,20 @@ quay về `up/event` kèm đúng `cmdId`. Không lưu lệnh thì kết quả l�
 **người** làm nên luôn có `actorId`; `up/event` là việc **máy** gặp — `CAMERA_FAULT`,
 `STORAGE_FAULT` — và không có actor nào. Trộn chung là đẻ ra một cột `actorId` rỗng ở phân nửa
 số dòng, rồi mọi truy vấn phải nhớ lọc nó.
+
+**`DeviceEvent` chống trùng bằng `(deviceId, seq)`, không bằng giờ** (CLAUDE.md §4.3). `up/event`
+đi QoS 1, nên broker được phép giao lại một tin đã giao, và listener ghi mỗi lần tin tới.
+`device_event.schema.json` vì thế mang `seq`: số nguyên không âm, mỗi kiosk tự đếm tăng dần và
+không bao giờ dùng lại một số, kể cả sau khi khởi động lại — dùng lại là server bỏ mất một sự kiện
+thật. Server giữ nó ở cột `seq` với unique index `(deviceId, seq)` và ghi bằng
+`INSERT … ON CONFLICT DO NOTHING`: bản giao lại không thành dòng thứ hai, không lên feed lần nữa,
+không gửi cảnh báo lần nữa.
+
+**`seq` tuỳ chọn, và sự kiện không mang nó vẫn được ghi.** Cột rỗng được, và Postgres coi các
+`NULL` là khác nhau trong unique index, nên hai dòng không có `seq` không bao giờ đụng nhau: chúng
+được ghi đủ, chỉ là không được chống trùng. Trường phải nằm trong schema vì schema sinh ra
+`z.strictObject`, gặp trường lạ là từ chối cả tin; nhưng không bắt buộc, vì bắt buộc là từ chối mọi
+tin của firmware không phát nó.
 
 **`Release` mang cả firmware lẫn model vì `ota_manifest.schema.json` có `target` ba giá trị.**
 Một bảng riêng cho model thì bản firmware không có chỗ đứng, trong khi hai thứ đi chung đúng một
@@ -5455,7 +5469,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
 | `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
-| `q_event` | Queue, depth 8, `app_event_t` | 8 × 72 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 304 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 72 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × ~1,8 KB | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
