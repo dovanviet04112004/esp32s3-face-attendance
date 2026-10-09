@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: help setup ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
-        train-det train-spoof train-recog trainctl quantize export golden pack \
+        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
         usb-list usb-attach usb-detach \
         be-dev be-build be-migrate be-seed be-demo fe-dev fe-build \
@@ -148,6 +148,15 @@ export: ## Deploy one exported model and lock it (BRANCH MODEL RUN_ID ARENA_BYTE
 	$(call need,ARENA_BYTES,measured arena of a .tflite; 0 for .espdl)
 	$(ML_PY) -m facepipe.export.update_lock --branch $(BRANCH) --model $(MODEL) \
 	  --run-id $(RUN_ID) --arena-bytes $(ARENA_BYTES)
+
+eval-det: ## Score detection (AP on WIDER val; ARGS passed to its eval, see ARGS=--help)
+	cd ml && $(ML_PY) -m facepipe.tasks.detection.eval $(ARGS)
+
+eval-spoof: ## Score anti-spoof (ARGS passed to its eval)
+	cd ml && $(ML_PY) -m facepipe.tasks.antispoof.eval $(ARGS)
+
+eval-recog: ## Score recognition: LFW, CFP-FP, AgeDB, TAR@FAR (ARGS passed to its eval)
+	cd ml && $(ML_PY) -m facepipe.tasks.recognition.eval $(ARGS)
 
 golden: ## Golden vectors of the three branches into contracts/golden/
 	$(ML_PY) -m facepipe.tasks.detection.postproc.emit_golden
