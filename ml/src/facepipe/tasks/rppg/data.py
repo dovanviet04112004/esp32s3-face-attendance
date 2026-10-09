@@ -8,6 +8,7 @@ so a new folder fails loudly instead of being scored as nothing.
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,12 +77,20 @@ def unique_clips(root: Path) -> list[Clip]:
     return list(clips.values())
 
 
+def video_files(root: Path) -> list[Path]:
+    """Every video under `root`, through the per-folder symlinks data/raw is built from."""
+    found = []
+    for folder, _, files in os.walk(root, followlinks=True):
+        found += [
+            Path(folder) / name for name in files if Path(name).suffix.lower() in VIDEO_SUFFIXES
+        ]
+    return sorted(found)
+
+
 def axon_clips(root: Path) -> list[Clip]:
     root = Path(root)
     clips: list[Clip] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in VIDEO_SUFFIXES:
-            continue
+    for path in video_files(root):
         parts = path.relative_to(root).with_suffix("").parts
         folder = folder_key(parts[0])
         if folder not in AXON_KINDS:

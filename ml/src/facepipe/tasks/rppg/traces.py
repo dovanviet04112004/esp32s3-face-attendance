@@ -23,9 +23,15 @@ NATIVE = "native"
 
 
 def all_clips() -> list[Clip]:
-    return unique_clips(data_path("antispoof.xdomain.unique_pair")) + axon_clips(
-        data_path("antispoof.xdomain.axon_masks")
-    )
+    """Both sets, refusing to go on when one of them yields nothing to score."""
+    sets = {
+        "unique_pair": unique_clips(data_path("antispoof.xdomain.unique_pair")),
+        "axon_masks": axon_clips(data_path("antispoof.xdomain.axon_masks")),
+    }
+    for name, clips in sets.items():
+        if not clips:
+            raise SystemExit(f"{name}: no video found; check the paths.yaml entry and its links")
+    return [clip for clips in sets.values() for clip in clips]
 
 
 def trace_file(path_name: str, clip: Clip) -> Path:

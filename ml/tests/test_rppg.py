@@ -118,6 +118,15 @@ def test_axon_maps_every_video_folder_to_a_class(tmp_path: Path) -> None:
         axon_clips(tmp_path)
 
 
+def test_axon_is_read_through_the_folder_links_data_raw_is_made_of(tmp_path: Path) -> None:
+    store, linked = tmp_path / "store/Latex_mask", tmp_path / "raw"
+    store.mkdir(parents=True)
+    (store / "m.mp4").write_bytes(b"")
+    linked.mkdir()
+    (linked / "Latex_mask").symlink_to(store, target_is_directory=True)
+    assert [clip.kind for clip in axon_clips(linked)] == ["mask"]
+
+
 def unique_tree(root: Path) -> None:
     rows = [("l1", "r1", "w1", ".mp4"), ("l2", "r2", "w2", ".MOV"), ("l3", "r3", "w1", ".mp4")]
     rows += [("l4", "r4", "w3", ".3gp"), ("l5", "r5", "w4", ".mp4")]
