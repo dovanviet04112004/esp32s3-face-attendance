@@ -3,8 +3,8 @@
 
 version: 1
 
-# {deviceId} is substituted per kiosk. Broker ACL grants each device
-# kiosk/{its own id}/# and nothing else (KEHOACH 7.2).
+# {deviceId} is substituted per kiosk. The broker ACL lets each device
+# publish only its own up/ and subscribe only its own down/ (KEHOACH 7.4).
 prefix: kiosk
 
 topics:
@@ -49,7 +49,7 @@ topics:
     qos: 1
     retained: false
     schema: schema/enroll_payload.schema.json
-    description: What an operator did at the machine - a face captured, or a removal asked for. The server owns identity; this is the kiosk telling it what changed under its own hands.
+    description: A sample captured at the machine for a person the server opened a capture for. The server owns identity; retake and removal are dashboard actions (KEHOACH 7.5).
 
   - name: cmd
     topic: kiosk/{deviceId}/down/cmd
