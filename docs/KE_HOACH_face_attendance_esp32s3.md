@@ -6311,6 +6311,15 @@ chưa có phiên TLS, giữ 38.067 B; có phiên TLS thật (09/10) giữ 29.755
 (`measurements/ram.md` §11), lượt đủ 10 phút còn nợ 🔬. Trượt cổng thì revert cả lock contract lẫn
 mặc định `AI_RUNTIME`.
 
+**Bản `fleet` trên kiosk thật mới là con số sát cổng nhất** (đo 10/10, `measurements/ram.md` §12).
+Ảnh phát hành còn mang console (E13-T20), và REPL của nó xin 8 KB ngăn xếp nội. Lúc đã chạy, vùng
+heap chính 204 KB còn 152 B, mọi chỗ trống còn lại nằm ở vùng dự trữ 32 KB: tổng 8,4 KB, khối liền
+lớn nhất 4,3 KB, đáy 3,8 KB — dưới cổng 24 KB. Hai luật đi ra từ lượt đo ấy. Bộ đệm chỉ một task dùng
+và dùng thưa — bản báo mẫu đăng ký, danh sách mạng đã lưu, bản ghi quét Wi-Fi — cấp ở PSRAM lúc
+khởi động, không nằm `.bss` nội. Còn hai đối tượng `Canvas` (7,7 KB biên dòng; bản đồ phủ của chúng
+vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được preview tụt từ 12,2–12,7 xuống
+10,6–11,1 fps.
+
 ---
 
 ## 7. Backend, Frontend, Deploy
