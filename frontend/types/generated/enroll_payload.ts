@@ -4,9 +4,9 @@
 
 import { z } from "zod";
 
-/** Face roster traffic in both directions. Server to kiosk pushes templates and assignments; kiosk to server reports what an operator did at the machine. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
+/** Face roster traffic in both directions. Server to kiosk pushes templates and assignments; kiosk to server reports the samples captured at the machine. Carries the int8 embedding and its dequant scale exactly as they land in the 552-byte record of KEHOACH 6.2.4. */
 export interface EnrollPayload {
-  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. Up from a kiosk, UPSERT reports one sample of a capture session, and DELETE_EMPLOYEE and RETAKE are an operator's requests that the server decides (KEHOACH 7.5). */
+  /** DELETE removes one template, DELETE_EMPLOYEE removes every template of the employee, REPLACE_ALL is the full-resync path. ASSIGN names an employee the kiosk should expect to enroll and carries no embedding, REVOKE withdraws that expectation. Up from a kiosk, UPSERT reports one sample of a capture session the server opened. Only the dashboard retakes or removes; a RETAKE or DELETE_EMPLOYEE sent up changes nothing, and the server answers it with what it holds (KEHOACH 7.5). */
   op: "UPSERT" | "DELETE" | "DELETE_EMPLOYEE" | "REPLACE_ALL" | "ASSIGN" | "REVOKE" | "RETAKE";
   employeeId: number;
   /** One employee holds several templates: frontal, glasses, low light. */
