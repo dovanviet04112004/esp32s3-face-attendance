@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 .PHONY: help setup ml-sync ml-lock be-install fe-install \
-        gen check lint fmt typecheck test ml-test ml-cov be-test \
+        gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-app fw-app-flash \
@@ -90,8 +90,12 @@ lint: ## Every static check CI runs: the repo tools and ruff
 fmt: ## Apply ruff fixes and formatting to ml/
 	cd ml && $(ML_PY) -m ruff check --fix . && $(ML_PY) -m ruff format .
 
-typecheck: ## tsc over backend/ and frontend/, as CI runs it
+typecheck: be-typecheck fe-typecheck ## tsc over backend/ and frontend/, as CI runs it
+
+be-typecheck: ## tsc over backend/
 	cd backend && npm run typecheck
+
+fe-typecheck: ## Route types, then tsc over frontend/
 	cd frontend && npm run typecheck
 
 test: ml-test be-test ## Host-side tests of ml/ and backend/
