@@ -8,6 +8,7 @@ import {
   EnvelopeSimpleIcon,
   KeyIcon,
   PlusIcon,
+  TrashIcon,
   UserMinusIcon,
   UserCircleDashedIcon,
   WarningCircleIcon,
@@ -230,6 +231,7 @@ export default function EmployeePage() {
   const [picked, setPicked] = useState("");
   const [enrolFault, setEnrolFault] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawingFrom, setWithdrawingFrom] = useState<Standing | null>(null);
 
   function pick(next: string): void {
     router.replace(next === "info" ? `/employees/${id}` : `/employees/${id}?tab=${next}`, { scroll: false });
@@ -349,6 +351,16 @@ export default function EmployeePage() {
       setWithdrawing(false);
       notify.done(t("consentWithdrawn", { count: done.devices }));
       void cache.invalidateQueries({ queryKey: ["biometric-consents", id] });
+      void cache.invalidateQueries({ queryKey: ["enrollments", "employee", id] });
+    },
+    onError: notify.failed,
+  });
+
+  const withdrawFrom = useMutation({
+    mutationFn: (kiosk: Standing) => api.delete(`/enrollments/${kiosk.id}/${id}`),
+    onSuccess: (_, kiosk) => {
+      setWithdrawingFrom(null);
+      notify.done(t("kioskWithdrawn", { device: kiosk.name ?? kiosk.id }));
       void cache.invalidateQueries({ queryKey: ["enrollments", "employee", id] });
     },
     onError: notify.failed,
@@ -652,18 +664,27 @@ export default function EmployeePage() {
                     {t(`standing${kiosk.state}`)}
                   </StatePill>
                 </span>
-                {kiosk.state === "ENROLLED" ? (
+                <span className="flex shrink-0 items-center gap-1">
+                  {kiosk.state === "ENROLLED" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={ArrowClockwiseIcon}
+                      loading={assign.isPending && assign.variables === kiosk.id}
+                      onClick={() => assign.mutate(kiosk.id)}
+                    >
+                      {t("retakeAction")}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="ghost"
                     size="sm"
-                    icon={ArrowClockwiseIcon}
-                    loading={assign.isPending && assign.variables === kiosk.id}
-                    onClick={() => assign.mutate(kiosk.id)}
-                    className="shrink-0"
-                  >
-                    {t("retakeAction")}
-                  </Button>
-                ) : null}
+                    shape="square"
+                    icon={TrashIcon}
+                    aria-label={t("kioskWithdrawOf", { device: kiosk.name ?? kiosk.id })}
+                    onClick={() => setWithdrawingFrom(kiosk)}
+                  />
+                </span>
               </li>
             ))}
           </ul>
@@ -835,6 +856,33 @@ export default function EmployeePage() {
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary variant="destructive" loading={withdraw.isPending} onClick={() => withdraw.mutate()}>
               {t("consentWithdraw")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+
+      <LayerDialog.Alert
+        open={withdrawingFrom !== null}
+        onOpenChange={(next) => !next && setWithdrawingFrom(null)}
+        dismissDisabled={withdrawFrom.isPending}
+      >
+        <LayerDialog.Content size="sm" closeLabel={common("close")}>
+          <LayerDialog.Title>{t("kioskWithdrawTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>
+            {withdrawingFrom
+              ? t("kioskWithdrawLead", { name: person.fullName, device: withdrawingFrom.name ?? withdrawingFrom.id })
+              : null}
+          </LayerDialog.Description>
+          <LayerDialog.Body>
+            <p className="text-kumo-subtle">{t("kioskWithdrawHint")}</p>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={withdrawFrom.isPending}
+              onClick={() => withdrawingFrom && withdrawFrom.mutate(withdrawingFrom)}
+            >
+              {t("kioskWithdraw")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
