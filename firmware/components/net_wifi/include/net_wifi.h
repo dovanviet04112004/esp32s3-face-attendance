@@ -17,7 +17,7 @@ extern "C" {
 /** Bring up the station and start joining the network used last.
  *  @ctx task | blocking | call once, after sys_storage_init
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND with no saved network, the station up for the screen to fill
- *       | ESP_ERR_INVALID_STATE
+ *       | ESP_ERR_INVALID_STATE | ESP_ERR_NO_MEM
  */
 esp_err_t net_wifi_start(void);
 

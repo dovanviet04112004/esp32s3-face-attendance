@@ -6,6 +6,7 @@
 
 #include "app_err.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
@@ -50,8 +51,8 @@ static int s_fails;                       // retries since the last address
 static bool s_joining;
 static bool s_picking;
 static uint8_t s_reason;                  // wifi_err_reason_t of the last disconnect
-static wifi_ap_record_t s_picked[NET_WIFI_SCAN_CAP];
-static wifi_ap_record_t s_swept[NET_WIFI_SCAN_CAP];
+static wifi_ap_record_t *s_picked;        // NET_WIFI_SCAN_CAP records in PSRAM (KEHOACH 6.4)
+static wifi_ap_record_t *s_swept;
 static storage_wifi_saved_t s_written;
 
 static int find(const storage_wifi_saved_t *saved, const char *ssid)
@@ -271,6 +272,15 @@ esp_err_t net_wifi_start(void)
 {
     if (s_state != NULL) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (s_picked == NULL) {
+        s_picked = heap_caps_calloc(NET_WIFI_SCAN_CAP, sizeof(wifi_ap_record_t), MALLOC_CAP_SPIRAM);
+    }
+    if (s_swept == NULL) {
+        s_swept = heap_caps_calloc(NET_WIFI_SCAN_CAP, sizeof(wifi_ap_record_t), MALLOC_CAP_SPIRAM);
+    }
+    if (s_picked == NULL || s_swept == NULL) {
+        return ESP_ERR_NO_MEM;
     }
     load_saved();
     s_state = xEventGroupCreate();
