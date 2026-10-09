@@ -9,6 +9,9 @@ on:
     paths: ["backend/**", "contracts/**", ".github/workflows/backend.yml"]
   workflow_call:
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: backend
@@ -85,7 +88,7 @@ jobs:
       MAIL_FROM: no-reply@example.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Skip until backend/ has a package.json
         id: guard
@@ -97,7 +100,7 @@ jobs:
             echo "backend/package.json absent, nothing to build yet"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.guard.outputs.ready == 'true'
         with:
           node-version: "24"

@@ -6,6 +6,9 @@ on:
   pull_request:
     paths: ["frontend/**", "contracts/**", ".github/workflows/frontend.yml"]
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: frontend
@@ -18,7 +21,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_WS_URL: ws://127.0.0.1:3000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Skip until frontend/ has a package.json
         id: guard
@@ -30,7 +33,7 @@ jobs:
             echo "frontend/package.json absent, nothing to build yet"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.guard.outputs.ready == 'true'
         with:
           node-version: "22"
