@@ -224,34 +224,59 @@ describe("roster sync across doors (e2e)", () => {
     assert.equal((await samples()).length, 2, "asking for a retake threw the old samples away");
   });
 
-  it("puts a held face up for retake when the kiosk asks", async () => {
+  it("keeps a held face when a kiosk asks for a retake and captures, and puts the door back", async () => {
+    const otherAt = await versionOf(DOOR_B);
+    const asked = await recorded(() => enrollment.takeReport(DOOR_A, ask(DOOR_A, employeeId, "RETAKE")));
+    assert.equal(await stateOf(DOOR_A), "ENROLLED", "a kiosk opened a capture session for itself");
+    assert.deepEqual(asked.map((one) => [one.to, one.op]), [[DOOR_A, "REVOKE"]], "the kiosk kept the row it added itself");
+
+    const captured = await recorded(() => enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x65, RETAKEN, 3)));
+    assert.deepEqual((await samples()).map((one) => [one.idx, one.at]), [[0, FIRST], [1, FIRST]], "a kiosk replaced a face");
+    assert.deepEqual(
+      captured.map((one) => [one.to, one.op]),
+      [[DOOR_A, "DELETE_EMPLOYEE"], [DOOR_A, "UPSERT"], [DOOR_A, "UPSERT"]],
+      "the door was not brought back to the held samples",
+    );
+    assert.equal(await versionOf(DOOR_B), otherAt, "another door heard of a capture nobody opened");
+  });
+
+  it("asks again for a face the dashboard put up for retake when the kiosk asks too", async () => {
+    const asked = await recorded(() => enrollment.takeReport(DOOR_B, ask(DOOR_B, employeeId, "RETAKE")));
+    assert.equal(await stateOf(DOOR_B), "RETAKE");
+    assert.deepEqual(asked.map((one) => [one.to, one.op]), [[DOOR_B, "ASSIGN"]]);
+  });
+
+  it("lets the session at the door the dashboard opened replace every old sample on every door", async () => {
     const wasAt = await versionOf(DOOR_A);
-    await enrollment.takeReport(DOOR_A, ask(DOOR_A, employeeId, "RETAKE"));
-    assert.equal(await stateOf(DOOR_A), "RETAKE");
-    assert.equal(await versionOf(DOOR_A) - wasAt, 1, "the kiosk was not told the retake stands");
-  });
-
-  it("lets the new session replace every old sample on every door", async () => {
-    const wasAt = await versionOf(DOOR_B);
-    await enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x66, RETAKEN, 3));
+    await enrollment.takeReport(DOOR_B, report(DOOR_B, employeeId, 0x66, RETAKEN, 3));
     assert.deepEqual((await samples()).map((one) => [one.idx, one.at]), [[3, RETAKEN]], "an old sample outlived the retake");
-    assert.equal(await stateOf(DOOR_A), "ENROLLED");
-    assert.equal(await stateOf(DOOR_B), "ENROLLED", "the other door still waits for a face it has been sent");
-    assert.equal(await versionOf(DOOR_B) - wasAt, 2, "the other door kept its old samples");
+    assert.equal(await stateOf(DOOR_B), "ENROLLED");
+    assert.equal(await stateOf(DOOR_A), "ENROLLED", "the other door still waits for a face it has been sent");
+    assert.equal(await versionOf(DOOR_A) - wasAt, 2, "the other door kept its old samples");
   });
 
-  it("takes a kiosk's remove request and keeps the samples other doors use", async () => {
-    await enrollment.takeReport(DOOR_B, ask(DOOR_B, employeeId, "DELETE_EMPLOYEE"));
+  it("keeps a person on the door when the kiosk asks to remove them, and gives the door the face back", async () => {
+    const sent = await recorded(() => enrollment.takeReport(DOOR_A, ask(DOOR_A, employeeId, "DELETE_EMPLOYEE")));
+    assert.equal(await stateOf(DOOR_A), "ENROLLED", "a kiosk removed a person from its door");
+    assert.equal((await samples()).length, 1);
+    assert.deepEqual(sent.map((one) => [one.to, one.op]), [[DOOR_A, "DELETE_EMPLOYEE"], [DOOR_A, "UPSERT"]]);
+    const logged = await db.auditLog.count({ where: { action: "enrollment.remove", subjectId: String(employeeId) } });
+    assert.equal(logged, 0, "a request the server refused was logged as a removal");
+  });
+
+  it("removes a person from one door from the dashboard and keeps the samples other doors use", async () => {
+    const res = await request(http).delete(`/enrollments/${DOOR_B}/${employeeId}`).set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(await stateOf(DOOR_B), "REVOKED");
     assert.equal((await samples()).length, 1, "removing a person from one door erased their face everywhere");
-    const logged = await db.auditLog.count({ where: { action: "enrollment.remove", subjectId: String(employeeId) } });
-    assert.equal(logged, 1, "a kiosk's removal left no trace");
   });
 
   it("does not hand a door its removed person back when another door captures", async () => {
-    await enrollment.takeReport(DOOR_A, ask(DOOR_A, employeeId, "RETAKE"));
+    const put = await request(http).post("/enrollments").set("Authorization", `Bearer ${token}`).send({ deviceId: DOOR_A, employeeId });
+    assert.equal(put.body.state, "RETAKE");
     const wasAt = await versionOf(DOOR_B);
     await enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x77, RETAKEN + 60_000, 0));
+    assert.deepEqual((await samples()).map((one) => [one.idx, one.at]), [[0, RETAKEN + 60_000]]);
     assert.equal(await stateOf(DOOR_B), "REVOKED");
     assert.equal(await versionOf(DOOR_B), wasAt, "a revoked door was sent the face again");
   });

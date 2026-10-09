@@ -357,24 +357,25 @@ export class EnrollmentService {
     this.log.warn(`erased biometrics for ${employeeId} on ${doors.length} kiosk(s): ${why}`);
   }
 
-  /** What an operator did at a kiosk: one captured sample, or a request the server decides (KEHOACH 7.5). */
+  /** What a kiosk reported. A captured sample is weighed; a retake or a removal asked at the kiosk
+   *  changes no pair, and the door is told what the server holds (KEHOACH 7.5).
+   */
   async takeReport(deviceId: string, report: EnrollPayload): Promise<void> {
     switch (report.op) {
       case "UPSERT":
         await this.takeSample(deviceId, report);
-        break;
+        // No request carried the kiosk's report, so the change interceptor never announced it.
+        this.feed.publish(FEED.change, { resources: ["enrollments"] }, report.employeeId);
+        return;
       case "RETAKE":
-        await this.askedRetake(deviceId, report.employeeId);
-        break;
+        this.log.warn(`${deviceId} asked to retake ${report.employeeId}, which only the dashboard does`);
+        return this.unasked(deviceId, report.employeeId);
       case "DELETE_EMPLOYEE":
-        await this.askedRemove(deviceId, report.employeeId);
-        break;
+        this.log.warn(`${deviceId} asked to remove ${report.employeeId}, which only the dashboard does`);
+        return this.refuse(deviceId, report.employeeId);
       default:
         this.log.warn(`${deviceId} sent ${report.op} up, which only the server sends`);
-        return;
     }
-    // No request carried the kiosk's report, so the change interceptor never announced it.
-    this.feed.publish(FEED.change, { resources: ["enrollments"] }, report.employeeId);
   }
 
   /**
@@ -495,49 +496,19 @@ export class EnrollmentService {
     );
   }
 
-  private async askedRetake(deviceId: string, employeeId: number): Promise<void> {
-    await this.device(deviceId);
-    const taken = await this.tell(deviceId, async (tx): Promise<Told<boolean>> => {
+  // A retake opens only from the dashboard: a pair still waiting is asked for again, any other row the kiosk drops.
+  private async unasked(deviceId: string, employeeId: number): Promise<void> {
+    await this.tell(deviceId, async (tx) => {
       const pair = await tx.deviceEnrollment.findUnique({
         where: { deviceId_employeeId: { deviceId, employeeId } },
         include: { employee: { select: { fullName: true, code: true } } },
       });
-      if (!pair || pair.state === "REVOKED" || !(await this.consent.live(employeeId))) {
-        return { value: false, builds: [(version, to) => this.withdraw(employeeId, version, to)] };
-      }
-      if (pair.state === "ENROLLED") {
-        await tx.deviceEnrollment.update({
-          where: { deviceId_employeeId: { deviceId, employeeId } },
-          data: { state: "RETAKE" },
-        });
-      }
-      return { value: true, builds: [(version, to) => this.expect(employeeId, pair.employee, version, to)] };
-    });
-    if (!taken) {
-      this.log.warn(`${deviceId} asked to retake ${employeeId}, who is not its to capture`);
-      return;
-    }
-    await this.audit.record({
-      action: AUDIT_ACTIONS.ENROLLMENT_RETAKE,
-      subject: AUDIT_SUBJECTS.EMPLOYEE,
-      subjectId: String(employeeId),
-      meta: { deviceId, by: "kiosk" },
-    });
-  }
-
-  private async askedRemove(deviceId: string, employeeId: number): Promise<void> {
-    const pair = await this.db.deviceEnrollment.findUnique({
-      where: { deviceId_employeeId: { deviceId, employeeId } },
-    });
-    if (!pair) {
-      return;
-    }
-    await this.revoke(deviceId, employeeId);
-    await this.audit.record({
-      action: AUDIT_ACTIONS.ENROLLMENT_REMOVE,
-      subject: AUDIT_SUBJECTS.EMPLOYEE,
-      subjectId: String(employeeId),
-      meta: { deviceId, by: "kiosk" },
+      const waiting = pair?.state === "ASSIGNED" || pair?.state === "RETAKE";
+      const build: Build =
+        pair && waiting && (await this.consent.live(employeeId))
+          ? (version, to) => this.expect(employeeId, pair.employee, version, to)
+          : (version, to) => this.withdraw(employeeId, version, to);
+      return { value: undefined, builds: [build] };
     });
   }
 
@@ -551,6 +522,10 @@ export class EnrollmentService {
       const builds: Build[] = [(version, to) => this.dropAll(employeeId, version, to)];
       if (pair && pair.state !== "REVOKED") {
         builds.push(...(await this.samplesFor(tx, pair)));
+        // A drop and an upsert both take a person off the pending list, so the ask goes last.
+        if (pair.state !== "ENROLLED") {
+          builds.push((version, to) => this.expect(employeeId, pair.employee, version, to));
+        }
       }
       return { value: undefined, builds };
     });
