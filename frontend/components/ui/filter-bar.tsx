@@ -322,7 +322,7 @@ export function FilterBar({ search, filters = [], extra, range }: Props) {
                 <FilterControl key={one.key} filter={one} inSheet />
               ))}
               {range ? (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <DateField label={common("from")} required={false} value={range.from} max={range.to || undefined} onChange={range.onFrom} />
                   <DateField label={common("to")} required={false} value={range.to} min={range.from || undefined} onChange={range.onTo} />
                 </div>

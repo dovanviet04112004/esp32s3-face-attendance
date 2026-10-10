@@ -266,7 +266,7 @@ function LeaveTypes() {
                 error={tried && draft.name.trim() === "" ? common("required") : undefined}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               />
-              <div className="grid grid-cols-2 items-start gap-4">
+              <div className="grid items-start gap-4 sm:grid-cols-2">
                 <Input
                   label={t("daysPerYear")}
                   required
