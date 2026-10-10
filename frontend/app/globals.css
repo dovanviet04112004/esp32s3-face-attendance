@@ -69,6 +69,13 @@
   }
 }
 
+/* Kumo sizes its fields with text utilities, which outrank @layer base, so the 16 px floor above reaches them only here. */
+@media (pointer: coarse) {
+  :is(input, select, textarea, [role="combobox"]):is(.text-xs, .text-sm, .text-base) {
+    font-size: 1rem;
+  }
+}
+
 /* A field's list is no wider than the field; a toolbar filter's rows carry a mark that lets it outgrow its button (KEHOACH 4.7). */
 [data-base-ui-portal] > [data-side] > [data-side]:has([role="listbox"]):not(:has([data-filter-option])) {
   max-width: var(--anchor-width);
