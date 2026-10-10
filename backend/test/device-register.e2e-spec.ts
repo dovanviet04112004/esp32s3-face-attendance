@@ -17,6 +17,8 @@ const SILENT = "e2e-reg-mute";
 const FIRST_CODE = "482913";
 const SECOND_CODE = "730215";
 const WRONG_CODE = "000001";
+const PUNCHER = "E2E-REG-PUNCHER";
+const HELD_BOOT = 3835;
 
 interface Answer {
   accepted: boolean;
@@ -25,6 +27,7 @@ interface Answer {
   token?: string;
   expiresInDays?: number;
   claimRenew?: boolean;
+  highestBoot?: number;
 }
 
 function claimsOf(token: string): { deviceId?: string; exp?: number } {
@@ -41,6 +44,7 @@ describe("device registration (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.device.deleteMany({ where: { id: { in: [DEVICE, STRANGER, SILENT] } } });
+    await db.employee.deleteMany({ where: { code: PUNCHER } });
   }
 
   async function register(body: object, claimCode = FIRST_CODE): Promise<request.Response> {
@@ -172,6 +176,7 @@ describe("device registration (e2e)", () => {
     assert.ok(answer.token, "an approved machine was not given its token");
     assert.equal(claimsOf(answer.token).deviceId, DEVICE, "the token names another machine");
     assert.ok((answer.expiresInDays ?? 0) > 0);
+    assert.equal(answer.highestBoot, 0, "a machine that sent no punch was told of a boot");
     assert.deepEqual(closed, [DEVICE], "a session opened with an older ticket outlived the new one");
 
     const row = await held(DEVICE);
@@ -202,6 +207,26 @@ describe("device registration (e2e)", () => {
     const owner = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, FIRST_CODE);
     assert.equal(owner.status, 200, "the machine whose code was typed could not collect its ticket");
     assert.ok((owner.body as Answer).token);
+  });
+
+  it("tells a machine that lost its storage how far its punches already reach", async () => {
+    const worker = await db.employee.create({ data: { code: PUNCHER, fullName: "Người chấm thử", active: true } });
+    await db.attendanceRecord.createMany({
+      data: [1n, 2n].map((seq) => ({
+        localId: String((BigInt(HELD_BOOT) << 32n) | seq),
+        deviceId: DEVICE,
+        employeeId: worker.id,
+        ts: new Date("2019-06-01T08:00:00Z"),
+        direction: "IN",
+        questionableTime: true,
+      })),
+    });
+    // Asking while holding a ticket says the storage is gone: back to the queue, then approved again.
+    paced(await register({ deviceId: DEVICE, bootstrapToken: bootstrap }));
+    assert.equal((await approve(DEVICE, FIRST_CODE)).status, 201);
+    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, FIRST_CODE);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal((res.body as Answer).highestBoot, HELD_BOOT, "the machine was not told how far its punches reach");
   });
 
   it("takes a revoked machine back into the queue, not straight back in", async () => {

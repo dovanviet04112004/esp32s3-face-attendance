@@ -40,7 +40,8 @@ interface HeartbeatFacts {
 
 /** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
  *  token only ever rides on the 200, once a person has said yes; `claimRenew`
- *  tells a kiosk its claim code is spent and it must show a new one.
+ *  tells a kiosk its claim code is spent and it must show a new one, and
+ *  `highestBoot` lets one that lost its boot count count on from above it (KEHOACH 6.2.5).
  */
 export interface Registration {
   accepted: boolean;
@@ -49,6 +50,7 @@ export interface Registration {
   token?: string;
   expiresInDays?: number;
   claimRenew?: boolean;
+  highestBoot?: number;
 }
 
 /** Named rather than taken whole: the row carries tokenHash, the hash of the
@@ -228,8 +230,18 @@ export class DevicesService {
     });
     // A session opened with a ticket that has since died is not heard once the machine is back (KEHOACH 7.3).
     await this.broker.closeSession(device.id);
-    this.log.log(`${device.id} collected its token`);
-    return this.handed(device.id, token, {});
+    const highestBoot = await this.highestBoot(device.id);
+    this.log.log(`${device.id} collected its token, its punches reach boot ${highestBoot}`);
+    return { ...(await this.handed(device.id, token, {})), highestBoot };
+  }
+
+  /** The boot half (localId >> 32) of the largest localId held for a kiosk, 0 when it sent none. */
+  private async highestBoot(deviceId: string): Promise<number> {
+    const [row] = await this.db.$queryRaw<{ highest: bigint | null }[]>`
+      SELECT max(floor("localId"::numeric / 4294967296))::bigint AS "highest"
+        FROM "AttendanceRecord"
+       WHERE "deviceId" = ${deviceId}`;
+    return Number(row?.highest ?? 0n);
   }
 
   /**

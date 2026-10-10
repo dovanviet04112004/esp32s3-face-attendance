@@ -247,6 +247,13 @@ export class DeviceTokenView {
     description: "Days until the token expires (DEVICE_TOKEN_TTL_DAYS)",
   })
   expiresInDays!: number;
+  @ApiPropertyOptional({
+    example: 3835,
+    description:
+      "Registration only: the boot half of the largest localId held for this kiosk, 0 when none; " +
+      "a kiosk counting below it lost its boot count and counts on from above it",
+  })
+  highestBoot?: number;
 }
 
 export class DeviceIdentityView {
