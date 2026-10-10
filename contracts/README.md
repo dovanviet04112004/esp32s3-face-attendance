@@ -14,21 +14,21 @@ Nguồn sự thật duy nhất cho ba khối `ml/`, `firmware/`, `backend+fronte
 
 ## Sinh code
 
-`tools/gen_from_schema.sh` đọc `schema/` và sinh ra:
+`make gen` chạy `tools/gen_contracts.py`, đọc `schema/` và `mqtt_topics.yaml` rồi sinh ra:
 
 | Đích | File |
 |---|---|
 | Backend | `backend/src/common/generated/*.ts` |
 | Frontend | `frontend/types/generated/*.ts` |
-| Firmware | `firmware/components/common/include/gen_payload.h` |
+| Firmware | `firmware/components/common/include/gen_payload.h`, `gen_topics.h` |
 
 **File sinh ra không được sửa tay.** CI chạy lại generator rồi `git diff --exit-code`, lệch
 là fail. Đổi payload thì sửa schema rồi chạy `make gen`, không sửa ở ba khối.
 
 ## Vector vàng
 
-`golden/` giải bài toán hậu xử lý Python phải khớp 1:1 với C. `ml` xuất tensor đầu vào và
-kết quả mong đợi ra `.npz`; `firmware/test_apps/parity` đọc chính file đó và so sánh trên
+`golden/` giải bài toán hậu xử lý Python phải khớp 1:1 với C. `make golden` xuất tensor đầu vào
+và kết quả mong đợi ra file `.gold`; `firmware/test_apps/parity` đọc chính file đó và so sánh trên
 board. Lệch ở decode anchor, NMS hay affine warp lộ ra ngay thay vì phải mò lúc tích hợp.
 
 | Thư mục | Bản Python | Bản C |
