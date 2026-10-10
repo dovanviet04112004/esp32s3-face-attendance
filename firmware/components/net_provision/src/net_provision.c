@@ -185,6 +185,21 @@ static char *register_body(void)
     return text;
 }
 
+// A kiosk that lost its boot count counts on from above the boot its punches reach (KEHOACH 6.2.5).
+static void count_past(const cJSON *root)
+{
+    const cJSON *highest = cJSON_GetObjectItemCaseSensitive(root, "highestBoot");
+    if (!cJSON_IsNumber(highest) || highest->valuedouble < 1 ||
+        highest->valuedouble >= (double)UINT32_MAX) {
+        return;
+    }
+    const uint32_t past = (uint32_t)highest->valuedouble;
+    const esp_err_t err = sys_storage_lift_boot_count(past);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "boot count not lifted past %" PRIu32 ": %s", past, esp_err_to_name(err));
+    }
+}
+
 // The ticket goes in first: an exp without its ticket means nothing, a ticket without its exp still logs in.
 static bool keep_ticket(const char *reply)
 {
@@ -192,6 +207,10 @@ static bool keep_ticket(const char *reply)
     const cJSON *token = cJSON_GetObjectItemCaseSensitive(root, "token");
     const bool usable = cJSON_IsString(token) && token->valuestring[0] != '\0' &&
                         strlen(token->valuestring) < TICKET_CAP;
+    // Ahead of the ticket, so no punch it lets out carries a boot the server holds (KEHOACH 7.3).
+    if (usable) {
+        count_past(root);
+    }
     bool kept = usable && sys_storage_set_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET,
                                               token->valuestring) == ESP_OK;
     uint32_t exp = 0;
