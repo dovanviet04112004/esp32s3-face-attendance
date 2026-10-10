@@ -4698,7 +4698,9 @@ số dòng, rồi mọi truy vấn phải nhớ lọc nó.
 đi QoS 1, nên broker được phép giao lại một tin đã giao, và listener ghi mỗi lần tin tới.
 `device_event.schema.json` vì thế mang `seq`: số nguyên không âm, mỗi kiosk tự đếm tăng dần và
 không bao giờ dùng lại một số, kể cả sau khi khởi động lại — dùng lại là server bỏ mất một sự kiện
-thật. Server giữ nó ở cột `seq` với unique index `(deviceId, seq)` và ghi bằng
+thật. Kiosk lấy `seq = boot_count << 32 | n`, `n` đếm sự kiện trong một lần khởi động, đúng khuôn
+`local_id` nên cũng sống qua lần mất NVS (§6.2.5); số JSON giữ đúng tới 2^53, tức hai triệu lần
+khởi động. Server giữ nó ở cột `seq` với unique index `(deviceId, seq)` và ghi bằng
 `INSERT … ON CONFLICT DO NOTHING`: bản giao lại không thành dòng thứ hai, không lên feed lần nữa,
 không gửi cảnh báo lần nữa.
 
@@ -6030,7 +6032,9 @@ trống. Nên số đếm đứng ở ba chỗ:
   của bản ghi cuối mỗi file `attend.NNN` còn lại, rồi cộng một. Mất NVS thì `boot.bin` giữ số;
   mất NVS ngay ở lần khởi động đầu chạy firmware có `boot.bin` thì log giữ.
 - **Server.** Lời 200 cấp vé ở bước 4 của §7.3 mang `highestBoot`: nửa cao lớn nhất trong các
-  `localId` server đang giữ của máy ấy, 0 khi chưa có. Máy có số đếm **nhỏ hơn** thì nhảy lên
+  `localId` và các `seq` sự kiện (§4.6) server đang giữ của máy ấy, 0 khi chưa có — tính cả sự
+  kiện vì máy khởi động nhiều lần mà không ai chấm công thì chỉ sự kiện mang số khởi động mới
+  nhất. Máy có số đếm **nhỏ hơn** thì nhảy lên
   `highestBoot + 1` và ghi cả hai bản. Bằng thì không nhảy: đó là máy bị thu hồi rồi được duyệt
   lại ngay trong lần khởi động đang gửi lên những số ấy, và nhảy giữa chừng làm `svc_sync` tưởng
   bản ghi chưa có giờ của chính lần khởi động này là của lần trước. Mất NVS là mất vé, nên máy
@@ -6529,8 +6533,8 @@ bị `Kconfig` loại khỏi bản `prod`.
 4. **Nhận máy** — admin thấy máy `pending` trong dashboard, bấm duyệt, **gõ mã nhận máy đang
    hiện trên màn kiosk**, rồi đặt tên người đọc được và vị trí. Sai mã thì không duyệt. Lần hỏi
    kế tiếp **mang đúng mã ấy**, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày
-   và `highestBoot`, nửa cao lớn nhất của các `localId` server đang giữ cho máy ấy; lời hỏi mang
-   mã khác vẫn chỉ nhận 202.
+   và `highestBoot`, nửa cao lớn nhất của các `localId` và `seq` sự kiện server đang giữ cho máy
+   ấy; lời hỏi mang mã khác vẫn chỉ nhận 202.
    Kiosk có số đếm lần khởi động nhỏ hơn `highestBoot` thì nhảy lên trên nó trước tiên (§6.2.5),
    rồi ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
