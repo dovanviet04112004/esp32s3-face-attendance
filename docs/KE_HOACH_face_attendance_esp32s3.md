@@ -6312,9 +6312,10 @@ chưa có phiên TLS, giữ 38.067 B; có phiên TLS thật (09/10) giữ 29.755
 mặc định `AI_RUNTIME`.
 
 **Bản `fleet` trên kiosk thật mới là con số sát cổng nhất** (đo 10/10, `measurements/ram.md` §12).
-Ảnh phát hành còn mang console (E13-T20), và REPL của nó xin 8 KB ngăn xếp nội. Lúc đã chạy, vùng
-heap chính 204 KB còn 152 B, mọi chỗ trống còn lại nằm ở vùng dự trữ 32 KB: tổng 8,4 KB, khối liền
-lớn nhất 4,3 KB, đáy 3,8 KB — dưới cổng 24 KB. Hai luật đi ra từ lượt đo ấy. Bộ đệm chỉ một task dùng
+Lượt đo ấy dựng theo `dev` nên còn console, và REPL của nó xin 8 KB ngăn xếp nội; bản phát hành dựng
+theo `prod` (§7.7), không có console, nên số ấy là cận dưới. Lúc đã chạy, vùng heap chính 204 KB còn
+152 B, mọi chỗ trống còn lại nằm ở vùng dự trữ 32 KB: tổng 8,4 KB, khối liền lớn nhất 4,3 KB, đáy
+3,8 KB — dưới cổng 24 KB. Hai luật đi ra từ lượt đo ấy. Bộ đệm chỉ một task dùng
 và dùng thưa — bản báo mẫu đăng ký, danh sách mạng đã lưu, bản ghi quét Wi-Fi — cấp ở PSRAM lúc
 khởi động, không nằm `.bss` nội. Còn hai đối tượng `Canvas` (7,7 KB biên dòng; bản đồ phủ của chúng
 vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được preview tụt từ 12,2–12,7 xuống
@@ -7156,9 +7157,13 @@ thái chỉ hỏi về lời mời gần nhất.
 
 **CI cần hai secret và một biến, và thiếu thì bỏ qua chứ không đỏ:** `RELEASE_PUBLISH_TOKEN` (bằng
 giá trị trong `.env` của VPS), `DEVICE_BOOTSTRAP_TOKEN` (ghi vào `sdkconfig.secrets` lúc build,
-bằng giá trị `api` giữ), và biến `API_URL`. Ảnh firmware build theo profile mà fleet đang chạy, khai
-ở biến `FLEET_PROFILE` (hiện là `dev`); đổi fleet sang `prod` là đổi một biến, không đổi workflow.
-**Bản phát cho đội, profile nào cũng vậy, khởi động lại khi panic** và coi task watchdog là panic:
+bằng giá trị `api` giữ), và biến `API_URL`. **Ảnh phát cho đội dựng theo `prod`**: máy ngoài hiện
+trường không mở console ghi NVS cho ai cắm cáp USB (§6.2.1), và RAM nội lấy lại 8 KB ngăn xếp REPL
+(§6.4). Biến `FLEET_PROFILE` của repo đè được profile ấy khi cần một bản chẩn đoán; workflow và
+`make fw-fleet` cùng lấy `prod` khi biến trống. Ảnh `prod` dựng với `partitions.prod.csv` (thêm
+`nvs_keys`, coredump 64 KB), nhưng OTA chỉ thay app: máy đang chạy giữ bảng cũ, và app chạy đúng
+trên đó vì mọi phân vùng nó mở cùng tên, cùng chỗ, còn `nvs_keys` chỉ cần khi bật mã hoá NVS
+(E13-T3). **Bản phát cho đội, profile nào cũng vậy, khởi động lại khi panic** và coi task watchdog là panic:
 cách lùi về bản cũ của bootloader chỉ chạy khi máy khởi động lại, còn `dev` dừng trong gdbstub
 để ai đó cắm cáp, nên một bản phát hỏng sẽ đứng im tới khi có người rút điện. Lớp ấy nằm ở
 `sdkconfig.fleet`, chỉ lượt build phát hành ghép thêm; bàn thử vẫn giữ gdbstub.
