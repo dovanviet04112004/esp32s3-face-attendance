@@ -19,6 +19,7 @@
 #define STORAGE_ATTEND_FMT "/lfs/log/attend.%03u"  // 000 to 999
 #define STORAGE_ATTEND_FILES 1000u
 #define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
+#define STORAGE_BOOT_PATH "/lfs/log/boot.bin"
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 3u
 #define STORAGE_FACES_VER_UNTAGGED 2u     // same records, no model tag in the header
@@ -36,6 +37,8 @@
 #define STORAGE_ATTEND_ROTATE_BYTES (256 * 1024)
 #define STORAGE_CURSOR_MAGIC 0x31554341u  // 'ACU1'
 #define STORAGE_CURSOR_VER 1u
+#define STORAGE_BOOT_MAGIC 0x31544F42u    // 'BOT1'
+#define STORAGE_BOOT_VER 1u
 #define STORAGE_ATTEND_FLAG_DOOR 0x01u    // the door opened for this punch
 #define STORAGE_ATTEND_FLAG_OFFLINE 0x02u // stamped with no broker link
 #define STORAGE_ATTEND_FLAG_NO_NTP 0x04u  // ts came from a clock never NTP set
@@ -162,6 +165,16 @@ typedef struct __attribute__((packed)) {
     uint32_t crc32;
 } storage_cursor_t;
 
+/** The second copy of NVS sys/boot_count: a wiped NVS cannot start local_ids over (KEHOACH 6.2.5).
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t format_ver;
+    uint16_t reserved;
+    uint32_t boot_count;                  // high half of every local_id made now
+    uint32_t crc32;
+} storage_boot_t;
+
 // The compiler holds these numbers, so a field added without a version bump
 // breaks the build rather than writing records the next firmware cannot read.
 static_assert(sizeof(storage_model_entry_t) == 64, "model entry must match KEHOACH 6.2.2");
@@ -188,3 +201,6 @@ static_assert(offsetof(storage_attend_record_t, crc32) == 44, "attend crc offset
 
 static_assert(sizeof(storage_cursor_t) == 16, "cursor must match KEHOACH 6.2.5");
 static_assert(offsetof(storage_cursor_t, offset) == 8, "cursor offset field drifted");
+
+static_assert(sizeof(storage_boot_t) == 16, "boot record must match KEHOACH 6.2.5");
+static_assert(offsetof(storage_boot_t, boot_count) == 8, "boot count offset drifted");

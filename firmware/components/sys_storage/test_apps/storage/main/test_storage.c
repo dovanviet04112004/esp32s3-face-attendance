@@ -116,6 +116,41 @@ TEST_CASE("init mounts once and refuses a second time", "[sys_storage]")
     TEST_ASSERT_GREATER_THAN(0, sys_storage_boot_count());
 }
 
+static uint32_t filed_boot(const char *path)
+{
+    storage_boot_t filed = { 0 };
+    size_t len = 0;
+    if (sys_storage_read(path, &filed, sizeof(filed), &len) != ESP_OK || len != sizeof(filed) ||
+        filed.magic != STORAGE_BOOT_MAGIC ||
+        filed.crc32 != sys_storage_crc32(&filed, offsetof(storage_boot_t, crc32))) {
+        return 0;
+    }
+    return filed.boot_count;
+}
+
+TEST_CASE("boot.bin holds this boot's count, above the copy the last boot left", "[sys_storage]")
+{
+    const uint32_t count = sys_storage_boot_count();
+    const uint32_t previous = filed_boot(STORAGE_BOOT_PATH ".bak");
+    printf("boot %u, boot.bin %u, the last boot's copy %u\n", (unsigned)count,
+           (unsigned)filed_boot(STORAGE_BOOT_PATH), (unsigned)previous);
+    TEST_ASSERT_EQUAL_UINT32(count, filed_boot(STORAGE_BOOT_PATH));
+    TEST_ASSERT_TRUE(previous < count);
+}
+
+TEST_CASE("a server count at or under this boot stays, one above lifts past it", "[sys_storage]")
+{
+    const uint32_t count = sys_storage_boot_count();
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_lift_boot_count(count - 1));
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_lift_boot_count(count));
+    TEST_ASSERT_EQUAL_UINT32(count, sys_storage_boot_count());
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, sys_storage_lift_boot_count(UINT32_MAX));
+
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_lift_boot_count(count + 1));
+    TEST_ASSERT_EQUAL_UINT32(count + 2, sys_storage_boot_count());
+    TEST_ASSERT_EQUAL_UINT32(count + 2, filed_boot(STORAGE_BOOT_PATH));
+}
+
 TEST_CASE("whatever the last power-up left behind still reads back checked", "[sys_storage]")
 {
     // Runs first: the cases below rewrite faces.bin, and this one has to see

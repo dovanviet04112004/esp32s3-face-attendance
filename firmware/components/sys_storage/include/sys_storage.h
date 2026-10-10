@@ -77,10 +77,18 @@ esp_err_t sys_storage_set_str(const char *ns, const char *key, const char *value
  */
 esp_err_t sys_storage_erase_key(const char *ns, const char *key);
 
-/** How many times this device has booted, counted up once per init.
- *  @ctx any | non-blocking | the high half of every attendance local_id
+/** The high half of every attendance local_id: above any count kept here or held by the server.
+ *  @ctx any | non-blocking | one more per init, more when sys_storage_lift_boot_count moves it
  */
 uint32_t sys_storage_boot_count(void);
+
+/** Count on from above a boot number the server holds, unless this boot is that one or later.
+ *  @ctx task | blocking | takes m_littlefs | writes NVS and LittleFS only when it lifts
+ *  @param highest the highestBoot of the registration answer (KEHOACH 7.3)
+ *  @ret ESP_OK, also when the count stays | ESP_ERR_INVALID_STATE until init
+ *       | ESP_ERR_INVALID_ARG at UINT32_MAX
+ */
+esp_err_t sys_storage_lift_boot_count(uint32_t highest);
 
 #define STORAGE_DEVICE_ID_CAP (GEN_TOPIC_DEVICE_ID_MAX + 1)
 

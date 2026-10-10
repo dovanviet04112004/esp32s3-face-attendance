@@ -3524,7 +3524,7 @@ cửa mở, loa kêu, thẻ hiện như thường; bản ghi theo quyết địn
 1. **Chống chấm trùng.** Cùng một `employee_id` trong `attend.dedup_min` phút thì `Grant` vẫn mở cửa nhưng **không sinh bản ghi mới** — người ta quét lại vì cửa chưa kịp mở, không phải vì muốn chấm hai lần. Cửa sổ là ngưỡng nghiệp vụ nên nằm ở NVS (§4.9, §6.2.1).
 2. **Điểm liveness âm.** §4.5.5d trả `live_score = −1` khi ảnh `models_0` không có nhánh spoof. Mặc định là **từ chối**, vì một kiosk không biết phân biệt mặt thật với ảnh in thì không nên mở cửa. `attend.allow_no_spoof` = 1 cho phép bàn thử mở, và bản ghi sinh ra vẫn mang `liveness_score` âm để server biết.
 3. **`flags` của bản ghi (§6.2.5).** bit0 theo `svc_door_open` trả về; bit1 bật khi bản ghi chỉ nằm ở LittleFS chưa lên được server; bit2 theo `sys_time_source()`, tức bật khi nguồn giờ chưa từng được NTP xác nhận.
-4. **`local_id`.** `boot_count << 32 | seq`, `seq` đếm trong phiên. Không bao giờ trùng kể cả sau mất điện (§6.2.5).
+4. **`local_id`.** `boot_count << 32 | seq`, `seq` đếm trong phiên. Không bao giờ trùng, kể cả sau mất điện hay mất NVS (§6.2.5).
 
 Thời lượng `Granted`, `Denied` và `Cooldown` là nhịp giao diện, không phải ngưỡng nghiệp vụ, nên là hằng số của component chứ không vào NVS.
 
@@ -5738,7 +5738,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `wifi` | `saved`, `ssid`, `pass` | blob / str | `saved` (blob `storage_wifi_saved_t`, layout ở `storage_format.h`) giữ năm mạng máy đã vào được, mạng dùng gần nhất trước, mỗi mạng một tên và mật khẩu (§7.6); chỉ ghi khi một mạng thật sự trả lời. `ssid`/`pass` là đường của console và của bản firmware chưa có `saved`: có thì lúc khởi động `net_wifi` đưa mạng ấy lên đầu `saved` rồi xoá hai khoá |
 | `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, layout khai ở `storage_format.h`. Khoá `enroll_out` do firmware có nút xoá ở máy để lại bị xoá ở lần khởi động đầu, nên yêu cầu nằm trong đó không bao giờ được gửi |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
-| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`; `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
+| `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`, và có bản thứ hai ở `log/boot.bin` vì mất NVS không được làm nó đếm lại (§6.2.5); `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
 | `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | năm ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
@@ -5784,10 +5784,11 @@ tức tạo ra đúng trạng thái mà luật ngay trên phải đi vá. `Kconf
 bật ở `sdkconfig.dev` với `sdkconfig.bench`, nên bản `prod` không biên dịch một dòng nào — một
 cờ lúc chạy thì không đủ, vì cờ ấy nằm trong chính NVS mà console ghi được.
 
-`nvs_partition_gen.py` bị loại vì nó ghi đè **cả phân vùng**, cuốn theo `sys/boot_count` — nửa
-cao của mọi `local_id`. Nạp lại địa chỉ broker bằng đường ấy là thiết bị sinh lại những
-`local_id` đã gửi đi, và server khử trùng bằng đúng khoá đó sẽ nuốt bản ghi mới như bản trùng:
-mất bản ghi chấm công, im lặng. Đường nạp ngoài hiện trường không dùng console — xem §7.3.
+`nvs_partition_gen.py` bị loại vì nó ghi đè **cả phân vùng**: vé, mã nhận máy, năm mạng đã lưu,
+`roster_ver` và danh sách chờ chụp đi theo, tức máy phải đăng ký lại và chờ người duyệt chỉ vì
+đổi một địa chỉ. `sys/boot_count` — nửa cao của mọi `local_id` — cũng đi theo; bản ở
+`log/boot.bin` giữ cho số ấy không đếm lại (§6.2.5), nhưng đó là lưới đỡ, không phải đường đi.
+Đường nạp ngoài hiện trường không dùng console — xem §7.3.
 
 **Gieo một lần là không đủ: bộ gieo phải có số hiệu.** Luật "boot đầu gieo, sau đó NVS sở hữu"
 đúng cho giá trị người vận hành đã đặt, nhưng nó khoá luôn cả những thiết bị **chưa ai đặt gì**:
@@ -5908,7 +5909,8 @@ mang số hiệu có thứ tự.
 ├── log/
 │   ├── attend.000         # append-only, xoay vòng khi > 256 KB
 │   ├── attend.001
-│   └── cursor.bin         # đã đồng bộ tới file nào, offset nào
+│   ├── cursor.bin         # đã đồng bộ tới file nào, offset nào
+│   └── boot.bin           # bản thứ hai của sys/boot_count, nửa cao của local_id
 ├── cfg/
 │   └── ui.json            # cấu hình không nhạy cảm, sửa được từ màn hình
 └── tmp/                   # ảnh crop tạm cho enroll — XOÁ SẠCH mỗi lần boot
@@ -6016,7 +6018,28 @@ Header file **giống hệt khuôn của `faces.bin`** (magic `'ALG1'`, `record_
 
 4 MB / 48 B ≈ **87.000 bản ghi** — thừa cho vài tháng mất mạng liên tục.
 
-`local_id` sinh từ `boot_count` (NVS) ghép với số thứ tự trong phiên, nên **không bao giờ trùng kể cả sau mất điện**, và server dùng đúng trường này làm khoá chống trùng (`unique(deviceId, localId)`).
+**`local_id` sinh từ `boot_count` ghép với số thứ tự trong phiên, và không bao giờ được lặp.**
+Server dùng đúng trường này làm khoá chống trùng (`unique(deviceId, localId)`), nên một
+`local_id` lặp lại là một lượt chấm công mới bị nuốt như bản trùng, không một dòng báo. Mất điện
+không đụng tới số đếm. Mất NVS thì có: `sys_storage` xoá NVS khi gặp `NO_FREE_PAGES` hay
+`NEW_VERSION_FOUND`, `erase-flash` xoá cả flash, và bật mã hoá NVS (E13-T3) bắt đầu từ một NVS
+trống. Nên số đếm đứng ở ba chỗ:
+
+- **Hai bản trên máy.** NVS `sys/boot_count` và `log/boot.bin` (bảng dưới) giữ cùng một số, ghi
+  lại mỗi lần khởi động. Lúc khởi động `sys_storage` lấy số lớn nhất trong hai bản ấy và nửa cao
+  của bản ghi cuối mỗi file `attend.NNN` còn lại, rồi cộng một. Mất NVS thì `boot.bin` giữ số;
+  mất NVS ngay ở lần khởi động đầu chạy firmware có `boot.bin` thì log giữ.
+- **Server.** Lời 200 cấp vé ở bước 4 của §7.3 mang `highestBoot`: nửa cao lớn nhất trong các
+  `localId` server đang giữ của máy ấy, 0 khi chưa có. Máy có số đếm **nhỏ hơn** thì nhảy lên
+  `highestBoot + 1` và ghi cả hai bản. Bằng thì không nhảy: đó là máy bị thu hồi rồi được duyệt
+  lại ngay trong lần khởi động đang gửi lên những số ấy, và nhảy giữa chừng làm `svc_sync` tưởng
+  bản ghi chưa có giờ của chính lần khởi động này là của lần trước. Mất NVS là mất vé, nên máy
+  mất số đếm luôn phải qua bước này; `erase-flash` xoá cả LittleFS nhưng cũng xoá bảng mặt, nên
+  trước lần duyệt ấy máy không nhận ra ai và không sinh bản ghi nào.
+
+Còn hở, nói rõ: máy mất NVS ở đúng lần khởi động đầu tiên chạy firmware có `boot.bin`, mà mọi
+file log của nó đều rỗng và bảng mặt vẫn còn, thì những lượt chấm công làm ra trước lần duyệt lại
+có thể trùng số đã gửi.
 
 **Nguồn giờ của `ts`, và khi nào bật bit2.** DS3231 (§2.3H) là nguồn giờ **chính**: `sys_time`
 đọc nó lúc boot và đặt giờ hệ thống ngay, trước khi có Wi-Fi. Đó là lý do nhánh này không còn
@@ -6061,6 +6084,21 @@ Con trỏ ghi bằng **đúng đường hai pha của `faces.bin`** (§6.2.6): m
 con trỏ cũ nguyên vẹn, không để lại 16 byte nửa vời. Con trỏ cũ chỉ gây gửi lại, đúng ý đồ
 at-least-once. Không có `cursor.bin` nghĩa là chưa đồng bộ gì, tức `{0, 32}`.
 
+**`log/boot.bin` — 16 B, một bản ghi duy nhất.** Bản thứ hai của `sys/boot_count`, theo đoạn
+`local_id` ở trên:
+
+| Offset | Kích thước | Trường |
+|---|---|---|
+| 0 | 4 | `magic` = `'BOT1'` |
+| 4 | 2 | `format_ver` u16 |
+| 6 | 2 | `reserved` |
+| 8 | 4 | `boot_count` u32 — nửa cao của mọi `local_id` máy đang sinh |
+| 12 | 4 | `crc32` |
+
+Ghi bằng đường hai pha như `cursor.bin`, một lần mỗi lần khởi động và một lần khi server nâng số
+đếm, nên không bao giờ thành nhịp ghi đều. File hỏng thì đọc `boot.bin.bak`; cả hai hỏng thì
+tính như vắng, tức 0, và hai chỗ còn lại giữ số.
+
 **Ai làm gì.** `sys_storage` (L2) sở hữu tên file, header, xoay vòng 256 KB, `cursor.bin` và
 việc xoá file đã đồng bộ hết — §4.1 cho nó độc quyền gọi `lfs_*`, và mục này đã giao cho nó
 một hàm header dùng chung cho cả hai định dạng. `svc_attendance` (L5) chỉ đưa xuống bản ghi
@@ -6074,6 +6112,7 @@ ack. Không component nào ngoài `sys_storage` biết log gồm mấy file.
 | Sửa `faces.bin` | Ghi `faces.tmp` → `lfs_file_sync` → rename `faces.bin`→`faces.bak` → rename `faces.tmp`→`faces.bin` | `faces.bin` hoặc còn nguyên bản cũ, hoặc đã là bản mới. Không bao giờ nửa vời. Boot sau đọc `faces.bin`; CRC sai thì rơi về `faces.bak` |
 | Thêm bản ghi chấm công | `lfs_file_write` + **`lfs_file_sync` ngay sau mỗi bản ghi**. Lần ghi sau **cắt cái đuôi dở** về mốc 32 + k×48 trước khi ghi tiếp | Bản ghi cuối dở dang bị cắt, các bản ghi trước còn nguyên. Không cắt thì n byte lẻ đó đẩy lệch mọi bản ghi ghi sau nó và cả file đọc ra sai |
 | Cập nhật `cursor.bin` | Ghi **SAU KHI** broker trả ack QoS 1, bằng đường hai pha của `faces.bin` | Gửi lại bản ghi đã gửi → server khử trùng bằng `local_id`. Đây là at-least-once, đúng ý đồ — thà trùng còn hơn mất |
+| Cập nhật `boot.bin` | Ghi NVS `sys/boot_count` trước, rồi `boot.bin` bằng đường hai pha của `faces.bin` | `boot.bin` còn số cũ, nhỏ hơn đúng một; lần khởi động sau lấy số lớn hơn của hai bản nên vẫn tăng |
 | Xoay vòng log | Bản ghi kế tiếp không còn vừa trong 256 KB → mở `attend.NNN+1`, ghi header rồi ghi vào đó. Xoá file cũ chỉ khi `cursor.file_index` đã vượt qua nó | Không mất bản ghi chưa sync. Không file nào vượt 256 KB, nên người đọc chặn được kích thước buffer |
 | `tmp/` | Xoá sạch trong `sys_storage_init()` | Không cần quan tâm |
 
@@ -6489,9 +6528,11 @@ bị `Kconfig` loại khỏi bản `prod`.
    về rồi hỏi ngay, không ngồi hết nhịp lùi.
 4. **Nhận máy** — admin thấy máy `pending` trong dashboard, bấm duyệt, **gõ mã nhận máy đang
    hiện trên màn kiosk**, rồi đặt tên người đọc được và vị trí. Sai mã thì không duyệt. Lần hỏi
-   kế tiếp **mang đúng mã ấy**, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày;
-   lời hỏi mang mã khác vẫn chỉ nhận 202.
-   Kiosk ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
+   kế tiếp **mang đúng mã ấy**, trong vòng một nhịp `pollIntervalS`, trả **200** kèm JWT 90 ngày
+   và `highestBoot`, nửa cao lớn nhất của các `localId` server đang giữ cho máy ấy; lời hỏi mang
+   mã khác vẫn chỉ nhận 202.
+   Kiosk có số đếm lần khởi động nhỏ hơn `highestBoot` thì nhảy lên trên nó trước tiên (§6.2.5),
+   rồi ghi `device/jwt`, lấy `device/jwt_exp` từ claim `exp` của **chính JWT** chứ không cộng
    vào đồng hồ của mình (đồng hồ máy có thể chưa đúng lúc ấy), tắt dải chờ, nối broker, và
    **không bao giờ dùng lại token bootstrap**.
 5. **Chạy và đổi vé** — MQTTS bằng `deviceId` cộng JWT. Khi `device/jwt_exp` chỉ còn

@@ -1,6 +1,7 @@
 #include "sys_storage.h"
 
 #include <dirent.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,7 +57,7 @@ static uint32_t s_log_index;
 static uint32_t s_log_dropped_below;
 static bool s_log_scanned;
 static nvs_slot_t s_slots[NVS_SLOTS];
-static uint32_t s_boot_count;
+static _Atomic uint32_t s_boot_count;
 static bool s_ready;
 
 static const storage_models_header_t *s_models;
@@ -194,6 +195,10 @@ static uint32_t stored_boot_count(nvs_handle_t sys)
     return count;
 }
 
+static uint32_t filed_boot_count(void);
+static uint32_t logged_boot_count(void);
+static esp_err_t keep_boot_count(uint32_t count);
+
 esp_err_t sys_storage_init(void)
 {
     if (s_ready) {
@@ -208,9 +213,17 @@ esp_err_t sys_storage_init(void)
 
     nvs_handle_t sys;
     APP_RETURN_ON_ERR(namespace_handle(STORAGE_NS_SYS, &sys), TAG, "sys namespace");
-    s_boot_count = stored_boot_count(sys) + 1;
-    APP_RETURN_ON_ERR(nvs_set_u32(sys, NVS_BOOT_COUNT, s_boot_count), TAG, "boot count");
-    APP_RETURN_ON_ERR(nvs_commit(sys), TAG, "commit");
+    const uint32_t stored = stored_boot_count(sys);
+    const uint32_t filed = filed_boot_count();
+    const uint32_t logged = logged_boot_count();
+    uint32_t highest = filed > stored ? filed : stored;
+    highest = logged > highest ? logged : highest;
+    if (stored < highest) {
+        ESP_LOGW(TAG, "nvs held boot %" PRIu32 " under boot.bin %" PRIu32 " and the log %" PRIu32,
+                 stored, filed, logged);
+    }
+    atomic_store(&s_boot_count, highest + 1);
+    APP_RETURN_ON_ERR(keep_boot_count(highest + 1), TAG, "boot count");
 
     // Enrol leaves crops here and nothing reads them after a reboot, so the
     // directory starts empty rather than filling up over the device's life.
@@ -219,14 +232,39 @@ esp_err_t sys_storage_init(void)
     size_t total = 0, used = 0;
     esp_littlefs_info(PARTITION_STORAGE, &total, &used);
     s_ready = true;
-    ESP_LOGI(TAG, "boot %" PRIu32 ", littlefs %u/%u KB", s_boot_count, (unsigned)(used / 1024),
-             (unsigned)(total / 1024));
+    ESP_LOGI(TAG, "boot %" PRIu32 ", littlefs %u/%u KB", atomic_load(&s_boot_count),
+             (unsigned)(used / 1024), (unsigned)(total / 1024));
     return ESP_OK;
 }
 
 uint32_t sys_storage_boot_count(void)
 {
-    return s_boot_count;
+    return atomic_load(&s_boot_count);
+}
+
+esp_err_t sys_storage_lift_boot_count(uint32_t highest)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (highest == UINT32_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // At the count itself the server holds this boot's records, kept apart by seq (KEHOACH 6.2.5).
+    if (atomic_load(&s_boot_count) >= highest) {
+        return ESP_OK;
+    }
+    APP_RETURN_ON_ERR(take(), TAG, "lock");
+    const uint32_t held = atomic_load(&s_boot_count);
+    esp_err_t err = ESP_OK;
+    if (held < highest) {
+        atomic_store(&s_boot_count, highest + 1);
+        err = keep_boot_count(highest + 1);
+        ESP_LOGW(TAG, "boot %" PRIu32 " sat under the server's %" PRIu32 ", counting on from %" PRIu32,
+                 held, highest, highest + 1u);
+    }
+    give();
+    return err;
 }
 
 esp_err_t sys_storage_device_id(char *out, size_t cap)
@@ -563,6 +601,86 @@ static uint32_t newest_log_index(void)
     }
     closedir(dir);
     return newest;
+}
+
+static bool boot_holds(const storage_boot_t *kept, size_t len)
+{
+    if (len != sizeof(*kept)) {
+        return false;
+    }
+    const uint32_t crc = sys_storage_crc32(kept, offsetof(storage_boot_t, crc32));
+    return kept->magic == STORAGE_BOOT_MAGIC && kept->crc32 == crc &&
+           kept->format_ver == STORAGE_BOOT_VER;
+}
+
+static uint32_t filed_boot_count(void)
+{
+    storage_boot_t kept;
+    size_t len = 0;
+    if (read_locked(STORAGE_BOOT_PATH, &kept, sizeof(kept), &len) == ESP_OK &&
+        boot_holds(&kept, len)) {
+        return kept.boot_count;
+    }
+    if (read_locked(STORAGE_BOOT_PATH ".bak", &kept, sizeof(kept), &len) == ESP_OK &&
+        boot_holds(&kept, len)) {
+        return kept.boot_count;
+    }
+    return 0;
+}
+
+// Covers an NVS lost on the first boot that writes boot.bin (KEHOACH 6.2.5).
+static uint32_t logged_boot_count(void)
+{
+    DIR *dir = opendir(STORAGE_ATTEND_DIR);
+    if (dir == NULL) {
+        return 0;
+    }
+    uint32_t highest = 0;
+    uint32_t index = 0;
+    char path[PATH_MAX_LEN];
+    for (struct dirent *entry = readdir(dir); entry != NULL; entry = readdir(dir)) {
+        if (!log_index_of(entry->d_name, &index)) {
+            continue;
+        }
+        log_path_of(index, path, sizeof(path));
+        const long size = file_size(path);
+        if (size < (long)(LOG_HEADER_BYTES + LOG_RECORD_BYTES)) {
+            continue;
+        }
+        const long records = (size - (long)LOG_HEADER_BYTES) / (long)LOG_RECORD_BYTES;
+        storage_attend_record_t last;
+        const long at = (long)LOG_HEADER_BYTES + (records - 1) * (long)LOG_RECORD_BYTES;
+        if (read_at(path, at, &last, sizeof(last)) != ESP_OK ||
+            last.crc32 != sys_storage_crc32(&last, offsetof(storage_attend_record_t, crc32)) ||
+            last.magic != STORAGE_ATTEND_REC_MAGIC) {
+            continue;
+        }
+        const uint32_t boot = (uint32_t)(last.local_id >> 32);
+        highest = boot > highest ? boot : highest;
+    }
+    closedir(dir);
+    return highest;
+}
+
+// NVS first: a cut between the two leaves boot.bin one behind, and the larger wins (KEHOACH 6.2.6).
+static esp_err_t keep_boot_count(uint32_t count)
+{
+    nvs_handle_t sys;
+    APP_RETURN_ON_ERR(namespace_handle(STORAGE_NS_SYS, &sys), TAG, "sys namespace");
+    APP_RETURN_ON_ERR(nvs_set_u32(sys, NVS_BOOT_COUNT, count), TAG, "boot count");
+    APP_RETURN_ON_ERR(nvs_commit(sys), TAG, "commit");
+    storage_boot_t kept = {
+        .magic = STORAGE_BOOT_MAGIC,
+        .format_ver = STORAGE_BOOT_VER,
+        .boot_count = count,
+    };
+    kept.crc32 = sys_storage_crc32(&kept, offsetof(storage_boot_t, crc32));
+    const esp_err_t filed = replace_locked(STORAGE_BOOT_PATH, &kept, sizeof(kept));
+    if (filed != ESP_OK) {
+        ESP_LOGW(TAG, "boot.bin not written, nvs alone holds boot %" PRIu32 ": %s", count,
+                 esp_err_to_name(filed));
+    }
+    return ESP_OK;
 }
 
 static esp_err_t write_log_header(const char *path)
