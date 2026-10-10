@@ -25,7 +25,7 @@ PORT_FLAG := $(if $(PORT),-p $(PORT))
 # Each firmware profile builds in its own folder from its own sdkconfig (KEHOACH 4.5.9).
 PROFILE ?= dev
 # The release job's profile while the repo variable is unset (KEHOACH 7.7).
-FLEET_PROFILE ?= dev
+FLEET_PROFILE ?= prod
 FW_BASE := sdkconfig.defaults sdkconfig.defaults.esp32s3
 # The batch token rides in only when the builder holds it (KEHOACH 4.5.9).
 FW_SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),sdkconfig.secrets)
