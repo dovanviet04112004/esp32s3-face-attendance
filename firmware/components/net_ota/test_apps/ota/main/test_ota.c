@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "esp_netif.h"
+#include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "net_ota.h"
 #include "sys_storage.h"
@@ -97,21 +98,28 @@ TEST_CASE("a digest that is not 64 lowercase hex digits is refused", "[net_ota]"
     }
 }
 
-TEST_CASE("one size fills the models slot and overflows the firmware slot", "[net_ota]")
+TEST_CASE("each slot takes an image up to its own size and not a byte more", "[net_ota]")
 {
     storage_up();
     const size_t models_room = sys_storage_models_slot_bytes();
+    const esp_partition_t *spare_app = esp_ota_get_next_update_partition(NULL);
     TEST_ASSERT_GREATER_THAN_UINT(0, models_room);
-    printf("the spare models slot holds %u B\n", (unsigned)models_room);
+    TEST_ASSERT_NOT_NULL(spare_app);
+    const size_t firmware_room = spare_app->size;
+    printf("the spare slots hold %u B of models and %u B of firmware\n", (unsigned)models_room,
+           (unsigned)firmware_room);
 
     char why[NET_OTA_WHY_CAP] = { 0 };
-    const net_ota_image_t whole_slot = manifest(URL_TLS, DIGEST_OK, models_room);
-    TEST_ASSERT_EQUAL(ESP_OK, net_ota_check(&whole_slot, true, why, sizeof(why)));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_ota_check(&whole_slot, false, why, sizeof(why)));
+    const net_ota_image_t models_full = manifest(URL_TLS, DIGEST_OK, models_room);
+    TEST_ASSERT_EQUAL(ESP_OK, net_ota_check(&models_full, true, why, sizeof(why)));
+    const net_ota_image_t models_over = manifest(URL_TLS, DIGEST_OK, models_room + 1);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_ota_check(&models_over, true, why, sizeof(why)));
     TEST_ASSERT_EQUAL_STRING("image does not fit the slot", why);
 
-    const net_ota_image_t past_slot = manifest(URL_TLS, DIGEST_OK, models_room + 1);
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_ota_check(&past_slot, true, why, sizeof(why)));
+    const net_ota_image_t firmware_full = manifest(URL_TLS, DIGEST_OK, firmware_room);
+    TEST_ASSERT_EQUAL(ESP_OK, net_ota_check(&firmware_full, false, why, sizeof(why)));
+    const net_ota_image_t firmware_over = manifest(URL_TLS, DIGEST_OK, firmware_room + 1);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_ota_check(&firmware_over, false, why, sizeof(why)));
 
     const net_ota_image_t empty = manifest(URL_TLS, DIGEST_OK, 0);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, net_ota_check(&empty, false, why, sizeof(why)));
