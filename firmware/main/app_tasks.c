@@ -548,12 +548,18 @@ static void publish_heartbeat(void)
     net_mqtt_publish(GEN_TOPIC_HEARTBEAT, payload, strlen(payload), 0);
 }
 
+static _Atomic uint32_t s_event_count;
+
 static void send_event(const app_event_t *from, const char *cmd_id)
 {
     device_event_t event = { 0 };
     if (sys_storage_device_id(event.device_id, sizeof(event.device_id)) != ESP_OK) {
         return;
     }
+    // The shape of local_id, so no reboot or lost NVS reuses a number (KEHOACH 4.6).
+    const uint32_t nth = atomic_fetch_add(&s_event_count, 1) + 1;
+    event.seq = (int64_t)(((uint64_t)sys_storage_boot_count() << 32) | nth);
+    event.has_seq = true;
     event.ts = sys_time_now_ms();
     event.type = (device_event_type_t)from->type;
     event.severity = (device_event_severity_t)from->severity;
