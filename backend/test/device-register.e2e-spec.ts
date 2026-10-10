@@ -19,6 +19,7 @@ const SECOND_CODE = "730215";
 const WRONG_CODE = "000001";
 const PUNCHER = "E2E-REG-PUNCHER";
 const HELD_BOOT = 3835;
+const EVENT_BOOT = 3840;
 
 interface Answer {
   accepted: boolean;
@@ -227,6 +228,17 @@ describe("device registration (e2e)", () => {
     const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, FIRST_CODE);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal((res.body as Answer).highestBoot, HELD_BOOT, "the machine was not told how far its punches reach");
+  });
+
+  it("counts the boots its events carry, which run ahead when nobody punches", async () => {
+    await db.deviceEvent.create({
+      data: { deviceId: DEVICE, seq: (BigInt(EVENT_BOOT) << 32n) | 1n, type: "BOOTED", severity: "INFO", ts: new Date() },
+    });
+    paced(await register({ deviceId: DEVICE, bootstrapToken: bootstrap }));
+    assert.equal((await approve(DEVICE, FIRST_CODE)).status, 201);
+    const res = await register({ deviceId: DEVICE, bootstrapToken: bootstrap }, FIRST_CODE);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal((res.body as Answer).highestBoot, EVENT_BOOT, "the boots only its events carry were left out");
   });
 
   it("takes a revoked machine back into the queue, not straight back in", async () => {

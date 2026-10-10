@@ -231,16 +231,17 @@ export class DevicesService {
     // A session opened with a ticket that has since died is not heard once the machine is back (KEHOACH 7.3).
     await this.broker.closeSession(device.id);
     const highestBoot = await this.highestBoot(device.id);
-    this.log.log(`${device.id} collected its token, its punches reach boot ${highestBoot}`);
+    this.log.log(`${device.id} collected its token, its punches and events reach boot ${highestBoot}`);
     return { ...(await this.handed(device.id, token, {})), highestBoot };
   }
 
-  /** The boot half (localId >> 32) of the largest localId held for a kiosk, 0 when it sent none. */
+  /** The boot half (>> 32) of the largest localId or event seq held for a kiosk, 0 when it sent none. */
   private async highestBoot(deviceId: string): Promise<number> {
     const [row] = await this.db.$queryRaw<{ highest: bigint | null }[]>`
-      SELECT max(floor("localId"::numeric / 4294967296))::bigint AS "highest"
-        FROM "AttendanceRecord"
-       WHERE "deviceId" = ${deviceId}`;
+      SELECT greatest(
+               (SELECT max(floor("localId"::numeric / 4294967296)) FROM "AttendanceRecord" WHERE "deviceId" = ${deviceId}),
+               (SELECT max("seq" / 4294967296) FROM "DeviceEvent" WHERE "deviceId" = ${deviceId})
+             )::bigint AS "highest"`;
     return Number(row?.highest ?? 0n);
   }
 
