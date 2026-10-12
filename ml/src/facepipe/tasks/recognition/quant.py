@@ -17,6 +17,7 @@ FACES: dict[tuple, np.ndarray] = {}
 
 # One step of the main ruler, 0.1 point of TAR (KEHOACH 3.7 selection rule).
 RESOLUTION = 0.001
+SCORE_SLICE = 512  # images; all of CFP-FP in float32 is 2.1 GB
 
 
 def calibration_batches(cfg: object, split: str | None, limit: int):
@@ -80,12 +81,25 @@ def probe_inputs(cfg: object, frames, count: int) -> np.ndarray:
     return FACES[key][:count]
 
 
+def embeddings(runner, encoded: list[bytes], size: int) -> np.ndarray:
+    """The runner's vector for every encoded image, decoded and normalised a slice at a time."""
+    from facepipe.compress.quant.ladder import run_batch
+
+    from .eval import decode_images
+
+    parts = []
+    for start in range(0, len(encoded), SCORE_SLICE):
+        images = decode_images(encoded[start : start + SCORE_SLICE], size)
+        x = ((images.astype(np.float32) - 127.5) / 127.5).transpose(0, 3, 1, 2)
+        parts.append(run_batch(runner, x, chunk=32)[0].reshape(len(x), -1))
+    return np.concatenate(parts)
+
+
 def score(runner, cfg: object) -> dict[str, float]:
     """Accuracy and TAR at FAR 1e-3 and 1e-4 on each verification benchmark, from the runner."""
     from facepipe import ML_ROOT
-    from facepipe.compress.quant.ladder import run_batch
 
-    from .eval import BENCHMARKS, decode_images, evaluate_pairs, pair_scores, read_bin
+    from .eval import BENCHMARKS, evaluate_pairs, pair_scores, read_bin
 
     root = ML_ROOT / cfg.data.params["benchmarks"]
     size = int(cfg.model.input_hw[0])
@@ -94,9 +108,7 @@ def score(runner, cfg: object) -> dict[str, float]:
         if not (root / f"{name}.bin").is_file():
             continue
         encoded, issame = read_bin(root / f"{name}.bin")
-        images = decode_images(encoded, size)
-        x = ((images.astype(np.float32) - 127.5) / 127.5).transpose(0, 3, 1, 2)
-        vectors = run_batch(runner, x, chunk=32)[0].reshape(len(x), -1)
+        vectors = embeddings(runner, encoded, size)
         vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-10)
         result = evaluate_pairs(pair_scores(vectors), issame)
         key = name.replace("-", "_").lower()

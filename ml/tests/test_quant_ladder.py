@@ -283,6 +283,30 @@ def test_timing_keeps_one_row_a_rounding_patch_beside_its_own(tmp_path: Path, mo
     assert ladder.row_patches(tmp_path, "timing+fused_prelu") == patches
 
 
+def test_recognition_embeds_a_benchmark_slice_by_slice_in_order(monkeypatch) -> None:
+    import io
+
+    from PIL import Image
+
+    rng = np.random.default_rng(3)
+    pixels = rng.integers(0, 256, size=(5, 4, 4, 3), dtype=np.uint8)
+    encoded = []
+    for image in pixels:
+        buffer = io.BytesIO()
+        Image.fromarray(image).save(buffer, format="PNG")
+        encoded.append(buffer.getvalue())
+
+    def runner(x: np.ndarray) -> list[np.ndarray]:
+        return [x.reshape(len(x), -1)[:, :6]]
+
+    runner.batched = True
+    whole = recognition_quant.embeddings(runner, encoded, 4)
+    monkeypatch.setattr(recognition_quant, "SCORE_SLICE", 2)
+    assert np.array_equal(recognition_quant.embeddings(runner, encoded, 4), whole)
+    want = ((pixels.astype(np.float32) - 127.5) / 127.5).transpose(0, 3, 1, 2)
+    assert np.array_equal(whole, want.reshape(5, -1)[:, :6])
+
+
 def test_antispoof_reads_live_from_the_softmax() -> None:
     live = antispoof_quant.live_scores(np.array([[0.0, 0.0], [10.0, -10.0]]), 0)
     assert live[0] == pytest.approx(0.5)
