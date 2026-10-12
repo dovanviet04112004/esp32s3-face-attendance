@@ -73,6 +73,24 @@ def test_input_hw_must_be_positive(tmp_path: Path, config_tree: dict) -> None:
         load_config(path)
 
 
+def test_square_side_is_the_model_input(config_file: Path) -> None:
+    """Declaring the input twice lets one copy drift: the model would be built
+    for one size while the loader kept feeding the other."""
+    assert load_config(config_file, ["model.input_hw=[96, 96]"]).model.square_side() == 96
+
+
+def test_square_side_refuses_a_rectangle(config_file: Path) -> None:
+    with pytest.raises(ValueError, match="square"):
+        load_config(config_file, ["model.input_hw=[80, 96]"]).model.square_side()
+
+
+def test_prefetch_is_dropped_without_workers(config_file: Path) -> None:
+    cfg = load_config(config_file, ["data.num_workers=0", "data.prefetch_factor=4"])
+    assert cfg.data.prefetch() == {}
+    cfg = load_config(config_file, ["data.num_workers=2", "data.prefetch_factor=4"])
+    assert cfg.data.prefetch() == {"prefetch_factor": 4}
+
+
 def test_hash_tracks_content_not_key_order(config_file: Path) -> None:
     first = load_config(config_file)
     second = load_config(config_file, ["train.epochs=2"])

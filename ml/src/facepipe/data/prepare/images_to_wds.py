@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import random
 import tarfile
 import time
 from collections.abc import Iterator, Sequence
@@ -116,6 +117,21 @@ def read_shard(path: Path) -> Iterator[dict[str, bytes]]:
             record[suffix] = handle.read() if handle else b""
     if record:
         yield record
+
+
+def worker_shards(shards: Sequence[Path], shuffle_seed: int | None = None) -> list[Path]:
+    """The share of shards this DataLoader worker reads, after a shuffle by shuffle_seed.
+
+    Without the split every worker would read every shard, so an epoch would
+    train on each record num_workers times while the logs showed one pass.
+    """
+    from torch.utils.data import get_worker_info
+
+    ordered = list(shards)
+    if shuffle_seed is not None:
+        random.Random(shuffle_seed).shuffle(ordered)
+    info = get_worker_info()
+    return ordered if info is None else ordered[info.id :: info.num_workers]
 
 
 def encode(path: Path, max_side: int | None, quality: int = JPEG_QUALITY) -> tuple[bytes, dict]:

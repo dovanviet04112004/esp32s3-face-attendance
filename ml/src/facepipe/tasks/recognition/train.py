@@ -31,25 +31,12 @@ TASK_LOSS = "recognition_arcface"
 BEST_METRIC = "cfp_fp_tar@far0.001"
 
 
-def prefetch(cfg: Config) -> dict[str, int]:
-    """DataLoader rejects prefetch_factor when it has no workers to prefetch on."""
-    return {"prefetch_factor": cfg.data.prefetch_factor} if cfg.data.num_workers > 0 else {}
-
-
-def crop_size(cfg: Config) -> int:
-    """The size the loader feeds, taken from the one place it is declared."""
-    height, width = cfg.model.input_hw
-    if height != width:
-        raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
-    return int(height)
-
-
 def build_dataset(cfg: Config, split_index: int, train: bool) -> Ms1mShardDataset:
     params = cfg.data.params
     return Ms1mShardDataset(
         root=Path(params["shards"]),
         identities=read_identities(Path(cfg.data.split_files[split_index])),
-        size=crop_size(cfg),
+        size=cfg.model.square_side(),
         train=train,
         seed=cfg.run.seed,
         embedding_dim=int(params.get("embedding_dim", 512)),
@@ -66,7 +53,7 @@ def build_loader(cfg: Config, dataset: Ms1mShardDataset, train: bool) -> DataLoa
         pin_memory=cfg.data.pin_memory,
         drop_last=cfg.data.drop_last if train else False,
         collate_fn=collate,
-        **prefetch(cfg),
+        **cfg.data.prefetch(),
     )
 
 
@@ -113,7 +100,11 @@ def main(argv: list[str] | None = None) -> int:
     def val_fn(module: nn.Module, epoch: int) -> dict[str, float]:
         """Verification accuracy on each benchmark, flattened for the logger."""
         scores = evaluate_all(
-            module, benchmarks, trainer.device, batch_size=cfg.data.batch_size, size=crop_size(cfg)
+            module,
+            benchmarks,
+            trainer.device,
+            batch_size=cfg.data.batch_size,
+            size=cfg.model.square_side(),
         )
         return {f"{name}_{k}": v for name, values in scores.items() for k, v in values.items()}
 

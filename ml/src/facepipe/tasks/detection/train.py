@@ -30,11 +30,6 @@ from .eval import average_precision, decode_batch
 TASK_LOSS = "detection_task"
 
 
-def prefetch(cfg: Config) -> dict[str, int]:
-    """DataLoader rejects prefetch_factor when it has no workers to prefetch on."""
-    return {"prefetch_factor": cfg.data.prefetch_factor} if cfg.data.num_workers > 0 else {}
-
-
 def build_dataset(cfg: Config, split_index: int, train: bool) -> WiderFaceDataset:
     params = cfg.data.params
     return WiderFaceDataset(
@@ -70,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         pin_memory=cfg.data.pin_memory,
         drop_last=cfg.data.drop_last,
         collate_fn=collate,
-        **prefetch(cfg),
+        **cfg.data.prefetch(),
     )
 
     criterion = LOSSES.get(TASK_LOSS)()
@@ -84,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             num_workers=cfg.data.num_workers,
             pin_memory=cfg.data.pin_memory,
             collate_fn=collate,
-            **prefetch(cfg),
+            **cfg.data.prefetch(),
         )
     else:
         logger.warning("no second split file: no validation, and best.pth will not be written")

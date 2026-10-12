@@ -21,7 +21,7 @@ import torch
 from PIL import Image
 from torch.utils.data import IterableDataset, get_worker_info
 
-from facepipe.data.prepare.images_to_wds import read_shard
+from facepipe.data.prepare.images_to_wds import read_shard, worker_shards
 
 from .postproc.align import ALIGNED_SIZE
 
@@ -140,20 +140,6 @@ class Ms1mShardDataset(IterableDataset):
     def keeps(self, record: dict[str, bytes]) -> bool:
         return int(record["cls"]) in self.labels
 
-    def _my_shards(self) -> list[Path]:
-        """This worker's slice of the shard list.
-
-        Without the split every worker would read every shard, so an epoch would
-        train on each record num_workers times while the logs showed one pass.
-        """
-        info = get_worker_info()
-        shards = list(self.shards)
-        if self.train:
-            random.Random(self.seed + self.epoch).shuffle(shards)
-        if info is None:
-            return shards
-        return shards[info.id :: info.num_workers]
-
     def _interleaved(self, shards: list[Path]) -> Iterator[dict[str, bytes]]:
         """Take one record from each of several shards in turn.
 
@@ -179,7 +165,8 @@ class Ms1mShardDataset(IterableDataset):
             yield record
 
     def _records(self) -> Iterator[RecogSample]:
-        for record in self._interleaved(self._my_shards()):
+        shards = worker_shards(self.shards, self.seed + self.epoch if self.train else None)
+        for record in self._interleaved(shards):
             if not self.keeps(record):
                 continue
             yield RecogSample(

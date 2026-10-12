@@ -51,28 +51,11 @@ TASK_LOSS = "antispoof_task"
 DISTILL_LOSS = "antispoof_distill"
 
 
-def prefetch(cfg: Config) -> dict[str, int]:
-    """DataLoader rejects prefetch_factor when it has no workers to prefetch on."""
-    return {"prefetch_factor": cfg.data.prefetch_factor} if cfg.data.num_workers > 0 else {}
-
-
-def crop_size(cfg: Config) -> int:
-    """The size the loader feeds, taken from the one place it is declared.
-
-    Each backbone ends in a depthwise kernel sized to the map a square input
-    produces, so a rectangle would not reach that layer with the right shape.
-    """
-    height, width = cfg.model.input_hw
-    if height != width:
-        raise ValueError(f"model.input_hw must be square for this branch, got {height}x{width}")
-    return int(height)
-
-
 def build_dataset(cfg: Config, split: str, train: bool) -> SpoofShardDataset:
     params = cfg.data.params
     return SpoofShardDataset(
         root=Path(params["shards"]),
-        size=crop_size(cfg),
+        size=cfg.model.square_side(),
         train=train,
         seed=cfg.run.seed,
         splits=split,
@@ -127,7 +110,7 @@ def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLo
         pin_memory=cfg.data.pin_memory,
         drop_last=cfg.data.drop_last if train else False,
         collate_fn=partial(collate, chroma=bool(cfg.model.params.get("chroma", False))),
-        **prefetch(cfg),
+        **cfg.data.prefetch(),
     )
 
 

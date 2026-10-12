@@ -109,21 +109,6 @@ def test_the_entry_point_trains_and_writes_a_run(tmp_path: Path) -> None:
     assert (run / "config.resolved.yaml").is_file()
 
 
-def test_a_rectangular_input_is_refused(tmp_path: Path) -> None:
-    from facepipe.core.config import load_config
-
-    shards, split = write_dataset(tmp_path)
-    cfg_path = write_config(
-        tmp_path, shards, split, write_benchmark(tmp_path, names=("lfw", "cfp_fp"))
-    )
-    payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    payload["model"]["input_hw"] = [INPUT_SIZE, INPUT_SIZE - 16]
-    cfg_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="square"):
-        train.crop_size(load_config(cfg_path))
-
-
 def test_a_benchmark_reads_back_as_pairs(tmp_path: Path) -> None:
     root = write_benchmark(tmp_path, pairs=3)
     encoded, issame = read_bin(root / "lfw.bin")

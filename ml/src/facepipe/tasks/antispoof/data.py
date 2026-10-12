@@ -22,7 +22,7 @@ import torch
 from PIL import Image
 from torch.utils.data import IterableDataset, get_worker_info
 
-from facepipe.data.prepare.images_to_wds import read_shard
+from facepipe.data.prepare.images_to_wds import read_shard, worker_shards
 
 CROP_SIZE = 81
 SHUFFLE_BUFFER = 2048
@@ -502,20 +502,6 @@ class SpoofShardDataset(IterableDataset):
     def __len__(self) -> int:
         return self._length
 
-    def _my_shards(self) -> list[Path]:
-        """This worker's slice of the shard list.
-
-        Without the split every worker would read every shard, so an epoch would
-        train on each record num_workers times while the logs showed one pass.
-        """
-        info = get_worker_info()
-        shards = list(self.shards)
-        if self.train:
-            random.Random(self.seed + self.epoch).shuffle(shards)
-        if info is None:
-            return shards
-        return shards[info.id :: info.num_workers]
-
     def _open(self, shards: list[Path], live: list) -> None:
         # Picked by folder, not by position: the paired set repeats five times in
         # the split and would otherwise fill the window on its own (KEHOACH 3).
@@ -531,7 +517,7 @@ class SpoofShardDataset(IterableDataset):
     def _records(self) -> Iterator[SpoofSample]:
         # One folder is one domain, so reading shards end to end hands a batch a
         # single domain and the domain terms have nothing to compare (KEHOACH 3).
-        waiting = self._my_shards()
+        waiting = worker_shards(self.shards, self.seed + self.epoch if self.train else None)
         live: list = []
         while True:
             self._open(waiting, live)

@@ -50,6 +50,17 @@ class ModelSection(Section):
             raise ValueError(f"input_hw must be positive, got {value}")
         return value
 
+    def square_side(self) -> int:
+        """The side of input_hw, for a backbone that only takes a square.
+
+        Such a backbone ends in a depthwise kernel sized to the map a square input
+        produces, so a rectangle would not reach that layer with the right shape.
+        """
+        height, width = self.input_hw
+        if height != width:
+            raise ValueError(f"model.input_hw must be square, got {height}x{width}")
+        return int(height)
+
 
 class DataSection(Section):
     name: str
@@ -62,6 +73,10 @@ class DataSection(Section):
     drop_last: bool = True
     split_files: list[Path] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
+
+    def prefetch(self) -> dict[str, int]:
+        """DataLoader's prefetch_factor keyword, which it rejects when no worker prefetches."""
+        return {"prefetch_factor": self.prefetch_factor} if self.num_workers > 0 else {}
 
 
 class OptimSection(Section):
