@@ -17,7 +17,7 @@ import type {
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
-import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import {
@@ -38,7 +38,6 @@ import {
   QUEUE_DESKS,
   filedBetween,
   personWhere,
-  resumeAfter,
   sortedBy,
   whoseRows,
 } from "../leave/queue-filter.js";

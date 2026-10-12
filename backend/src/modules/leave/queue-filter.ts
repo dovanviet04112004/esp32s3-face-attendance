@@ -1,7 +1,5 @@
-import { BadRequestException } from "@nestjs/common";
 import type { Prisma, Role } from "@prisma/client";
 
-import { decodeCursor } from "../../common/dto/cursor.dto.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { namedFilter, type PrismaService } from "../../database/prisma.service.js";
@@ -66,26 +64,6 @@ export function filedBetween(field: string, query: Pick<QueueQueryDto, "from" | 
     bound.lt = dayWindow(query.to.slice(0, 10), zone).to;
   }
   return Object.keys(bound).length === 0 ? {} : { [field]: bound };
-}
-
-/** Rows past the cursor in `(field, id)` order. */
-export function resumeAfter(field: string, order: Order, cursor: string | undefined): Loose {
-  if (!cursor) {
-    return {};
-  }
-  const key = decodeCursor(cursor);
-  const at = new Date(key.sortValue);
-  if (Number.isNaN(at.getTime())) {
-    throw new BadRequestException("CURSOR_INVALID");
-  }
-  const past = order === "asc" ? "gt" : "lt";
-  return {
-    AND: [
-      // Looks redundant; it is the bound Postgres turns into an index condition (KEHOACH 9.9 rule 3).
-      { [field]: { [order === "asc" ? "gte" : "lte"]: at } },
-      { OR: [{ [field]: { [past]: at } }, { [field]: at, id: { [past]: key.id } }] },
-    ],
-  };
 }
 
 export function sortedBy(field: string, order: Order): Loose[] {

@@ -9,7 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
-import { COUNT_CEILING, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
+import { COUNT_CEILING, encodeCursor, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
 
 const DEVICE = "e2e-paging-door";
 const CODE = "E2EPG01";
@@ -127,6 +127,16 @@ describe("paging (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 400);
     assert.equal(res.body.message, "CURSOR_INVALID");
+  });
+
+  it("refuses a cursor whose time or punch id does not read", async () => {
+    for (const forged of [encodeCursor("not-a-time", "1"), encodeCursor(shared, "not-an-id")]) {
+      const res = await request(http)
+        .get(`/attendance?cursor=${forged}`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 400, JSON.stringify(res.body));
+      assert.equal(res.body.message, "CURSOR_INVALID");
+    }
   });
 
   it("hands back a cursor while there is more, and null at the end", async () => {

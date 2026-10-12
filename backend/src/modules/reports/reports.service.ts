@@ -756,7 +756,7 @@ export class ReportsService {
     visible: number[] | null,
     query: TallyRangeDto,
   ): Promise<AttendanceTally[]> {
-    const after = query.cursor ? decodeCursor(query.cursor) : null;
+    const after = query.cursor ? decodeCursor(query.cursor, "int") : null;
     const rows = await this.db.$queryRaw<
       {
         employeeId: number;
@@ -782,7 +782,7 @@ export class ReportsService {
         ${
           after
             ? Prisma.sql`AND e."fullName" >= ${after.sortValue}
-          AND (e."fullName", e."id") > (${after.sortValue}, ${Number(after.id)})`
+          AND (e."fullName", e."id") > (${after.sortValue}, ${after.id})`
             : Prisma.empty
         }
       GROUP BY a."employeeId", e."code", e."fullName"

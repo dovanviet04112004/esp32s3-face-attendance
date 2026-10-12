@@ -16,7 +16,7 @@ import type {
 } from "@prisma/client";
 
 import { toExcelCsv } from "../../common/csv.js";
-import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
@@ -50,7 +50,6 @@ import {
   PERSON_VIEW,
   THE_DESK,
   personWhere,
-  resumeAfter,
   sortedBy,
   waitedDays,
 } from "./queue-filter.js";

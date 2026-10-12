@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AuditLog, Prisma } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -97,22 +97,8 @@ export class AuditService {
           }
         : {}),
     };
-    const from = query.cursor ? decodeCursor(query.cursor) : null;
-    if (from && (!/^\d+$/.test(from.id) || Number.isNaN(Date.parse(from.sortValue)))) {
-      throw new BadRequestException("CURSOR_INVALID");
-    }
-    const resumed: Prisma.AuditLogWhereInput = from
-      ? {
-          AND: [
-            where,
-            {
-              OR: [
-                { ts: { lt: new Date(from.sortValue) } },
-                { ts: new Date(from.sortValue), id: { lt: BigInt(from.id) } },
-              ],
-            },
-          ],
-        }
+    const resumed: Prisma.AuditLogWhereInput = query.cursor
+      ? { AND: [where, resumeAfter("ts", "desc", query.cursor, { id: "bigint" })] }
       : where;
     const [rows, found] = await Promise.all([
       this.db.auditLog.findMany({

@@ -17,14 +17,14 @@ import {
 } from "@prisma/client";
 import webpush from "web-push";
 
-import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type NoticeFanoutJob, type NoticeGatherJob } from "../../queue/queues.js";
-import { filedBetween, personWhere, resumeAfter, sortedBy } from "../leave/queue-filter.js";
+import { filedBetween, personWhere, sortedBy } from "../leave/queue-filter.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
 import { pushBody, type PushBody } from "./dto/push-body.js";

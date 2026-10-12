@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, Shift, ShiftAssignment } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -200,18 +200,9 @@ export class ShiftsService {
       shiftId: id,
       ...(term ? { employeeId: await namedFilter(this.db, term) } : {}),
     };
-    const after = query.cursor ? decodeCursor(query.cursor) : null;
-    const resume: Prisma.ShiftAssignmentWhereInput = after
-      ? {
-          OR: [
-            { validFrom: { lt: new Date(after.sortValue) } },
-            { validFrom: new Date(after.sortValue), id: { lt: after.id } },
-          ],
-        }
-      : {};
     const [rows, found] = await Promise.all([
       this.db.shiftAssignment.findMany({
-        where: { AND: [where, resume] },
+        where: { AND: [where, resumeAfter("validFrom", "desc", query.cursor)] },
         include: ROSTERED,
         orderBy: [{ validFrom: "desc" }, { id: "desc" }],
         take: query.take,

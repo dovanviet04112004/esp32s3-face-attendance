@@ -17,7 +17,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
 
 import type { Env } from "../../config/env.schema.js";
-import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { LINKED_DESKS } from "../../common/scope/viewer.js";
 import { isPrismaCode, namedFilter, PrismaService, UNIQUE_VIOLATION, type IdFilter } from "../../database/prisma.service.js";
@@ -276,14 +276,8 @@ export class UsersService {
   async list(query: ListUsersDto): Promise<Page<AccountView>> {
     const [branch, named] = await this.narrowings(query);
     const where = accountWhere(query, branch, named);
-    const from = query.cursor ? decodeCursor(query.cursor) : null;
-    const resumed: Prisma.UserWhereInput = from
-      ? {
-          AND: [
-            where,
-            { OR: [{ email: { gt: from.sortValue } }, { email: from.sortValue, id: { gt: from.id } }] },
-          ],
-        }
+    const resumed: Prisma.UserWhereInput = query.cursor
+      ? { AND: [where, resumeAfter("email", "asc", query.cursor, { sort: "text" })] }
       : where;
     const [rows, found] = await Promise.all([
       this.db.user.findMany({

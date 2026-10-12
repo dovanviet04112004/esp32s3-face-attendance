@@ -985,9 +985,9 @@ export class EmployeesService implements OnModuleInit {
         endsOn: earliestDay(one.contracts.map((deal) => (query.ending === "contract" ? deal.endDate : deal.probationEnd))),
       }))
       .sort((a, b) => a.endsOn.localeCompare(b.endsOn) || a.id - b.id);
-    const from = query.cursor ? decodeCursor(query.cursor) : null;
+    const from = query.cursor ? decodeCursor(query.cursor, "int") : null;
     const start = from
-      ? ends.findIndex((one) => one.endsOn > from.sortValue || (one.endsOn === from.sortValue && one.id > Number(from.id)))
+      ? ends.findIndex((one) => one.endsOn > from.sortValue || (one.endsOn === from.sortValue && one.id > from.id))
       : query.skip;
     const slice = start < 0 ? [] : ends.slice(start, start + query.take);
     const rows = await this.db.employee.findMany({

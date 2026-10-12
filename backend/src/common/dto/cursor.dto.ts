@@ -14,17 +14,26 @@ export function countedTo(found: number): { total: number; totalIsExact: boolean
     : { total: found, totalIsExact: true };
 }
 
-export interface CursorKey {
+export interface CursorKey<Id = string> {
   sortValue: string;
-  id: string;
+  id: Id;
 }
+
+type IdColumn = "text" | "int" | "bigint";
+
+const COLUMN_MAX = { int: 2_147_483_647n, bigint: 9_223_372_036_854_775_807n } as const;
 
 export function encodeCursor(sortValue: Date | string, id: number | bigint | string): string {
   const held = sortValue instanceof Date ? sortValue.toISOString() : sortValue;
   return Buffer.from(JSON.stringify({ sortValue: held, id: String(id) })).toString("base64url");
 }
 
-export function decodeCursor(raw: string): CursorKey {
+/** The key a cursor resumes after, its id read as the id column holds it; anything else is CURSOR_INVALID. */
+export function decodeCursor(raw: string, id?: "text"): CursorKey;
+export function decodeCursor(raw: string, id: "int"): CursorKey<number>;
+export function decodeCursor(raw: string, id: "bigint"): CursorKey<bigint>;
+export function decodeCursor(raw: string, id: IdColumn): CursorKey<string | number | bigint>;
+export function decodeCursor(raw: string, id: IdColumn = "text"): CursorKey<string | number | bigint> {
   let read: unknown;
   try {
     read = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
@@ -35,7 +44,38 @@ export function decodeCursor(raw: string): CursorKey {
   if (typeof key?.sortValue !== "string" || typeof key?.id !== "string") {
     throw new BadRequestException("CURSOR_INVALID");
   }
-  return { sortValue: key.sortValue, id: key.id };
+  if (id === "text") {
+    return { sortValue: key.sortValue, id: key.id };
+  }
+  if (!/^\d+$/.test(key.id) || BigInt(key.id) > COLUMN_MAX[id]) {
+    throw new BadRequestException("CURSOR_INVALID");
+  }
+  return { sortValue: key.sortValue, id: id === "int" ? Number(key.id) : BigInt(key.id) };
+}
+
+/** Rows past the cursor in `(field, id)` order; `field` holds a time unless `sort` says it holds text. */
+export function resumeAfter(
+  field: string,
+  order: "asc" | "desc",
+  cursor: string | undefined,
+  { sort = "time", id = "text" }: { sort?: "time" | "text"; id?: IdColumn } = {},
+): Record<string, unknown> {
+  if (!cursor) {
+    return {};
+  }
+  const key = decodeCursor(cursor, id);
+  const at = sort === "time" ? new Date(key.sortValue) : key.sortValue;
+  if (at instanceof Date && Number.isNaN(at.getTime())) {
+    throw new BadRequestException("CURSOR_INVALID");
+  }
+  const past = order === "asc" ? "gt" : "lt";
+  return {
+    AND: [
+      // Looks redundant; it is the bound Postgres turns into an index condition (KEHOACH 9.9 rule 3).
+      { [field]: { [order === "asc" ? "gte" : "lte"]: at } },
+      { OR: [{ [field]: { [past]: at } }, { [field]: at, id: { [past]: key.id } }] },
+    ],
+  };
 }
 
 export function nextCursor<T extends { id: number | bigint | string }>(

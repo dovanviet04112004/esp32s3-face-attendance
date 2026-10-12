@@ -10,7 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, AttendanceRecord as Punch, PunchHold } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { AttendanceRecord } from "../../common/generated/attendance_record.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -102,22 +102,9 @@ export class AttendanceService {
       ],
     };
     const order = query.order ?? "asc";
-    const after = query.cursor ? decodeCursor(query.cursor) : null;
-    const at = after ? new Date(after.sortValue) : null;
-    if (at !== null && Number.isNaN(at.getTime())) {
-      throw new BadRequestException("CURSOR_INVALID");
-    }
-    const past = order === "asc" ? "gt" : "lt";
-    const resumed: Prisma.AttendanceRecordWhereInput =
-      at && after
-        ? {
-            AND: [
-              where,
-              { receivedAt: { [order === "asc" ? "gte" : "lte"]: at } },
-              { OR: [{ receivedAt: { [past]: at } }, { receivedAt: at, id: { [past]: BigInt(after.id) } }] },
-            ],
-          }
-        : where;
+    const resumed: Prisma.AttendanceRecordWhereInput = query.cursor
+      ? { AND: [where, resumeAfter("receivedAt", order, query.cursor, { id: "bigint" })] }
+      : where;
     const [rows, found] = await this.db.$transaction([
       this.db.attendanceRecord.findMany({
         where: resumed,
@@ -227,20 +214,9 @@ export class AttendanceService {
     } else {
       where.ts = range;
     }
-    const from = query.cursor ? decodeCursor(query.cursor) : null;
-    const at = from ? new Date(from.sortValue) : null;
-    // The lte is the only half Postgres turns into an index bound; without it
-    // the scan walks every row above the cursor again (KEHOACH 9.9 rule 3).
-    const resumed: Prisma.AttendanceRecordWhereInput =
-      at && from
-        ? {
-            AND: [
-              where,
-              { ts: { lte: at } },
-              { OR: [{ ts: { lt: at } }, { ts: at, id: { lt: BigInt(from.id) } }] },
-            ],
-          }
-        : where;
+    const resumed: Prisma.AttendanceRecordWhereInput = query.cursor
+      ? { AND: [where, resumeAfter("ts", "desc", query.cursor, { id: "bigint" })] }
+      : where;
     // Both halves of one transaction so the pager's total cannot describe a
     // different set of rows than the page above it.
     const [rows, found] = await this.db.$transaction([

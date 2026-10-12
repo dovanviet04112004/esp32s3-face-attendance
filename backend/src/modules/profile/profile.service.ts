@@ -10,7 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Employee, Prisma, ProfileChange } from "@prisma/client";
 
-import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
+import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
@@ -25,7 +25,6 @@ import {
   QUEUE_DESKS,
   filedBetween,
   personWhere,
-  resumeAfter,
   sortedBy,
   waitedDays,
   whoseRows,
