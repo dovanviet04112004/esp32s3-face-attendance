@@ -1,16 +1,23 @@
 """The anti-spoof branch's hooks of the ESP-DL ladder (KEHOACH 3.7): calibration, probe, ruler.
 
 Every input the graph has arrives in the same sample: calibrating one while
-another holds zeros measures a range the model never meets. The ruler is the
-board's own frames, cut the way preproc.cpp cuts them.
+another holds zeros measures a range the model never meets. The ruler is AUC on
+CelebA-Spoof's held-out shards beside the board's own frames, cut as preproc.cpp
+cuts them; the cross-domain sets are scored at the kiosk's threshold for reading.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import numpy as np
 
+# Bumped whenever score() measures something new, so rows scored the old way are scored again.
+RULER = "celeba-auc"
+# One step of the main ruler, AUC over 39,072 faces (KEHOACH 3.7 selection rule).
+RESOLUTION = 0.001
+XDOMAIN_SHARDS = "antispoof.xdomain_shards"
 PREPROC_CPP = "firmware/components/ai_engine/src/antispoof/preproc.cpp"
 VISION_KCONFIG = "firmware/components/svc_vision/Kconfig"
 FACE_SCALE = re.compile(r"kFaceScale\s*=\s*([0-9.]+)f?;")
@@ -94,23 +101,79 @@ def live_scores(logits: np.ndarray, live_index: int) -> np.ndarray:
 
 
 def score(runner, cfg: object) -> dict[str, float]:
-    """Liveness on the board's own frames, cut the way preproc.cpp cuts them."""
-    from facepipe.compress.quant.ladder import device_frames, run_batch
+    """The board's frames, CelebA-Spoof's held-out shards and the cross-domain sets, one dict."""
+    from facepipe.compress.quant.ladder import data_paths, device_frames, run_batch
 
     from .losses.task_loss import LIVE
 
     x, truth = face_crops(cfg, device_frames())
-    return metrics_of(live_scores(run_batch(runner, x)[0], LIVE), truth)
+    metrics = metrics_of(live_scores(run_batch(runner, x)[0], LIVE), truth)
+    celeba = shard_scores(runner, cfg, cfg.data.params["test_split"])
+    metrics.update({f"celeba_{key}": value for key, value in rates_at_floor(*celeba).items()})
+    for name, root in data_paths(XDOMAIN_SHARDS).items():
+        other = shard_scores(runner, cfg, shard_specs(root), root)
+        metrics.update({f"{name}_{key}": value for key, value in rates_at_floor(*other).items()})
+    return metrics
+
+
+def shard_specs(root: Path) -> list[str]:
+    """The splits that cover every shard under root: root itself, or each folder that holds some."""
+    if any(root.glob("shard_*.tar")):
+        return ["."]
+    found = sorted(p.name for p in root.iterdir() if p.is_dir() and any(p.glob("shard_*.tar")))
+    if not found:
+        raise FileNotFoundError(f"{root}: no shard_*.tar in it or one level down")
+    return found
+
+
+def shard_scores(
+    runner, cfg: object, split: str | list[str], root: Path | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Live scores of runner over shard splits, read as training reads them, beside their labels."""
+    from facepipe.compress.quant.ladder import run_batch
+
+    from .eval import build_loader, input_names
+    from .losses.task_loss import LIVE
+
+    view = "wide" if input_names(cfg) == ["wide"] else "tight"
+    scores, labels = [], []
+    for tight, wide, label, *_rest in build_loader(cfg, split, root):
+        x = (wide if view == "wide" else tight).numpy()
+        scores.append(live_scores(run_batch(runner, x)[0], LIVE))
+        labels.append(label.numpy())
+    return np.concatenate(scores), np.concatenate(labels)
+
+
+def live_floor() -> float:
+    """The kiosk's live_min as a probability, read from the Kconfig that seeds it."""
+    from facepipe.compress.quant.ladder import firmware_constant
+
+    return firmware_constant(VISION_KCONFIG, LIVE_MIN) / 1000.0
+
+
+def rates_at_floor(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
+    """APCER and BPCER at the kiosk's threshold, and AUC when both classes are present."""
+    from .eval import auc
+    from .losses.task_loss import LIVE
+
+    floor = live_floor()
+    real, fake = live[truth == LIVE], live[truth != LIVE]
+    rates: dict[str, float] = {"n": int(live.size)}
+    if fake.size:
+        rates["apcer"] = float((fake >= floor).mean())
+    if real.size:
+        rates["bpcer"] = float((real < floor).mean())
+    if real.size and fake.size:
+        rates["auc"] = float(auc(live, truth))
+    return rates
 
 
 def metrics_of(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
     """Real faces kept and attacks blocked at the kiosk's live_min, with AUC and EER."""
-    from facepipe.compress.quant.ladder import firmware_constant
-
     from .eval import auc, equal_error_rate
     from .losses.task_loss import LIVE
 
-    floor = firmware_constant(VISION_KCONFIG, LIVE_MIN) / 1000.0
+    floor = live_floor()
     real, fake = live[truth == LIVE], live[truth != LIVE]
     return {
         "real_kept": int((real >= floor).sum()),
@@ -125,21 +188,22 @@ def metrics_of(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
 
 
 def rank(metrics: dict[str, float]) -> tuple:
-    """Attacks blocked first, APCER being the branch's must (KEHOACH 1.1), then real faces kept."""
-    return (metrics["attacks_blocked"], metrics["real_kept"], metrics["auc"])
+    """The main ruler first, AUC on CelebA-Spoof's held-out shards, then the board's frames."""
+    return (metrics["celeba_auc"], metrics["attacks_blocked"], metrics["real_kept"])
 
 
 def gate(metrics: dict[str, float], ceiling: dict[str, float]) -> bool:
-    """KEHOACH 3.7: every attack blocked and no fewer real faces kept than Q0."""
+    """KEHOACH 3.7: AUC within 1% of Q0, every board attack blocked, no fewer real faces kept."""
     return (
-        metrics["attacks_blocked"] == metrics["attacks"]
+        metrics["celeba_auc"] >= 0.99 * ceiling["celeba_auc"]
+        and metrics["attacks_blocked"] == metrics["attacks"]
         and metrics["real_kept"] >= ceiling["real_kept"]
     )
 
 
 def headline(metrics: dict[str, float]) -> str:
     return (
-        f"real kept {metrics['real_kept']}/{metrics['real']}  attacks blocked "
-        f"{metrics['attacks_blocked']}/{metrics['attacks']}  auc {metrics['auc']:.4f}"
-        f"  real min {metrics['real_min']:.3f}  attack max {metrics['attack_max']:.3f}"
+        f"celeba auc {metrics['celeba_auc']:.4f} apcer {metrics['celeba_apcer']:.4f} bpcer "
+        f"{metrics['celeba_bpcer']:.4f}  board: real kept {metrics['real_kept']}/{metrics['real']}"
+        f" attacks blocked {metrics['attacks_blocked']}/{metrics['attacks']}"
     )

@@ -27,6 +27,12 @@ antispoof:
     axon_masks: data/raw/antispoof/xdomain/axon_masks
     lcc_fasd: data/raw/antispoof/xdomain/lcc_fasd
     synthaspoof: data/raw/antispoof/xdomain/synthaspoof
+  # The held-out parts of those sets as xdomain_crop.py cut them; the ladder reads them (KEHOACH 3.7).
+  xdomain_shards:
+    lcc_fasd: data/interim/antispoof/xdomain/lcc_fasd/evaluation
+    synthaspoof: data/interim/antispoof/xdomain/synthaspoof/test
+    nuaa: data/interim/antispoof/xdomain/nuaa
+    axon: data/interim/antispoof/xdomain/axon
 
 recognition:
   ms1mv3: data/raw/recognition/ms1mv3

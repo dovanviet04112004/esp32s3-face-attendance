@@ -24,14 +24,24 @@ PATHS = ML_ROOT / "configs" / "common" / "paths.yaml"
 DEVICE_SPLIT = ML_ROOT / "data" / "splits" / "device" / "v1" / "test_device.txt"
 INT8_DIR, LADDER_FILE, GRAPH_FILE = "int8", "ladder.yaml", "graph.native"
 CEILING_ROW = "float"
+FRAME_TIME = re.compile(r"(\d+) us mean")
+
+
+def paths_entry(entry: str):
+    node = yaml.safe_load(PATHS.read_text(encoding="utf-8"))
+    for key in entry.split("."):
+        node = node[key]
+    return node
 
 
 def data_path(entry: str) -> Path:
     """One dataset root of configs/common/paths.yaml, resolved against ml/."""
-    node = yaml.safe_load(PATHS.read_text(encoding="utf-8"))
-    for key in entry.split("."):
-        node = node[key]
-    return ML_ROOT / node
+    return ML_ROOT / paths_entry(entry)
+
+
+def data_paths(entry: str) -> dict[str, Path]:
+    """A mapping of configs/common/paths.yaml, each root resolved against ml/."""
+    return {name: ML_ROOT / root for name, root in paths_entry(entry).items()}
 
 
 def firmware_constant(relative: str, pattern: re.Pattern) -> float:
@@ -151,20 +161,29 @@ def build_row(run: Path, row: str, rungs: dict, calib: list[torch.Tensor], model
     return graph
 
 
+def ruler_of(run: Path) -> str:
+    """The version of the branch's ruler; a row scored under another one is scored again."""
+    return getattr(hooks_of(run), "RULER", "")
+
+
+def current(run: Path, entry: dict) -> bool:
+    return "metrics" in entry and entry.get("ruler", "") == ruler_of(run)
+
+
 def scored(run: Path, runner, ceiling: dict | None) -> dict:
     """The branch's ruler over runner, with the gate against ceiling when there is one."""
     hooks = hooks_of(run)
     metrics = hooks.score(runner, config_of(run))
-    entry = {"metrics": metrics, "headline": hooks.headline(metrics)}
+    entry = {"ruler": ruler_of(run), "metrics": metrics, "headline": hooks.headline(metrics)}
     if ceiling is not None:
         entry["passes"] = bool(hooks.gate(metrics, ceiling))
     return entry
 
 
 def ceiling_of(run: Path) -> dict:
-    """Q0, the float model's metrics, scored once and kept as the ladder's first row."""
+    """Q0, the float model's metrics, scored once per ruler and kept as the ladder's first row."""
     rows = read_ladder(run)
-    if CEILING_ROW not in rows:
+    if CEILING_ROW not in rows or not current(run, rows[CEILING_ROW]):
         traced = tasks.module_of(run, "eval").export_spec(run)[1]
         write_row(run, CEILING_ROW, {"rung": 0, **scored(run, TorchRunner(traced), None)})
         rows = read_ladder(run)
@@ -178,7 +197,7 @@ def verdict(entry: dict) -> str:
 def best_row(run: Path, rungs_wanted: set[int]) -> str:
     """The row of the rungs wanted that ranks first by the branch's ruler."""
     hooks, rows = hooks_of(run), read_ladder(run)
-    found = [name for name, e in rows.items() if e.get("rung") in rungs_wanted and "metrics" in e]
+    found = [name for name, e in rows.items() if e.get("rung") in rungs_wanted and current(run, e)]
     if not found:
         raise ValueError(f"{run.name}: no row of rung {sorted(rungs_wanted)} yet")
     return max(found, key=lambda name: hooks.rank(rows[name]["metrics"]))
@@ -329,6 +348,44 @@ def step_deploy(run: Path, row: str) -> None:
     )
 
 
+def board_ms(run: Path, row: str) -> float | None:
+    """The row's mean time a frame on the chip, from the whole graph's probe log; None unprobed."""
+    log = row_dir(run, row) / "probe" / "models_0.log"
+    found = (
+        FRAME_TIME.search(log.read_text(encoding="utf-8", errors="replace"))
+        if log.is_file()
+        else None
+    )
+    return int(found.group(1)) / 1000.0 if found else None
+
+
+def step_choose(run: Path) -> int:
+    """KEHOACH 3.7's choice: the best passing row, or a faster one within a step of the ruler.
+
+    Prints every row in reach of the best; exit status 1 while one of them has no probe yet.
+    """
+    hooks, rows = hooks_of(run), read_ladder(run)
+    passing = [name for name, e in rows.items() if e.get("passes") and current(run, e)]
+    if not passing:
+        raise SystemExit(f"{run.name}: no row passes its gate under ruler {ruler_of(run)!r}")
+    best = max(passing, key=lambda name: hooks.rank(rows[name]["metrics"]))
+    top = hooks.rank(rows[best]["metrics"])[0]
+    near = [n for n in passing if top - hooks.rank(rows[n]["metrics"])[0] <= hooks.RESOLUTION]
+    timed = {name: board_ms(run, name) for name in near}
+    for name in near:
+        ms = timed[name]
+        print(
+            f"{name:16s} {rows[name]['headline']}  {'unprobed' if ms is None else f'{ms:.1f} ms'}"
+        )
+    waiting = [name for name, ms in timed.items() if ms is None]
+    if waiting:
+        print(f"probe before choosing: {' '.join(waiting)}")
+        return 1
+    chosen = min(near, key=lambda name: (timed[name], -hooks.rank(rows[name]["metrics"])[0]))
+    print(f"chosen: {chosen}")
+    return 0
+
+
 def table(run: Path) -> str:
     """The ladder of run as text, one row a line: rung, name, the branch's headline and the gate."""
     lines = []
@@ -339,7 +396,7 @@ def table(run: Path) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    steps = ["ptq", "int16", "qat", "timing", "same-int8", "deploy", "table"]
+    steps = ["ptq", "int16", "qat", "timing", "same-int8", "choose", "deploy", "table"]
     parser.add_argument("step", choices=steps)
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--row", help="deploy: the row to lock")
@@ -358,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
         step_timing(run)
     elif args.step == "same-int8":
         return step_same_int8(run, args.against)
+    elif args.step == "choose":
+        return step_choose(run)
     elif args.step == "deploy":
         if not args.row:
             raise SystemExit("deploy needs --row")

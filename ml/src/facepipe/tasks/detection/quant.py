@@ -12,6 +12,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+# One step of the main ruler, 0.1 point of AP (KEHOACH 3.7 selection rule).
+RESOLUTION = 0.001
+
 
 def calibration_batches(cfg: object, split: str | None, limit: int):
     """Yield real images one at a time, keyed by the graph's input name."""

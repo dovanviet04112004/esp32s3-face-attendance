@@ -5,7 +5,7 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
-        quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-deploy quant-table \
+        quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
@@ -331,6 +331,9 @@ quant-timing: ## The row make speed times: minmax, no equalization, no bias corr
 
 quant-same-int8: ## The run's network code against commit AGAINST (HEAD), integer for integer
 	$(call ladder_step,same-int8) --against $(or $(AGAINST),HEAD)
+
+quant-choose: ## KEHOACH 3.7's choice: the best passing row, or a faster one within a step of the ruler
+	$(call ladder_step,choose)
 
 quant-deploy: ## Lock ladder row ROW of the run into firmware/models/ and contracts/models.lock.json
 	$(call need,ROW,a ladder row such as kl or int16_top4)

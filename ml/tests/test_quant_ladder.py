@@ -120,14 +120,101 @@ def test_detection_holds_the_served_size_within_one_percent_of_q0() -> None:
     assert detection_quant.rank({key: 0.9}) == (0.9,)
 
 
-def test_antispoof_blocks_every_attack_and_keeps_q0_s_real_faces() -> None:
-    ceiling = {"real_kept": 61}
-    good = {"attacks_blocked": 25, "attacks": 25, "real_kept": 61, "auc": 0.99}
+def test_antispoof_holds_auc_blocks_every_attack_and_keeps_q0_s_real_faces() -> None:
+    ceiling = {"real_kept": 61, "celeba_auc": 0.95}
+    good = {"attacks_blocked": 25, "attacks": 25, "real_kept": 61, "celeba_auc": 0.9406}
     assert antispoof_quant.gate(good, ceiling)
+    assert not antispoof_quant.gate({**good, "celeba_auc": 0.9404}, ceiling)
     assert not antispoof_quant.gate({**good, "attacks_blocked": 24}, ceiling)
     assert not antispoof_quant.gate({**good, "real_kept": 60}, ceiling)
-    fewer_attacks = {**good, "attacks_blocked": 24, "real_kept": 62}
-    assert antispoof_quant.rank(good) > antispoof_quant.rank(fewer_attacks)
+    better_on_the_large_set = {**good, "celeba_auc": 0.95, "real_kept": 60}
+    assert antispoof_quant.rank(better_on_the_large_set) > antispoof_quant.rank(good)
+
+
+def test_antispoof_rates_are_read_at_the_kiosk_threshold() -> None:
+    from facepipe.tasks.antispoof.losses.task_loss import LIVE
+
+    floor = antispoof_quant.live_floor()
+    fake = 1 - LIVE
+    live = np.array([floor, floor - 0.01, floor - 0.2, floor + 0.2])
+    truth = np.array([LIVE, LIVE, fake, fake])
+    rates = antispoof_quant.rates_at_floor(live, truth)
+    assert rates["n"] == 4
+    assert rates["bpcer"] == pytest.approx(0.5)
+    assert rates["apcer"] == pytest.approx(0.5)
+    assert "auc" in rates
+    only_attacks = antispoof_quant.rates_at_floor(live[2:], truth[2:])
+    assert "auc" not in only_attacks and "bpcer" not in only_attacks
+
+
+def test_a_set_of_shards_is_read_whole_or_folder_by_folder(tmp_path: Path) -> None:
+    flat = tmp_path / "flat"
+    flat.mkdir()
+    (flat / "shard_00000.tar").write_bytes(b"")
+    nested = tmp_path / "nested"
+    for name in ("print", "bonafide", "empty"):
+        (nested / name).mkdir(parents=True)
+    (nested / "print" / "shard_00000.tar").write_bytes(b"")
+    (nested / "bonafide" / "shard_00000.tar").write_bytes(b"")
+    assert antispoof_quant.shard_specs(flat) == ["."]
+    assert antispoof_quant.shard_specs(nested) == ["bonafide", "print"]
+    with pytest.raises(FileNotFoundError):
+        antispoof_quant.shard_specs(nested / "empty")
+
+
+def test_a_row_scored_under_another_ruler_is_scored_again(tmp_path: Path, monkeypatch) -> None:
+    scored: list[str] = []
+
+    def score(_runner, _cfg):
+        scored.append("x")
+        return {"m": 0.9}
+
+    hooks = SimpleNamespace(
+        RULER="v2", score=score, headline=lambda m: "h", rank=lambda m: (m["m"],)
+    )
+    monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
+    monkeypatch.setattr(ladder, "config_of", lambda _run: None)
+    monkeypatch.setattr(
+        ladder.tasks,
+        "module_of",
+        lambda _run, _name: SimpleNamespace(export_spec=lambda _run: (None, torch.nn.Identity())),
+    )
+    ladder.write_row(
+        tmp_path, ladder.CEILING_ROW, {"rung": 0, "ruler": "v1", "metrics": {"m": 1.0}}
+    )
+    assert ladder.ceiling_of(tmp_path) == {"m": 0.9}
+    assert ladder.ceiling_of(tmp_path) == {"m": 0.9}
+    assert scored == ["x"]
+    ladder.write_row(tmp_path, "kl", {"rung": 2, "ruler": "v1", "metrics": {"m": 0.95}})
+    with pytest.raises(ValueError, match="no row of rung"):
+        ladder.best_row(tmp_path, {2})
+
+
+def test_the_choice_takes_a_faster_row_within_one_step_of_the_best(
+    tmp_path: Path, monkeypatch
+) -> None:
+    hooks = SimpleNamespace(RESOLUTION=0.001, rank=lambda m: (m["m"],))
+    monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
+    rows = (
+        ("kl", 0.9500, True, 300),
+        ("mse", 0.9492, True, 290),
+        ("int16_top4", 0.9530, True, 340),
+        ("int16_top2", 0.9525, True, 310),
+        ("minmax", 0.9600, False, 200),
+    )
+    for name, m, passes, ms in rows:
+        ladder.write_row(
+            tmp_path, name, {"rung": 2, "metrics": {"m": m}, "headline": name, "passes": passes}
+        )
+        log = ladder.row_dir(tmp_path, name) / "probe" / "models_0.log"
+        log.parent.mkdir(parents=True)
+        log.write_text(
+            f"probe x: 8 frames, 0 of 9 values off, {ms * 1000} us mean, 1 us peak a frame\n"
+        )
+    assert ladder.step_choose(tmp_path) == 0
+    assert ladder.board_ms(tmp_path, "int16_top2") == 310.0
+    (ladder.row_dir(tmp_path, "int16_top2") / "probe" / "models_0.log").unlink()
+    assert ladder.step_choose(tmp_path) == 1
 
 
 def test_antispoof_reads_live_from_the_softmax() -> None:

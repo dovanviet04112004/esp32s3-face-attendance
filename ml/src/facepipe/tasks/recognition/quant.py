@@ -15,6 +15,10 @@ import torch
 FACES: dict[tuple, np.ndarray] = {}
 
 
+# One step of the main ruler, 0.1 point of TAR (KEHOACH 3.7 selection rule).
+RESOLUTION = 0.001
+
+
 def calibration_batches(cfg: object, split: str | None, limit: int):
     """Yield real aligned faces one at a time, keyed by the graph's input name."""
     from .data import Ms1mShardDataset, collate, normalize_batch, read_identities

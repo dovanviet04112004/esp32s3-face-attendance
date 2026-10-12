@@ -143,7 +143,9 @@ def collect_scores(
     return np.concatenate(scores), np.concatenate(truth)
 
 
-def build_loader(cfg: object, split: str, root: Path | None = None) -> torch.utils.data.DataLoader:
+def build_loader(
+    cfg: object, split: str | list[str], root: Path | None = None
+) -> torch.utils.data.DataLoader:
     """The named split, read the way training reads it but without shuffling.
 
     root overrides where the shards live, which is how a cross-domain set is read
