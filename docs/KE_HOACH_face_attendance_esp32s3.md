@@ -2134,15 +2134,15 @@ Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho c
 FP32, trần để so; Q1 PTQ per-channel + fold BN + bias correction, CLE chỉ bật khi đo được là có lợi
 trên chính nhánh đó (Lớp 4). ESP-DL là runtime deploy: kernel S3 nhận **một số mũ luỹ thừa 2 cho cả
 tensor**, đối xứng, zero point 0, ở cả trọng số lẫn activation, nên một nhánh có dải kênh lệch nhau
-mất độ chính xác đúng ở luật ấy. Mỗi nhánh ESP-DL đi thang dưới đây và **dừng ở bậc đầu tiên đạt cửa**
-của nó.
+mất độ chính xác đúng ở luật ấy. Mỗi nhánh ESP-DL đi **trọn** thang dưới đây — bậc nào cũng dựng và
+chấm, kể cả khi bậc trước đã đạt cửa — rồi chọn **một** hàng theo luật chọn ở dưới bảng cửa.
 
 | Bậc | Làm gì | Code | Khi nào |
 |---|---|---|---|
 | 1 | PTQ ESP-PPQ `esp32s3` w8a8, gập BN (cả `Linear` + `BatchNorm1d`), **layerwise equalization** (4 vòng, ngưỡng 0,4, `opt_level` 2), bias correction | `ptq_espdl.py` | luôn |
 | 2 | Bốn thuật toán hiệu chuẩn — min-max, percentile, MSE, KL — trên cùng tập hiệu chuẩn | `ptq_espdl.py` | luôn, bảng bốn cột |
-| 3 | int16 cho các lớp nhạy nhất, xếp theo SNR từng lớp của ESP-PPQ trên đồ thị của cách hiệu chuẩn thắng ở bậc 2; mỗi dòng `int16_top{k}` cho k lớp đứng đầu, cả trọng số lẫn activation của lớp ấy ở 16 bit | `mixed_espdl.py` | khi bậc 2 trượt cửa |
-| 4 | QAT: học tiếp tham số float của chính đồ thị int8 qua lượng tử giả của ESP-PPQ, gradient đi thẳng qua phép làm tròn, số mũ giữ như lúc hiệu chuẩn, nên đồ thị học xong là đồ thị xuất ra chip | `qat_espdl.py` | khi bậc 3 vẫn trượt, **chỉ khi chủ repo cho train** |
+| 3 | int16 cho các lớp nhạy nhất, xếp theo SNR từng lớp của ESP-PPQ trên đồ thị của cách hiệu chuẩn thắng ở bậc 2; mỗi dòng `int16_top{k}` cho k lớp đứng đầu, cả trọng số lẫn activation của lớp ấy ở 16 bit | `mixed_espdl.py` | luôn |
+| 4 | QAT: học tiếp tham số float của chính đồ thị int8 qua lượng tử giả của ESP-PPQ, gradient đi thẳng qua phép làm tròn, số mũ giữ như lúc hiệu chuẩn, nên đồ thị học xong là đồ thị xuất ra chip | `qat_espdl.py` | luôn, sau cùng: đây là một lượt train trên GPU, mỗi nhánh một lượt trên hàng int8 thắng ở bậc 2 |
 
 **Cửa của từng nhánh**, chấm bằng mô phỏng ESP-PPQ của chính đồ thị sẽ xuất. Mô phỏng ấy được bản dò
 (dưới) giữ khớp chip từng bit, nên số của nó là số của chip.
@@ -2150,12 +2150,14 @@ của nó.
 | Nhánh | Thước | Cửa |
 |---|---|---|
 | detection | AP mặt ≥ 38 px trên WIDER val | sụt dưới 1% so với Q0 |
-| antispoof | 87 khung OV5640 của `test_device`, ngưỡng `live_min` 500‰ | chặn đủ mọi khung giả và giữ không ít mặt thật hơn Q0; APCER là điều kiện bắt buộc (§1.1) |
+| antispoof | AUC trên CelebA-Spoof `test:10:` (39.072 mặt, cắt bằng nhánh detect như kiosk); kèm 87 khung OV5640 của `test_device` ở ngưỡng `live_min` 500‰ | AUC sụt dưới 1% so với Q0, **và** trên 87 khung chặn đủ mọi khung giả, giữ không ít mặt thật hơn Q0 — APCER là điều kiện bắt buộc (§1.1). LCC-FASD evaluation, SynthASpoof test, NUAA và Axon chấm cùng ngưỡng ấy, ghi cạnh để đọc, không chặn |
 | recognition | TAR@FAR 1e-3 trên CFP-FP, thước chọn checkpoint của nhánh; kèm LFW, AgeDB-30 | sụt dưới 1% so với Q0 |
 
-Giờ trên chip **ghi cạnh mỗi dòng, không chặn thang**: một lượt ba model int8 đã 452 ms, trên ngân
-sách 360 ms (`latency.md` §13). Dòng int16 trả thêm giờ; ADR của nhánh cân độ chính xác lấy lại với
-giờ trả thêm, rồi chủ repo chọn. Arena không phải cửa của ESP-DL (§3.8).
+**Luật chọn hàng: chất lượng trước, rồi tới giờ.** Trong các hàng đạt cửa, hàng chọn là hàng có thước
+chính cao nhất. Một hàng khác chỉ thay nó khi thước chính kém không quá **một bước phân giải** của
+thước — detection 0,1 điểm AP, recognition 0,1 điểm TAR, anti-spoof 0,001 AUC — **và** chạy nhanh hơn
+trên chip. Bản vá xuất không đổi số nguyên (dưới) nên bật ở mọi hàng của nhánh; giờ của các hàng vì thế
+chỉ khác nhau ở lớp int16. Giờ đo bằng bản dò trên chính hàng ấy. Arena không phải cửa của ESP-DL (§3.8).
 
 Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi file một bước:
 
@@ -2212,8 +2214,8 @@ chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurement
       AGAINST=<commit>` phải báo 0 số lệch.
    5. Dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
 3. **Chất lượng.** `make quant-ptq BRANCH=<nhánh> RUN=<run>` dựng bậc 1–2 và chấm cả bốn cách hiệu chuẩn
-   bằng thước của nhánh, cạnh Q0. Trượt cửa thì `make quant-int16`, rồi `make quant-qat` khi chủ repo cho
-   train.
+   bằng thước của nhánh, cạnh Q0; `make quant-int16` rồi `make quant-qat` dựng bậc 3 và 4.
+   `make quant-table` xếp các hàng theo luật chọn.
 4. **Chốt.** Bản dò chạy trên hàng đã chọn (`ROW=<hàng>`, không phải `timing`): khớp từng bit, giờ và
    PSRAM ghi vào `latency.md`. ADR của nhánh ghi bậc đã chọn kèm bảng đối chứng.
    `make quant-deploy BRANCH=<nhánh> RUN=<run> ROW=<hàng>` chép `.espdl` vào `firmware/models/<nhánh>/` và
