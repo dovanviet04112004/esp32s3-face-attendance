@@ -73,6 +73,6 @@ dependencies:
 direct_dependencies:
 - espressif/esp-dl
 - joltwallet/littlefs
-manifest_hash: 9d2e01c32ca5943ded21983306a86d3dbe9ac563dbc7823ef4c7616bcf15fdee
+manifest_hash: b48439770ad2fb36f0778a9c93f551fda03f6d92708d52b138cb1f35544decbd
 target: esp32s3
 version: 3.0.0
