@@ -2778,12 +2778,11 @@ ml/
 │   │   └── make_split.py                  # ★ sinh split + ghi SPLIT.md + sha256
 │   │
 │   ├── tasks/                             # ── BA NHÁNH, MỖI NHÁNH MỘT THƯ MỤC ĐỘC LẬP ──
-│   │   │   Cùng khuôn: README · model/ · losses/ · postproc/
-│   │   │              · data.py · quant.py · train.py · eval.py
+│   │   │   Cùng khuôn: model/ · losses/ · postproc/ · data.py · quant.py · train.py · eval.py
+│   │   │   Kiến trúc, metric, số đo của nhánh nằm ở §1, §3 và docs/measurements/<nhánh>/
 │   │   │   ★ = file phải khớp 1:1 với bản C ở firmware, kiểm bằng contracts/golden/
 │   │   │
 │   │   ├── detection/
-│   │   │   ├── README.md                  # kiến trúc gì, metric gì, lệnh chạy
 │   │   │   ├── model/
 │   │   │   │   ├── yunet.py               # backbone + neck
 │   │   │   │   ├── head.py                # 3 đầu ra: cls / bbox / 5 landmark
@@ -2801,7 +2800,6 @@ ml/
 │   │   │   └── eval.py                    # WIDER AP + NMSE landmark trên ảnh OV5640
 │   │   │
 │   │   ├── antispoof/
-│   │   │   ├── README.md
 │   │   │   ├── model/
 │   │   │   │   ├── minifasnet_v2_se.py
 │   │   │   │   ├── minifasnet_v2.py           # ★ MiniFASNetV2 upstream, tên thuộc tính giữ nguyên để
@@ -2821,7 +2819,6 @@ ml/
 │   │   │   └── eval.py                    # ACER, HTER cross-dataset, ROC tập tự thu
 │   │   │
 │   │   └── recognition/
-│   │       ├── README.md
 │   │       ├── model/
 │   │       │   ├── mobilefacenet.py
 │   │       │   ├── mobilefacenet_eca.py   # ★ kiến trúc FRBench, tên thuộc tính giữ nguyên để nạp
@@ -3184,7 +3181,7 @@ components/svc_facedb/
 ├── test_apps/              # ★ chuẩn ESP-IDF: test app nằm TRONG component
 │   └── facedb/{main/test_facedb.c, CMakeLists.txt, pytest_facedb.py}
 ├── Kconfig                 # tuỳ chọn hiện trong menuconfig (vd. FACEDB_MAX_PERSON)
-└── README.md               # 1 trang: làm gì, phụ thuộc gì, đo gì, giới hạn gì
+└── README.md               # chỉ khi có điều header, Kconfig và KẾ HOẠCH chưa nói: số đo, giới hạn, bring-up
 ```
 
 Quy tắc header:
@@ -4466,7 +4463,7 @@ Case cần mắt hoặc ngón tay người gắn thêm tag `[manual]`. `app_main
 # dev   — vừa code vừa gỡ lỗi
 idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.dev"  build
 
-# bench — đo số cho E8, phải giống prod về tốc độ nhưng còn profiler
+# bench — đo số cho E8, phải giống prod về tốc độ nhưng còn trace FreeRTOS và console
 idf.py -B build_bench -D SDKCONFIG=build_bench/sdkconfig \
        -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.bench" build
 
@@ -4513,18 +4510,18 @@ sau khi dựng, và đều đã gitignore.
 | `COMPILER_OPTIMIZATION_*` | `DEBUG` | `PERF` | `PERF` | |
 | `COMPILER_OPTIMIZATION_ASSERTION_LEVEL` | full | silent | **silent** | Bỏ chuỗi assert và tên file nguồn khỏi binary |
 | `COMPILER_STACK_CHECK_MODE` | `NORM` | `NONE` | `NONE` | Stack canary tốn chu kỳ ở mọi lần gọi hàm |
-| `LOG_DEFAULT_LEVEL` | `DEBUG` | `INFO` | `WARN` | |
+| `LOG_DEFAULT_LEVEL` | `INFO` | `INFO` | `WARN` | Ở `DEBUG` driver SPI tự trace ~850 dòng/giây vào console USB-CDC; một lần ghi console bị chặn là chặn task preview, màn đứng hình. Muốn chi tiết một tag thì nâng tag ấy lúc chạy, `LOG_MAXIMUM_LEVEL` còn giữ chuỗi |
 | `LOG_MAXIMUM_LEVEL` | `VERBOSE` | `INFO` | `WARN` | Biên dịch bỏ hẳn chuỗi log, không chỉ ẩn lúc chạy |
 | `HEAP_POISONING` | `LIGHT` | `NONE` | `NONE` | Poisoning làm mọi `malloc` chậm đi |
 | `FREERTOS_USE_TRACE_FACILITY` | y | **y** | n | `bench` cần để đo tải từng core |
 | `FREERTOS_GENERATE_RUN_TIME_STATS` | n | **y** | n | |
-| `AI_PROFILING` (Kconfig riêng) | n | **y** | n | Đo latency từng op: `MicroProfiler` ở TFLM, `profile_module()` ở ESP-DL |
+| `AI_PROFILING` (Kconfig riêng) | n | n | n | In giờ từng op **sau mỗi lần invoke**, nên bật trên kiosk là làm sai chính số `bench` đo; giờ từng module đo bằng app dò (`make ai-profile`, §4.5.8), cờ chỉ bật tay khi soi một op |
 | `ESP_SYSTEM_PANIC` | `GDBSTUB` | `PRINT_REBOOT` | `PRINT_REBOOT` | |
-| `SECURE_BOOT` / `SECURE_FLASH_ENC` | n | n | **y** | |
+| `SECURE_BOOT` / `SECURE_FLASH_ENC` | n | n | n | Bật ở E13-T3 cùng NVS encryption: đốt eFuse là **một chiều** trên board được nạp, chủ repo quyết lúc nào |
 | `NET_MQTT_REQUIRE_TLS` | n | n | **y** | Bàn thử còn nối broker không TLS; bản ship thì không bao giờ (§6.2.1) |
 | `APP_CONSOLE` | y | y | **n** | Console ghi được mọi khoá NVS qua USB (§6.2.1) |
 
-> `bench` cố tình **giống `prod` về tốc độ** (`-O2`, không assert, không poisoning) và chỉ khác ở chỗ còn profiler. Đo trên `dev` rồi báo cáo là số sai — `-Og` chậm hơn đáng kể.
+> `bench` cố tình **giống `prod` về tốc độ** (`-O2`, không assert, không poisoning) và chỉ khác ở chỗ còn trace FreeRTOS để đo tải từng core, cùng console. Đo trên `dev` rồi báo cáo là số sai — `-Og` chậm hơn đáng kể.
 
 ##### Cấu hình chung cho cả ba profile (`sdkconfig.defaults.esp32s3`)
 
