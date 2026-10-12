@@ -6,14 +6,6 @@
 cold_drive: /mnt/e/face-attendance-data
 fast_drive: /data/face-attendance
 
-data_root: data
-raw_root: data/raw
-interim_root: data/interim
-processed_root: data/processed
-splits_root: data/splits
-cache_root: data/cache
-artifacts_root: artifacts
-
 detection:
   widerface: data/raw/detection/widerface
   retinaface_labels: data/raw/detection/retinaface_labels

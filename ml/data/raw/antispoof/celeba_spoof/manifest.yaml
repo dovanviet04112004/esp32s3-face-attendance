@@ -13,5 +13,5 @@ counts:
 consumed_by:
 - antispoof/teacher
 - antispoof/student
-notes: Mirror dang parquet, KHONG phai layout Data/+metas/ goc. celeba_spoof_crop.py
+notes: Mirror dang parquet, KHONG phai layout Data/+metas/ goc. celeba_spoof_parquet.py
   phai doc parquet, khong doc bbox.json.

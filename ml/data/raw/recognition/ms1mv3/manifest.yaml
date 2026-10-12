@@ -16,5 +16,5 @@ counts:
   files: 3
 consumed_by:
 - recognition/student
-notes: 'Mac dinh cho nhanh recognition: 27.4 GB, dung RecordIO ma glint360k_to_wds.py
+notes: 'Mac dinh cho nhanh recognition: 27.4 GB, dung RecordIO ma recordio_to_wds.py
   doc duoc.'
