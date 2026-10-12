@@ -262,6 +262,78 @@ def test_fused_prelu_joins_each_fusable_prelu_to_its_conv(sloped, tmp_path: Path
         assert fused[1][slope].shape == (16,)
 
 
+class NarrowBlocks(nn.Module):
+    """Two residual blocks whose middle widths, 13 and 26, are not multiples of 16, and a 10-channel
+    head whose output leaves the graph."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stem = nn.Conv2d(3, 16, 3, padding=1)
+        self.blocks = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(16, mid, 1),
+                nn.PReLU(mid),
+                nn.Conv2d(mid, mid, 3, padding=1, groups=mid),
+                nn.PReLU(mid),
+                nn.Conv2d(mid, 16, 1),
+            )
+            for mid in (13, 26)
+        )
+        self.head = nn.Conv2d(16, 10, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.stem(x)
+        for block in self.blocks:
+            x = x + block(x)
+        return self.head(x)
+
+
+def test_padded_channels_grows_a_block_with_zeros_and_changes_no_integer(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(11)
+    calib = [torch.rand(1, 3, 8, 8) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("antispoof")
+    graph = quantise_ladder_net(NarrowBlocks().eval(), tmp_path, calib, rungs, ("out",))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
+    with esp_ppq_patches.applied(["padded_channels"]):
+        grown = espdl_graph(export_espdl.export(graph, tmp_path / "grown.espdl", test_input))
+    assert plain[0].keys() == grown[0].keys()
+    widths = {}
+    for name, (_op, inputs, _outputs) in plain[0].items():
+        for param in inputs[1:]:
+            if param not in plain[1]:
+                continue
+            before, after = plain[1][param], grown[1][param]
+            assert grown[2][param] == plain[2][param], param
+            assert np.array_equal(np.sort(after[after != 0]), np.sort(before[before != 0])), param
+            widths[name] = (before.size, after.size)
+    expand, depthwise = "/blocks.0/blocks.0.0/Conv", "/blocks.0/blocks.0.2/Conv"
+    project, head = "/blocks.0/blocks.0.4/Conv", "/head/Conv"
+    assert np.array_equal(
+        filters(grown[1][grown[0][expand][1][1]])[:13], filters(plain[1][plain[0][expand][1][1]])
+    )
+    assert not filters(grown[1][grown[0][expand][1][1]])[13:].any()
+    assert widths[depthwise][1] > widths[depthwise][0]
+    assert not filters(grown[1][grown[0][project][1][1]])[:, 13:].any()
+    assert widths[head][0] == widths[head][1]
+    assert np.array_equal(grown[1][grown[0][head][1][1]], plain[1][plain[0][head][1][1]])
+
+
+def test_a_clip_keeps_zero_only_when_zero_lies_inside_its_bounds() -> None:
+    from types import SimpleNamespace
+
+    def clip(low: float, high: float):
+        bound = [SimpleNamespace(is_parameter=True, value=torch.tensor(v)) for v in (low, high)]
+        return SimpleNamespace(type="Clip", inputs=[None, *bound])
+
+    assert esp_ppq_patches.keeps_zero(clip(0.0, 6.0))
+    assert not esp_ppq_patches.keeps_zero(clip(1.0, 6.0))
+    assert esp_ppq_patches.keeps_zero(SimpleNamespace(type="PRelu", inputs=[]))
+    assert not esp_ppq_patches.keeps_zero(SimpleNamespace(type="Sigmoid", inputs=[]))
+
+
 def test_ai_engine_registers_the_fused_module() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     assert espdl_shapes.FUSED_PRELU in espdl_op_check.own_modules(core)

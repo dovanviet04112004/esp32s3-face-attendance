@@ -140,6 +140,132 @@ def cache_sized_convolutions() -> Iterator[None]:
         espdl_exporter.reset_graph_layout = reset
 
 
+ZERO_KEEPING = frozenset({"PRelu", "Relu", "LeakyRelu", "Clip"})
+
+
+def padded(channels: int) -> int:
+    return -(-channels // CHANNEL_STEP) * CHANNEL_STEP
+
+
+def clip_bounds(op) -> tuple[float, float]:
+    """A Clip's lower and upper bound, unbounded where one is left out."""
+
+    def bound(index: int, name: str, missing: float) -> float:
+        if len(op.inputs) > index and op.inputs[index].value is not None:
+            return float(op.inputs[index].value)
+        return float(op.attributes.get(name, missing))
+
+    return bound(1, "min", float("-inf")), bound(2, "max", float("inf"))
+
+
+def keeps_zero(op) -> bool:
+    """op maps 0 to 0 in every channel, so a channel of zeros stays one through it."""
+    if op.type != "Clip":
+        return op.type in ZERO_KEEPING
+    low, high = clip_bounds(op)
+    return low <= 0 <= high
+
+
+def per_tensor(op) -> bool:
+    configs = [*getattr(op, "input_quant_config", []), *getattr(op, "output_quant_config", [])]
+    return all(c.scale is None or c.scale.numel() == 1 for c in configs)
+
+
+def per_channel(op, channels: int) -> bool:
+    """op works on each of the channels alone and keeps a channel of zeros at zero."""
+    if op.type == "Conv":
+        return op.attributes.get("group", 1) == channels == op.inputs[1].value.shape[0]
+    return keeps_zero(op)
+
+
+def channel_path(graph, conv) -> tuple[list, list] | None:
+    """The ops conv's output channels go through one by one, and the ungrouped Convs summing them.
+
+    None when a reader does anything else with them, or one of their tensors leaves the graph.
+    """
+    channels, frontier = conv.inputs[1].value.shape[0], [conv.outputs[0]]
+    middle, ends = [], []
+    while frontier:
+        var = frontier.pop()
+        if var.name in graph.outputs or not var.dest_ops:
+            return None
+        for reader in var.dest_ops:
+            if reader.inputs[0] is not var or not per_tensor(reader):
+                return None
+            if reader.type == "Conv" and reader.attributes.get("group", 1) == 1:
+                ends.append(reader)
+            elif per_channel(reader, channels):
+                middle.append(reader)
+                frontier.append(reader.outputs[0])
+            else:
+                return None
+    return middle, ends
+
+
+def zero_rows(var, size: int, dim: int = 0) -> None:
+    """var's parameter grown along dim to size with zeros."""
+    extra = list(var.value.shape)
+    extra[dim] = size - extra[dim]
+    var.value = torch.cat([var.value, var.value.new_zeros(extra)], dim=dim)
+
+
+def widen(var, size: int) -> None:
+    var.shape = [var.shape[0], size, *var.shape[2:]]
+
+
+def pad_channels(graph, conv) -> bool:
+    """conv's output channels, and the path channel_path finds for them, grown to a multiple of 16
+    with zeros: zero filters, biases and slopes, and zero weight columns where they are summed.
+    """
+    if conv.type != "Conv" or conv.attributes.get("group", 1) != 1 or not per_tensor(conv):
+        return False
+    channels = conv.inputs[1].value.shape[0]
+    if not channels % CHANNEL_STEP or not conv.inputs[1].is_parameter:
+        return False
+    path = channel_path(graph, conv)
+    if path is None:
+        return False
+    middle, ends = path
+    size = padded(channels)
+    for var in conv.inputs[1:]:
+        zero_rows(var, size)
+    widen(conv.outputs[0], size)
+    for op in middle:
+        if op.type == "Conv":
+            for var in op.inputs[1:]:
+                zero_rows(var, size)
+            op.attributes["group"] = size
+        elif op.type == "PRelu" and op.inputs[1].value.numel() == channels:
+            zero_rows(op.inputs[1], size)
+        widen(op.outputs[0], size)
+    for op in ends:
+        zero_rows(op.inputs[1], size, dim=1)
+    return True
+
+
+@contextlib.contextmanager
+def padded_channels() -> Iterator[None]:
+    """Each ungrouped Conv's unaligned output channels padded to a multiple of 16 on their path.
+
+    esp-dl's S3 kernels take channels sixteen at a time, and a remainder sends the whole convolution
+    down a slower path (latency.md 14.2). The zeros add nothing, so no integer changes.
+    """
+    from esp_ppq.parser import espdl_exporter
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+
+    def padding(self, graph, *args, **kwargs):
+        for op in list(graph.topological_sort()):
+            pad_channels(graph, op)
+        return prepare(self, graph, *args, **kwargs)
+
+    espdl_exporter.EspdlExporter.prepare_graph = padding
+    try:
+        yield
+    finally:
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
+
+
 PRELU_MARK = "PRelu"
 
 
@@ -266,6 +392,7 @@ def fused_prelu() -> Iterator[None]:
 PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "cache_sized_convolutions": cache_sized_convolutions,
     "fused_prelu": fused_prelu,
+    "padded_channels": padded_channels,
 }
 # Patches that change an integer the chip computes: ladder variants only (KEHOACH 3.7).
 ROUNDING = frozenset({"fused_prelu"})

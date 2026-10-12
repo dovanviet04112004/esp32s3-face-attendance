@@ -26,6 +26,8 @@ FLOAT_KERNEL_OPS = frozenset({"LayerNormalization", "Softmax"})
 # ESP-PPQ fuses only Relu into a convolution; esp-dl 3.3's activation_type_t has no ReLU6.
 LUT_MARK = "lut = "
 UNFUSED_ACTIVATIONS = frozenset({"PRelu", "LeakyRelu"})
+# Readers padded_channels can carry zero channels through or into: per channel ops and convolutions.
+PADDABLE_READERS = frozenset({"Conv", "ConvPRelu", "PRelu", "Relu", "LeakyRelu", "Clip"})
 PROFILE_ROW = re.compile(r"\|\s*(?P<name>\S+)\s*\|\s*(?P<op>\w+)\s*\|\s*(?P<us>\d+)us\s*\|")
 # esp-dl's profile_memory leaves a cell blank when it holds 0.00KB.
 MEMORY_TOTAL = re.compile(r"\|\s*total\s*\|" + r"\s*(?:([0-9.]+)KB)?\s*\|" * 3)
@@ -126,7 +128,22 @@ def column_merge(x: list[int], y: list[int], attrs: str, cache_bytes: int) -> in
     return None
 
 
-def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_bytes: int):
+def unaligned_fix(
+    module: Module, x: list[int], y: list[int], readers: dict, cache_bytes: int
+) -> str:
+    """The patch that aligns module's channels to 16, or why none does."""
+    out_readers = readers.get(module.outputs[0], [])
+    if y[-1] % CHANNEL_STEP and out_readers and set(out_readers) <= PADDABLE_READERS:
+        return "padded_channels"
+    if x[-1] % CHANNEL_STEP and x[-1] != 3 and not y[-1] % CHANNEL_STEP:
+        return "padded_channels, from the convolution that makes them"
+    k = column_merge(x, y, module.attrs, cache_bytes)
+    return f"aligned_pointwise, {k} columns" if k else "no export patch"
+
+
+def conv_tags(
+    module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_bytes: int, readers=None
+):
     """A convolution's slow paths and its cycles a multiply-add, None when shapes are unknown."""
     x, w, y = (laid.get(name) for name in (*module.inputs[:2], module.outputs[0]))
     if x is None or w is None or y is None:
@@ -137,8 +154,7 @@ def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_by
     macs = math.prod(y) * (c_in // group) * taps
     tags = []
     if c_in % CHANNEL_STEP or c_out % CHANNEL_STEP:
-        k = column_merge(x, y, module.attrs, cache_bytes)
-        fix = f"aligned_pointwise, {k} columns" if k else "no export patch"
+        fix = unaligned_fix(module, x, y, readers or {}, cache_bytes)
         tags.append(f"unaligned {c_in} -> {c_out} channels ({fix})")
     weight_bytes = math.prod(w)
     pointwise_rows = group == 1 and taps == 1 and math.prod(y[:-1]) > 1
@@ -155,7 +171,7 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
     A convolution also returns its cycles a multiply-add.
     """
     if module.op in espdl_shapes.CONV_OPS:
-        return conv_tags(module, laid, cpu_mhz, cache_bytes)
+        return conv_tags(module, laid, cpu_mhz, cache_bytes, readers)
     tags = []
     if "quant_type = 'F32'" in module.attrs:
         tags.append("runs in float")

@@ -66,6 +66,16 @@ def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
     laid = {"x": [1, 7, 7, 32], "w": [1, 1, 32, 103], "y": [1, 7, 7, 103]}
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
     assert tags == ["unaligned 32 -> 103 channels (no export patch)"]
+    inside = {"y": ["PRelu"]}
+    tags, _rate = espdl_profile.conv_tags(
+        module("Conv", ["x", "w"], ["y"]), laid, 240, 65536, inside
+    )
+    assert tags == ["unaligned 32 -> 103 channels (padded_channels)"]
+    laid = {"x": [1, 7, 7, 103], "w": [1, 1, 103, 64], "y": [1, 7, 7, 64]}
+    tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
+    assert tags == [
+        "unaligned 103 -> 64 channels (padded_channels, from the convolution that makes them)"
+    ]
 
     laid = {"x": [1, 14, 14, 128], "w": [1, 1, 128, 512], "y": [1, 14, 14, 512]}
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
