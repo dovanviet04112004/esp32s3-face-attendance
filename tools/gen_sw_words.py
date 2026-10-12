@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the lock-screen words of the service worker from the push section of both catalogues.
+"""Write the lock-screen words of the service worker from both catalogues: app name and push section.
 
 The worker cannot load the app's catalogues, so it reads this one copy, and no
 sentence is typed into the worker by hand (KEHOACH 9.21.4). Run with --check to
@@ -21,19 +21,22 @@ SECTION = "push"
 
 
 def render() -> str:
-    """The file's text: the three-line banner, then one object of words per locale."""
-    words = {}
+    """The file's text: the three-line banner, the app's name and one object of words per locale."""
+    names, words = {}, {}
     for locale in LOCALES:
         catalogue = json.loads((MESSAGES / f"{locale}.json").read_text(encoding="utf-8"))
+        names[locale] = catalogue["app"]["name"]
         words[locale] = catalogue[SECTION]
     missing = set(words["vi"]) ^ set(words["en"])
     if missing:
         raise SystemExit(f"push words missing from one catalogue: {sorted(missing)}")
+    name_body = json.dumps(names, ensure_ascii=False, indent=2, sort_keys=True)
     body = json.dumps(words, ensure_ascii=False, indent=2, sort_keys=True)
     return (
         "// GENERATED FILE - DO NOT EDIT.\n"
         "// Source: frontend/messages/{vi,en}.json\n"
         "// Regenerate: ./tools/gen_sw_words.py\n"
+        f"self.SW_NAME = {name_body};\n"
         f"self.SW_WORDS = {body};\n"
     )
 
