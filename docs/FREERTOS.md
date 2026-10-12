@@ -44,9 +44,9 @@ phải bằng chứng.
 | IDLE đói → watchdog (2.3) | `cam_task` hết khung thì `vTaskDelay(1)`; `ai_task` nhường một tick mỗi khung | §5.1 của kế hoạch, và watchdog im trên board |
 | Bẫy đơn vị watermark (6.2) | Code nhân `sizeof(StackType_t)` thay vì hằng số 4 | `portSTACK_TYPE` là `uint8_t` nên nhân 1 — đúng ở đây **và** trên port khác |
 | `pdMS_TO_TICKS` về 0 tick (4.1) | `CONFIG_FREERTOS_HZ=1000`, sàn 1 ms | Ràng buộc này **phụ thuộc config** — hạ tick rate là dính lại |
-| Đảo ngược ưu tiên (10.4) | Khoá dùng mutex thật, semaphore chỉ để báo hiệu ISR→task | Bốn mutex, hai semaphore, không cái nào lẫn vai |
+| Đảo ngược ưu tiên (10.4) | Khoá dùng mutex thật; semaphore nhị phân và đếm chỉ để báo hiệu | Sáu mutex (`FaceDb` hai, `sys_storage`, `bsp` I2C, `ServoDoor`, gửi MQTT); semaphore báo hiệu ISR→task ở ToF, touch, bounce LCD và task→task ở ack MQTT, overlay UI — không cái nào làm khoá |
 | Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ duy nhất lồng ba khoá đi đúng chiều | `FaceDb::persist` lấy `m_facedb_io` rồi `m_facedb` rồi mới `m_littlefs` |
-| ISR chạm PSRAM (8.4) | Hai ISR chỉ đụng handle semaphore | Đọc `drv_tof.c`, `drv_lcd.c` |
+| ISR chạm PSRAM (8.4) | Ba đường ngắt chỉ đụng handle semaphore ở DRAM | Đọc `drv_tof.c`, `drv_touch.c`, `drv_lcd.c` |
 | Cấp phát động sau boot (7.7) | CLAUDE.md §4.1 cấm `new`/`delete` sau boot | `grep` ra **0 chỗ** |
 | Mất quyền sở hữu con trỏ (9.7) | `cam_task` không đụng `frame` sau khi gửi; `blit` xảy ra **trước** | Đọc `cam_task` |
 | Không kiểm `xQueueReceive` (9.2) | Mọi lời gọi đều nằm trong điều kiện | `grep` ra **0 chỗ** trần |
@@ -77,8 +77,10 @@ bàn. Danh mục này là thứ tìm ra chúng.
 
 ### 0.5 Chưa kiểm được
 
-Sáu task của E10 và E13 chưa tồn tại, nên §14 liệt kê những gì phải chạy lại khi chúng lên.
-**Danh mục này chỉ đúng tới ngày ghi** — thêm một task là phải soát lại từ §1.
+Cả mười task của KẾ HOẠCH §5.2 đều đã chạy và đã soát lại từng mục dưới đây theo code ngày
+12/10. Phần còn lại cần board, không đọc code ra được: watermark đủ mười task, đáy heap, và
+lượt soak 24 giờ (§14). **Danh mục này chỉ đúng tới ngày ghi** — thêm một task là phải soát
+lại từ §1.
 
 ---
 
@@ -86,15 +88,15 @@ Sáu task của E10 và E13 chưa tồn tại, nên §14 liệt kê những gì 
 
 | # | Kiểu hỏng | Cách kiểm | Trạng thái |
 |---|---|---|---|
-| 1.1 | `vTaskDelete` không trả bộ nhớ ngay — **IDLE mới là kẻ đi dọn** | Task ưu tiên cao chiếm CPU mãi thì IDLE không chạy và stack không bao giờ về | ✅ `net_task` tự xoá ở core 0, nơi mọi task đều có chỗ chặn nên IDLE0 chạy |
-| 1.2 | Task tự xoá mà chưa tự dọn tài nguyên của mình | Đọc thân task trước mỗi `vTaskDelete(NULL)` | ✅ `net_task` không xin heap, `host` nằm trên stack của chính nó |
+| 1.1 | `vTaskDelete` không trả bộ nhớ ngay — **IDLE mới là kẻ đi dọn** | Task ưu tiên cao chiếm CPU mãi thì IDLE không chạy và stack không bao giờ về | ✅ `net_task` xong việc và `sync_task` lúc `svc_sync_init()` hỏng tự xoá ở core 0, nơi mọi task đều có chỗ chặn nên IDLE0 chạy |
+| 1.2 | Task tự xoá mà chưa tự dọn tài nguyên của mình | Đọc thân task trước mỗi `vTaskDelete(NULL)` | ✅ `net_task` không xin heap, `host` nằm trên stack của chính nó; `sync_task` xoá trước khi xin gì |
 | 1.3 | `vTaskSuspend` **xoá phần trễ còn lại** — xin ngủ 3000 ms có thể tỉnh sau 57 ms *(bản đồ)* | `grep vTaskSuspend` | ✅ không dùng |
-| 1.4 | Xoá task đang giữ khoá | Kiểm task nào cầm mutex | ✅ task duy nhất tự xoá không cầm khoá nào |
+| 1.4 | Xoá task đang giữ khoá | Kiểm task nào cầm mutex | ✅ hai task tự xoá đều không cầm khoá nào lúc xoá |
 | 1.5 | Stack và TCB cấp động nên `xTaskCreate` **có thể thất bại** | Kiểm giá trị trả về | ✅ `app_tasks_start` trả `ESP_ERR_NO_MEM` khi `pdPASS` không về |
 
 `xTaskCreateStatic` đưa stack và TCB vào `.bss`, heap mất 0 B thay vì cỡ stack cộng 108 B dôi
-*(bản đồ)*. Bốn task sống suốt đời chương trình (`cam`, `tof`, `ai`, `attend`) là ứng viên,
-**chưa làm** — đổi sang static thì thiếu RAM sẽ lộ lúc **link** thay vì lúc chạy.
+*(bản đồ)*. Chín task sống suốt đời chương trình (mọi task trừ `net`) là ứng viên, **chưa
+làm** — đổi sang static thì thiếu RAM sẽ lộ lúc **link** thay vì lúc chạy.
 
 ---
 
@@ -107,10 +109,10 @@ Sáu task của E10 và E13 chưa tồn tại, nên §14 liệt kê những gì 
 | 2.3 | **Bỏ đói**: task ưu tiên cao không bao giờ Blocked → luôn Ready → luôn được chọn → IDLE đói → `Task watchdog got triggered · IDLE0` | Tìm `for(;;)` không có lời gọi chặn | ✅ xem §3 |
 | 2.4 | `vTaskDelay(0)` **không** đưa vào Blocked, chỉ nhường cho task **cùng** mức | `grep "vTaskDelay(0)"` | ✅ không dùng |
 | 2.5 | Xếp ưu tiên theo "task nào quan trọng" thay vì theo **độ gấp của hạn chót** | Đối chiếu §5.2 | ✅ `cam` 7 vì mất khung là mất vĩnh viễn; `ai` 5 vì nó chiếm core riêng |
-| 2.6 | Ghim core sai | `AI_TASK_CORE` | ✅ core 1 chỉ có `ai_task` |
+| 2.6 | Ghim core sai | `*_TASK_CORE` | ✅ core 1 chỉ có `ai_task`; chín task kia ở core 0 |
 
 | 2.7 | Tưởng bộ lập lịch là một task nền ngồi canh chừng — **nó là một HÀM**. Không có gì xảy ra thì không một dòng lệnh nào của nó chạy | — | nên chia nhiều task **không** tốn công quản lý thường trực |
-| 2.8 | Thang ưu tiên 0…24, đặt ở **tham số thứ năm** của `xTaskCreate` | Đọc `kTasks[]` | ✅ `cam` 7 · `tof` 6 · `ai` 5 · `attend` 4 · `net` 3, không chạm trần 24 |
+| 2.8 | Thang ưu tiên 0…24, đặt ở **tham số thứ năm** của `xTaskCreate` | Đọc `kTasks[]` | ✅ `cam` 7 · `tof` 6 · `audio` 6 · `ai` 5 · `touch` 5 · `ui` 4 · `attend` 4 · `net` 3 · `ota` 3 · `sync` 2, không chạm trần 24 |
 | 2.9 | `vTaskPrioritySet` có hiệu lực **ngay trong lời gọi**, không đợi tick | `grep vTaskPrioritySet` | ✅ không dùng — ưu tiên chốt lúc tạo |
 | 2.10 | Chen ngang xảy ra **giữa chừng bất cứ việc gì**, kể cả giữa một lệnh | — | xem 2.11 |
 | 2.11 | **Tài nguyên ra dùng chung bị cắt xen**: hai task cùng ghi console thì chữ của task này rơi vào giữa từ của task kia | Kiểm task nào ghi ra console | ✅ `ESP_LOGx` đi qua `s_log_mutex` của IDF (`log/src/os/log_lock.c`) nên **dòng không xé**. `printf` trần thì không có bảo đảm ấy — trong repo chỉ test app dùng, mà unity chạy tuần tự một task |
@@ -129,9 +131,9 @@ Ready.
 
 | Chờ gì | Dùng gì | Chỗ dùng trong repo |
 |---|---|---|
-| Thời gian | `vTaskDelayUntil` | ⚠ `tof_task` dùng `vTaskDelay`, xem 5.2 |
-| Dữ liệu do task khác sinh | `xQueueReceive` | `ai_task`, `attend_task` |
-| ISR báo có việc | `xSemaphoreTake` | `drv_tof` |
+| Thời gian | `vTaskDelayUntil` | ⚠ `ui_task` và `tof_task` trôi theo thời gian xử lý, xem 5.2 |
+| Dữ liệu do task khác sinh | `xQueueReceive` | `ai_task`, `attend_task`, `audio_task`, `sync_task`, `ota_task` |
+| ISR báo có việc | `xSemaphoreTake` | `drv_tof`, `drv_touch`, bounce của `drv_lcd` |
 | Thiết bị đọc/ghi xong | Hàm của trình điều khiển | `drv_camera_grab` |
 
 Cấm dùng `vTaskDelay` để **hỏi vòng** dữ liệu: 10 ms thì trễ, 1 ms thì đốt CPU. Chặn lành rẻ
@@ -160,7 +162,7 @@ hơn hỏi vòng **1,96×** *(bản đồ)*, vì kernel gỡ task khỏi Ready n
 | # | Kiểu hỏng | Trạng thái |
 |---|---|---|
 | 5.1 | Dùng `vTaskDelay` cho việc cần **mốc tuyệt đối** | ⚠ xem dưới |
-| 5.2 | **`tof_task` dùng `vTaskDelay(TOF_POLL_MS)`** nên chu kỳ bằng 100 ms **cộng** thời gian xử lý, trôi dần | Chấp nhận được vì nó chỉ dò hiện diện, không phải đồng hồ. **Ghi lại để không nhân ra chỗ cần nhịp chuẩn** — chỗ đó phải là `vTaskDelayUntil` |
+| 5.2 | **`ui_task` tick bằng `vTaskDelay`, `tof_task` chờ ngắt data-ready có hạn `TOF_POLL_MS`** nên chu kỳ bằng nhịp **cộng** thời gian xử lý, trôi dần | Chấp nhận được vì một cái vẽ hoạt hình, một cái dò hiện diện, không cái nào là đồng hồ. **Ghi lại để không nhân ra chỗ cần nhịp chuẩn** — chỗ đó phải là `vTaskDelayUntil` |
 
 ---
 
@@ -170,15 +172,16 @@ hơn hỏi vòng **1,96×** *(bản đồ)*, vì kernel gỡ task khỏi Ready n
 |---|---|---|---|
 | 6.1 | Tràn stack, triệu chứng là panic **ở chỗ hoàn toàn không liên quan** | `uxTaskGetSystemState` lấy watermark mọi task | ✅ `soak` và `bench_mem` in mỗi mẫu |
 | 6.2 | **Bẫy đơn vị**: kernel gốc trả **word**, IDF trả **byte** | Đọc `prvTaskCheckFreeStackSpace`: nó chia cho `sizeof(StackType_t)`, mà trên Xtensa `portSTACK_TYPE` là **`uint8_t`** nên chia cho 1 → **byte** | ✅ code nhân với `sizeof(StackType_t)` = 1, đúng ở đây **và** đúng trên port có word 4 B |
-| 6.3 | Canary chỉ kiểm **lúc đổi task** — tràn rồi hồi giữa chừng thì không ai báo | `CONFIG_FREERTOS_CHECK_STACKOVERFLOW` | ⏳ kiểm khi chốt sdkconfig prod |
-| 6.4 | `printf`/`vsnprintf` riêng nó ăn khoảng 1 KB stack | Đối chiếu stack khai với chỗ có `printf` | ✅ task nhỏ nhất là `tof` 3 KB, không `printf` trong vòng lặp |
+| 6.3 | Canary chỉ kiểm **lúc đổi task** — tràn rồi hồi giữa chừng thì không ai báo | `CONFIG_FREERTOS_CHECK_STACKOVERFLOW` | ✅ `CANARY`, mặc định của IDF, ở cả ba profile vì không overlay nào đổi nó; giới hạn ấy là lý do watermark vẫn phải đo (§14) |
+| 6.4 | `printf`/`vsnprintf` riêng nó ăn khoảng 1 KB stack | Đối chiếu stack khai với chỗ có `printf` | ✅ hai task nhỏ nhất là `tof` và `touch` 3 KB, không `printf` trần trong vòng lặp; `vsnprintf` chỉ ở `sync_task` 5 KB, `ota_task` 8 KB và đường dựng heartbeat |
 | 6.5 | `vTaskList` cần ~40 B mỗi task — để `static`, đừng để trên stack | Đọc `soak.c`, `bench_mem.c` | ✅ `s_tasks[32]` khai `static` |
 | 6.6 | Mảng lớn trong thân hàm | `grep "\[[0-9]\{3,\}\]"` | ✅ buffer lớn đều `static` hoặc `heap_caps_malloc` |
 | 6.7 | Đệ quy | Đọc mắt | ✅ không có |
 | 6.8 | Cấp stack dư không làm task ăn thêm — nó vẫn dùng đúng phần nó cần *(bản đồ: 892 B ở mọi cỡ)* | — | dùng watermark để cắt, đừng đoán |
 
-Watermark đo 11/09: `cam` 2644, `attend` 2968, `tof` 1568, **`ai` 1532 B trống** — mỏng nhất, và
-đo khi mới có detect chạy. Phải đo lại khi spoof với recog chạy sâu (E10-T8).
+Watermark đo 11/09, khi mới có bốn task: `cam` 2644, `attend` 2968, `tof` 1568, **`ai` 1532 B
+trống** — mỏng nhất, đo lúc mới có detect. ⏳ Đo lại đủ mười task, với spoof và recog chạy sâu
+trên ESP-DL, là việc của E10-T8.
 
 **Ba chỗ tranh nhau đúng một khối RAM vật lý**, và mỗi chỗ hỏng ở một thời điểm khác nhau:
 
@@ -236,13 +239,13 @@ không phải phiền toái.
 
 | # | Kiểu hỏng | Cách kiểm | Trạng thái |
 |---|---|---|---|
-| 8.1 | **`pvPortMalloc` luôn lấy DRAM nội, không bao giờ PSRAM** — stack, TCB, queue, semaphore đều đi đường này | Cộng RAM nội mà queue và task chiếm | ✅ `app_wiring` in ra lúc boot: 400 B kết quả, 768 B uplink |
+| 8.1 | **`pvPortMalloc` luôn lấy DRAM nội, không bao giờ PSRAM** — stack, TCB, queue, semaphore đều đi đường này | Cộng RAM nội mà queue và task chiếm | ✅ `app_wiring` in ra lúc boot cỡ hàng kết quả và uplink; hàng roster 1072 ô dựng bằng `xQueueCreateStatic` trên vùng chứa ở PSRAM |
 | 8.2 | `malloc` có thể **rơi sang PSRAM** nếu cỡ vượt ngưỡng `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` | Chỗ nào cần nội thì phải nói rõ | ✅ buffer DMA khai `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` |
 | 8.3 | Buffer DMA nằm ở PSRAM | Đọc cấp phát của LCD và camera | ✅ bounce buffer ở RAM nội |
 | 8.4 | **ISR không bao giờ đọc được PSRAM** | Kiểm biến mà ISR đụng tới | ✅ hai ISR chỉ đụng handle semaphore |
 | 8.5 | PSRAM **ghi chậm 14,86×**, đọc tuần tự chỉ chậm 1,93× *(bản đồ)* | Đặt dữ liệu ghi-một-lần-đọc-tuần-tự ở PSRAM | ✅ arena và bảng embedding đúng khuôn này |
 | 8.6 | Tưởng IDF dùng `heap_1`…`heap_5` của FreeRTOS gốc — **không**, nó có bộ cấp phát riêng theo `caps` | — | ✅ mọi chỗ trong repo đi qua `heap_caps_*` |
-| 8.7 | Không biết **mọi đối tượng FreeRTOS đều có bản `…Static`** | `xTaskCreateStatic`, `xQueueCreateStatic`, `xSemaphoreCreateMutexStatic` | ⏳ chưa dùng, xem §1 |
+| 8.7 | Không biết **mọi đối tượng FreeRTOS đều có bản `…Static`** | `xTaskCreateStatic`, `xQueueCreateStatic`, `xSemaphoreCreateMutexStatic` | ✅ hàng roster dùng `xQueueCreateStatic` với vùng chứa ở PSRAM; task vẫn tạo động, xem §1 |
 
 ---
 
@@ -253,15 +256,15 @@ không phải phiền toái.
 | 9.1 | Biến dùng chung không khoá: giẫm chân nhau, đọc ra thứ **dở dang** | Tìm biến ghi bởi task này đọc bởi task kia | ✅ mọi đường liên task đều qua queue hoặc event group |
 | 9.1b | Có chỗ chứa nhưng **không có nhịp** — lỗi này ít người để ý hơn lỗi trên. Ghi hai lần đọc một lần thì **mất một giá trị mà không ai biết**; muốn chờ giá trị mới thì phải quay vòng hỏi, đốt CPU | Đối chiếu §5.3 | ✅ cái thiếu không phải chỗ chứa mà là nhịp, và queue cho cả hai |
 | 9.2 | **Không kiểm giá trị trả về của `xQueueReceive`** — trả `pdFALSE` thì biến đích **không đổi**, in lại giá trị cũ y như thật | `grep xQueueReceive` không kèm điều kiện | ✅ **0 chỗ**, mọi lời gọi đều kiểm |
-| 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ✅ `ai_task` chờ 100 ms rồi log kind phải bỏ; `offer_to_ai` gửi 0 nhưng trả khung về pool ở cả hai nhánh |
-| 9.4 | `portMAX_DELAY` khi nhận — treo im lặng nếu bên kia chết | Kiểm task nào chặn vô hạn | ✅ `ai_task` chờ 2 s, hết hạn thì nạp watchdog và log hàng đợi cạn |
+| 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ✅ `ai_task` chờ 100 ms rồi log kind phải bỏ. Năm chỗ gửi 0 đều có nhánh trượt: `offer_to_ai` trả khung về pool; event, lệnh và gói OTA log cái bị rơi; uplink log một lần vì bản ghi đã nằm trên flash (§6.2.6) |
+| 9.4 | `portMAX_DELAY` khi nhận — treo im lặng nếu bên kia chết | Kiểm task nào chặn vô hạn | ✅ `ai_task` chờ 2 s, hết hạn thì nạp watchdog và log hàng đợi cạn. Chỗ duy nhất chờ mãi là `audio_task` trên hàng âm thanh: việc duy nhất của nó là chờ đó, và nó không đăng ký watchdog (9b) |
 | 9.5 | Gửi con trỏ trỏ vào stack người gửi | Đọc kiểu phần tử | ✅ `q_frame` chở con trỏ khung do pool sở hữu |
 | 9.6 | Gửi `&x` thay vì `x` hoặc ngược lại — **trình dịch không báo lỗi** | Đọc mắt từng lời gọi | ✅ |
 | 9.7 | **Gửi con trỏ đi là mất quyền sở hữu** — người gửi không được đụng nữa | Đọc mã sau mỗi lần gửi | ✅ `cam_task` không đụng `frame` sau `offer_to_ai`; `blit` xảy ra **trước** |
 | 9.8 | Depth 1 ghi đè mà **khung bị đẩy ra không ai trả về pool** | Đọc `offer_to_ai` | ✅ hút khung cũ ra trả pool, gửi hỏng cũng trả |
 | 9.9 | `xQueueOverwrite` trên queue dài khác 1 | `FRAME_DEPTH` | ✅ depth 1, và code dùng hút-rồi-gửi |
-| 9.10 | Queue chở struct lớn | `sizeof × depth` | ✅ 4 × ~100 B |
-| 9.11 | `xQueueCreate` trả `NULL` khi hết heap | Kiểm giá trị trả về | ✅ `app_wiring` kiểm cả năm |
+| 9.10 | Queue chở struct lớn | `sizeof × depth` | ✅ kết quả 4 × 156 B, lệnh 4 × ~160 B ở RAM nội; roster 1072 × 576 B ở PSRAM |
+| 9.11 | `xQueueCreate` trả `NULL` khi hết heap | Kiểm giá trị trả về | ✅ `app_wiring` kiểm cả chín hàng và event group |
 | 9.12 | Gửi số trần, không biết nó sinh lúc nào | Thêm trường đóng dấu giờ | ⏳ `q_uplink` có `ts` trong bản ghi; `q_result` chưa cần |
 | 9.13 | **`malloc` mỗi lần gửi** thay vì dùng vòng đệm cấp sẵn | `grep malloc` trong thân task | ✅ **0 chỗ** — khung đi qua pool của `esp32-camera` |
 | 9.14 | **Số ô đệm phải lớn hơn độ dài queue ít nhất 1**, nếu không người gửi không còn ô nào để lấp trong lúc queue đang đầy | `CAM_FB_COUNT` so với `FRAME_DEPTH` | ✅ **4 ô** cho queue dài **1**. Số 4 chốt bằng phép đo chứ không bằng luật này: 3 ô cho preview **8,1 fps**, 4 ô cho **14,18 fps** (`latency.md` §6) |
@@ -289,7 +292,7 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 |---|---|---|---|
 | 10.1 | `portMAX_DELAY` khi lấy mutex — treo vô hạn, không cách nào biết | `grep "xSemaphoreTake.*portMAX_DELAY"` | ✅ **0 chỗ** |
 | 10.2 | Khoá lồng nhau sai thứ tự → deadlock | Thứ tự §5.3: `m_facedb` → `m_littlefs` → `m_i2c` → `m_spi_lcd` | ✅ chỗ duy nhất lồng hai khoá là `FaceDb::persist()`, đi đúng chiều |
-| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ✅ `m_facedb_io` xếp hàng người ghi, phép ghi 552 KB chạy ngoài `m_facedb` (§5.3 của kế hoạch) |
+| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ✅ `m_facedb_io` xếp hàng người ghi, phép ghi ~580 KB chạy ngoài `m_facedb` (§5.3 của kế hoạch). `audio_task` đọc file WAV đúng một lần lúc khởi động vào PSRAM rồi phát từ đó, nên không giữ khoá lưu trữ lúc phát |
 | 10.4 | Dùng binary semaphore thay mutex — **mất kế thừa ưu tiên** | Kiểm từng semaphore | ✅ hai semaphore đều là báo hiệu ISR→task |
 | 10.5 | Lấy lại mutex không đệ quy từ nhánh đang giữ | Đọc hàm public gọi lẫn nhau | ✅ |
 | 10.6 | Lấy mutex trong ISR — sai tuyệt đối | `grep` trong ISR | ✅ |
@@ -303,10 +306,10 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 | # | Kiểu hỏng | Trạng thái |
 |---|---|---|
 | 11.1 | Gọi API không phải `*FromISR` | ✅ |
-| 11.2 | Quên `portYIELD_FROM_ISR` | ✅ `drv_tof` gọi; `drv_lcd` là callback `esp_lcd` nên **trả cờ** cho driver nhường, đúng hợp đồng |
+| 11.2 | Quên `portYIELD_FROM_ISR` | ✅ `drv_tof` và `drv_touch` gọi; `drv_lcd` là callback `esp_lcd` nên **trả cờ** cho driver nhường, đúng hợp đồng |
 | 11.3 | Log, `malloc`, I2C trong ISR | ✅ |
-| 11.4 | Thiếu `IRAM_ATTR` khi cache tắt lúc ghi flash / OTA | ✅ `drv_tof` có; ⏳ kiểm lại khi có `ota_task` |
-| 11.5 | Chạm PSRAM từ ISR lúc cache tắt | ⏳ khi có OTA |
+| 11.4 | Thiếu `IRAM_ATTR` khi cache tắt lúc ghi flash / OTA | ✅ Dịch vụ ngắt GPIO cài với `ESP_INTR_FLAG_IRAM`, nên ngắt ToF và touch vẫn chạy lúc `ota_task` hay LittleFS ghi flash: cả hai là `IRAM_ATTR`. Ngắt SPI của LCD cấp không có cờ IRAM (`bsp_board` không đặt `intr_flags`), nên IDF che nó lúc ghi flash và callback `bounce_sent` nằm trên flash không bao giờ chạy khi cache tắt |
+| 11.5 | Chạm PSRAM từ ISR lúc cache tắt | ✅ hai ngắt IRAM chỉ đụng handle semaphore nằm ở DRAM |
 
 ---
 
@@ -315,7 +318,7 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 | # | Kiểu hỏng | Trạng thái |
 |---|---|---|
 | 12.1 | Chặn trong callback timer — task timer dùng chung, nghẽn một cái là nghẽn tất | ✅ chỉ `servo_door`, chờ ≤ 50 ms |
-| 12.2 | Task đăng ký watchdog rồi chặn vô hạn | ⚠ **P2** |
+| 12.2 | Task đăng ký watchdog rồi chặn vô hạn | ✅ chỉ `ai_task` đăng ký, và nó chờ có hạn (P2, §0.3) |
 | 12.3 | Nạp nhầm ô watchdog — `esp_task_wdt_reset()` chỉ nạp ô của task gọi nó | ✅ `ai_task` nhường tick cho IDLE1 (§5.1) |
 | 12.4 | Vùng tới hạn dài làm nổ interrupt watchdog | ✅ không có vùng tới hạn tự viết |
 
@@ -353,19 +356,16 @@ kiểu P1 hay P3 phải bị chặn từ `dev`, vì trên hiện trường sẽ 
 
 ---
 
-## 14. Còn phải kiểm khi hệ đủ
+## 14. Còn phải kiểm trên board
 
-Không kiểm được bây giờ vì task liên quan chưa tồn tại. Chạy lại trước khi chốt E10 và E13.
+Đọc code không trả lời được mấy câu dưới, vì chúng là số đo. Chạy trước khi chốt E10 và E13.
 
-| Khi có | Phải kiểm |
-|---|---|
-| `ui_task` (E10-T1) | `m_spi_lcd` tranh chấp giữa vẽ màn hình và OTA; **LVGL không thread-safe**, mọi lời gọi `lv_*` phải từ một task; heap LVGL ở PSRAM có phân mảnh không |
-| `touch_task` (E10-T1) | `q_touch` depth 8 có nuốt kịp thao tác vuốt nhanh; ISR GT911 trên GPIO14 |
-| `audio_task` (E7-T8) | Đọc WAV từ LittleFS giữ `m_littlefs` bao lâu — **cùng loại lỗi với P1** |
-| `mqtt_task`, `sync_task` (E10-T6) | `q_uplink` đầy thì ghi thẳng LittleFS chứ không rơi; con trỏ chỉ nhích sau ack |
-| `ota_task` (E13-T1) | Ghi flash **tắt cache**: mọi ISR chạy lúc đó phải `IRAM_ATTR` và không chạm PSRAM |
-| Đủ 10 task | Watermark toàn bộ (E10-T8), đáy heap (E8-T9), dòng đỉnh (E10-T9) |
-| Trước khi giao | Soak 24 giờ và rút điện 20 lần (E10-T3, E10-T8), **một lượt soak dựng bằng `sdkconfig.dev`** để có poisoning |
+| Phải kiểm | Vì sao | Row |
+|---|---|---|
+| Watermark đủ mười task, khi spoof và recog chạy sâu trên ESP-DL | Số đo 11/09 chỉ có bốn task và mới có detect | E10-T8 |
+| Đáy heap nội và PSRAM khi cả hệ chạy, có Wi-Fi và MQTT/TLS | `bench_mem` in được, chưa có lượt đo đủ hệ | E8-T9 |
+| Soak 24 giờ và rút điện 20 lần, **một lượt dựng bằng `sdkconfig.dev`** để có poisoning | P4 | E10-T3, E10-T8 |
+| Một lượt OTA trọn khi `cam_task` đang vẽ và kiosk đang ghi chấm công | Kiểm bằng máy điều 11.4: ghi flash xen giữa vẽ và ngắt | E13-T1 |
 
 ---
 
