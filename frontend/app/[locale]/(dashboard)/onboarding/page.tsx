@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Combobox, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { Banner, Button, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
 import {
   ArrowCounterClockwiseIcon,
   CheckIcon,
@@ -12,9 +12,10 @@ import {
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -44,11 +45,6 @@ interface Named {
   id: string;
   code: string;
   name: string;
-}
-
-interface Choice {
-  value: string;
-  label: string;
 }
 
 interface TaskPage {
@@ -107,58 +103,9 @@ function isLate(task: OpenTask): boolean {
   return task.dueOn.slice(0, 10) < todayIso();
 }
 
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
-
 function dueOk(value: string): boolean {
   const days = Number(value);
   return value !== "" && Number.isInteger(days) && Math.abs(days) <= kDayWindow;
-}
-
-/** A searchable pick from a catalogue that can run to hundreds of rows. */
-function ChoiceField({
-  label,
-  items,
-  value,
-  onChange,
-  none,
-}: {
-  label: ReactNode;
-  items: Named[];
-  value: string;
-  onChange: (next: string) => void;
-  none: string;
-}) {
-  const common = useTranslations("common");
-  const choices = useMemo(
-    () => [{ value: "", label: none }, ...items.map((one): Choice => ({ value: one.id, label: `${one.code} · ${one.name}` }))],
-    [items, none],
-  );
-  const held = choices.find((one) => one.value === value) ?? choices[0];
-  return (
-    <Combobox
-      items={choices}
-      value={held}
-      onValueChange={(next) => onChange((next as Choice | null)?.value ?? "")}
-      itemToStringLabel={(one: Choice) => one.label}
-      isItemEqualToValue={(one: Choice, other: Choice) => one.value === other.value}
-      filter={(one: Choice, typed: string) => fold(one.label).includes(fold(typed.trim()))}
-      label={label}
-    >
-      <Combobox.TriggerInput placeholder={common("search")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
-      <Combobox.Content>
-        <Combobox.Empty>{common("noMatch")}</Combobox.Empty>
-        <Combobox.List>
-          {(one: Choice) => (
-            <Combobox.Item key={one.value} value={one}>
-              {one.label}
-            </Combobox.Item>
-          )}
-        </Combobox.List>
-      </Combobox.Content>
-    </Combobox>
-  );
 }
 
 export default function OnboardingPage() {

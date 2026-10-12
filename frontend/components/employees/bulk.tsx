@@ -11,12 +11,14 @@ import {
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { ChoiceField, type DepartmentChoice } from "@/components/forms/employee-form";
+import type { DepartmentChoice } from "@/components/forms/employee-form";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
+import { usePhone } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { CountPill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -24,7 +26,7 @@ import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { addDays, clockOf, dayOnly, todayIso } from "@/lib/format";
 
-export type BulkJob = "place" | "invite" | "kiosk" | "shift" | "offboard";
+type BulkJob = "place" | "invite" | "kiosk" | "shift" | "offboard";
 
 type SkipReason =
   | "EMPLOYEE_NOT_FOUND"
@@ -136,22 +138,8 @@ const FIELD_KEY = {
 } as const;
 const kShownRows = 50;
 const kShownNames = 5;
-const PHONE = "(max-width: 47.99rem)";
 // A preview is asked for, never kept: the next look has to read the rows as they stand.
 const FRESH_PREVIEW = { staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false } as const;
-
-function usePhone(): boolean {
-  const listen = useCallback((again: () => void) => {
-    const query = window.matchMedia(PHONE);
-    query.addEventListener("change", again);
-    return () => query.removeEventListener("change", again);
-  }, []);
-  return useSyncExternalStore(
-    listen,
-    () => window.matchMedia(PHONE).matches,
-    () => false,
-  );
-}
 
 // The directory keeps its filter as query-string text; the api reads booleans and numbers.
 function asFilter(filter: Record<string, string>): Filter {
@@ -760,7 +748,7 @@ const DIALOGS: Record<BulkJob, (props: DialogProps) => ReactNode> = {
 };
 
 /** The props DataTable takes to tick rows and act on them. */
-export interface TableSelection<T> {
+interface TableSelection<T> {
   selectable?: boolean;
   chosen?: ReadonlySet<string>;
   onChosenChange?: (next: ReadonlySet<string>) => void;

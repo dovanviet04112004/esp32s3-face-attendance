@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Checkbox, Combobox, Empty, Input, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Empty, Input, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
 import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
@@ -15,14 +15,15 @@ import {
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useTranslations } from "next-intl";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { PagingRow } from "@/components/tables/data-table";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { Failed } from "@/components/ui/failed";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
-import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { AsideCard, Facts, PageHeader, PageLayout, usePhone } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -31,6 +32,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
+import { fold } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Department {
@@ -54,11 +56,6 @@ interface Draft {
   costCentre: string;
   head: Person | null;
   entityId: string;
-}
-
-interface Choice {
-  value: string;
-  label: string;
 }
 
 interface Entity {
@@ -108,79 +105,6 @@ const kPreviewRows = 50;
 const kNameMax = 128;
 const kCodeMax = 32;
 const kCostCentreMax = 32;
-const PHONE = "(max-width: 47.99rem)";
-
-function usePhone(): boolean {
-  const listen = useCallback((again: () => void) => {
-    const query = window.matchMedia(PHONE);
-    query.addEventListener("change", again);
-    return () => query.removeEventListener("change", again);
-  }, []);
-  return useSyncExternalStore(
-    listen,
-    () => window.matchMedia(PHONE).matches,
-    () => false,
-  );
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
-
-/** A searchable department field: a flat Select of a big tree hides the one wanted. */
-function DepartmentField({
-  label,
-  description,
-  rows,
-  value,
-  onChange,
-  none,
-  exclude,
-}: {
-  label: ReactNode;
-  description?: string;
-  rows: Department[];
-  value: string;
-  onChange: (next: string) => void;
-  none: string;
-  exclude?: ReadonlySet<string>;
-}) {
-  const common = useTranslations("common");
-  const choices = useMemo(
-    () => [
-      { value: "", label: none },
-      ...rows
-        .filter((row) => row.active && !exclude?.has(row.id))
-        .map((row): Choice => ({ value: row.id, label: `${row.code} · ${row.name}` })),
-    ],
-    [rows, none, exclude],
-  );
-  const held = choices.find((one) => one.value === value) ?? choices[0];
-  return (
-    <Combobox
-      items={choices}
-      value={held}
-      onValueChange={(next) => onChange((next as Choice | null)?.value ?? "")}
-      itemToStringLabel={(one: Choice) => one.label}
-      isItemEqualToValue={(one: Choice, other: Choice) => one.value === other.value}
-      filter={(one: Choice, typed: string) => fold(one.label).includes(fold(typed.trim()))}
-      label={label}
-      description={description}
-    >
-      <Combobox.TriggerInput placeholder={common("search")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
-      <Combobox.Content>
-        <Combobox.Empty>{common("noMatch")}</Combobox.Empty>
-        <Combobox.List>
-          {(one: Choice) => (
-            <Combobox.Item key={one.value} value={one}>
-              {one.label}
-            </Combobox.Item>
-          )}
-        </Combobox.List>
-      </Combobox.Content>
-    </Combobox>
-  );
-}
 
 /** The api returns the tree flat with parentId; a node whose parent is out of reach counts as a root. */
 function childrenOf(rows: Department[]): Map<string | null, Department[]> {
@@ -317,6 +241,7 @@ function Org() {
   });
 
   const rows = useMemo(() => departments.data ?? [], [departments.data]);
+  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
   const byParent = useMemo(() => childrenOf(rows), [rows]);
   const keep = useMemo(() => matching(rows, fold(url.q)), [rows, url.q]);
   const visible = flatten(byParent, flipped, keep);
@@ -822,10 +747,10 @@ function Org() {
                 />
                 {draft.held === null ? (
                   <div className="sm:col-span-2">
-                    <DepartmentField
+                    <ChoiceField
                       label={optional(t("parent"))}
                       description={t("parentHint")}
-                      rows={rows}
+                      items={activeRows}
                       value={draft.parentId}
                       onChange={(next) => setDraft({ ...draft, parentId: next })}
                       none={t("noParent")}
@@ -872,13 +797,12 @@ function Org() {
           <LayerDialog.Title>{chosen ? t("moveTitle", { name: chosen.name }) : t("moveAction")}</LayerDialog.Title>
           <LayerDialog.Description>{t("moveLead")}</LayerDialog.Description>
           <LayerDialog.Body>
-            <DepartmentField
+            <ChoiceField
               label={t("parent")}
-              rows={rows.filter((row) => row.legalEntityId === chosen?.legalEntityId)}
+              items={activeRows.filter((row) => row.legalEntityId === chosen?.legalEntityId && !cannotParent.has(row.id))}
               value={moving ?? ""}
               onChange={(next) => setMoving(next)}
               none={t("noParent")}
-              exclude={cannotParent}
             />
             {faultBanner}
           </LayerDialog.Body>
@@ -983,16 +907,16 @@ function Org() {
           <LayerDialog.Description>{t("reorgLead")}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="grid items-start gap-4 sm:grid-cols-2">
-              <DepartmentField
+              <ChoiceField
                 label={t("reorgFrom")}
-                rows={rows}
+                items={activeRows}
                 value={fromId}
                 onChange={(next) => replan(() => setFromId(next))}
                 none={common("empty")}
               />
-              <DepartmentField
+              <ChoiceField
                 label={t("reorgTo")}
-                rows={rows}
+                items={activeRows}
                 value={toId}
                 onChange={(next) => replan(() => setToId(next))}
                 none={t("reorgKeep")}

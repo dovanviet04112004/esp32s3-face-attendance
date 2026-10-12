@@ -1,11 +1,12 @@
 "use client";
 
-import { Banner, Button, Combobox, Input, LayerCard, Select } from "@cloudflare/kumo";
+import { Banner, Button, Input, LayerCard, Select } from "@cloudflare/kumo";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useLocale, useTranslations } from "next-intl";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { BottomBar } from "@/components/ui/bottom-bar";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { DateField } from "@/components/ui/date-field";
 import { useOptional } from "@/components/ui/optional";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
@@ -36,7 +37,7 @@ export interface EmployeeDraft {
   insuranceSalary: string;
 }
 
-export type ContractKind = "PROBATION" | "FIXED_TERM" | "INDEFINITE" | "SEASONAL" | "INTERNSHIP";
+type ContractKind = "PROBATION" | "FIXED_TERM" | "INDEFINITE" | "SEASONAL" | "INTERNSHIP";
 
 const KINDS: ContractKind[] = ["PROBATION", "FIXED_TERM", "INDEFINITE", "SEASONAL", "INTERNSHIP"];
 
@@ -113,58 +114,6 @@ interface Props {
   onSubmit: (draft: EmployeeDraft) => void;
   /** Leaves the form; without it Cancel restores the record the form opened with. */
   onCancel?: () => void;
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
-
-/** A catalogue long enough to need a search box: departments, job titles (KEHOACH 9.12). */
-export function ChoiceField({
-  label,
-  description,
-  items,
-  value,
-  empty,
-  onChange,
-}: {
-  label: ReactNode;
-  description?: string;
-  items: DepartmentChoice[];
-  value: string;
-  /** What the open list says when the catalogue itself has nothing yet. */
-  empty: string;
-  onChange: (next: string) => void;
-}) {
-  const common = useTranslations("common");
-  const held = items.find((one) => one.id === value) ?? null;
-  return (
-    <Combobox
-      items={items}
-      value={held}
-      onValueChange={(next) => onChange((next as DepartmentChoice | null)?.id ?? "")}
-      itemToStringLabel={(one: DepartmentChoice) => one.name}
-      isItemEqualToValue={(one: DepartmentChoice, other: DepartmentChoice) => one.id === other.id}
-      filter={(one: DepartmentChoice, typed: string) => fold(`${one.code} ${one.name}`).includes(fold(typed.trim()))}
-      label={label}
-      description={description}
-    >
-      <Combobox.TriggerInput placeholder={common("search")} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
-      <Combobox.Content>
-        <Combobox.Empty>{items.length === 0 ? empty : common("noMatch")}</Combobox.Empty>
-        <Combobox.List>
-          {(one: DepartmentChoice) => (
-            <Combobox.Item key={one.id} value={one}>
-              <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                <span className="truncate">{one.name}</span>
-                <span className="shrink-0 font-mono text-kumo-subtle">{one.code}</span>
-              </span>
-            </Combobox.Item>
-          )}
-        </Combobox.List>
-      </Combobox.Content>
-    </Combobox>
-  );
 }
 
 /** One row of the form, Cloudflare's settings anatomy (KEHOACH 9.12): what the part is for on the left, its fields on the right. */

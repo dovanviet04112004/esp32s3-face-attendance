@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Checkbox, Combobox, Empty, Input, InputGroup, LayerCard, LayerDialog, Select, Textarea } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Empty, Input, InputGroup, LayerCard, LayerDialog, Select, Textarea } from "@cloudflare/kumo";
 import {
   ArrowCounterClockwiseIcon,
   MagnifyingGlassIcon,
@@ -14,10 +14,11 @@ import {
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { FileGaps } from "@/components/documents/file-gaps";
 import { DataTable, PagingRow, PersonCell, type Column, type RowAction } from "@/components/tables/data-table";
+import { ChoiceField } from "@/components/ui/choice-field";
 import { Failed } from "@/components/ui/failed";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
@@ -28,6 +29,7 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { fold } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const TABS = ["publish", "gaps", "types"] as const;
@@ -114,60 +116,6 @@ interface Signing {
   reach: number;
   unsigned: number;
   floor: boolean;
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
-
-/** A searchable pick from a catalogue that can run to hundreds of rows; empty means "every one of them". */
-function ChoiceField({
-  label,
-  description,
-  items,
-  value,
-  onChange,
-  none,
-  empty,
-}: {
-  label: ReactNode;
-  description?: string;
-  items: Named[];
-  value: string;
-  onChange: (next: string) => void;
-  /** The placeholder of the empty field, so the first keystroke already searches. */
-  none: string;
-  empty: string;
-}) {
-  const common = useTranslations("common");
-  const held = items.find((one) => one.id === value) ?? null;
-  return (
-    <Combobox
-      items={items}
-      value={held}
-      onValueChange={(next) => onChange((next as Named | null)?.id ?? "")}
-      itemToStringLabel={(one: Named) => one.name}
-      isItemEqualToValue={(one: Named, other: Named) => one.id === other.id}
-      filter={(one: Named, typed: string) => fold(`${one.code} ${one.name}`).includes(fold(typed.trim()))}
-      label={label}
-      description={description}
-    >
-      <Combobox.TriggerInput placeholder={none} clearLabel={common("clear")} showOptionsLabel={common("showOptions")} />
-      <Combobox.Content>
-        <Combobox.Empty>{items.length === 0 ? empty : common("noMatch")}</Combobox.Empty>
-        <Combobox.List>
-          {(one: Named) => (
-            <Combobox.Item key={one.id} value={one}>
-              <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                <span className="truncate">{one.name}</span>
-                <span className="shrink-0 font-mono text-kumo-subtle">{one.code}</span>
-              </span>
-            </Combobox.Item>
-          )}
-        </Combobox.List>
-      </Combobox.Content>
-    </Combobox>
-  );
 }
 
 export default function DocumentsPage() {
@@ -759,7 +707,7 @@ function Documents() {
                     items={departments.data ?? []}
                     value={docDraft.departmentId}
                     onChange={(next) => setDocDraft({ ...docDraft, departmentId: next })}
-                    none={t("anyDepartment")}
+                    placeholder={t("anyDepartment")}
                     empty={people("departmentsEmpty")}
                   />
                 </div>
@@ -770,7 +718,7 @@ function Documents() {
                     items={jobTitles.data ?? []}
                     value={docDraft.jobTitleId}
                     onChange={(next) => setDocDraft({ ...docDraft, jobTitleId: next })}
-                    none={t("anyJobTitle")}
+                    placeholder={t("anyJobTitle")}
                     empty={people("jobTitlesEmpty")}
                   />
                 </div>
