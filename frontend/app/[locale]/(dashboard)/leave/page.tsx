@@ -11,7 +11,6 @@ import {
   useRequestWords,
   type RequestKind,
   type RequestRow,
-  type RequestState,
 } from "@/components/requests/request-card";
 import { REQUEST_KINDS } from "@/components/requests/request-form";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
