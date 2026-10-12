@@ -1,5 +1,1 @@
-build/
-sdkconfig
-sdkconfig.old
-managed_components/
 main/probe/

@@ -277,8 +277,11 @@ fw-part-erase: idf ## Erase partition PART of the board
 	$(call need,PART,a partition name such as models_0)
 	$(parttool) erase_partition --partition-name $(PART)
 
+# A defaults file newer than the app's sdkconfig would be ignored for every key the sdkconfig holds.
 fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/test_apps/*)
 	$(call need,APP,the folder of an IDF test app)
+	@for f in $(APP)/sdkconfig.defaults* firmware/sdkconfig.defaults.esp32s3 firmware/sdkconfig.{dev,bench}; do \
+	  [ $$f -nt $(APP)/sdkconfig ] && rm -f $(APP)/sdkconfig; done; true
 	cd $(APP) && idf.py reconfigure && ninja -C build -j$(JOBS)
 
 fw-app-flash: idf ## Flash a built test app, then the monitor (APP= as for fw-app, MONITOR= skips it)
@@ -353,8 +356,8 @@ ai-unit: idf ai-probe ## Run the probe of ROW on the board: test_apps/probe, the
 	set -e; logs=($$($(call manifest_field,logs))); i=0; \
 	for image in $$($(call manifest_field,images)); do \
 	  $(esptool_board) write-flash \
-	    $(call part_info,$(PROBE_APP)/partitions.dev.csv,models_0,offset) $$image \
-	    $(call part_info,$(PROBE_APP)/partitions.dev.csv,models_1,offset) $$image < /dev/null; \
+	    $(call part_info,firmware/partitions.dev.csv,models_0,offset) $$image \
+	    $(call part_info,firmware/partitions.dev.csv,models_1,offset) $$image < /dev/null; \
 	  timeout $(PROBE_LOG_S) script -qfec "cd $(PROBE_APP) && idf.py $(PORT_FLAG) monitor" /dev/null \
 	    > $${logs[$$i]} || true; \
 	  i=$$((i + 1)); \

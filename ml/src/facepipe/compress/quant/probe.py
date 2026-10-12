@@ -21,7 +21,7 @@ from . import esp_ppq_patches, export_espdl, ladder, ptq_espdl
 PROBE_APP = REPO_ROOT / "firmware" / "components" / "ai_engine" / "test_apps" / "probe"
 RECORD = PROBE_APP / "main" / "probe" / "frames.gold"
 MANIFEST = RECORD.with_name("manifest.json")
-PARTITIONS = PROBE_APP / "partitions.dev.csv"
+PARTITIONS = REPO_ROOT / "firmware" / "partitions.dev.csv"
 
 
 def ancestors(op) -> set[str]:
