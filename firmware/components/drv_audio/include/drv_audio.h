@@ -1,4 +1,4 @@
-/** The MAX98357A on I2S: a sink for 16 kHz, 16-bit mono PCM (KEHOACH 6.2.3).
+/** The MAX98357A on I2S: a sink for 16 kHz, 16-bit mono PCM (KEHOACH 6.2.8).
  *  @ctx task | blocking | one caller at a time, plays take m_i2c for the amp's SD line
  */
 #pragma once

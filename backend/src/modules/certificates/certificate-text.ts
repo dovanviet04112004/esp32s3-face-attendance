@@ -85,7 +85,7 @@ function earningsOf(facts: LetterFacts): string[] {
 }
 
 /** The wording of a letter somebody takes to a bank, so it is written here
- *  rather than in either client catalogue (KEHOACH 3.1).
+ *  rather than in either client catalogue (KEHOACH 9.17 item 5).
  */
 export function letterFor(kind: CertificateKind, facts: LetterFacts): string {
   const entity = facts.entity ?? both(FALLBACK_ENTITY);

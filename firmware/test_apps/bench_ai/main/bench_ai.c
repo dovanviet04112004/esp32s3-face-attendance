@@ -254,7 +254,7 @@ TEST_CASE("the same interleaved pass under preview traffic", "[bench_ai]")
     load_stop();
 }
 
-// A runtime that allocates per invoke would leak or fragment over a day of frames (KEHOACH 4.1).
+// A runtime that allocates per invoke would leak or fragment over a day of frames (KEHOACH 4.5.5a).
 TEST_CASE("the heap stays where it was across fifty passes", "[bench_ai]")
 {
     TEST_ASSERT_EQUAL(ESP_OK, run_detect());
