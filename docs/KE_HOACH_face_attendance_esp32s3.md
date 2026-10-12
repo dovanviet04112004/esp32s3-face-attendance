@@ -2594,7 +2594,7 @@ payload** phải nằm trên `fast_drive`.
 
 | Nhánh | Đọc mỗi epoch | Cỡ tập | Dạng đúng | Ổ |
 |---|---|---|---|---|
-| Detection | 11.618 ảnh | **394 MB** | file lẻ **đã thu nhỏ cạnh dài 320** | `fast_drive` |
+| Detection | 11.618 ảnh | **1,4 GB** | file lẻ, **ảnh gốc** WIDER_train | `fast_drive` |
 | Anti-spoof | **419.935 mặt × 2 tỉ lệ** | 8,2 GB | **shard**, hai tỉ lệ **cùng một record** | `cold_drive` |
 | Recognition | 5.179.510 ảnh | 36 GB | shard — mirror đã sẵn dạng này | `cold_drive` |
 
@@ -2603,19 +2603,20 @@ trên tồn tại để né phí mở file 15 ms của drvfs; `fast_drive` đã 
 38.856 ảnh/s). Với 11.618 ảnh nằm gọn trong page cache thì shard không mua thêm gì, mà lại
 đổi `Dataset` lấy `IterableDataset` — mất trộn mẫu ở mức từng ảnh, chỉ còn trộn theo bộ đệm.
 
-Thứ **thật sự** mua được tốc độ ở nhánh này là **thu nhỏ ảnh**, vì nghẽn là giải nén chứ
-không phải mở file. Số đo:
+**Student detection đọc ảnh gốc, dù nghẽn của nhánh này là giải nén chứ không phải mở
+file.** Số đo:
 
 | | ảnh/s (chỉ đọc) | ảnh/s (đọc + train) | epoch |
 |---|---|---|---|
 | Ảnh gốc 1,4 GB | 258 | 271 | 28 s |
-| **Thu nhỏ 320, 394 MB** | **1.135** | **1.111** | **10 s** |
+| Thu nhỏ cạnh dài 320, 394 MB | 1.135 | 1.111 | 10 s |
 
-`shrink_coco.py` thu ảnh **và** tỉ lệ lại toạ độ trong cùng một lần quét. Làm hai lần, hoặc
-resize mà quên nhãn, cho ra tập dữ liệu vẫn nạp được, vẫn train được, và **sai đúng một hệ
-số ở mọi khuôn mặt** — không có gì báo lỗi.
+Bản thu nhỏ nhanh hơn nhưng sai với công thức của student: §3 Lớp 2 đưa `crop_scale`
+`[0.3, 1.0]` vào. Cắt 30% của bản 320 px rồi đưa về 160 px là **phóng 1,67×**, tức bịa
+pixel; cắt 30% của ảnh gốc 1024 px cho 307 px rồi thu về 160 px là chi tiết thật. Cái giá
+đo được là epoch 28 giây so với 19.
 
-Mọi run của cùng một nhánh phải dùng **cùng một** tập đã thu nhỏ, nếu không thì hai run không so được với nhau.
+Mọi run của cùng một nhánh phải đọc **cùng một** tập ảnh, nếu không thì hai run không so được với nhau.
 
 Detection là nhánh **duy nhất** đọc file lẻ (lý do ở trên); may là nó cũng là nhánh duy
 nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
@@ -2636,12 +2637,6 @@ khi* pipeline train không có augment phóng to — nếu có, resize là âm t
 model đáng lẽ được thấy. Nhánh detect có scale augment, nên **giữ ảnh
 gốc**.
 
-**Student detect cũng giữ ảnh gốc**, vì §3 Lớp 2 đã đưa `crop_scale` `[0.3, 1.0]` vào công
-thức của nó. Cắt 30% của bản 320 px rồi đưa về 160 px là **phóng 1,67×** — bịa pixel; cắt
-30% của ảnh gốc 1024 px cho 307 px rồi thu về 160 px, chi tiết thật. Bản `widerface_small`
-đúng cho công thức không có augment phóng to và hết đúng khi có; đo được cái giá của nó là
-epoch 19 giây so với 28.
-
 > **Tối ưu cách xếp, không tối ưu giao thức.** Được phép đổi: bố cục file, số worker,
 > kích thước shard, thứ tự đọc. **Không được đổi để chạy nhanh hơn**: split (§1.3),
 > điều kiện so sánh của bảng đối chứng (§3.7), tập calib tách khỏi test, hay việc đo
@@ -2657,6 +2652,8 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── detection/
 │   │   ├── widerface/
 │   │   │   ├── {WIDER_train, WIDER_val, WIDER_test, wider_face_split}/
+│   │   │   │                                 #   WIDER_train nằm trên fast_drive: student đọc lại
+│   │   │   │                                 #   ảnh gốc mỗi epoch (§4.4.1)
 │   │   │   ├── eval_tools/ground_truth/      # ★ Easy/Medium/Hard — thang do cua muc 0.80
 │   │   │   └── manifest.yaml                 # ✅
 │   │   └── retinaface_labels/
@@ -2670,7 +2667,9 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   │       ├── nuaa/          + manifest.yaml    # ✅ ảnh in
 │   │       ├── unique_live/   + manifest.yaml    # ✅ live đối chứng
 │   │       ├── unique_replay/ + manifest.yaml    # ✅ màn hình phát lại
-│   │       └── axon_masks/    + manifest.yaml    # ✅ video, mặt nạ latex 3D
+│   │       ├── axon_masks/    + manifest.yaml    # ✅ video, mặt nạ latex 3D
+│   │       ├── lcc_fasd/      + manifest.yaml    # ✅ training · development · evaluation
+│   │       └── synthaspoof/   + manifest.yaml    # ✅ ảnh tổng hợp, train · test
 │   ├── recognition/
 │   │   ├── ms1mv3/{train.rec, train.idx, property}     + manifest.yaml   # ✅ mặc định
 │   │   ├── glint360k/glint360k-*.tar.gz                + manifest.yaml   # ✅ webdataset sẵn
@@ -2682,26 +2681,22 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │           └── manifest.csv                  # ✅ file, person_id, session, lighting,
 │                                             #    distance_cm, is_spoof, spoof_type, capture_date
 │
-├── interim/                                  # mac dinh tren cold_drive; chi widerface_yolo
-│   │                                         #   va anh WIDER goc nam tren fast_drive
+├── interim/                                  # trên cold_drive (§4.4.1)
 │   ├── detection/widerface_coco/{train.json, val.json}      # box + 5 landmark, format COCO
-│   ├── detection/widerface_yolo/{images/, labels/, data.yaml}  # ★ fast_drive: vua page cache
-│   │                                             #   images/ la HARDLINK toi raw/, anh giu nguyen goc
-│   ├── detection/widerface_shards/{train, val}/  # ★ shard cho detect, resize san 160x120
 │   ├── antispoof/celeba_spoof_crops/{train, valid, test}/shard_*.tar
 │   │                                             #   1 record = tight.jpg + wide.jpg + json
 │   │                                             #   ★ hop mat cat bang nhanh detect,
 │   │                                             #     KHONG dung cot Bbox cua dataset (§3)
+│   ├── antispoof/xdomain/<bộ>/[<phần>/]shard_*.tar   # các bộ khác miền, cùng khuôn record;
+│   │                                             #   mặt cũng do nhánh detect cắt (xdomain_crop.py)
 │   ├── recognition/ms1mv3_shards/{000000.tar, ...}          # webdataset
 │   │   └── record_counts.json                # ★ so ban ghi moi split giu lai, sinh tu dong
 │   │                                         #   lan dau. Dem tay phai doc het 36 GB, va
 │   │                                         #   lich LR can con so do TRUOC khi train
 │   └── recognition/identities.txt                           # danh sach ID doc tu shard
 │
-├── processed/
-│   ├── detection/{train_160x120/, val_640x480/}
-│   ├── antispoof/{train_80x80/, val_80x80/}
-│   └── recognition/{train_112x112/, val_112x112/}
+├── processed/                                # trống: ba nhánh nạp thẳng từ interim/, crop và
+│                                             #   căn mặt đã nằm sẵn trong shard
 │
 ├── splits/                                   # ✅ COMMIT TOÀN BỘ
 │   ├── detection/v1/{train.txt, landmark_val.txt, SPLIT.md}
@@ -2775,10 +2770,8 @@ ml/
 │   │   │   │                              #   ra thẳng shard, hai tỉ lệ trong một record
 │   │   │   ├── recordio_to_wds.py         # MXNet RecordIO → shard; Glint360K đã shard sẵn
 │   │   │   ├── images_to_wds.py           # ★ NƠI DUY NHẤT định nghĩa bố cục record shard
-│   │   │   │                              #   ShardWriter + read_shard — dùng cho cả 3 nhánh
-│   │   │   ├── shrink_coco.py             # ★ thu nho anh + ti le lai toa do trong MOT lan
-│   │   │   │                              #   quet. He so scale chi ton tai o mot cho, nen
-│   │   │   │                              #   khong the co anh moi voi nhan cu
+│   │   │   │                              #   ShardWriter, read_shard, phần shard của từng worker
+│   │   │   │                              #   — dùng cho cả 3 nhánh
 │   │   │   ├── xdomain_crop.py            # bốn bộ khác miền → shard, mặt do nhánh detect tìm
 │   │   │   │                              #   crop mà kiosk không tự tạo ra được thì không phải phép thử công bằng
 │   │   │   └── device_index.py            # quét ov5640/images → manifest.csv
@@ -2923,7 +2916,7 @@ ml/
 │                                          #   bộ ESP-DL cùng model; nội dung chép vào latency.md §13
 │
 ├── notebooks/                             # ❌ gitignore output, ✅ commit .py qua jupytext
-│   └── {01_explore_widerface.ipynb, 02_check_ov5640_stats.ipynb, ...}
+│   └── 01_celeba_spoof_splits.py
 │       Notebook CHỈ để khảo sát. Code chạy được phải chuyển vào src/facepipe/
 ├── .python-version                        # pin bản Python cho uv
 └── tests/
@@ -2933,7 +2926,9 @@ ml/
     ├── test_export_espdl.py                 # pack/lock EDL2, gập Linear+BN1d, op check ESP-DL
     ├── test_{ptq_espdl,mixed_espdl,qat_espdl,espdl_shapes,espdl_profile}.py   # thang §3.7
     ├── test_{esp_ppq_patches,quant_ladder,quant_probe}.py
-    └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
+    ├── test_{yunet,train}.py · test_detection_{data,losses,eval,predict}.py
+    ├── test_antispoof{,_eval,_split}.py · test_recognition{,_train,_postproc}.py
+    └── {test_splits.py, test_transforms.py}
 ```
 
 ##### Ranh giới `core/` ↔ `tasks/`
