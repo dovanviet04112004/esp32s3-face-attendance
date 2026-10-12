@@ -1,6 +1,10 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source: frontend/messages/{vi,en}.json
 // Regenerate: ./tools/gen_sw_words.py
+self.SW_NAME = {
+  "en": "Workforce",
+  "vi": "Nhân Lực"
+};
 self.SW_WORDS = {
   "en": {
     "ADVANCE_PAID": "Your salary advance has been paid out",
