@@ -7,6 +7,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "espdl_conv_prelu.hpp"
 #include "sdkconfig.h"
 
 namespace ai {
@@ -56,6 +57,7 @@ esp_err_t EspdlModel::init(const void *blob, const char *name, bool copy_weights
     dl::Model *model = nullptr;
     {
         const ExternalMallocGuard guard;
+        register_espdl_modules();
         // max_internal_size 0 keeps every tensor in PSRAM (KEHOACH 3 layer 5).
         model = new (std::nothrow) dl::Model(static_cast<const char *>(blob), fbs::MODEL_LOCATION_IN_FLASH_RODATA,
                                              0, dl::MEMORY_MANAGER_GREEDY, nullptr, copy_weights);

@@ -10,6 +10,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_timer.h"
+#include "espdl_conv_prelu.hpp"
 #include "sys_storage.h"
 #include "unity.h"
 
@@ -194,6 +195,7 @@ extern "C" void app_main(void)
     if (usb_serial_jtag_driver_install(&console) == ESP_OK) {
         usb_serial_jtag_vfs_use_driver();
     }
+    ai::register_espdl_modules();
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();

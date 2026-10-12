@@ -9,3 +9,7 @@ idf_component_register(
     EMBED_FILES "${frames}"
     WHOLE_ARCHIVE
 )
+
+# The probe builds dl::Model itself, so it registers ai_engine's own modules first (KEHOACH 3.7).
+idf_component_get_property(engine_dir ai_engine COMPONENT_DIR)
+target_include_directories(${COMPONENT_LIB} PRIVATE "${engine_dir}/priv_include")
