@@ -2211,7 +2211,9 @@ các op của `dl_module_creator.hpp`.
 
 **Quy trình đưa một model lên chip**, nhánh nào cũng vậy. Mỗi bước là một lệnh make có điều kiện qua;
 chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurements/` (`latency.md` cho giờ,
-`<nhánh>/quant_ladder.md` cho chất lượng), mỗi bước một commit.
+`<nhánh>/quant_ladder.md` cho chất lượng), mỗi bước một commit. Bước của thang và bản dò chạy trong một
+scope systemd có trần `ML_MEM_MAX` của `Makefile`: bước nào vượt trần thì chỉ nó chết, còn máy WSL 10 GB
+không sập theo. Thước đọc tập chấm theo lô, không bao giờ giữ cả một tập ở float32.
 
 1. **Đúng: chip tính như mô phỏng.** `make quant-timing BRANCH=<nhánh> RUN=<run>`, rồi
    `make ai-unit BRANCH=<nhánh> RUN=<run> ROW=timing`. Qua khi model nạp được, `model->test()` khớp ở cả
