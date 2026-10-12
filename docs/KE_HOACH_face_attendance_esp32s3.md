@@ -2200,7 +2200,7 @@ chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurement
    trên board, in bảng xếp hạng và dừng ở bước đầu tiên không qua:
    1. Hàng `timing` (min-max, không equalization, không bias correction) lượng tử nhanh; giờ trên chip
       chỉ phụ thuộc cấu trúc đồ thị nên đo bằng nó là đủ. Bản dò in thời gian từng module bằng
-      `profile_module` của esp-dl. Hàng ấy hiệu chuẩn trên chính dữ liệu thật của thang: lưới hiệu
+      `profile_module` của esp-dl, và bộ nhớ model chiếm (RAM nội, PSRAM, flash) bằng `profile_memory`. Hàng ấy hiệu chuẩn trên chính dữ liệu thật của thang: lưới hiệu
       chuẩn bằng nhiễu có thể không chạm giá trị nào sát nửa bước, nên che mất lỗi mô phỏng.
    2. `espdl_profile.py` (`make ai-profile`) đọc bảng ấy cùng `.espdl` đã chạy: thời gian theo loại op,
       module chậm nhất, chu kỳ trên mỗi phép nhân-cộng của từng tích chập. Nó gắn nhãn các đường chậm
@@ -2857,7 +2857,7 @@ ml/
 │   │       ├── export_espdl.py             # .espdl + mẫu thử khung thật, chặn phép thụ động đổi số mũ
 │   │       ├── espdl_shapes.py             # phát lại get_output_shape của esp-dl trên .info
 │   │       ├── esp_ppq_patches.py          # bản vá ESP-PPQ theo nhánh, mỗi bản một test ghim
-│   │       ├── espdl_profile.py            # bảng profile_module → giờ theo op, nhãn đường chậm
+│   │       ├── espdl_profile.py            # bảng profile của esp-dl → giờ theo op, PSRAM, nhãn đường chậm
 │   │       ├── ladder.py                   # các bậc, <run>/int8/ladder.yaml, đồ thị từng hàng
 │   │       └── probe.py                    # bản dò: đồ thị + bản cắt + khung thật cho test_apps/probe
 │   │
