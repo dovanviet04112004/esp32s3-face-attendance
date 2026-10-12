@@ -154,7 +154,7 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
 
     A convolution also returns its cycles a multiply-add.
     """
-    if module.op == "Conv":
+    if module.op in espdl_shapes.CONV_OPS:
         return conv_tags(module, laid, cpu_mhz, cache_bytes)
     tags = []
     if "quant_type = 'F32'" in module.attrs:
@@ -163,7 +163,9 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
         tags.append("esp-dl's int8 kernel works in float32 per value (no export patch)")
     if LUT_MARK in module.attrs:
         tags.append("activation alone, one table lookup a value (no export patch)")
-    if module.op in UNFUSED_ACTIVATIONS:
+    if module.op == "PRelu":
+        tags.append("activation alone (fused_prelu, when its Conv alone feeds it on one grid)")
+    elif module.op in UNFUSED_ACTIVATIONS:
         tags.append("activation alone, ESP-PPQ fuses only Relu (no export patch)")
     if module.op == "MatMul" and (y := laid.get(module.outputs[0])) and y[-1] < MATMUL_STEP:
         tags.append(f"{y[-1]} output columns run in C (lay the product transposed)")

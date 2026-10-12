@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from facepipe.compress.quant import espdl_profile, export_espdl, ladder, ptq_espdl
+from facepipe.compress.quant import espdl_profile, espdl_shapes, export_espdl, ladder, ptq_espdl
 
 # Rows as dl_model_base.cpp of esp-dl 3.3.11 prints them through ESP_LOGI.
 MODULES = """I (900) dl::Model: | name       | type | latency |
@@ -76,6 +76,12 @@ def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
     tags, rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), {}, 240, 65536)
     assert (tags, rate) == ([], None)
 
+    laid = {"x": [1, 8, 8, 24], "w": [1, 1, 24, 24], "y": [1, 8, 8, 24]}
+    fused = module(espdl_shapes.FUSED_PRELU, ["x", "w", "b", "a"], ["y"])
+    assert espdl_profile.tags_of(fused, laid, {}, 240, 65536)[0] == [
+        "unaligned 24 -> 24 channels (aligned_pointwise, 2 columns)"
+    ]
+
 
 def test_the_other_slow_paths_name_their_patch() -> None:
     def tags(op: str, laid: dict | None = None, attrs: str = "") -> list[str]:
@@ -93,6 +99,9 @@ def test_the_other_slow_paths_name_their_patch() -> None:
         "activation alone, one table lookup a value (no export patch)"
     ]
     assert tags("PRelu", attrs="quant_type = 'S8'") == [
+        "activation alone (fused_prelu, when its Conv alone feeds it on one grid)"
+    ]
+    assert tags("LeakyRelu", attrs="quant_type = 'S8'") == [
         "activation alone, ESP-PPQ fuses only Relu (no export patch)"
     ]
     assert tags("Add") == []

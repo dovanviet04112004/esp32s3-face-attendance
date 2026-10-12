@@ -38,6 +38,11 @@ class Info:
     nodes: list[tuple[str, str, list[str], list[str]]] = field(default_factory=list)
 
 
+# esp-dl's Conv, and the module ai_engine registers for a Conv with its PReLU joined (KEHOACH 3.7).
+FUSED_PRELU = "ConvPRelu"
+CONV_OPS = ("Conv", FUSED_PRELU)
+
+
 def dims(text: str, sep: str) -> list[int]:
     return [int(v) for v in text.split(sep) if v.strip()]
 
@@ -117,7 +122,7 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
     if op == "Concat" and None not in shapes:
         axis = attribute(attrs, "axis") % len(x)
         return [sum(s[axis] for s in shapes) if i == axis else d for i, d in enumerate(x)]
-    if op == "Conv" and shapes[1] is not None:
+    if op in CONV_OPS and shapes[1] is not None:
         w, pads, strides = shapes[1], attribute(attrs, "pads"), attribute(attrs, "strides")
         dilations, group = attribute(attrs, "dilations"), attribute(attrs, "group")
         out = list(x)

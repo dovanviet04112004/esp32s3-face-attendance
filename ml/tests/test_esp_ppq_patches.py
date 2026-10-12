@@ -11,7 +11,8 @@ import pytest
 import torch
 from torch import nn
 
-from facepipe.compress.quant import esp_ppq_patches, export_espdl, ptq_espdl
+from facepipe import REPO_ROOT
+from facepipe.compress.quant import esp_ppq_patches, espdl_shapes, export_espdl, ladder, ptq_espdl
 from facepipe.export import espdl_op_check
 from tests.conftest import quantise_ladder_net
 
@@ -68,8 +69,8 @@ def test_every_branch_names_only_patches_that_exist() -> None:
         assert set(names) <= set(esp_ppq_patches.PATCHES), branch
 
 
-def espdl_graph(path: Path) -> tuple[dict, dict]:
-    """An .espdl's nodes by name as (op, inputs), and its initializers by name as arrays."""
+def espdl_graph(path: Path) -> tuple[dict, dict, dict]:
+    """An .espdl's nodes by name as (op, inputs, outputs), its initializers and their exponents."""
     import flatbuffers
 
     graph = espdl_op_check.graph(path)
@@ -77,8 +78,9 @@ def espdl_graph(path: Path) -> tuple[dict, dict]:
     for i in range(graph.NodeLength()):
         node = graph.Node(i)
         inputs = [node.Input(j).decode() for j in range(node.InputLength())]
-        nodes[node.Name().decode()] = (node.OpType().decode(), inputs)
-    dtypes, tensors = {1: np.float32, 3: np.int8, 6: np.int32, 7: np.int64}, {}
+        outputs = [node.Output(j).decode() for j in range(node.OutputLength())]
+        nodes[node.Name().decode()] = (node.OpType().decode(), inputs, outputs)
+    dtypes, tensors, exponents = {1: np.float32, 3: np.int8, 6: np.int32, 7: np.int64}, {}, {}
     for i in range(graph.InitializerLength()):
         t = graph.Initializer(i)
         dims = [int(d) for d in t.DimsAsNumpy()]
@@ -86,7 +88,8 @@ def espdl_graph(path: Path) -> tuple[dict, dict]:
         raw = bytes(t._tab.Bytes[start : start + 16 * t.RawDataLength()])
         data = np.frombuffer(raw, dtypes[t.DataType()])[: math.prod(dims)]
         tensors[t.Name().decode()] = data.reshape(dims)
-    return nodes, tensors
+        exponents[t.Name().decode()] = [int(e) for e in t.ExponentsAsNumpy()]
+    return nodes, tensors, exponents
 
 
 def filters(stored: np.ndarray) -> np.ndarray:
@@ -130,10 +133,10 @@ def test_cache_sized_convolutions_slice_only_what_fills_the_cache(tmp_path: Path
     plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
     with esp_ppq_patches.applied(["cache_sized_convolutions"]):
         sliced = espdl_graph(export_espdl.export(graph, tmp_path / "sliced.espdl", test_input))
-    convs = {name: ins for name, (op, ins) in plain[0].items() if op == "Conv"}
-    kept = {name: ins for name, (op, ins) in sliced[0].items() if op == "Conv" and name in convs}
-    parts = [ins for name, (op, ins) in sliced[0].items() if op == "Conv" and name not in convs]
-    assert [op for op, _ in sliced[0].values()].count("Concat") == 1
+    convs = {name: ins for name, (op, ins, _) in plain[0].items() if op == "Conv"}
+    kept = {name: ins for name, (op, ins, _) in sliced[0].items() if op == "Conv" and name in convs}
+    parts = [ins for name, (op, ins, _) in sliced[0].items() if op == "Conv" and name not in convs]
+    assert [op for op, _, _ in sliced[0].values()].count("Concat") == 1
     assert list(kept) == ["/narrow/Conv"]
     assert np.array_equal(plain[1][convs["/narrow/Conv"][1]], sliced[1][kept["/narrow/Conv"][1]])
     assert [sliced[1][ins[1]].shape[-1] for ins in parts] == [256, 256]
@@ -143,11 +146,114 @@ def test_cache_sized_convolutions_slice_only_what_fills_the_cache(tmp_path: Path
     assert np.array_equal(biases, plain[1][convs["/expand/Conv"][2]])
 
 
-def test_the_export_hook_is_put_back_after_the_patch() -> None:
+def test_the_export_hooks_are_put_back_after_the_patches() -> None:
     pytest.importorskip("esp_ppq")
     from esp_ppq.parser import espdl_exporter
+    from esp_ppq.parser.espdl import export_patterns
 
-    kept = espdl_exporter.reset_graph_layout
-    with esp_ppq_patches.applied(["cache_sized_convolutions"]):
-        assert espdl_exporter.reset_graph_layout is not kept
-    assert espdl_exporter.reset_graph_layout is kept
+    def hooks() -> list:
+        return [
+            espdl_exporter.reset_graph_layout,
+            export_patterns.FuseReluLikePattern.export,
+            espdl_exporter.EspdlExporter.export_graph,
+        ]
+
+    kept = hooks()
+    with esp_ppq_patches.applied(["cache_sized_convolutions", "fused_prelu"]):
+        assert all(now is not before for now, before in zip(hooks(), kept, strict=True))
+    assert hooks() == kept
+
+
+class SlopedConvolutions(nn.Module):
+    """A pointwise and a depthwise convolution whose PReLUs keep their input's exponent.
+
+    The third PReLU sees only large negatives its small slopes shrink to a finer exponent, and a
+    last convolution feeds a Sigmoid, a reader with one input.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pointwise = nn.Conv2d(16, 16, 1)
+        self.depthwise = nn.Conv2d(16, 16, 3, padding=1, groups=16)
+        self.shrinking = nn.Conv2d(16, 16, 1)
+        self.gate = nn.Conv2d(16, 16, 1)
+        self.slopes = nn.ModuleList(nn.PReLU(16) for _ in range(3))
+        with torch.no_grad():
+            for conv, spread, bias in (
+                (self.pointwise, 0.1, 0.2),
+                (self.depthwise, 0.2, 0.1),
+                (self.shrinking, 0.1, -12.0),
+            ):
+                conv.weight.uniform_(-spread, spread)
+                conv.bias.fill_(bias)
+            for slope in self.slopes:
+                slope.weight.uniform_(0.005, 0.3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        convs = (self.pointwise, self.depthwise, self.shrinking)
+        for conv, slope in zip(convs, self.slopes, strict=True):
+            x = slope(conv(x))
+        return torch.sigmoid(self.gate(x))
+
+
+@pytest.fixture(scope="module")
+def sloped(tmp_path_factory: pytest.TempPathFactory):
+    """SlopedConvolutions quantised for the S3, its calibration, and its fusable PRelus."""
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(7)
+    calib = [torch.rand(1, 16, 6, 6) for _ in range(4)]
+    work = tmp_path_factory.mktemp("sloped")
+    rungs = ptq_espdl.timing_rungs("antispoof")
+    graph = quantise_ladder_net(SlopedConvolutions().eval(), work, calib, rungs, ("out",))
+    fusable = [op for op in graph.operations.values() if esp_ppq_patches.fusable(op)]
+    return graph, calib, fusable
+
+
+def test_fused_prelu_simulates_the_s3_kernel_s_floor(sloped) -> None:
+    from esp_ppq.executor import TorchExecutor
+    from esp_ppq.quantization.qfunction.linear import PPQLinearQuant_toInt
+
+    graph, calib, fusable = sloped
+    executor = TorchExecutor(graph, device="cpu")
+    names = [name for op in fusable for name in (op.inputs[0].name, op.outputs[0].name)]
+    rounded = executor.forward(calib[0], output_names=names)
+    with esp_ppq_patches.applied(["fused_prelu"]):
+        floored = executor.forward(calib[0], output_names=names)
+    differs = 0
+    for i, op in enumerate(fusable):
+        step = float(op.output_quant_config[0].scale)
+        x = torch.round(floored[2 * i] / step).long()
+        slope_config = op.input_quant_config[1]
+        a = PPQLinearQuant_toInt(op.inputs[1].value, slope_config).long().reshape(1, -1, 1, 1)
+        shift = -round(math.log2(float(slope_config.scale)))
+        want = torch.where(x < 0, (x * a) >> shift, x).clamp(-128, 127)
+        assert torch.equal(torch.round(floored[2 * i + 1] / step).long(), want)
+        differs += int((rounded[2 * i + 1] != floored[2 * i + 1]).sum())
+    assert differs > 0
+
+
+def test_fused_prelu_joins_each_fusable_prelu_to_its_conv(sloped, tmp_path: Path) -> None:
+    graph, calib, fusable = sloped
+    kept = {op.inputs[0].source_op.name for op in fusable}
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
+    with esp_ppq_patches.applied(["fused_prelu"]):
+        fused = espdl_graph(export_espdl.export(graph, tmp_path / "fused.espdl", test_input))
+    assert kept == {"/pointwise/Conv", "/depthwise/Conv"}
+    assert {n for n, (op, _, _) in fused[0].items() if op == espdl_shapes.FUSED_PRELU} == kept
+    assert [op for op, _, _ in fused[0].values()].count("PRelu") == 1
+    readers = {ins[0]: (ins[1], outs) for op, ins, outs in plain[0].values() if op == "PRelu"}
+    for name in kept:
+        _op, inputs, (y,) = plain[0][name]
+        slope, outputs = readers[y]
+        assert fused[0][name] == (espdl_shapes.FUSED_PRELU, [*inputs, slope], outputs)
+        for param in (*inputs[1:], slope):
+            assert np.array_equal(fused[1][param].reshape(-1), plain[1][param].reshape(-1))
+            assert fused[2][param] == plain[2][param]
+        assert fused[1][slope].shape == (16,)
+
+
+def test_ai_engine_registers_the_fused_module() -> None:
+    core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
+    assert espdl_shapes.FUSED_PRELU in espdl_op_check.own_modules(core)

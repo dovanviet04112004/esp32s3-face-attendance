@@ -139,6 +139,16 @@ def test_registered_reads_the_module_creator(tmp_path: Path) -> None:
     assert espdl_op_check.registered(header) == {"Conv", "PRelu"}
 
 
+def test_own_modules_reads_what_ai_engine_registers(tmp_path: Path) -> None:
+    (tmp_path / "espdl_conv_prelu.cpp").write_text(
+        'creator->register_module("ConvPRelu", deserialize);\n', encoding="utf-8"
+    )
+    (tmp_path / "espdl_conv_prelu.hpp").write_text(
+        'register_module("Ignored", x);\n', encoding="utf-8"
+    )
+    assert espdl_op_check.own_modules(tmp_path) == {"ConvPRelu"}
+
+
 class Expanded(nn.Module):
     """A channel gate written with expand_as, the way the published ECA block is."""
 

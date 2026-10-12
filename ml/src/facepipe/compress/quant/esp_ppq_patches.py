@@ -1,8 +1,8 @@
 """Fixes to ESP-PPQ 1.3.11, each in force only for the branches whose block in quant.yaml names it.
 
 A patch enters around every place its branch uses ESP-PPQ: quantising, simulating and exporting
-(KEHOACH 3.7). Each one records the board symptom it answers and has a test pinning it; an export
-patch only drops work ESP-PPQ leaves for the chip and never changes an integer of the graph.
+(KEHOACH 3.7). Each one records the board symptom it answers and has a test pinning it. A patch that
+has the chip round another way simulates that rounding too, so the ruler scores the chip's integers.
 """
 
 from __future__ import annotations
@@ -11,7 +11,10 @@ import contextlib
 import math
 from collections.abc import Callable, Iterator, Sequence
 
+import torch
+
 from .espdl_profile import CHANNEL_STEP, chip
+from .espdl_shapes import FUSED_PRELU
 
 
 def laid_shape(var, info) -> list[int]:
@@ -137,8 +140,132 @@ def cache_sized_convolutions() -> Iterator[None]:
         espdl_exporter.reset_graph_layout = reset
 
 
+PRELU_MARK = "PRelu"
+
+
+def one_grid(*configs) -> bool:
+    """Every config quantises on the same per-tensor grid."""
+    return len({float(config.scale) for config in configs}) == 1
+
+
+def int8(configs) -> bool:
+    return all(config.num_of_bits == 8 for config in configs)
+
+
+def fusable(prelu) -> bool:
+    """prelu, a PRelu, applied by esp-dl's S3 kernels where its 2-D Conv rounds: that Conv's lone
+    reader, an int8 slope a channel on a fractional grid, the Conv's output grid kept throughout.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    if prelu.type != "PRelu" or not isinstance(prelu, QuantableOperation):
+        return False
+    conv, slope = prelu.inputs[0].source_op, prelu.inputs[1]
+    if not (
+        isinstance(conv, QuantableOperation)
+        and conv.type == "Conv"
+        and conv.inputs[1].is_parameter
+        and conv.inputs[1].value.dim() == 4
+        and len(prelu.inputs[0].dest_ops) == 1
+        and slope.is_parameter
+        and slope.value.numel() == conv.inputs[1].value.shape[0]
+    ):
+        return False
+    grid = [conv.output_quant_config[0], *prelu.input_quant_config[:1], *prelu.output_quant_config]
+    slope_config = prelu.input_quant_config[1]
+    return (
+        int8([*conv.input_quant_config[:2], *grid, slope_config])
+        and one_grid(*grid)
+        and float(slope_config.scale) < 1
+    )
+
+
+def chip_prelu(op, values: list, ctx=None, **kwargs):
+    """ESP-PPQ's PRelu, with a fusable one's negative side as EE.VPRELU.S8 leaves it: the int8
+    product shifted right, so floored; the gradient passes straight through.
+    """
+    from esp_ppq.core import QuantizationStates
+    from esp_ppq.executor.op.torch.default import PRelu_forward
+
+    y = PRelu_forward(op, values, ctx, **kwargs)
+    if not QuantizationStates.is_activated(op.output_quant_config[0].state) or not fusable(op):
+        return y
+    step = op.output_quant_config[0].scale.to(y.device)
+    floored = torch.floor(y / step) * step
+    return torch.where(values[0] < 0, y + (floored - y).detach(), y)
+
+
+def fuse_prelu(graph, op) -> bool:
+    """op, a Conv, joined to the PRelu that alone reads it when that PRelu is fusable.
+
+    The slope rides on as op's last input, one value a channel; export_graph renames the pair.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+    from esp_ppq.parser.espdl.espdl_graph_utils import fuse_downstream_operation
+
+    readers = graph.get_downstream_operations(op) if op.name in graph.operations else []
+    if op.type != "Conv" or len(readers) != 1 or not fusable(readers[0]):
+        return False
+    if op.outputs[0].name in graph.outputs:
+        raise ValueError(
+            f"{op.name} writes a graph output, so the PRelu simulated on it stays apart"
+        )
+    prelu = readers[0]
+    slope = prelu.inputs[1]
+    slope_config, out_config = prelu.input_quant_config[1], prelu.output_quant_config[0]
+    prelu.inputs.remove(slope)
+    slope.dest_ops.remove(prelu)
+    fuse_downstream_operation(graph, prelu, keep_coherence=True)
+    slope.value = slope.value.reshape(-1)
+    op.inputs.append(slope)
+    slope.dest_ops.append(op)
+    op.config = OperationQuantizationConfig([*op.input_quant_config, slope_config], [out_config])
+    op.attributes["activation"] = PRELU_MARK
+    return True
+
+
+@contextlib.contextmanager
+def fused_prelu() -> Iterator[None]:
+    """Each fusable PRelu simulated as the S3 kernel applies it and exported inside its Conv.
+
+    esp-dl 3.3.11's Conv leaves the PReLU slope empty, so the pair leaves as ConvPRelu, the module
+    ai_engine registers; esp-dl's own PRelu rounds half up, the fused kernel floors (KEHOACH 3.7).
+    """
+    from esp_ppq.core import TargetPlatform
+    from esp_ppq.executor.base import OPERATION_FORWARD_TABLE
+    from esp_ppq.parser import espdl_exporter
+    from esp_ppq.parser.espdl import export_patterns
+
+    table = OPERATION_FORWARD_TABLE[TargetPlatform.ESPDL_S3_INT8]
+    simulated = table["PRelu"]
+    joined = export_patterns.FuseReluLikePattern.export
+    write = espdl_exporter.EspdlExporter.export_graph
+
+    def joining(self, op, graph, **kwargs):
+        op = joined(self, op, graph, **kwargs)
+        fuse_prelu(graph, op)
+        return op
+
+    def writing(self, graph, *args, **kwargs):
+        for op in graph.operations.values():
+            if op.type == "Conv" and op.attributes.get("activation") == PRELU_MARK:
+                op.type = FUSED_PRELU
+        return write(self, graph, *args, **kwargs)
+
+    table["PRelu"] = chip_prelu
+    export_patterns.FuseReluLikePattern.export = joining
+    espdl_exporter.EspdlExporter.export_graph = writing
+    try:
+        yield
+    finally:
+        table["PRelu"] = simulated
+        export_patterns.FuseReluLikePattern.export = joined
+        espdl_exporter.EspdlExporter.export_graph = write
+
+
 PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "cache_sized_convolutions": cache_sized_convolutions,
+    "fused_prelu": fused_prelu,
 }
 
 

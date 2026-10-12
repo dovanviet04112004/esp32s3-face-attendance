@@ -21,6 +21,8 @@ HEADER_BYTES = 16
 CREATOR_HPP = (
     "firmware/managed_components/espressif__esp-dl/dl/module/include/dl_module_creator.hpp"
 )
+# ai_engine registers its own modules beside esp-dl's (KEHOACH 3.7).
+AI_ENGINE_CORE = "firmware/components/ai_engine/src/core"
 _REGISTER = re.compile(r'register_module\(\s*"([A-Za-z0-9_]+)"')
 
 
@@ -84,9 +86,14 @@ def content_digest(path: Path) -> str:
     return hashlib.sha256(("|".join(sorted(records)) + "#" + ops).encode()).hexdigest()
 
 
-def registered(creator_hpp: Path) -> set[str]:
-    """Every op name ESP-DL's module creator maps to a module."""
-    return set(_REGISTER.findall(creator_hpp.read_text(encoding="utf-8")))
+def registered(source: Path) -> set[str]:
+    """Every op name source registers a module for."""
+    return set(_REGISTER.findall(source.read_text(encoding="utf-8")))
+
+
+def own_modules(core: Path) -> set[str]:
+    """The op names ai_engine registers itself, read from its core sources."""
+    return {name for src in sorted(core.glob("*.cpp")) for name in registered(src)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             f"{creator} is missing; build the firmware once so the component manager fetches esp-dl"
         )
-    known = registered(creator)
+    own = own_modules(REPO_ROOT / AI_ENGINE_CORE)
+    known = registered(creator) | own
     counts = operators(args.model)
     missing = sorted(set(counts) - known)
     lines = [
@@ -115,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         "",
     ]
     for name in sorted(counts):
-        status = "NO MODULE" if name in missing else "esp-dl"
+        status = "NO MODULE" if name in missing else "ai_engine" if name in own else "esp-dl"
         lines.append(f"{status:16s} {name:28s} x{counts[name]}")
 
     report = "\n".join(lines)

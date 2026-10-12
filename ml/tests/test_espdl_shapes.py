@@ -45,6 +45,13 @@ def test_a_grouped_convolution_keeps_its_input_channels() -> None:
     assert got == [1, 8, 8, 16]
 
 
+def test_a_convolution_with_its_prelu_joined_shapes_as_the_convolution() -> None:
+    x, w, attrs = [1, 8, 8, 16], [3, 3, 1, 16], conv_attrs([1, 1, 1, 1], 1, 16)
+    shapes = [x, w, [16], [16]]
+    got = espdl_shapes.output_shape(espdl_shapes.FUSED_PRELU, attrs, shapes, [None] * 4)
+    assert got == [1, 8, 8, 16]
+
+
 def test_pooling_flattening_and_unknown_ops() -> None:
     x = [1, 4, 4, 32]
     assert espdl_shapes.output_shape("GlobalAveragePool", "", [x], [None]) == [1, 1, 1, 32]
