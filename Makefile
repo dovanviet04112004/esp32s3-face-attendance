@@ -140,7 +140,6 @@ be-e2e: ## Backend e2e as CI runs it: throwaway stack, clean clone plus the work
 	git ls-files --others --exclude-standard -- backend contracts | while read -r f; do \
 	  mkdir -p "$$clone/$$(dirname "$$f")"; cp "$$f" "$$clone/$$f"; done; \
 	cd "$$clone/backend"; cp -al "$$repo/backend/node_modules" node_modules; rm -rf node_modules/.prisma; \
-	sed -i 's|:18083|:58092|g' test/*.ts; \
 	export NODE_ENV=test DATABASE_URL=postgresql://ci:ci@localhost:55462/attendance_ci REDIS_URL=redis://localhost:56392 \
 	  JWT_ACCESS_SECRET=ci-only-access-secret-0123456789abcdef JWT_REFRESH_SECRET=ci-only-refresh-secret-0123456789abcdef \
 	  JWT_DEVICE_SECRET=ci-only-device-secret-0123456789abcdef DEVICE_BOOTSTRAP_TOKEN=ci-only-bootstrap-token \
