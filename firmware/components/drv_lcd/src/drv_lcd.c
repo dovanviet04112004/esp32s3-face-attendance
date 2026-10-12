@@ -136,11 +136,8 @@ static void slow_the_scan(void)
     esp_lcd_panel_io_tx_param(s_io, CMDSET_REG, (uint8_t[]){CMDSET_LOCK_B}, 1);
 }
 
-uint32_t drv_lcd_read_reg(uint8_t reg)
+static uint32_t read_reg(uint8_t reg)
 {
-    if (s_reader == NULL) {
-        return 0;
-    }
     uint8_t raw[READ_REG_BYTES] = {0};
     gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(APP_LCD_CS_GPIO, 1);
@@ -296,14 +293,9 @@ esp_err_t drv_lcd_init(void)
     APP_RETURN_ON_ERR(panel_up(), TAG, "panel");
     APP_RETURN_ON_ERR(reader_up(), TAG, "scanline reader");
     ESP_LOGI(TAG, "panel id %06" PRIx32 " at %dx%d, %d bounce of %d B, scanline reads %d",
-             drv_lcd_read_reg(CHIP_ID_REG), APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT,
+             read_reg(CHIP_ID_REG), APP_LCD_H_RES, APP_LCD_V_RES, BOUNCE_COUNT,
              BOUNCE_BYTES, scan_line());
     return ESP_OK;
-}
-
-int drv_lcd_scan_line(void)
-{
-    return s_reader != NULL ? scan_line() : -1;
 }
 
 esp_err_t drv_lcd_backlight(uint8_t percent)
@@ -346,29 +338,6 @@ static esp_err_t send_bounce(int x1, int y1, int x2, int y2, uint16_t *filled)
         xSemaphoreGive(s_bounce_free);
     }
     return err;
-}
-
-esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels)
-{
-    const int width = x2 - x1;
-    if (width <= 0 || y2 <= y1 || width > BOUNCE_PIXELS) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    const int rows_per_strip = BOUNCE_PIXELS / width;
-    const uint16_t *src = pixels;
-    for (int y = y1; y < y2; y += rows_per_strip) {
-        const int rows = (y + rows_per_strip <= y2) ? rows_per_strip : y2 - y;
-        uint16_t *dst = NULL;
-        APP_RETURN_ON_ERR(claim_bounce(&dst), TAG, "bounce");
-        // The panel reads RGB565 high byte first, and an ESP word holds it low
-        // byte first, so every pixel turns over on its way to the wire.
-        for (int i = 0; i < rows * width; ++i) {
-            dst[i] = __builtin_bswap16(src[i]);
-        }
-        APP_RETURN_ON_ERR(send_bounce(x1, y, x2, y + rows, dst), TAG, "strip");
-        src += rows * width;
-    }
-    return ESP_OK;
 }
 
 // The sensor is soldered across the board and only ever sees a lying frame, so
@@ -560,31 +529,6 @@ esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565
     return ESP_OK;
 }
 
-static int16_t clamp_to(float value, int limit)
-{
-    const int rounded = (int)(value + 0.5f);
-    if (rounded < 0) {
-        return 0;
-    }
-    return (int16_t)(rounded > limit ? limit : rounded);
-}
-
-bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], int16_t out[4])
-{
-    int left = 0;
-    int taken_width = 0;
-    if (box == NULL || out == NULL || !preview_slice(src_width, src_height, &left, &taken_width)) {
-        return false;
-    }
-    const float columns = (float)APP_LCD_H_RES / (float)taken_width;
-    const float rows = (float)APP_LCD_V_RES / (float)src_height;
-    out[0] = clamp_to((box[0] - (float)left) * columns, APP_LCD_H_RES);
-    out[1] = clamp_to(box[1] * rows, APP_LCD_V_RES);
-    out[2] = clamp_to((box[2] - (float)left) * columns, APP_LCD_H_RES);
-    out[3] = clamp_to(box[3] * rows, APP_LCD_V_RES);
-    return out[2] > out[0] && out[3] > out[1];
-}
-
 bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4], float out[4])
 {
     int left = 0;
@@ -599,22 +543,6 @@ bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4],
     out[2] = (float)left + (float)box[2] * columns;
     out[3] = (float)box[3] * rows;
     return out[2] > out[0] && out[3] > out[1];
-}
-
-esp_err_t drv_lcd_fill(uint16_t rgb565)
-{
-    const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
-    const uint16_t wire = __builtin_bswap16(rgb565);
-    for (int y = 0; y < APP_LCD_V_RES; y += rows_per_strip) {
-        const int rows = (y + rows_per_strip <= APP_LCD_V_RES) ? rows_per_strip : APP_LCD_V_RES - y;
-        uint16_t *dst = NULL;
-        APP_RETURN_ON_ERR(claim_bounce(&dst), TAG, "bounce");
-        for (int i = 0; i < rows * APP_LCD_H_RES; ++i) {
-            dst[i] = wire;
-        }
-        APP_RETURN_ON_ERR(send_bounce(0, y, APP_LCD_H_RES, y + rows, dst), TAG, "strip");
-    }
-    return ESP_OK;
 }
 
 esp_lcd_panel_handle_t drv_lcd_panel(void)

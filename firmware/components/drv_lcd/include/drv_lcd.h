@@ -1,4 +1,4 @@
-/** The 320x480 panel: bring-up, backlight, and blitting one rectangle.
+/** The 320x480 panel: bring-up, backlight, and the camera preview with its overlay.
  *  @ctx task | blocking | uses the SPI bus bsp_board owns
  */
 #pragma once
@@ -87,12 +87,6 @@ esp_err_t drv_lcd_backlight(uint8_t percent);
  */
 esp_err_t drv_lcd_sleep(bool sleeping);
 
-/** Copy RGB565 pixels into a rectangle of panel memory.
- *  @ctx task | blocking | the buffer must survive the call
- *  @param x2,y2 one past the last column and row, as esp_lcd expects
- */
-esp_err_t drv_lcd_blit(int x1, int y1, int x2, int y2, const void *pixels);
-
 /** Fill the panel from the centre slice of one sensor frame, upright.
  *  @ctx task | blocking | pixels are RGB565 already in the panel's byte order
  *  @param src_width,src_height frame size in pixels, wider than it is tall
@@ -107,37 +101,12 @@ esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
  */
 esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565);
 
-/** Read a panel status register over the same line the scanline counter uses.
- *  @ctx task | blocking | no lock, so keep it off the blit path
- *  @param reg command byte, one the panel answers with data
- *  @ret its first three reply bytes packed big-endian, 0 when init has not run
- */
-uint32_t drv_lcd_read_reg(uint8_t reg);
-
-/** Where the panel's scan sits, counted in the two-line units it reports.
- *  @ctx task | blocking | no lock, so keep it off the blit path
- *  @ret 0 to 241, or -1 when the read does not answer
- */
-int drv_lcd_scan_line(void);
-
-/** Where a rectangle of the sensor frame lands on the panel.
- *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows
- *  @param box x1,y1,x2,y2 in frame pixels; out takes panel pixels, clamped
- *  @ret false when no slice of that frame shape fits the panel
- */
-bool drv_lcd_frame_to_panel(int src_width, int src_height, const float box[4], int16_t out[4]);
-
-/** Where a rectangle of the panel sits in the sensor frame, the inverse of the above.
+/** Where a rectangle of the panel sits in the sensor frame.
  *  @ctx any | non-blocking | the same centre slice drv_lcd_blit_frame shows
  *  @param box x1,y1,x2,y2 in panel pixels; out takes frame pixels
  *  @ret false when no slice of that frame shape fits the panel
  */
 bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4], float out[4]);
-
-/** Paint the whole panel one colour.
- *  @ctx task | blocking | goes out through the bounce buffers
- */
-esp_err_t drv_lcd_fill(uint16_t rgb565);
 
 /** Microseconds the last full-frame blit spent writing, past the phase wait.
  *  @ctx any | non-blocking | 0 until the first frame has gone out
@@ -145,8 +114,8 @@ esp_err_t drv_lcd_fill(uint16_t rgb565);
  */
 uint32_t drv_lcd_blit_us(void);
 
-/** Panel handle for the LVGL port to drive.
- *  @ctx any | non-blocking
+/** The esp_lcd handle of the panel.
+ *  @ctx any | non-blocking | NULL until drv_lcd_init creates it
  */
 esp_lcd_panel_handle_t drv_lcd_panel(void);
 
