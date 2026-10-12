@@ -3,16 +3,12 @@ export const SCOPE_PREFIX = "scope:under:";
 
 /** Every cache key and its lifetime, declared once (KEHOACH 4.9). */
 export const CACHE = {
-  employee: (id: number) => ({ key: `emp:${id}`, ttlSeconds: 600 }),
-  employeeList: (hash: string) => ({ key: `emp:list:${hash}`, ttlSeconds: 60 }),
-  deviceStatus: (id: string) => ({ key: `dev:${id}:status`, ttlSeconds: 45 }),
   // The scope belongs in the key: a narrowed answer cached under a bare
   // range would be served back to somebody who sees more (KEHOACH 9.4).
   report: (type: string, range: string, scope = "all") => ({
     key: `report:${type}:${scope}:${range}`,
     ttlSeconds: 900,
   }),
-  activeShifts: () => ({ key: "shift:active", ttlSeconds: 1800 }),
   reportsTo: (employeeId: number) => ({ key: `${SCOPE_PREFIX}${employeeId}`, ttlSeconds: 300 }),
 } as const;
 

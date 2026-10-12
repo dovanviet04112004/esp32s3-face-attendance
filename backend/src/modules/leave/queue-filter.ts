@@ -97,14 +97,6 @@ export function waitedDays(since: Date, now: Date): number {
   return Math.max(0, Math.floor((now.getTime() - since.getTime()) / MS_PER_DAY));
 }
 
-/** A desk never sees its own rows waiting in the queue it decides (KEHOACH 9.10). */
-export function notOwnWaiting(viewer: Viewer, desks: Role[], waiting: boolean, askedFor?: number): Loose {
-  if (!waiting || viewer.employeeId === null || !desks.includes(viewer.role) || askedFor === viewer.employeeId) {
-    return {};
-  }
-  return { employeeId: { not: viewer.employeeId } };
-}
-
 /** Naming a person narrows what the viewer may see; it never widens it. */
 export function whoseRows(visible: number[] | null, asked: number | undefined): Loose {
   if (asked === undefined) {

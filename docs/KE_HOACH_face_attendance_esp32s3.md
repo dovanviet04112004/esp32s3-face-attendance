@@ -4722,11 +4722,8 @@ sau 3 s. Lớp chặn hỏi Redis trên **mọi** request, nên chờ nó là tr
 
 | Khoá | Nội dung | TTL | Xoá khi |
 |---|---|---|---|
-| `emp:{id}` | hồ sơ nhân viên | 10 phút | sửa nhân viên |
-| `emp:list:{hash}` | trang danh sách đã lọc | 60 giây | thêm/sửa/xoá nhân viên |
-| `dev:{id}:status` | online, RSSI, heap | 45 giây | heartbeat tới |
-| `report:{type}:{range}` | báo cáo đã tổng hợp | 15 phút | có bản ghi chấm công mới trong khoảng |
-| `shift:active` | ca đang hiệu lực | 30 phút | sửa ca |
+| `report:{type}:{scope}:{range}` | báo cáo đã tổng hợp, theo phạm vi người xem (§9.4) | 15 phút | có bản ghi chấm công mới trong khoảng |
+| `scope:under:{employeeId}` | một người và mọi cấp dưới của họ, dù sâu bao nhiêu | 5 phút | đổi quản lý hay phòng ban của bất kỳ ai: xoá cả nhóm |
 
 Cache **chỉ chứa dữ liệu đọc lại được từ Postgres**. Không cache embedding, không cache JWT,
 không cache thứ gì mà mất đi là sai nghiệp vụ.
