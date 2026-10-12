@@ -1504,6 +1504,7 @@
     "LEAVE_TYPE_REQUIRED": "Choose a leave type first.",
     "MANAGER_CYCLE": "That arrangement makes a loop of managers.",
     "NETWORK_UNREACHABLE": "Could not reach the server. Check the API is running at the address this page calls.",
+    "INTERNAL_ERROR": "The server ran into an unexpected error. Try again in a moment.",
     "NOTHING_TO_CORRECT": "Nothing changed to save.",
     "NOT_AN_EMPLOYEE": "This account is not attached to an employee record.",
     "NOT_YOUR_REQUEST": "This request is not yours to decide.",

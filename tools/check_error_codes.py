@@ -28,6 +28,8 @@ LITERAL = re.compile(r"\"([^\"]*)\"|`([^`]*)`")
 CODE = re.compile(r"^[A-Z0-9_]+$")
 # The throttler answers with the code its module options name, not a throw.
 OPTION = re.compile(r"errorMessage:\s*\"([A-Z0-9_]+)\"")
+# The exception filter answers a failure no throw named with a code of its own.
+FALLBACK = re.compile(r"messageOf\(known\) : \"([A-Z0-9_]+)\"")
 
 # Raised by the frontend itself when no response arrives, so no backend file
 # mentions it.
@@ -53,7 +55,7 @@ def scan() -> tuple[dict[str, list[str]], list[str]]:
     sentences: list[str] = []
     for path in sorted(BACKEND.rglob("*.ts")):
         for at, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for code in OPTION.findall(line):
+            for code in OPTION.findall(line) + FALLBACK.findall(line):
                 found.setdefault(code, []).append(str(path))
             for argument in CALL.findall(line):
                 codes, prose = codes_in(argument)

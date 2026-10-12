@@ -1504,6 +1504,7 @@
     "LEAVE_TYPE_REQUIRED": "Chọn loại phép trước đã.",
     "MANAGER_CYCLE": "Sắp xếp này tạo thành vòng cấp trên.",
     "NETWORK_UNREACHABLE": "Không gọi được máy chủ. Kiểm tra API có đang chạy ở địa chỉ trang này gọi tới không.",
+    "INTERNAL_ERROR": "Máy chủ gặp lỗi chưa rõ nguyên nhân. Thử lại sau ít phút.",
     "NOTHING_TO_CORRECT": "Chưa đổi gì để lưu.",
     "NOT_AN_EMPLOYEE": "Tài khoản này chưa gắn với hồ sơ nhân viên nào.",
     "NOT_YOUR_REQUEST": "Đơn này không thuộc quyền duyệt của bạn.",

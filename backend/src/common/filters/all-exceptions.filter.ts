@@ -30,7 +30,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // An unknown failure says nothing about itself outward: the detail is for
     // the log, because it tends to name tables, files and versions.
-    const message = known ? messageOf(known) : "internal error";
+    const message = known ? messageOf(known) : "INTERNAL_ERROR";
     if (!known) {
       this.log.error(`${req.method} ${req.path}: ${String(error)}`);
     }
