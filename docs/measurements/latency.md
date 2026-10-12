@@ -809,3 +809,21 @@ và alpha 0; cả 15 đường của spoof nhận được, detect chỉ ba đư
 Spoof nhanh hơn 18 ms (−22%) mà không đổi số nguyên nào, nên bản vá vào `esp_ppq_patches` của spoof. Sau
 đệm, mọi tích chập của spoof đều căn 16 kênh: pointwise còn 29,1 ms ở trung vị 0,21 chu kỳ. Ba đường của
 detect không bớt được giờ nào, nên detect không bật bản vá.
+
+### 14.5 Bản vá làm tròn xếp chồng — đo 13/10
+
+`make quant-timing` dựng các nấc theo `rounding_patches` của mỗi nhánh từ cùng một đồ thị lượng tử. Hai nấc
+mới: `clip_as_relu` ở detect (18 `Clip` của ReLU6 thành `Relu` gộp vào `Conv`, bão hoà ở 7,94) và
+`prelu_on_input_grid` trên `fused_prelu` ở spoof và recog (17 PReLU dời đầu ra về lưới của `Conv`, mất một
+bước mịn ở mặt dương, rồi được gộp). Cả ba qua `model->test()` ở đồ thị và 4 bản cắt.
+
+| Hàng | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | So với nấc dưới |
+|---|---|---:|---:|
+| detect `timing+clip_as_relu` | 8 khung, **0 / 46.200** | **47,4** / 48,6 ms | −15,1 ms (từ 62,5) |
+| spoof `timing+fused_prelu+prelu_on_input_grid` | 40 khung, **0 / 120** | **51,2** / 53,3 ms | −4,4 ms (từ 55,6) |
+| recog `timing+fused_prelu+prelu_on_input_grid` | 24 khung, **0 / 12.288** | **217,5** / 220,1 ms | −13,2 ms (từ 230,7) |
+
+Một khuôn mặt qua cả ba nhánh: **444,8 ms** lúc đầu (12/10); **391,1 ms** với riêng các bản vá không đổi số
+nguyên; **316,1 ms** với cả các nấc làm tròn, nhanh hơn 28,9%. Ba nấc làm tròn đổi số nguyên, nên chất lượng
+của chúng chưa có ở đây: thước của từng nhánh chấm các hàng biến thể của thang, và `make quant-choose` giữ
+nấc nào trong một bước phân giải của hàng tốt nhất.
