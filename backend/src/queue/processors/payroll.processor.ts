@@ -9,7 +9,7 @@ import { RedisService } from "../../database/redis.service.js";
 import { payslipMail } from "../../modules/payroll/mail-text.js";
 import { PayrollService } from "../../modules/payroll/payroll.service.js";
 import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
-import { QUEUE, type DeliverJob, type PayrollJob } from "../queues.js";
+import { JOB, QUEUE, type DeliverJob, type PayrollJob } from "../queues.js";
 
 @Injectable()
 export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
@@ -31,7 +31,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.payroll,
       async (job) => {
         const body = job.data as PayrollJob;
-        if (body.type === "run") {
+        if (body.type === JOB.run) {
           await this.payroll.runNow(body.runId);
           this.announceRun();
           return;
@@ -44,7 +44,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       this.log.error(`payroll ${job?.id} failed: ${error.message}`);
       const body = job?.data as PayrollJob | undefined;
       // Out of attempts, so the run says so rather than sitting on RUNNING.
-      if (body?.type === "run" && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      if (body?.type === JOB.run && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
         void this.payroll
           .failRun(body.runId)
           .then(() => this.announceRun())

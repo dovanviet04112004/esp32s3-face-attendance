@@ -464,7 +464,7 @@ export class TimesheetService implements OnModuleInit {
    * behind the proxy rather than one that finishes.
    */
   async scheduleBuild(from: string, to: string): Promise<{ jobId: string }> {
-    const job: TimesheetJob = { type: "build", from, to };
+    const job: TimesheetJob = { type: JOB.build, from, to };
     const queued = await this.queues[QUEUE.timesheet].add(JOB.build, job);
     return { jobId: String(queued.id) };
   }

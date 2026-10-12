@@ -254,7 +254,7 @@ export class UsersService {
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     for (const one of invites.filter((each) => landed.has(each.userId))) {
       await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
-        type: "password-setup",
+        type: JOB.passwordSetup,
         userId: one.userId,
         link: `${root}/${one.person.locale}/set-password?token=${one.link}`,
         reason: "opened",
@@ -375,7 +375,7 @@ export class UsersService {
     ]);
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
-      type: "password-setup",
+      type: JOB.passwordSetup,
       userId,
       link: `${root}/${locale}/set-password?token=${link}`,
       reason: why,

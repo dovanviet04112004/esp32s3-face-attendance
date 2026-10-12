@@ -200,7 +200,7 @@ export class ProfileService {
     });
     if (PROFILE_FIELDS[held.field].notice !== null && held.noticeTo !== null) {
       await this.queues[QUEUE.notify].add(JOB.profileNotice, {
-        type: "profile-notice",
+        type: JOB.profileNotice,
         changeId: held.id,
       } satisfies ProfileNoticeJob);
     }

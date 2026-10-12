@@ -1445,7 +1445,7 @@ export class PayrollService {
     await queue.addBulk(
       waiting.map((slip) => ({
         name: JOB.deliver,
-        data: { type: "deliver", payslipId: slip.id } satisfies PayrollJob,
+        data: { type: JOB.deliver, payslipId: slip.id } satisfies PayrollJob,
         opts: { jobId: `payslip-${slip.id}` },
       })),
     );

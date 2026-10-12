@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { CursorPageDto, type Page } from "../../common/dto/pagination.dto.js";
+import { JOB } from "../../queue/queues.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
   AttendanceTallyPage,
@@ -144,6 +145,6 @@ export class ReportsController {
   @ApiOperation({ summary: "Queue a long roll-up; asking while one waits queues nothing more" })
   @ApiCreatedResponse({ type: ReportQueued })
   async schedule(@Body() range: RangeDto): Promise<{ jobId: string }> {
-    return { jobId: await this.reports.schedule({ type: "monthly", ...range }) };
+    return { jobId: await this.reports.schedule({ type: JOB.monthly, ...range }) };
   }
 }

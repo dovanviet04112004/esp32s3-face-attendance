@@ -20,7 +20,14 @@ import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.j
 import { TasksSweep } from "../../modules/notifications/sweeps/tasks.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { DEFAULT_MAIL_LOCALE } from "../../modules/payroll/mail-text.js";
-import { QUEUE, type MfaChangedJob, type NotifyJob, type PasswordChangedJob, type PasswordSetupJob } from "../queues.js";
+import {
+  JOB,
+  QUEUE,
+  type MfaChangedJob,
+  type NotifyJob,
+  type PasswordChangedJob,
+  type PasswordSetupJob,
+} from "../queues.js";
 
 const POST_TIMEOUT_MS = 10000;
 
@@ -53,75 +60,75 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.notify,
       async (job) => {
         const body = job.data as NotifyJob;
-        if (body.type === "contracts-ending") {
+        if (body.type === JOB.contractsEnding) {
           await this.contracts.sweep();
           return;
         }
-        if (body.type === "probation-due") {
+        if (body.type === JOB.probationDue) {
           await this.probation.sweep();
           return;
         }
-        if (body.type === "requests-stale") {
+        if (body.type === JOB.requestsStale) {
           await this.stale.sweep();
           return;
         }
-        if (body.type === "backup-watch") {
+        if (body.type === JOB.backupWatch) {
           await this.backups.sweep();
           return;
         }
-        if (body.type === "notice-reconcile") {
+        if (body.type === JOB.noticeReconcile) {
           await this.reconcile.sweep();
           return;
         }
-        if (body.type === "notice-cleanup") {
+        if (body.type === JOB.noticeCleanup) {
           await this.cleanup.sweep();
           return;
         }
-        if (body.type === "kiosk-alerts") {
+        if (body.type === JOB.kioskAlerts) {
           await this.kiosk.sweep();
           return;
         }
-        if (body.type === "tasks-due") {
+        if (body.type === JOB.tasksDue) {
           await this.tasks.sweep();
           return;
         }
-        if (body.type === "documents-due") {
+        if (body.type === JOB.documentsDue) {
           await this.documents.sweep();
           return;
         }
-        if (body.type === "notice-documents") {
+        if (body.type === JOB.noticeDocuments) {
           await this.documents.fanOut(body.versionId);
           return;
         }
-        if (body.type === "attendance-due") {
+        if (body.type === JOB.attendanceDue) {
           await this.attendance.sweep();
           return;
         }
-        if (body.type === "team-attendance") {
+        if (body.type === JOB.teamAttendance) {
           await this.attendance.summarise();
           return;
         }
-        if (body.type === "notice-fanout") {
+        if (body.type === JOB.noticeFanout) {
           await this.notices.fanOut(body);
           return;
         }
-        if (body.type === "notice-gather") {
+        if (body.type === JOB.noticeGather) {
           await this.notices.gather(body.userId, new Date(body.since));
           return;
         }
-        if (body.type === "password-setup") {
+        if (body.type === JOB.passwordSetup) {
           await this.mailSetup(body);
           return;
         }
-        if (body.type === "password-changed") {
+        if (body.type === JOB.passwordChanged) {
           await this.mailChanged(body);
           return;
         }
-        if (body.type === "mfa-changed") {
+        if (body.type === JOB.mfaChanged) {
           await this.mailMfa(body);
           return;
         }
-        if (body.type === "profile-notice") {
+        if (body.type === JOB.profileNotice) {
           await this.profile.mailNotice(body.changeId);
           return;
         }
