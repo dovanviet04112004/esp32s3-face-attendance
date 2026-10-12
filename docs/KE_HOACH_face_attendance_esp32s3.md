@@ -2156,8 +2156,12 @@ chấm, kể cả khi bậc trước đã đạt cửa — rồi chọn **một*
 **Luật chọn hàng: chất lượng trước, rồi tới giờ.** Trong các hàng đạt cửa, hàng chọn là hàng có thước
 chính cao nhất. Một hàng khác chỉ thay nó khi thước chính kém không quá **một bước phân giải** của
 thước — detection 0,1 điểm AP, recognition 0,1 điểm TAR, anti-spoof 0,001 AUC — **và** chạy nhanh hơn
-trên chip. Bản vá xuất không đổi số nguyên (dưới) nên bật ở mọi hàng của nhánh; giờ của các hàng vì thế
-chỉ khác nhau ở lớp int16. Giờ đo bằng bản dò trên chính hàng ấy. Arena không phải cửa của ESP-DL (§3.8).
+trên chip. Bản vá xuất không đổi số nguyên (dưới) nên bật ở mọi hàng của nhánh. Bản vá **làm tròn** thì
+đổi số nguyên, nên không bao giờ bật cho cả nhánh: `make quant-variants` dựng từ hàng tốt nhất một **hàng
+biến thể** `<hàng>+<bản vá>` cho mỗi bản vá ấy, cùng số nguyên trọng số với hàng gốc nhưng mô phỏng và
+xuất đúng như chip tính khi có bản vá, rồi chấm bằng cùng thước. Luật trên tự quyết biến thể có thay hàng
+gốc không. Giờ của các hàng vì thế khác nhau ở lớp int16 và ở bản vá làm tròn. Giờ đo bằng bản dò trên
+chính hàng ấy. Arena không phải cửa của ESP-DL (§3.8).
 
 Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi file một bước:
 
@@ -2180,7 +2184,9 @@ Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi fil
 `esp_ppq_patches.py` sửa lỗi của ESP-PPQ 1.3.11, chỉ cho nhánh khai nó trong `esp_ppq_patches` của
 `quant.yaml`, ở mọi chỗ nhánh ấy dùng ESP-PPQ: lượng tử, mô phỏng, xuất. Mỗi bản vá ghi triệu chứng
 trên board và có test ghim nó. Bản vá ở bước xuất chỉ bỏ việc thừa ESP-PPQ để lại cho chip, **không đổi
-một số nguyên nào** của đồ thị: test so số nguyên của bản xuất có và không có bản vá. Viết lại mạng
+một số nguyên nào** của đồ thị: test so số nguyên của bản xuất có và không có bản vá. Bản vá làm tròn
+khai ở `rounding_patches`, không bao giờ ở `esp_ppq_patches` (`ptq_espdl.block` từ chối), và luôn kèm
+phần mô phỏng phép làm tròn mới, để thước chấm đúng số nguyên chip ra. Viết lại mạng
 trước khi lượng tử phải ra cùng số nguyên với bản chưa viết lại khi lượng tử bằng chính các bậc của
 thang (`same_integers`): bias correction của ESP-PPQ hiệu chỉnh theo khối op, nên thêm hay bớt op có
 thể đổi số nguyên dù phép tính không đổi. Viết lại nào không qua được phép so ấy thì làm ở bước xuất.
@@ -2191,12 +2197,17 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 | Bản vá xuất | Nhận đồ thị chỗ nào | Vì sao số nguyên không đổi |
 |---|---|---|
 | `cache_sized_convolutions` | tích chập 1×1 mà trọng số lấp đầy cache dữ liệu 64 KB | cắt theo kênh ra thành từng lát nửa cache rồi `Concat`; mỗi kênh ra vẫn là đúng phép tính ấy |
-| `fused_prelu` | `Conv` mà đầu ra chỉ đi vào một `PRelu` mang **cùng số mũ** ở đầu vào và đầu ra, alpha theo từng kênh | thành một op `ConvPRelu`. Nhân int8 của esp-dl trên S3 làm tròn tích chập ra int8 theo số mũ đầu ra rồi áp `EE.VPRELU.S8` lên đó, đúng lệnh op `PRelu` đứng riêng dùng; cùng số mũ thì hai cách ra cùng từng số. `PRelu` khác số mũ ở hai đầu giữ nguyên chỗ cũ |
+
+| Bản vá làm tròn | Nhận đồ thị chỗ nào | Chip tính khác chỗ nào, mô phỏng theo thế nào |
+|---|---|---|
+| `fused_prelu` | `PRelu` là đầu đọc duy nhất của một `Conv` 2-D int8, alpha int8 theo từng kênh trên lưới số mũ âm, và đầu ra `Conv`, đầu vào lẫn đầu ra `PRelu` cùng một lưới | cặp thành một op `ConvPRelu`. Nhân int8 của esp-dl trên S3 làm tròn tích chập half-up ra int8 theo số mũ đầu ra, rồi áp `EE.VPRELU.S8`: tích int8 của giá trị âm với alpha **dịch phải**, tức làm tròn xuống 🔬. Op `PRelu` đứng riêng lại tính bằng `vmulas` rồi làm tròn half-up như ESP-PPQ, nên gộp đổi số ở nhánh âm. Mô phỏng của bản vá làm tròn xuống nhánh âm của đúng các `PRelu` ấy, gradient đi thẳng qua cho QAT |
 
 Module `Conv` của esp-dl 3.3.11 dựng tham số nhân với con trỏ alpha để trống ("Do not support PReLU"),
 dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.5.6): nó dựng tham số qua
 `ConvOpArgs` công khai rồi điền con trỏ alpha và số mũ của nó, chạy cả tích chập thường lẫn depthwise.
-`espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh các op của `dl_module_creator.hpp`.
+`espdl_model.cpp` đăng ký nó sau các module của esp-dl, trước model đầu tiên; bản dò dựng `dl::Model`
+trực tiếp nên gọi cùng hàm đăng ký. `espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh
+các op của `dl_module_creator.hpp`.
 
 **Quy trình đưa một model lên chip**, nhánh nào cũng vậy. Mỗi bước là một lệnh make có điều kiện qua;
 chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurements/` (`latency.md` cho giờ,
@@ -2220,12 +2231,15 @@ chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurement
       của esp-dl trên S3, mỗi nhãn kèm bản vá xử lý nó: số kênh không chia hết cho 16, trọng số tích
       chập lớn hơn cache dữ liệu 64 KB, `Transpose` và `RequantizeLinear` do bước xuất chèn.
    3. Bật bản vá của nhãn trong `esp_ppq_patches` của nhánh, chạy lại chuỗi. Giữ bản vá khi bản dò vẫn
-      khớp từng bit **và** giờ giảm.
+      khớp từng bit **và** giờ giảm. Nhãn trỏ tới bản vá làm tròn thì bản vá vào `rounding_patches`:
+      `make quant-timing` dựng thêm `timing+<bản vá>` để bản dò của nó (`ROW=timing+<bản vá>`) kiểm
+      từng bit và đo giờ, còn thước cân nó ở bước 3.
    4. Nhãn không có bản vá thì viết lại mạng; `make quant-same-int8 BRANCH=<nhánh> RUN=<run>
       AGAINST=<commit>` phải báo 0 số lệch.
    5. Dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
 3. **Chất lượng.** `make quant-ptq BRANCH=<nhánh> RUN=<run>` dựng bậc 1–2 và chấm cả bốn cách hiệu chuẩn
-   bằng thước của nhánh, cạnh Q0; `make quant-int16` rồi `make quant-qat` dựng bậc 3 và 4.
+   bằng thước của nhánh, cạnh Q0; `make quant-int16` rồi `make quant-qat` dựng bậc 3 và 4;
+   `make quant-variants` dựng hàng biến thể của mỗi bản vá làm tròn trên hàng tốt nhất.
    `make quant-choose` áp luật chọn: in mọi hàng trong một bước của hàng đầu kèm giờ trên chip, và
    báo hàng nào còn phải dò trước khi chọn được.
 4. **Chốt.** Bản dò chạy trên hàng đã chọn (`ROW=<hàng>`, không phải `timing`): khớp từng bit, giờ và
