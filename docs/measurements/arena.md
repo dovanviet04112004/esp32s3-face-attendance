@@ -1,6 +1,6 @@
 # Arena TFLM — số đo trên board
 
-Bảng của KẾ HOẠCH §3.10 và §6.4, đo trong `firmware/test_apps/bench_ai` với cả
+Bảng của KẾ HOẠCH §3.8 và §6.4, đo trong `firmware/test_apps/bench_ai` với cả
 ba model nạp từ partition `models_0`.
 
 ## 1. `tail` và `head` từng model — E8-T7
@@ -19,7 +19,7 @@ nạp thêm spoof lên 365,0 KB, mà `tail_spoof + head_spoof` đã biết.
 ## 1b. Sau khi sửa kiến trúc, và sau khi chia lại arena
 
 `arena_fast` giữ **một mình detect** ở SRAM nội; `arena_big` cho **anti-spoof và
-recognition dùng chung** một `MicroAllocator` ở PSRAM (§3.10).
+recognition dùng chung** một `MicroAllocator` ở PSRAM (§3.8).
 
 | Arena | Dùng | Cấp | Ở đâu |
 |---|---|---|---|
@@ -64,7 +64,7 @@ buffer LCD, buffer crop và heap dự phòng: 111 KB thiếu 156 KB, còn 331 KB
 
 Kích thước model đọc từ partition: detect 158 KB, spoof 849 KB, recog **712 KB**.
 
-## 2. Công thức §3.10 trả đúng cái nó hứa
+## 2. Công thức §3.8 trả đúng cái nó hứa
 
 `arena_fast` giữ detect và spoof trên **cùng một `MicroAllocator`**:
 
@@ -79,7 +79,7 @@ Kích thước model đọc từ partition: detect 158 KB, spoof 849 KB, recog *
 | **Tiết kiệm** | **158,4 KB, tức 30%** |
 
 Đúng bằng `head_det`, vì head của detect nằm gọn trong head của spoof. Đây là
-lý do §3.10 bắt truyền `MicroAllocator*` chứ không truyền buffer.
+lý do §3.8 bắt truyền `MicroAllocator*` chứ không truyền buffer.
 
 Số cuối cùng đo được sau khi cả ba nạp xong:
 
@@ -97,7 +97,7 @@ Số cuối cùng đo được sau khi cả ba nạp xong:
 
 **Ràng buộc là tính liền mạch, không phải tổng.** `heap_caps_aligned_alloc` cần
 một dải liền, mà bounce buffer LCD và mô tả DMA camera cắt heap thành mảnh. Vì
-vậy `ai_engine_init()` chạy trước mọi driver (§3.10).
+vậy `ai_engine_init()` chạy trước mọi driver (§3.8).
 
 Nhưng ngay cả khi xin đầu tiên, `arena_fast` cần **365 KB** còn SRAM nội chỉ có
 ~293 KB, và đó là lúc chưa có Wi-Fi lẫn LVGL. **Với model hiện tại, không có
@@ -236,7 +236,7 @@ recognition**, tức số của ảnh hai backbone, trong khi nhánh một backb
 Cơ chế: `update_lock.py` để `--arena-bytes` mặc định 0, lần export cuối không truyền, nên phép
 đo bị ghi đè bằng "chưa đo". Cờ này giờ **bắt buộc**, không có mặc định.
 
-Cả hai ô mang **422.764 B** — tổng của nhóm, đúng luật §3.8 (`plan:2720`): hai nhánh chung một
+Cả hai ô mang **422.764 B** — tổng của nhóm, đúng luật §3.8: hai nhánh chung một
 `MicroAllocator` thì cả hai entry ghi cùng một con, `ai_engine` lấy `max` theo nhóm.
 
 Đóng gói lại `models_0` rồi đọc trên board:

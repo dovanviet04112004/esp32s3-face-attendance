@@ -2,8 +2,8 @@
 
 Mọi số đã đo được của nhánh detect, kèm điều kiện đo. Số chưa chạy trên board đánh dấu 🔬.
 
-Bảng đối chứng KD (A0 vs A3) theo §3.7 có nhà riêng là `ablation_teacher.md`; ở đây chỉ
-giữ dòng A0 để không phải mở hai file khi đọc.
+Bảng đối chứng KD (A0 vs A3) của §3.7 cũ chỉ có dòng A0: ADR-0002 bỏ knowledge distillation
+trước khi arm A3 chạy.
 
 ---
 
@@ -18,7 +18,7 @@ Giống nhau: kiến trúc YuNet (75.631 tham số), `input_hw [120, 160]`, seed
 SGD lr 0,02 + nesterov, cosine + 3 epoch warmup, EMA 0,999, `split.lock` v1, 300 epoch.
 
 > **Cảnh báo khi đọc mọi bảng dưới đây.** v1 và v2 lệch nhau **hai** biến: công thức lấy
-> mẫu *và* tiêu chí chọn checkpoint. §3.7 xếp tiêu chí chọn checkpoint vào cột "phải
+> mẫu *và* tiêu chí chọn checkpoint. §3.7 cũ xếp tiêu chí chọn checkpoint vào cột "phải
 > giống hệt", nên đây **không phải** ablation một biến. Chênh lệch đo được là của cả cặp.
 > Để tách được, phải chấm lại v1 bằng chính tiêu chí AP — chưa làm.
 
@@ -155,7 +155,7 @@ Ca 2 và 3 mặt ở sàn 32 px chỉ có 19 và 5 ảnh — **không đủ đ�
 
 ---
 
-## 6. Bảng đối chứng A — có teacher hay không (§3.7)
+## 6. Bảng đối chứng A — có teacher hay không (§3.7 cũ)
 
 | Arm | Cách train | val AP | AP ≥32 px (sàn cũ) | WIDER e/m/h | INT8 trên `test_device` |
 |---|---|---|---|---|---|
@@ -167,7 +167,7 @@ student, còn `Yolo26PoseTeacher` trả `TeacherDetections`; và FGD cần featu
 teacher ở cùng độ phân giải với student, trong khi teacher chạy 640² còn student chạy
 160×120. Hai việc này là **E4-T13**.
 
-Quy tắc chọn của §3.7 là accuracy **sau INT8 trên `test_device`**, nên bảng này chưa
+Quy tắc chọn của §3.7 cũ là accuracy **sau INT8 trên `test_device`**, nên bảng này chưa
 chốt được arm nào, và chưa được viết ADR.
 
 ---
@@ -253,7 +253,7 @@ nhưng mọi số conf đo bằng app chưa gọi `expose()` đều là chặn d
 
 - Chấm lại v1 theo tiêu chí AP để tách hai biến ở §1.
 - E4-T13 → chạy arm A3 → điền nốt §6.
-- Thang lượng tử hoá §3.8, `quant_ladder.md`. Cổng INT8: sụt < 1% so với **0,9414**, số của
+- Thang lượng tử hoá §3.7, `quant_ladder.md`. Cổng INT8: sụt < 1% so với **0,9414**, số của
   sàn 38 px ở §1; bảng §6 dựng ở sàn 32 px nên không so thẳng vào đó được.
 
 Ngưỡng tin cậy **0,30** đo ở §5 là giá trị đề nghị, không phải hằng số trong code: theo

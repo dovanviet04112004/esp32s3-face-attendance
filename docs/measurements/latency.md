@@ -138,7 +138,7 @@ không tăng tốc được (PReLU, MEAN, PAD, CONCATENATION, RESIZE) là 1.831.
 tức **52,4% thời gian của cả pipeline dùng cho op mà chip không có kernel**.
 
 **Vì sao trước đó lại là PReLU, và vì sao thay bằng `ReLU` chứ không phải
-`ReLU6`**: CLE (cân bằng chéo lớp, §3.8) đòi hàm kích hoạt thuần nhất dương.
+`ReLU6`**: CLE (cân bằng chéo lớp, §3.7) đòi hàm kích hoạt thuần nhất dương.
 `ReLU6` có trần cố định nên không thoả — nó chỉ giữ được 15/48 cặp conv của
 MobileFaceNet. `PReLU` thoả, nên chọn PReLU là chọn CLE, và giá phải trả hiện
 ở bảng trên. `ReLU` cũng thuần nhất dương, giữ đủ **48/48** cặp, mà lại tốn 0 ms
@@ -155,7 +155,7 @@ Lock chỉ đổi sau khi mỗi nhánh có run train của chính kiến trúc m
 ngưỡng accuracy INT8 ở §4.2.
 
 **Đưa activation về SRAM nội chỉ thu được 1,9%.** Tách `head` xuống SRAM nội và
-để `tail` ở PSRAM (§3.10) cho:
+để `tail` ở PSRAM (§3.8) cho:
 
 | Nhánh | Cả arena ở PSRAM | `head` ở SRAM nội | Thu về |
 |---|---|---|---|

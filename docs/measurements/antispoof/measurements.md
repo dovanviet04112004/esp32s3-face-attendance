@@ -100,7 +100,7 @@ Ba thứ tìm ra khi soi vì sao main process ghim 105% CPU còn GPU chỉ 57%:
 2. **`compile` chưa từng được bật cho nhánh này** — nó nằm ở config recognition. Trớ trêu
    là nhánh model nhỏ nhất, nơi overhead Python nặng nhất, lại là nhánh thiếu nó.
 3. **`reduce-overhead` (CUDA graphs)** hơn thêm 15% trên benchmark, **không bật**: tỉ lệ
-   benchmark→thực tế đo được là 63%, nên thực tế chỉ còn ~9%, mà §3.7 buộc bật cho cả arm
+   benchmark→thực tế đo được là 63%, nên thực tế chỉ còn ~9%, mà §3.7 cũ buộc bật cho cả arm
    A3 dài ~13 giờ và graph capture đòi shape tĩnh.
 
 Epoch thật: **7 phút 19 → 4 phút 35** (−37%).
@@ -111,7 +111,7 @@ Epoch thật: **7 phút 19 → 4 phút 35** (−37%).
 
 ---
 
-## 5. Bảng đối chứng A — có teacher hay không (§3.7)
+## 5. Bảng đối chứng A — có teacher hay không (§3.7 cũ)
 
 > **Đo ở crop 80×80, hai backbone.** Bản đang deploy là một backbone ở **81×81**; số của nó
 > ở §31 và §33. Hai bộ số không so thẳng với nhau được.
@@ -748,7 +748,7 @@ sẽ phải phóng to — đúng điều mà 224 sinh ra để tránh. Đổi l�
 
 ### 13.3 Batch của student bị arm KD chặn trên
 
-§3.7 buộc hai arm dùng chung batch, nên batch phải là cái arm KD **chứa nổi**, không phải
+§3.7 cũ buộc hai arm dùng chung batch, nên batch phải là cái arm KD **chứa nổi**, không phải
 cái arm nền thích. Đo channels-last trên card 4 GB:
 
 | Batch | Arm nền | Arm KD | VRAM |
@@ -782,7 +782,7 @@ là **11 phút mỗi epoch**, cả run dưới sáu giờ.
 `channels_last` cho **515 → 630** ảnh/giây. Mọi convolution ở CDCN++ là 3×3 dày, đúng thứ
 kernel channels-last của cudnn sinh ra để chạy.
 
-Teacher là **đầu vào cố định của cả hai arm**, nên §3.7 không ràng buộc batch của nó theo
+Teacher là **đầu vào cố định của cả hai arm**, nên §3.7 cũ không ràng buộc batch của nó theo
 batch của student.
 
 ---
@@ -883,7 +883,7 @@ CelebA-Spoof vân in và moiré đủ để phân biệt; trên khung điện th
 `attack_anh` lại là viền màn hình và khung trình duyệt — nằm đúng phần bối cảnh đó. Kiểm
 được bằng một run A0 thu hẹp dải, mọi điều kiện khác giữ nguyên.
 
-**Chưa chốt A0.** Bảng đối chứng §3.7 chỉ có nghĩa khi arm nền dùng được, mà một nửa
+**Chưa chốt A0.** Bảng đối chứng §3.7 cũ chỉ có nghĩa khi arm nền dùng được, mà một nửa
 `attack_anh` lọt ở ngưỡng 0,90 thì chưa.
 
 ---
@@ -1067,7 +1067,7 @@ bằng OV5640 trả lời được.
 ### 16.7 Chốt
 
 A0 dùng được: 5/6 mốc đạt, mốc trượt duy nhất nằm trên bộ 24 mẫu. Bộ trọng số
-`20260905-1740_865b5d0_64c387` là arm nền cho bảng đối chứng §3.7. Ngưỡng vận hành tạm đặt
+`20260905-1740_865b5d0_64c387` là arm nền cho bảng đối chứng §3.7 cũ. Ngưỡng vận hành tạm đặt
 **0,90**; nó chưa phải ngưỡng nghiệm thu vì chưa đo trên miền thiết bị.
 
 ---
@@ -1232,7 +1232,7 @@ Phải đo lại sau khi có model train bằng hộp detector; chưa chốt.
   giải khung hình như Axon.
 - `export_soft_target.py`, `postproc/preproc.py`, `postproc/emit_golden.py`, `quant.py`,
   `README.md` — §4.4 đã khai, chưa viết.
-- Thang lượng tử hoá §3.8.
+- Thang lượng tử hoá §3.7.
 
 ---
 

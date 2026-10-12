@@ -57,7 +57,7 @@ nhất định đoạt cả thứ hạng.
 nên chỉ làm loãng, còn AgeDB dao động 0,05 giữa hai epoch liền nhau (0,5877 → 0,5333) nên
 gộp vào là để bộ nhiễu nhất lái quyết định.
 
-§3.7 xếp tiêu chí chọn checkpoint vào cột phải giống hệt giữa hai arm, nên nó chốt trước khi
+§3.7 cũ xếp tiêu chí chọn checkpoint vào cột phải giống hệt giữa hai arm, nên nó chốt trước khi
 A3 chạy. Đổi tiêu chí **không** làm bảng §4.1 phải đo lại — mọi cột đã ghi sẵn cho từng
 epoch; nó chỉ đổi checkpoint được chọn, và cả hai checkpoint đã nằm trên đĩa.
 
@@ -116,7 +116,7 @@ chỗ nó trong vòng train, nên chi phí teacher không lặp lại mỗi epoc
 
 ---
 
-## 4. Bảng đối chứng A — có teacher hay không (§3.7)
+## 4. Bảng đối chứng A — có teacher hay không (§3.7 cũ)
 
 | Arm | Cách train | LFW / CFP-FP / AgeDB | Accuracy sau INT8 trên `test_device` |
 |---|---|---|---|
@@ -259,7 +259,7 @@ nằm ở việc xếp hạng hai epoch liền nhau của cùng một arm.
 
 - Chốt tiêu chí chọn checkpoint (§4.2) → cache embedding teacher → chạy arm A3, điền §4.
 - `postproc/emit_golden.py`, `quant.py`, `README.md` — §4.4 đã khai, chưa viết.
-- Thang lượng tử hoá §3.8, `quant_ladder.md`.
+- Thang lượng tử hoá §3.7, `quant_ladder.md`.
 - TAR@FAR trên tập nhân viên tự thu — mới có một người, §7.
 
 ---

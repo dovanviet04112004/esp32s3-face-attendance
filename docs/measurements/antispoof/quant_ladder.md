@@ -1,6 +1,6 @@
 # Thang lượng tử hoá — nhánh anti-spoof
 
-Bảng đối chứng B của KẾ HOẠCH §3.8. Mỗi dòng đủ 5 cột; cột nào chưa đo được thì
+Bảng đối chứng B của KẾ HOẠCH §3.8 cũ; thang ấy nay là §3.7. Mỗi dòng đủ 5 cột; cột nào chưa đo được thì
 để 🔬 chứ không điền số suy ra.
 
 ## 1. Model đem lượng tử hoá
@@ -13,9 +13,9 @@ Ba checkpoint, cùng kiến trúc `minifasnet_v2_se`, hai crop 80×80:
 | `1740` | `20260905-1740_865b5d0_64c387` | bản vá cổng crop-scale |
 | `0944` | `20260906-0944_8535ca1_80fe5f` | mới nhất, epoch 45, val EER 0,1452 |
 
-**Chưa chốt arm §3.7.** Cả ba run hiện có đều là A0 (`teacher.enabled: false`);
-arm A3 chưa chạy nên `ablation_teacher.md` chưa tồn tại. §3.8 nói thang chạy
-trên arm thắng ở §3.7, nên bảng dưới là **số của một checkpoint cụ thể**, dùng
+**Chưa chốt arm của §3.7 cũ.** Cả ba run hiện có đều là A0 (`teacher.enabled: false`);
+arm A3 không bao giờ chạy, vì ADR-0002 bỏ knowledge distillation. §3.8 cũ nói thang chạy
+trên arm thắng ở §3.7 cũ, nên bảng dưới là **số của một checkpoint cụ thể**, dùng
 để dựng và kiểm đường export — không được đọc thành "đã chốt cấu hình quantize"
 (§4.2).
 
@@ -47,7 +47,7 @@ nguồn nào.
 
 **Lượng tử hoá không làm mất accuracy đo được.** Q1 nhỏ hơn Q0 **2,41 lần** mà
 EER của **cả ba** model đều tốt hơn Q0. Ba kết quả độc lập cùng chiều nên đây
-không còn là nhiễu. Ngưỡng accuracy của §3.8 là "sụt < 1% so với Q0" — Q1 vượt
+không còn là nhiễu. Ngưỡng accuracy của §3.8 cũ là "sụt < 1% so với Q0" — Q1 vượt
 thoải mái, nên theo quy tắc *"Q1 đạt thì dừng, không chạy Q2 cho đẹp bảng"*,
 **Q2 (QAT + LSQ) chưa cần chạy**. Hai ngưỡng còn lại (arena, latency) vẫn treo
 cho tới khi có số trên board.
@@ -77,7 +77,7 @@ Hệ quả: dải lượng tử hoá đo trên miền train chứ không phải 
 có tập OV5640 thật thì phải chạy lại toàn bộ bảng — đây là lý do §1 tách `calib/`
 riêng ngay từ đầu.
 
-**Percentile 99,9% chưa cài.** §3.8 định nghĩa Q1 gồm cả nó, nhưng
+**Percentile 99,9% chưa cài.** §3.8 cũ định nghĩa Q1 gồm cả nó, nhưng
 `TFLiteConverter` chỉ lấy dải theo min-max của tập đại diện và không mở API cho
 percentile; muốn có phải sửa thẳng tham số lượng tử hoá trong flatbuffer. Dòng
 Q1 ở trên vì thế là **per-channel + CLE + bias correction, hiệu chỉnh min-max**.
@@ -166,7 +166,7 @@ Pool của `0728` không chấm vì thang dừng ở `op_check` trước bước
 đường của §41.1. Q1 so với Q0 trên board: PReLU giữ nguyên 0/62, ReLU giữ nguyên 3/62 — lượng
 tử không đổi thứ tự ở cả hai, chỉ thu khe (0,473 → 0,322 và 0,146 → 0,127).
 
-Cả hai run đều là **A0 với trọng số nhập**, không phải arm §3.7; bảng này dựng đường export cho
+Cả hai run đều là **A0 với trọng số nhập**, không phải arm của §3.7 cũ; bảng này dựng đường export cho
 chúng và ghi số, không chốt cấu hình lượng tử.
 
 ## 7. Student width 32 distill từ trọng số nhập — 16/09, CLE tắt
