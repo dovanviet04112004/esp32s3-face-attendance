@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Empty, LayerCard, LayerDialog, LinkButton } from "@cloudflare/kumo";
+import { Button, Empty, LayerCard, LayerDialog } from "@cloudflare/kumo";
 import { CheckIcon, ClockCounterClockwiseIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
@@ -9,12 +9,12 @@ import { Suspense, useMemo, useState } from "react";
 
 import type { Notice } from "@/components/notifications/kinds";
 import { NOTICES_KEY, useNoticeWords, useReadSubject } from "@/components/notifications/notice-row";
+import { RequestForm } from "@/components/requests/request-form";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
-import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { atClock, clockOf, dayOf, dayOnly, dayWindow, todayIso } from "@/lib/format";
@@ -116,13 +116,17 @@ function MyAttendance() {
   const nav = useTranslations("nav");
   const common = useTranslations("common");
   const format = useFormatter();
-  const router = useRouter();
   const cache = useQueryClient();
   const notify = useNotify();
   const say = useNoticeWords();
   const { employeeId, role } = useSession();
   const [url, setUrl] = useUrlState({ month: "", day: "" });
   const [picked, setPicked] = useState<Day | null>(null);
+  const [fixSeed, setFixSeed] = useState(0);
+  const [fixing, setFixing] = useState(false);
+  const [fixDate, setFixDate] = useState<string | undefined>(undefined);
+  const [handOff, setHandOff] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
   // A notice names a day, and the month around it is the one to show.
   const linkedDay = DAY.test(url.day) ? url.day : "";
   const month = monthOf(url.month || linkedDay.slice(0, 7));
@@ -269,7 +273,11 @@ function MyAttendance() {
     }
     return plan?.shift ? `${clockOf(plan.shift.startTime, locale)}–${clockOf(plan.shift.endTime, locale)}` : shifts("none");
   };
-  const fix = (date: string) => router.push(`/me/requests?new=ATTENDANCE_FIX&date=${date}`);
+  const fix = (date?: string) => {
+    setFixDate(date);
+    setFixSeed((held) => held + 1);
+    setFixing(true);
+  };
   const fixable = (day: Day) => day.date < today;
 
   const MARK: Record<Mark, { tone: "waiting" | "bad" | "good" | "idle"; label: (day: Day) => string } | null> = {
@@ -339,14 +347,9 @@ function MyAttendance() {
                 ...(totals.absentDays === undefined ? [] : [[t("attAbsentDays"), totals.absentDays] as [string, number]]),
               ]}
             />
-            <LinkButton
-              href="/me/requests?new=ATTENDANCE_FIX"
-              variant="secondary"
-              icon={ClockCounterClockwiseIcon}
-              className="mt-3 w-full justify-start"
-            >
+            <Button variant="secondary" icon={ClockCounterClockwiseIcon} className="mt-3 w-full justify-start" onClick={() => fix()}>
               {t("fixAsk")}
-            </LinkButton>
+            </Button>
           </AsideCard>
         }
       >
@@ -375,7 +378,22 @@ function MyAttendance() {
         />
       </PageLayout>
 
-      <LayerDialog.Root open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
+      <LayerDialog.Root
+        open={open !== null && !leaving}
+        onOpenChange={(next) => !next && setLeaving(true)}
+        onOpenChangeComplete={(next) => {
+          if (next) {
+            return;
+          }
+          // The day stays drawn while its sheet slides away; only then does the form rise.
+          setLeaving(false);
+          setOpen(null);
+          if (handOff) {
+            fix(handOff);
+            setHandOff(null);
+          }
+        }}
+      >
         <LayerDialog.Content closeLabel={common("close")}>
           <LayerDialog.Title>{open ? format.dateTime(dayOnly(open.date), { weekday: "long", day: "numeric", month: "long" }) : ""}</LayerDialog.Title>
           <LayerDialog.Description>{open ? planWords(open.plan) : ""}</LayerDialog.Description>
@@ -442,11 +460,20 @@ function MyAttendance() {
           </LayerDialog.Body>
           {open && fixable(open) ? (
             <LayerDialog.Actions dismissLabel={common("close")}>
-              <LayerDialog.Actions.Primary onClick={() => fix(open.date)}>{t("fixThisDay")}</LayerDialog.Actions.Primary>
+              <LayerDialog.Actions.Primary
+                onClick={() => {
+                  setHandOff(open.date);
+                  setLeaving(true);
+                }}
+              >
+                {t("fixThisDay")}
+              </LayerDialog.Actions.Primary>
             </LayerDialog.Actions>
           ) : null}
         </LayerDialog.Content>
       </LayerDialog.Root>
+
+      <RequestForm key={fixSeed} open={fixing} onOpenChange={setFixing} kind="ATTENDANCE_FIX" date={fixDate} />
     </>
   );
 }
