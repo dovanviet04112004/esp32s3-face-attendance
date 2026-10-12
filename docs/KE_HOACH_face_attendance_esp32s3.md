@@ -2215,7 +2215,8 @@ chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurement
    5. Dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
 3. **Chất lượng.** `make quant-ptq BRANCH=<nhánh> RUN=<run>` dựng bậc 1–2 và chấm cả bốn cách hiệu chuẩn
    bằng thước của nhánh, cạnh Q0; `make quant-int16` rồi `make quant-qat` dựng bậc 3 và 4.
-   `make quant-table` xếp các hàng theo luật chọn.
+   `make quant-choose` áp luật chọn: in mọi hàng trong một bước của hàng đầu kèm giờ trên chip, và
+   báo hàng nào còn phải dò trước khi chọn được.
 4. **Chốt.** Bản dò chạy trên hàng đã chọn (`ROW=<hàng>`, không phải `timing`): khớp từng bit, giờ và
    PSRAM ghi vào `latency.md`. ADR của nhánh ghi bậc đã chọn kèm bảng đối chứng.
    `make quant-deploy BRANCH=<nhánh> RUN=<run> ROW=<hàng>` chép `.espdl` vào `firmware/models/<nhánh>/` và
