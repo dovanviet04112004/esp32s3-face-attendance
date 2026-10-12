@@ -2232,6 +2232,11 @@ không sập theo. Thước đọc tập chấm theo lô, không bao giờ giữ
       module chậm nhất, chu kỳ trên mỗi phép nhân-cộng của từng tích chập. Nó gắn nhãn các đường chậm
       của esp-dl trên S3, mỗi nhãn kèm bản vá xử lý nó: số kênh không chia hết cho 16, trọng số tích
       chập lớn hơn cache dữ liệu 64 KB, `Transpose` và `RequantizeLinear` do bước xuất chèn.
+      `ALL=1` in **mọi** module chứ không chỉ những cái chậm nhất, cùng bảng theo lớp kernel: tích chập
+      đầu 3 kênh, pointwise, depthwise và tích chập thường theo cỡ và bước, mỗi lớp tách căn hay lệch 16
+      kênh, rồi từng loại op khác. Mỗi lớp có tổng giờ, tỉ trọng, chu kỳ trên phép nhân-cộng thấp nhất,
+      giữa và cao nhất, và phần giờ bớt được nếu mọi module của lớp chạy bằng module nhanh nhất cùng lớp.
+      Bảng ấy là danh sách việc của bước 3–4: không lớp nào bị bỏ qua chỉ vì không lọt top.
    3. Bật bản vá của nhãn trong `esp_ppq_patches` của nhánh, chạy lại chuỗi. Giữ bản vá khi bản dò vẫn
       khớp từng bit **và** giờ giảm. Nhãn trỏ tới bản vá làm tròn thì bản vá vào `rounding_patches`:
       `make quant-timing` dựng thêm `timing+<bản vá>` để bản dò của nó (`ROW=timing+<bản vá>`) kiểm
