@@ -10,7 +10,7 @@ import { DataTable, PersonCell, type Column } from "@/components/tables/data-tab
 import { DateField } from "@/components/ui/date-field";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { Facts, PageHeader, PageLayout } from "@/components/ui/page";
-import { api } from "@/lib/api";
+import { api, queryOf } from "@/lib/api";
 import { useUrlState } from "@/lib/url-state";
 
 interface Entry {
@@ -53,11 +53,6 @@ const kPage = 50;
 const kPickTake = 20;
 // The input also refills itself with the chosen label; only keystrokes are a search.
 const TYPED: ReadonlySet<string> = new Set(["input-change", "input-clear", "clear-press"]);
-
-function queryOf(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
-}
 
 /** The catalogue name of an action or a subject, or the raw name for one added since. */
 function useVocabularyNames(): { actionName: (action: string) => string; subjectName: (subject: string) => string } {

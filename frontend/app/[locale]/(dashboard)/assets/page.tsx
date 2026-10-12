@@ -22,7 +22,7 @@ import { useOptional } from "@/components/ui/optional";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill, type Tone } from "@/components/ui/pill";
-import { api } from "@/lib/api";
+import { api, queryOf, saveCsv } from "@/lib/api";
 import { useFault } from "@/lib/fault";
 import { useUrlState } from "@/lib/url-state";
 
@@ -60,19 +60,6 @@ interface Draft {
   kind: string;
   serialNo: string;
   note: string;
-}
-
-function query(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
-}
-
-function save(text: string, name: string): void {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 export default function AssetsPage() {
@@ -115,13 +102,13 @@ function Assets() {
   const register = useInfiniteQuery({
     queryKey: ["assets", "register", filters],
     initialPageParam: "",
-    queryFn: async ({ pageParam }) => (await api.get<AssetPage>(`/assets${query({ ...filters, cursor: pageParam })}`)).data,
+    queryFn: async ({ pageParam }) => (await api.get<AssetPage>(`/assets${queryOf({ ...filters, cursor: pageParam })}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
   const counts = useQuery({
     queryKey: ["assets", "counts", url.q, url.kind],
-    queryFn: async () => (await api.get<Counts>(`/assets/counts${query({ search: url.q, kind: url.kind })}`)).data,
+    queryFn: async () => (await api.get<Counts>(`/assets/counts${queryOf({ search: url.q, kind: url.kind })}`)).data,
   });
 
   // A search hit names one asset and arrives with the register filtered to its code.
@@ -162,7 +149,7 @@ function Assets() {
   });
 
   const exporting = useMutation({
-    mutationFn: async () => save((await api.get<string>(`/assets/export${query(filters)}`)).data, "assets.csv"),
+    mutationFn: async () => saveCsv((await api.get<string>(`/assets/export${queryOf(filters)}`)).data, "assets.csv"),
     onSuccess: () => notify.done(t("exported")),
     onError: notify.failed,
   });

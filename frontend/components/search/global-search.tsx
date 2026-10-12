@@ -27,6 +27,7 @@ import type { RequestKind } from "@/components/requests/request-card";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { fold } from "@/lib/format";
 import { entriesFor } from "@/lib/nav";
 
 const KINDS = [
@@ -120,11 +121,6 @@ const kMinLength = 2;
 // The api refuses a longer term (SearchQueryDto).
 const kMaxLength = 64;
 
-// NFD leaves đ whole, since Unicode files it as a letter of its own rather than d with a mark.
-function folded(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/đ/g, "d");
-}
-
 /** The field-shaped button the top bar shows; with no `onOpen` it is the inert copy of the opening frame. */
 export function SearchTrigger({ onOpen }: { onOpen?: () => void }) {
   const t = useTranslations("search");
@@ -207,10 +203,10 @@ export function GlobalSearch() {
   const loading = wanted.length >= kMinLength && (wanted !== term || found.isFetching);
 
   const piles = useMemo<Pile[]>(() => {
-    const needle = folded(typed.trim());
+    const needle = fold(typed.trim());
     const pages = entriesFor(role, employeeId !== null)
       .flatMap((group) => group.entries.flatMap((entry) => entry.members))
-      .filter((item) => needle === "" || folded(nav(item.key)).includes(needle))
+      .filter((item) => needle === "" || fold(nav(item.key)).includes(needle))
       .map((item) => ({
         id: `page:${item.href}`,
         title: nav(item.key),

@@ -8,16 +8,15 @@ import { Suspense, useEffect, useState } from "react";
 
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
-import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthBounds, monthKey, monthOf, thisMonth } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { api } from "@/lib/api";
-import { atClock, clockAt, dayOf, dayOnly, dayWindow, monthStart } from "@/lib/format";
+import { clockAt, dayOf, dayOnly, dayWindow } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const PAGE = 50;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const MONTH = /^(\d{4})-(\d{2})$/;
 
 interface TallyPage {
   rows: Tally[];
@@ -39,23 +38,6 @@ interface Tally {
 interface Department {
   id: string;
   name: string;
-}
-
-function monthOf(raw: string): Month {
-  const hit = raw.match(MONTH);
-  const month = hit ? Number(hit[2]) : 0;
-  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
-}
-
-function monthKey(at: Month): string {
-  return `${at.year}-${String(at.month).padStart(2, "0")}`;
-}
-
-// The roll-up counts up to `to` inclusive, and the monthly job warms exactly a month's span.
-function monthBounds(at: Month): { from: string; to: string } {
-  const first = `${monthKey(at)}-01`;
-  const end = atClock(monthStart(1, first));
-  return { from: atClock(first).toISOString(), to: new Date(end.getTime() - 1).toISOString() };
 }
 
 function dayBounds(from: string, to: string): { from: string; to: string } {

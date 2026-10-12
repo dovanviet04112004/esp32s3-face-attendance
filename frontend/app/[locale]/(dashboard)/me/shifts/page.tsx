@@ -7,7 +7,7 @@ import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { Failed } from "@/components/ui/failed";
-import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthOrder, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { AsideCard, PageHeader, PageLayout, StatList } from "@/components/ui/page";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -60,10 +60,6 @@ function leadingBlanks(firstDay: string): number {
   return (new Date(`${firstDay}T00:00:00Z`).getUTCDay() + MONDAY_OFFSET) % WEEK;
 }
 
-function order(at: Month): number {
-  return at.year * 12 + at.month;
-}
-
 const CELL: Record<Sort, string> = {
   work: "bg-kumo-base",
   away: "bg-kumo-info-tint",
@@ -103,7 +99,7 @@ export default function MyShiftsPage() {
   const count = (group: Group) => days.filter((one) => groupOf(sortOf(one)) === group).length;
 
   function move(next: Month): void {
-    setShowing(order(next) < order(earliest) ? earliest : next);
+    setShowing(monthOrder(next) < monthOrder(earliest) ? earliest : next);
     setLit(null);
   }
 

@@ -26,13 +26,14 @@ import { SettlementSheet } from "@/components/payroll/settlement-sheet";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { periodName } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill, type Tone } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, saveCsv } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
@@ -140,19 +141,6 @@ interface Step {
   key: StepKey;
   state: StepState;
   body?: ReactNode;
-}
-
-function periodName(period: { year: number; month: number }): string {
-  return `${String(period.month).padStart(2, "0")}/${period.year}`;
-}
-
-function save(text: string, name: string): void {
-  const link = document.createElement("a");
-  // The api already opens the file with a BOM where Excel needs one, so this must not add one.
-  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 function FaultBanner({ fault }: { fault: string | null }) {
@@ -368,7 +356,7 @@ function PayrollPeriod() {
 
   const exportFile = useMutation({
     mutationFn: async (kindOf: "bank" | "ledger") =>
-      save(
+      saveCsv(
         (await api.get<string>(`/payroll-periods/${periodId}/export?kind=${kindOf}`)).data,
         `payroll-${kindOf}-${name.replace("/", "-")}.csv`,
       ),
@@ -378,7 +366,7 @@ function PayrollPeriod() {
 
   const exportSlips = useMutation({
     mutationFn: async () =>
-      save((await api.get<string>(`/payslips/export?${slipFilter.toString()}`)).data, `payslips-${name.replace("/", "-")}.csv`),
+      saveCsv((await api.get<string>(`/payslips/export?${slipFilter.toString()}`)).data, `payslips-${name.replace("/", "-")}.csv`),
     onSuccess: () => notify.done(t("slipsExported")),
     onError: notify.failed,
   });

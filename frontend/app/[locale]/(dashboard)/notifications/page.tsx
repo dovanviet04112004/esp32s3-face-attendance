@@ -23,7 +23,7 @@ import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, queryOf } from "@/lib/api";
 import { useUrlState } from "@/lib/url-state";
 
 const STATUSES: NoticeStatus[] = ["action", "unread", "all", "archived"];
@@ -48,11 +48,6 @@ interface NoticePage {
   total: number;
   totalIsExact?: boolean;
   next: string | null;
-}
-
-function queryOf(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
 }
 
 function Notifications() {

@@ -21,16 +21,13 @@ import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useFault } from "@/lib/fault";
+import { fold } from "@/lib/format";
 
 export const CONDITIONS = ["NEW", "GOOD", "WORN", "DAMAGED"] as const;
 // The largest page the register serves; a shelf that long is searched, not scrolled.
 const kShelf = 200;
 
 export type Condition = (typeof CONDITIONS)[number];
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
 
 export interface Asset {
   id: string;

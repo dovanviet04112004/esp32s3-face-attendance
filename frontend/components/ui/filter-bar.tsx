@@ -16,6 +16,7 @@ import {
 
 import { DateField } from "@/components/ui/date-field";
 import { cn } from "@/lib/cn";
+import { fold } from "@/lib/format";
 
 const WIDE = "(min-width: 48rem)";
 const kSettleMs = 300;
@@ -137,10 +138,6 @@ function useFit(splits: boolean) {
   }, []);
 
   return { box, bar: barRef, fit };
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }
 
 function Counted({ label, count }: { label: string; count: number | undefined }) {

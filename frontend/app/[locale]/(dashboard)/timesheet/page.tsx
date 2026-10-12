@@ -16,12 +16,12 @@ import { Suspense, useEffect, useState } from "react";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
-import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthKey, monthOf, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
+import { api, saveCsv } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { clockAt, dayOnly, hours, minutes as asMinutes } from "@/lib/format";
@@ -90,20 +90,9 @@ const BUILDERS = ["ADMIN", "HR", "PAYROLL"];
 const kBuildPollMs = 3_000;
 const kReasonMax = 500;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const MONTH = /^(\d{4})-(\d{2})$/;
 
 function sameMonth(left: Month, right: Month): boolean {
   return left.year === right.year && left.month === right.month;
-}
-
-function monthOf(raw: string): Month {
-  const hit = raw.match(MONTH);
-  const month = hit ? Number(hit[2]) : 0;
-  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
-}
-
-function monthText(at: Month): string {
-  return `${at.year}-${String(at.month).padStart(2, "0")}`;
 }
 
 function clockOf(iso: string | null): string {
@@ -113,14 +102,6 @@ function clockOf(iso: string | null): string {
 function minutesOf(clock: string): number | null {
   const hit = clock.match(/^(\d{2}):(\d{2})$/);
   return hit ? Number(hit[1]) * 60 + Number(hit[2]) : null;
-}
-
-function save(text: string, name: string): void {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 function Timesheet() {
@@ -252,7 +233,7 @@ function Timesheet() {
 
   const exportCsv = useMutation({
     mutationFn: async () =>
-      save((await api.get<string>(`/timesheet/summary/export?${withFilter.toString()}`)).data, `timesheet-${span.from}-${span.to}.csv`),
+      saveCsv((await api.get<string>(`/timesheet/summary/export?${withFilter.toString()}`)).data, `timesheet-${span.from}-${span.to}.csv`),
     onSuccess: () => notify.done(t("exported")),
     onError: notify.failed,
   });
@@ -451,7 +432,7 @@ function Timesheet() {
             ) : (
               <MonthPicker
                 value={month}
-                onChange={(next) => setUrl({ month: sameMonth(next, thisMonth()) ? "" : monthText(next), from: "", to: "" })}
+                onChange={(next) => setUrl({ month: sameMonth(next, thisMonth()) ? "" : monthKey(next), from: "", to: "" })}
                 max={thisMonth()}
               />
             )

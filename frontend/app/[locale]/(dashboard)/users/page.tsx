@@ -21,7 +21,7 @@ import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill, type Tone } from "@/components/ui/pill";
-import { api } from "@/lib/api";
+import { api, queryOf } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { useUrlState } from "@/lib/url-state";
@@ -79,11 +79,6 @@ function statusOf(row: Account): Status {
     return "locked";
   }
   return row.pending ? "pending" : "active";
-}
-
-function queryOf(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
 }
 
 function Accounts() {

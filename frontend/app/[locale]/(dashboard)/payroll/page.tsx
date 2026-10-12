@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { DateField } from "@/components/ui/date-field";
-import { MonthPicker, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthOrder, periodName, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -66,14 +66,6 @@ const STEP_KEY: Record<StepKey, { name: "stepRun" | "stepCheck" | "stepLock" | "
 // Company-wide is its own choice in the picker; the api reads a missing id as that.
 const kWholeCompany = "";
 
-function periodName(period: { year: number; month: number }): string {
-  return `${String(period.month).padStart(2, "0")}/${period.year}`;
-}
-
-function order(at: { year: number; month: number }): number {
-  return at.year * 12 + at.month;
-}
-
 /** This month, or the month after the newest period when this one is already open. */
 function nextToOpen(periods: Period[], entityId: string): Month {
   const own = periods.filter((one) => (one.legalEntityId ?? kWholeCompany) === entityId);
@@ -81,7 +73,7 @@ function nextToOpen(periods: Period[], entityId: string): Month {
   if (!own.some((one) => one.year === now.year && one.month === now.month)) {
     return now;
   }
-  const newest = own.reduce((best, one) => (order(one) > order(best) ? one : best), own[0]);
+  const newest = own.reduce((best, one) => (monthOrder(one) > monthOrder(best) ? one : best), own[0]);
   return shiftMonth({ year: newest.year, month: newest.month }, 1);
 }
 

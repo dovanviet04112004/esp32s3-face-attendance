@@ -7,7 +7,7 @@ import { Suspense } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { FilterBar } from "@/components/ui/filter-bar";
-import { MonthPicker, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthKey, monthOf, thisMonth } from "@/components/ui/month-picker";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
@@ -67,19 +67,8 @@ const PAGE = 200;
 function reviewed(row: { review?: string | null }): boolean {
   return row.review === "PENDING" || row.review === "REJECTED";
 }
-const MONTH = /^(\d{4})-(\d{2})$/;
 // The kiosk picker is open to the enrolment desk only; everyone else reads the machine id.
 const KIOSK_READERS = new Set(["ADMIN", "HR"]);
-
-function monthOf(raw: string): Month {
-  const hit = raw.match(MONTH);
-  const month = hit ? Number(hit[2]) : 0;
-  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
-}
-
-function monthKey(at: Month): string {
-  return `${at.year}-${String(at.month).padStart(2, "0")}`;
-}
 
 function PunchHistory() {
   const t = useTranslations("attendance");

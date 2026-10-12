@@ -11,18 +11,17 @@ import type { Notice } from "@/components/notifications/kinds";
 import { NOTICES_KEY, useNoticeWords, useReadSubject } from "@/components/notifications/notice-row";
 import { RequestForm } from "@/components/requests/request-form";
 import { DataTable, type Column } from "@/components/tables/data-table";
-import { MonthPicker, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthKey, monthSpan, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { atClock, clockOf, dayOf, dayOnly, dayWindow, todayIso } from "@/lib/format";
+import { clockOf, dayOf, dayOnly, dayWindow, lateBy, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const kPunchPage = 200;
 const kMaxPages = 10;
-const kMinuteMs = 60_000;
 const kDeviceTake = 200;
 const MONTH = /^(\d{4})-(\d{2})$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -82,16 +81,6 @@ interface Day {
 function monthOf(raw: string): Month {
   const found = MONTH.exec(raw);
   return found ? { year: Number(found[1]), month: Number(found[2]) } : thisMonth();
-}
-
-function monthKey(at: Month): string {
-  return `${at.year}-${String(at.month).padStart(2, "0")}`;
-}
-
-/** Minutes past the shift's start plus its grace; zero or less is on time. */
-function lateBy(day: string, shift: NonNullable<PlannedDay["shift"]>, first: Punch): number {
-  const start = atClock(day, shift.startTime);
-  return Math.floor((new Date(first.ts).getTime() - start.getTime()) / kMinuteMs) - (shift.graceMinutes ?? 0);
 }
 
 function markOf(date: string, plan: PlannedDay | undefined, punches: Punch[], late: number, today: string): Mark {
@@ -203,7 +192,7 @@ function MyAttendance() {
       const date = `${span.from.slice(0, 8)}${String(at + 1).padStart(2, "0")}`;
       const seen = (byDay.get(date) ?? []).sort((left, right) => left.ts.localeCompare(right.ts));
       const plan = plans.get(date);
-      const late = plan?.shift && seen[0] ? lateBy(date, plan.shift, seen[0]) : 0;
+      const late = plan?.shift && seen[0] ? lateBy(date, plan.shift, seen[0].ts) : 0;
       return { date, plan, punches: seen, lateMinutes: late, mark: markOf(date, plan, seen, late, today) };
     }).reverse();
   }, [punches.data, roster.data, span.from, span.to, today]);

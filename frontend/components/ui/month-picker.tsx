@@ -5,16 +5,34 @@ import { CalendarBlankIcon, CaretLeftIcon, CaretRightIcon } from "@phosphor-icon
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { todayIso } from "@/lib/format";
+import { atClock, monthStart, todayIso } from "@/lib/format";
 
 export interface Month {
   year: number;
   month: number;
 }
 
+const MONTH = /^(\d{4})-(\d{2})$/;
+
 export function thisMonth(): Month {
   const [year, month] = todayIso().split("-").map(Number);
   return { year, month };
+}
+
+/** The month a `YYYY-MM` names, or this month when it names none. */
+export function monthOf(raw: string): Month {
+  const hit = raw.match(MONTH);
+  const month = hit ? Number(hit[2]) : 0;
+  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
+}
+
+export function monthKey(at: Month): string {
+  return `${at.year}-${String(at.month).padStart(2, "0")}`;
+}
+
+/** A payroll period's name, `MM/YYYY`. */
+export function periodName(at: Month): string {
+  return `${String(at.month).padStart(2, "0")}/${at.year}`;
 }
 
 export function shiftMonth(at: Month, by: number): Month {
@@ -29,7 +47,14 @@ export function monthSpan(at: Month): { from: string; to: string } {
   return { from: `${at.year}-${pad(at.month)}-01`, to: `${at.year}-${pad(at.month)}-${pad(last)}` };
 }
 
-function order(at: Month): number {
+/** First and last instant of a month in the company's zone, `to` inclusive, as the api reads a span of punches. */
+export function monthBounds(at: Month): { from: string; to: string } {
+  const first = `${monthKey(at)}-01`;
+  const end = atClock(monthStart(1, first));
+  return { from: atClock(first).toISOString(), to: new Date(end.getTime() - 1).toISOString() };
+}
+
+export function monthOrder(at: Month): number {
   return at.year * 12 + at.month;
 }
 
@@ -56,7 +81,7 @@ export function MonthPicker({
   const earlier = shiftMonth(value, -1);
   const later = shiftMonth(value, 1);
   const blocked = (at: Month) =>
-    (max !== undefined && order(at) > order(max)) || (min !== undefined && order(at) < order(min));
+    (max !== undefined && monthOrder(at) > monthOrder(max)) || (min !== undefined && monthOrder(at) < monthOrder(min));
   const name = (at: Month, style: "long" | "short") =>
     format.dateTime(new Date(Date.UTC(at.year, at.month - 1, 15)), { month: style, ...(style === "long" ? { year: "numeric" } : {}) });
 

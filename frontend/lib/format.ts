@@ -78,6 +78,12 @@ export function dayWindow(day: string): { from: Date; to: Date } {
   return { from: atClock(day), to: atClock(addDays(day, 1)) };
 }
 
+/** Minutes past the shift's start plus its grace; zero or less is on time. */
+export function lateBy(day: string, shift: { startTime: string; graceMinutes?: number }, firstPunchAt: string): number {
+  const start = atClock(day, shift.startTime);
+  return Math.floor((new Date(firstPunchAt).getTime() - start.getTime()) / kMinuteMs) - (shift.graceMinutes ?? 0);
+}
+
 type Stamp = { hour: "2-digit"; minute: "2-digit"; day?: "numeric"; month?: "numeric"; year?: "numeric" };
 
 /** As much of an instant as a live row needs: the clock today, the date on another day, the year in another year. */
@@ -126,6 +132,11 @@ export function percent(fraction: number, locale: string): string {
   return new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 2 }).format(
     fraction,
   );
+}
+
+/** Text as a search compares it: no case, no marks, and đ as d, which NFD leaves whole as a letter of its own. */
+export function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }
 
 /** A shift's wall-clock "HH:mm" read in the locale's own clock, as punch times already are. */

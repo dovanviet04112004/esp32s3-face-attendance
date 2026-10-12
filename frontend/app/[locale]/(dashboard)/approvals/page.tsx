@@ -28,7 +28,7 @@ import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
-import { api } from "@/lib/api";
+import { api, queryOf } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, days, money } from "@/lib/format";
@@ -164,10 +164,6 @@ interface Department {
   name: string;
 }
 
-function query(params: Record<string, string>): string {
-  return new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "")).toString();
-}
-
 function waitedSince(row: { createdAt: string; waitedDays?: number }): number {
   return row.waitedDays ?? Math.max(0, Math.floor((Date.now() - new Date(row.createdAt).getTime()) / kDayMs));
 }
@@ -187,7 +183,7 @@ function useQueue<T>(key: string[], path: string, params: Record<string, string>
     refetchInterval: WAITING_POLL_MS,
     initialPageParam: "",
     queryFn: async ({ pageParam }) =>
-      (await api.get<Page<T>>(`${path}?${query({ ...params, take: String(kPage), cursor: pageParam })}`)).data,
+      (await api.get<Page<T>>(`${path}${queryOf({ ...params, take: String(kPage), cursor: pageParam })}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 }
@@ -1402,7 +1398,6 @@ function Inbox() {
   const t = useTranslations("requests");
   const c = useTranslations("certificates");
   const p = useTranslations("profile");
-  const common = useTranslations("common");
   const role = useSession((s) => s.role);
   const counts = useInboxCounts(role);
   const [url, setUrl] = useUrlState<UrlState>(DEFAULTS);

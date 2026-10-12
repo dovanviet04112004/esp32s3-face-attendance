@@ -15,6 +15,7 @@ import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
+import { fold } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 const kCodeMax = 32;
@@ -38,10 +39,6 @@ interface Draft {
   name: string;
   taxCode: string;
   address: string;
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }
 
 function LegalEntities() {

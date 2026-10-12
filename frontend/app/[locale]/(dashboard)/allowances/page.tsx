@@ -15,7 +15,7 @@ import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { money } from "@/lib/format";
+import { fold, money } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 // The allowance columns of D02-LT; anything else keeps an allowance off the filing.
@@ -42,10 +42,6 @@ interface Draft {
   insurable: boolean;
   taxFreeCap: string;
   d02Column: string;
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }
 
 function Allowances() {

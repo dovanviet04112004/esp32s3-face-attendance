@@ -18,7 +18,7 @@ import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { useRouter } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, queryOf, saveCsv } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useUrlState } from "@/lib/url-state";
 
@@ -36,18 +36,6 @@ interface RequestPage {
 interface Department {
   id: string;
   name: string;
-}
-
-function query(params: Record<string, string>): string {
-  return new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "")).toString();
-}
-
-function save(text: string, name: string): void {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 function Register() {
@@ -78,7 +66,7 @@ function Register() {
     queryKey: ["requests", "register", filter, url.state, order],
     initialPageParam: "",
     queryFn: async ({ pageParam }) =>
-      (await api.get<RequestPage>(`/requests?${query({ ...filter, state: url.state, ...order, take: String(kPage), cursor: pageParam })}`)).data,
+      (await api.get<RequestPage>(`/requests${queryOf({ ...filter, state: url.state, ...order, take: String(kPage), cursor: pageParam })}`)).data,
     getNextPageParam: (last) => last.next ?? undefined,
   });
 
@@ -87,7 +75,7 @@ function Register() {
     queryKey: ["requests", "register", "counts", filter],
     queryFn: async () => {
       const count = async (state: string) =>
-        (await api.get<RequestPage>(`/requests?${query({ ...filter, state, take: "1" })}`)).data.total;
+        (await api.get<RequestPage>(`/requests${queryOf({ ...filter, state, take: "1" })}`)).data.total;
       const [all, ...each] = await Promise.all([count(""), ...STATES.map(count)]);
       return { "": all, ...Object.fromEntries(STATES.map((one, at) => [one, each[at] ?? 0])) } as Record<string, number>;
     },
@@ -110,7 +98,7 @@ function Register() {
 
   const download = useMutation({
     mutationFn: async () =>
-      save((await api.get<string>(`/requests/export?${query({ ...filter, state: url.state, ...order })}`)).data, "requests.csv"),
+      saveCsv((await api.get<string>(`/requests/export${queryOf({ ...filter, state: url.state, ...order })}`)).data, "requests.csv"),
     onSuccess: () => notify.done(t("exported")),
     onError: notify.failed,
   });

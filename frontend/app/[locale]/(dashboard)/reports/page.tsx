@@ -10,15 +10,25 @@ import { DataTable, PersonCell, type Column } from "@/components/tables/data-tab
 import { DateField } from "@/components/ui/date-field";
 import { Failed } from "@/components/ui/failed";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
-import { MonthPicker, monthSpan, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
+import {
+  MonthPicker,
+  monthBounds,
+  monthKey,
+  monthOf,
+  monthOrder,
+  monthSpan,
+  shiftMonth,
+  thisMonth,
+  type Month,
+} from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { PageHeader } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, saveCsv } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { atClock, dayOnly, hours, money, monthStart, todayIso } from "@/lib/format";
+import { dayOnly, fold, hours, money, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
 interface Entity {
@@ -93,38 +103,12 @@ const REASON_TONE: Record<Reason, Tone> = {
 const PERIOD_TONE: Record<Period["state"], Tone> = { OPEN: "waiting", LOCKED: "idle", PAID: "good" };
 const kTrend = 6;
 const kPage = 15;
-const MONTH = /^(\d{4})-(\d{2})$/;
-
-function monthOf(raw: string): Month {
-  const hit = raw.match(MONTH);
-  const month = hit ? Number(hit[2]) : 0;
-  return hit && month >= 1 && month <= 12 ? { year: Number(hit[1]), month } : thisMonth();
-}
-
-function monthKey(at: Month): string {
-  return `${at.year}-${String(at.month).padStart(2, "0")}`;
-}
-
-function order(at: Month): number {
-  return at.year * 12 + at.month;
-}
-
-// The same span the Punches page asks for, so the job warms exactly what that page reads.
-function monthBounds(at: Month): { from: string; to: string } {
-  const first = `${monthKey(at)}-01`;
-  const end = atClock(monthStart(1, first));
-  return { from: atClock(first).toISOString(), to: new Date(end.getTime() - 1).toISOString() };
-}
 
 /** The day a roster report defaults to: the month's last day, or today while the month runs. */
 function rosterDay(at: Month): string {
   const today = todayIso();
   const last = monthSpan(at).to;
   return last < today ? last : today;
-}
-
-function fold(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }
 
 function Section({ title, lead, link, children }: { title: string; lead: ReactNode; link?: ReactNode; children: ReactNode }) {
@@ -218,8 +202,8 @@ function Reports() {
     queryFn: async () => (await api.get<Period[]>("/payroll-periods")).data,
   });
   const lastPeriods = (periods.data ?? [])
-    .filter((one) => one.legalEntityId === entity && order(one) <= order(month))
-    .sort((left, right) => order(right) - order(left))
+    .filter((one) => one.legalEntityId === entity && monthOrder(one) <= monthOrder(month))
+    .sort((left, right) => monthOrder(right) - monthOrder(left))
     .slice(0, kTrend);
   const periodTotals = useQueries({
     queries: lastPeriods.map((one) => ({
@@ -245,19 +229,13 @@ function Reports() {
   }, [entity, span.from, url.q, filing]);
 
   const d02 = useMutation({
-    mutationFn: async () => {
-      const file = (await api.get<string>(`/reports/d02-lt?legalEntityId=${entity}&on=${on}`)).data;
-      const link = document.createElement("a");
-      // The api already opens the file with a BOM, so this must not add one.
-      link.href = URL.createObjectURL(new Blob([file], { type: "text/csv;charset=utf-8" }));
-      link.download = `d02-lt-${on}.csv`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-    },
+    mutationFn: async () =>
+      saveCsv((await api.get<string>(`/reports/d02-lt?legalEntityId=${entity}&on=${on}`)).data, `d02-lt-${on}.csv`),
     onSuccess: () => notify.done(t("d02Done", { date: format.dateTime(dayOnly(on), "day") })),
     onError: notify.failed,
   });
 
+  // The same span the Punches page asks for, so the job warms exactly what that page reads.
   const rollUp = useMutation({
     mutationFn: async () => (await api.post<{ jobId: string }>("/reports/attendance/monthly", monthBounds(month))).data,
     onSuccess: () => notify.done(t("rollUpQueued", { month: monthName }), t("rollUpQueuedHint")),
@@ -275,14 +253,14 @@ function Reports() {
       }
     : undefined;
   const cash = (raw: string | null) => (raw === null ? "" : money(Number(raw), locale));
-  const isNow = (at: Month) => order(at) === order(thisMonth());
+  const isNow = (at: Month) => monthOrder(at) === monthOrder(thisMonth());
 
   const attendanceColumns: Column<MonthRow>[] = [
     {
       id: "month",
       header: t("colMonth"),
       cell: (row) => (
-        <span className={cn("flex items-center gap-2 whitespace-nowrap tabular-nums", order(row.at) === order(month) && "font-medium")}>
+        <span className={cn("flex items-center gap-2 whitespace-nowrap tabular-nums", monthOrder(row.at) === monthOrder(month) && "font-medium")}>
           {nameOf(row.at)}
           {isNow(row.at) ? <StatePill tone="waiting">{t("running")}</StatePill> : null}
         </span>
@@ -308,7 +286,7 @@ function Reports() {
       id: "period",
       header: t("colPeriod"),
       cell: (row) => (
-        <span className={cn("flex items-center gap-2 whitespace-nowrap tabular-nums", order(row.period) === order(month) && "font-medium")}>
+        <span className={cn("flex items-center gap-2 whitespace-nowrap tabular-nums", monthOrder(row.period) === monthOrder(month) && "font-medium")}>
           {nameOf(row.period)}
           <StatePill tone={PERIOD_TONE[row.period.state]}>{pay(`state${row.period.state}`)}</StatePill>
         </span>

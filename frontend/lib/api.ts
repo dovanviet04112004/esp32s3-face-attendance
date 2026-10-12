@@ -72,3 +72,17 @@ api.interceptors.response.use(
     return api.request(failed);
   },
 );
+
+export function queryOf(params: Record<string, string>): string {
+  const kept = Object.entries(params).filter(([, value]) => value !== "");
+  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
+}
+
+export function saveCsv(text: string, name: string): void {
+  const link = document.createElement("a");
+  // The api already opens the file with a BOM where Excel needs one, so this must not add one.
+  link.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}

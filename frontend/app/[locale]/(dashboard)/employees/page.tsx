@@ -16,7 +16,7 @@ import { useNotify } from "@/components/ui/notify";
 import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
 import { Link } from "@/i18n/navigation";
-import { api } from "@/lib/api";
+import { api, queryOf } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { dayOnly, money, monthStart, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -91,11 +91,6 @@ function optionCounts(counts: Record<string, number> | undefined): Record<string
 const kEndingDays = 30;
 const kMsPerDay = 86_400_000;
 const kDueShown = 3;
-
-function queryOf(params: Record<string, string>): string {
-  const kept = Object.entries(params).filter(([, value]) => value !== "");
-  return kept.length ? `?${new URLSearchParams(kept).toString()}` : "";
-}
 
 function DueList({ title, rows, total, onAll }: { title: string; rows: Expiring[]; total: number; onAll: () => void }) {
   const t = useTranslations("overview");
