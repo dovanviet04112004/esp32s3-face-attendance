@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The quantisation ladder of KEHOACH section 3.8, one run at a time. Q0 is the float
+# The quantisation ladder of KEHOACH section 3.7, one run at a time. Q0 is the float
 # ceiling and Q1 is per-channel PTQ with BN folding and bias correction. Every rung
 # is scored on the same split so the numbers in docs/measurements/<branch>/quant_ladder.md
 # compare against each other.
@@ -9,9 +9,9 @@
 # TFLite quantises activations per tensor, and on the anti-spoof branch that trade
 # costs 53% of EER (measurements/antispoof 32).
 #
-# The ESP-DL rung (ESPDL=1) quantises the same run under that runtime's rules, with
-# equalisation on (KEHOACH 3.7). TFLITE=0 skips the TFLite rungs for a run that
-# only ships on ESP-DL, such as one whose PReLU esp-nn has no kernel for.
+# The ESP-DL stage (ESPDL=1) climbs rungs 1-2 of the run's ESP-DL ladder, which
+# scores every row whatever SCORE says. TFLITE=0 skips the TFLite rungs for a run
+# that only ships on ESP-DL, such as one whose PReLU esp-nn has no kernel for.
 #
 # Which branch a run belongs to comes from its own frozen config, so one
 # invocation can walk runs from all three.
@@ -32,8 +32,6 @@ SCORE="${SCORE:-1}"
 CLE="${CLE:-0}"
 TFLITE="${TFLITE:-1}"
 ESPDL="${ESPDL:-1}"
-# Empty reads dl_module_creator.hpp from the firmware's managed esp-dl.
-ESPDL_CREATOR="${ESPDL_CREATOR:-}"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$*" >&2; }
@@ -78,7 +76,7 @@ ladder() {
     log "${tag}: branch ${branch}, model ${model}"
 
     if [[ "${ESPDL}" == "1" ]]; then
-        espdl_rung "${run}" "${tag}" "${branch}" "${model}" "${art}" || return 1
+        espdl_rung "${run}" "${tag}" || return 1
     fi
     [[ "${TFLITE}" == "1" ]] || return 0
 
@@ -122,19 +120,9 @@ ladder() {
 }
 
 espdl_rung() {
-    local run="$1" tag="$2" branch="$3" model="$4" art="$5"
-    local out="${art}/espdl/${model}_s8_${tag}.espdl"
-    log "${tag}: Q1 on ESP-DL, ESP-PPQ with equalisation"
-    "${PY}" -m facepipe.compress.quant.ptq_espdl --run "${run}" --out "${out}" \
-        --work "${art}/espdl/work_${tag}" --samples "${CALIB_SAMPLES}" || return 1
-    log "${tag}: operators, and whether ESP-DL has a module for each"
-    local creator=()
-    [[ -n "${ESPDL_CREATOR}" ]] && creator=(--creator "${ESPDL_CREATOR}")
-    "${PY}" -m facepipe.export.espdl_op_check --model "${out}" "${creator[@]}" \
-        --out "${art}/reports/espdl_op_check_${tag}.txt" || return 1
-    [[ "${SCORE}" == "1" ]] || return 0
-    log "${tag}: scoring ${out##*/}"
-    "${PY}" "${ML_ROOT}/bench/host_bench.py" --runtime espdl --model "${out}" --run "${run}"
+    local run="$1" tag="$2"
+    log "${tag}: ESP-DL rungs 1-2, four calibrations beside Q0, each checked for ESP-DL's modules"
+    "${PY}" -m facepipe.compress.quant.ladder ptq --run "${run}"
 }
 
 failed=0

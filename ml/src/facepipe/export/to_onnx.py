@@ -25,8 +25,13 @@ def flat_tensors(args: tuple) -> list[torch.Tensor]:
     return out
 
 
-def agreement(model: torch.nn.Module, onnx_path: Path, args: tuple) -> float:
-    """Largest absolute gap between the torch graph and the written one."""
+def agreement(
+    model: torch.nn.Module, onnx_path: Path, args: tuple, relative: bool = False
+) -> float:
+    """Largest gap between the torch graph and the written one over every output.
+
+    relative measures each output's gap against the largest magnitude torch gives it.
+    """
     import onnxruntime
 
     with torch.no_grad():
@@ -36,7 +41,12 @@ def agreement(model: torch.nn.Module, onnx_path: Path, args: tuple) -> float:
     tensors = flat_tensors(args)
     feeds = {inp.name: tensors[i].numpy() for i, inp in enumerate(session.get_inputs())}
     got = session.run(None, feeds)
-    return max(float(np.abs(a.numpy() - b).max()) for a, b in zip(expected, got, strict=True))
+    tiny = np.finfo(np.float32).tiny
+    gaps = []
+    for a, b in zip(expected, got, strict=True):
+        gap = float(np.abs(a.numpy() - b).max())
+        gaps.append(gap / max(float(np.abs(a.numpy()).max()), tiny) if relative else gap)
+    return max(gaps)
 
 
 def main(argv: list[str] | None = None) -> int:

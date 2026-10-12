@@ -311,11 +311,19 @@ def load_detector(ckpt: Path, device: torch.device):
     return model, priors
 
 
-@torch.no_grad()
 def largest_face(
     detector, priors, frame_rgb: np.ndarray, device: torch.device
 ) -> np.ndarray | None:
     """The biggest box in one frame, in that frame's pixels, or None."""
+    found = largest_detection(detector, priors, frame_rgb, device)
+    return None if found is None else found[0]
+
+
+@torch.no_grad()
+def largest_detection(
+    detector, priors, frame_rgb: np.ndarray, device: torch.device
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """The biggest face in a frame as its box and five landmarks in the frame's pixels, or None."""
     from PIL import Image
 
     from facepipe.tasks.detection.data import letterbox_params
@@ -332,9 +340,11 @@ def largest_face(
     found = decode_batch(detector(tensor.to(device)), priors, conf=DETECT_CONF)[0]
     if not len(found.boxes):
         return None
-    boxes = to_original(found, scale, pad_x, pad_y).boxes
+    mapped = to_original(found, scale, pad_x, pad_y)
+    boxes = mapped.boxes
     sides = np.maximum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1])
-    return boxes[int(np.argmax(sides))]
+    biggest = int(np.argmax(sides))
+    return boxes[biggest], mapped.landmarks[biggest]
 
 
 def crop_views(frame_rgb: np.ndarray, box: np.ndarray, size: int) -> tuple[np.ndarray, np.ndarray]:

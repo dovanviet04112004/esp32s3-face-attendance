@@ -153,7 +153,8 @@ class Expanded(nn.Module):
 
 
 def export_espdl(model: nn.Module, work: Path, name: str) -> Path:
-    from facepipe.compress.quant import ptq_espdl
+    from facepipe.compress.quant import export_espdl as writer
+    from facepipe.compress.quant import ladder, ptq_espdl
 
     onnx_path = work / f"{name}.onnx"
     torch.onnx.export(
@@ -165,10 +166,12 @@ def export_espdl(model: nn.Module, work: Path, name: str) -> Path:
         output_names=["out"],
         dynamo=False,
     )
-    calib = [torch.rand(1, 3, 8, 8) for _ in range(4)]
-    out = work / f"{name}.espdl"
-    ptq_espdl.quantize(onnx_path, calib, out)
-    return out
+    generator = torch.Generator().manual_seed(0)
+    calib = [torch.rand(1, 3, 8, 8, generator=generator) for _ in range(4)]
+    graph = ptq_espdl.quantize_onnx(onnx_path, calib, work, ptq_espdl.ladder("recognition"))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    return writer.export(graph, work / f"{name}.espdl", test_input)
 
 
 def test_the_op_check_catches_expand_and_the_digest_ignores_export_noise(tmp_path: Path) -> None:

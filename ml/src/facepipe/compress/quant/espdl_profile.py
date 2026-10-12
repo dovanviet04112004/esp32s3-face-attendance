@@ -1,0 +1,203 @@
+"""Step 2.2 of KEHOACH 3.7: esp-dl's per-module profile from a board log, joined to its .espdl.
+
+Each module's time is ranked, and each slow path of esp-dl's S3 kernels is tagged with the patch of
+esp_ppq_patches that handles it, or with the rewrite it asks for when no patch does. The CPU clock
+and data cache are the firmware's own, read from its sdkconfig defaults.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import espdl_shapes
+
+SDKCONFIG = Path(__file__).resolve().parents[5] / "firmware" / "sdkconfig.defaults.esp32s3"
+CHANNEL_STEP = 16  # esp-dl's S3 vector kernels take channels sixteen at a time
+MATMUL_STEP = 16  # dl_base_matmul.cpp: vector path, 16 output columns
+LAYOUT_OPS = frozenset({"Transpose"})
+GRID_OPS = frozenset({"QuantizeLinear", "RequantizeLinear", "DequantizeLinear"})
+FLOAT_KERNEL_OPS = frozenset({"LayerNormalization", "Softmax"})
+PROFILE_ROW = re.compile(r"\|\s*(?P<name>\S+)\s*\|\s*(?P<op>\w+)\s*\|\s*(?P<us>\d+)us\s*\|")
+# esp-dl's profile_memory leaves a cell blank when it holds 0.00KB.
+MEMORY_TOTAL = re.compile(r"\|\s*total\s*\|" + r"\s*(?:([0-9.]+)KB)?\s*\|" * 3)
+VALUE_INFO = re.compile(
+    r"^%(?P<name>[^\[\s]+)\[(?P<dtype>[A-Z0-9]+), (?P<shape>[0-9x]*)\]", re.MULTILINE
+)
+CPU_MHZ_KEY = re.compile(r"^CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_(\d+)=y$", re.MULTILINE)
+DATA_CACHE_KEY = re.compile(r"^CONFIG_ESP32S3_DATA_CACHE_(\d+)KB=y$", re.MULTILINE)
+
+
+@dataclass
+class Module:
+    """One profiled module: its op, time on the chip, and the .info's view of its variables."""
+
+    name: str
+    op: str
+    us: int
+    inputs: list[str]
+    outputs: list[str]
+    attrs: str
+
+
+def chip(sdkconfig: Path = SDKCONFIG) -> tuple[int, int]:
+    """The firmware's CPU clock in MHz and data cache in bytes."""
+    text = sdkconfig.read_text(encoding="utf-8")
+    mhz, cache = CPU_MHZ_KEY.search(text), DATA_CACHE_KEY.search(text)
+    if mhz is None or cache is None:
+        raise ValueError(f"{sdkconfig}: no CPU clock or data cache size to profile against")
+    return int(mhz.group(1)), int(cache.group(1)) * 1024
+
+
+def profile(text: str, graph: dict | None = None) -> dict[str, tuple[str, int]]:
+    """Each module's (op, µs) in the last profile_module print in text.
+
+    With graph, from nodes(), only rows naming one of its nodes with that node's op count: a serial
+    line can drop a row's characters, and what is left of a name may be another node's.
+    """
+    rows = ((m["name"], m["op"], int(m["us"])) for m in PROFILE_ROW.finditer(text))
+    return {
+        name: (op, us) for name, op, us in rows if graph is None or graph.get(name, ("",))[0] == op
+    }
+
+
+def memory(text: str) -> dict[str, float] | None:
+    """The model's KB in internal RAM, PSRAM and flash, from the last profile_memory print."""
+    found = MEMORY_TOTAL.findall(text)
+    if not found:
+        return None
+    return dict(
+        zip(("internal", "psram", "flash"), (float(v or 0) for v in found[-1]), strict=True)
+    )
+
+
+def nodes(espdl: Path) -> dict[str, tuple[str, list[str], list[str]]]:
+    """Each node of an .espdl by name: (op, inputs, outputs)."""
+    from esp_ppq.parser.espdl.FlatBuffers.Dl import Model
+
+    graph = Model.Model.GetRootAs(espdl.read_bytes()[16:], 0).Graph()
+    found = {}
+    for i in range(graph.NodeLength()):
+        node = graph.Node(i)
+        found[node.Name().decode()] = (
+            node.OpType().decode(),
+            [node.Input(j).decode() for j in range(node.InputLength())],
+            [node.Output(j).decode() for j in range(node.OutputLength())],
+        )
+    return found
+
+
+def shapes(info_text: str, info: espdl_shapes.Info) -> dict[str, list[int]]:
+    """Every variable's shape as the chip lays it: the .info's value infos, inputs, initializers."""
+    found = {m["name"]: espdl_shapes.dims(m["shape"], "x") for m in VALUE_INFO.finditer(info_text)}
+    return found | info.inputs | info.declared
+
+
+def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_bytes: int):
+    """A convolution's slow paths and its cycles a multiply-add, None when shapes are unknown."""
+    x, w, y = (laid.get(name) for name in (*module.inputs[:2], module.outputs[0]))
+    if x is None or w is None or y is None:
+        return [], None
+    group = espdl_shapes.attribute(module.attrs, "group", 1)
+    taps = math.prod(w[:-2])
+    c_in, c_out = x[-1], y[-1]
+    macs = math.prod(y) * (c_in // group) * taps
+    tags = []
+    if c_in % CHANNEL_STEP or c_out % CHANNEL_STEP:
+        fix = "aligned_pointwise" if taps == 1 else "no export patch"
+        tags.append(f"unaligned {c_in} -> {c_out} channels ({fix})")
+    weight_bytes = math.prod(w)
+    if group == 1 and weight_bytes > cache_bytes and math.prod(y[:-1]) > 1:
+        tags.append(
+            f"{weight_bytes // 1024} KB of weights outgrow the cache (cache_sized_convolutions)"
+        )
+    return tags, module.us * cpu_mhz / max(macs, 1)
+
+
+def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes: int):
+    """The slow paths module takes on esp-dl's S3 kernels, each with the patch that handles it.
+
+    A convolution also returns its cycles a multiply-add.
+    """
+    if module.op == "Conv":
+        return conv_tags(module, laid, cpu_mhz, cache_bytes)
+    tags = []
+    if "quant_type = 'F32'" in module.attrs:
+        tags.append("runs in float")
+    if module.op in FLOAT_KERNEL_OPS:
+        tags.append("esp-dl's int8 kernel works in float32 per value (no export patch)")
+    if module.op == "MatMul" and (y := laid.get(module.outputs[0])) and y[-1] < MATMUL_STEP:
+        tags.append(f"{y[-1]} output columns run in C (lay the product transposed)")
+    if module.op in LAYOUT_OPS:
+        tags.append("layout copy (lean_transposes)")
+    if module.op in GRID_OPS:
+        tags.append("grid change (lean_quantizers when repeated)")
+    if (
+        module.op == "Concat"
+        and len(set(module.inputs)) == 1
+        and readers.get(module.outputs[0]) == ["Transpose"]
+    ):
+        tags.append("copies of one map (copies_by_broadcast)")
+    return tags, None
+
+
+def report(log_text: str, espdl: Path, top: int) -> str:
+    """The profile in log_text of espdl: time by op type, then the slowest modules, tagged."""
+    cpu_mhz, cache_bytes = chip()
+    info_text = espdl.with_suffix(".info").read_text(encoding="utf-8")
+    graph, info = nodes(espdl), espdl_shapes.parse(info_text)
+    timed, rows = profile(log_text, graph), len(PROFILE_ROW.findall(log_text))
+    laid = shapes(info_text, info)
+    attrs = {outs[0]: a for _, a, _, outs in info.nodes}
+    readers = defaultdict(list)
+    for op, ins, _ in graph.values():
+        for name in ins:
+            readers[name].append(op)
+    modules = [
+        Module(name, op, us, graph[name][1], graph[name][2], attrs.get(graph[name][2][0], ""))
+        for name, (op, us) in timed.items()
+    ]
+    by_op = defaultdict(lambda: [0, 0])
+    for m in modules:
+        by_op[m.op][0] += 1
+        by_op[m.op][1] += m.us
+    lines = [
+        f"{sum(m.us for m in modules) / 1000:.1f} ms over {len(modules)} modules of {espdl.name}"
+    ]
+    if rows > len(modules):
+        lines.append(
+            f"{rows - len(modules)} rows of the log left out: another model's, garbled, or a total"
+        )
+    held = memory(log_text)
+    if held is not None:
+        lines.append("memory: " + ", ".join(f"{place} {kb:.1f} KB" for place, kb in held.items()))
+    lines.append("by op type:")
+    ranked_ops = sorted(by_op.items(), key=lambda kv: -kv[1][1])
+    lines += [f"  {op:22s} {n:4d} {us / 1000:8.1f} ms" for op, (n, us) in ranked_ops]
+    lines.append(f"slowest {top} modules:")
+    for m in sorted(modules, key=lambda m: -m.us)[:top]:
+        tags, rate = tags_of(m, laid, readers, cpu_mhz, cache_bytes)
+        cycles = f"{rate:5.2f} c/MAC " if rate is not None else ""
+        lines.append(
+            f"  {m.us / 1000:7.1f} ms {m.op:18s} {cycles}{m.name}"
+            + "".join(f"\n      - {t}" for t in tags)
+        )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--espdl", type=Path, required=True)
+    parser.add_argument("--top", type=int, default=40)
+    args = parser.parse_args(argv)
+    print(report(args.log.read_text(encoding="utf-8", errors="replace"), args.espdl, args.top))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

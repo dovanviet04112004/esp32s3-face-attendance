@@ -1,0 +1,48 @@
+# The ESP-DL ladder of KEHOACH 3.7: the rungs every branch starts from, the timing row make speed
+# times, and one block per branch over them. Runs are immutable, so the ladder reads only this file.
+default:
+  equalization: {iterations: 4, value_threshold: 0.4, opt_level: 2}
+  bias_correction: true
+  calibration: kl
+  int16_ops: []
+  onnx_rtol: 1.0e-4
+
+timing: {equalization: null, bias_correction: false, calibration: minmax}
+
+branches:
+  detection:
+    rungs: {}
+    ladder:
+      calib_samples: 300
+      calibrations: [minmax, percentile, mse, kl]
+      check_samples: 8
+      layerwise_samples: 32
+      int16_tops: [1, 2, 4]
+      qat: {batch: 16, steps: 2000, learning_rate: 1.0e-5}
+    esp_ppq_patches: []
+    probe: {cuts: 4, frames: 8}
+    chosen: null
+  antispoof:
+    rungs: {}
+    ladder:
+      calib_samples: 300
+      calibrations: [minmax, percentile, mse, kl]
+      check_samples: 8
+      layerwise_samples: 32
+      int16_tops: [1, 2, 4]
+      qat: {batch: 32, steps: 2000, learning_rate: 1.0e-5}
+    esp_ppq_patches: []
+    probe: {cuts: 4, frames: 40}
+    chosen: null
+  recognition:
+    rungs: {}
+    ladder:
+      calib_samples: 300
+      calibrations: [minmax, percentile, mse, kl]
+      check_samples: 8
+      layerwise_samples: 32
+      int16_tops: [1, 2, 4, 8]
+      qat: {batch: 32, steps: 2000, learning_rate: 1.0e-5}
+    esp_ppq_patches: []
+    probe: {cuts: 4, frames: 24}
+    chosen: null

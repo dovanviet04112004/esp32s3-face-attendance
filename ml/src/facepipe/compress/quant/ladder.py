@@ -1,0 +1,374 @@
+"""The ESP-DL ladder of KEHOACH 3.7 for one run: rows scored with the branch's ruler beside Q0.
+
+Each row keeps its native graph and .espdl in <run>/int8/<row>/ and one entry in
+<run>/int8/ladder.yaml. Rung 4 trains, so it runs only with the owner's go.
+"""
+
+from __future__ import annotations
+
+import argparse
+import functools
+import importlib
+import re
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import torch
+import yaml
+
+from ...export import espdl_op_check, update_lock
+from . import esp_ppq_patches, export_espdl, mixed_espdl, ptq_espdl, qat_espdl
+
+ML_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = ML_ROOT.parent
+PATHS = ML_ROOT / "configs" / "common" / "paths.yaml"
+DEVICE_SPLIT = ML_ROOT / "data" / "splits" / "device" / "v1" / "test_device.txt"
+INT8_DIR, LADDER_FILE, GRAPH_FILE = "int8", "ladder.yaml", "graph.native"
+CEILING_ROW = "float"
+
+
+def data_path(entry: str) -> Path:
+    """One dataset root of configs/common/paths.yaml, resolved against ml/."""
+    node = yaml.safe_load(PATHS.read_text(encoding="utf-8"))
+    for key in entry.split("."):
+        node = node[key]
+    return ML_ROOT / node
+
+
+def firmware_constant(relative: str, pattern: re.Pattern) -> float:
+    """A number the firmware declares, read from its source rather than copied (KEHOACH 4.9)."""
+    found = pattern.search((REPO_ROOT / relative).read_text(encoding="utf-8"))
+    if found is None:
+        raise ValueError(f"{relative}: the constant this step depends on is gone")
+    return float(found.group(1))
+
+
+@functools.cache
+def device_frames() -> tuple[tuple[str, int, np.ndarray], ...]:
+    """Every frame of test_device as (name, label, RGB), in the split's order."""
+    from PIL import Image
+
+    raw = data_path("device.ov5640")
+    frames = []
+    for line in DEVICE_SPLIT.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        name, label = line.split()
+        with Image.open(raw / name) as handle:
+            frames.append((name, int(label), np.array(handle.convert("RGB"), dtype=np.uint8)))
+    return tuple(frames)
+
+
+class TorchRunner:
+    """The float model as a runner: float NCHW in, outputs in the ONNX graph's order out."""
+
+    batched = True
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = model.eval().to(self.device)
+
+    def __call__(self, x: np.ndarray) -> list[np.ndarray]:
+        tensor = torch.from_numpy(np.ascontiguousarray(x, dtype=np.float32)).to(self.device)
+        with torch.no_grad():
+            out = self.model(tensor)
+        outs = out if isinstance(out, tuple | list) else (out,)
+        return [o.detach().cpu().numpy() for o in outs]
+
+
+def run_batch(runner, x: np.ndarray, chunk: int = 64) -> list[np.ndarray]:
+    """Every output over a batch, stacked; a runner without a batch path goes one by one."""
+    step = chunk if runner.batched else 1
+    parts = [runner(np.ascontiguousarray(x[i : i + step])) for i in range(0, len(x), step)]
+    return [np.concatenate([p[j] for p in parts]) for j in range(len(parts[0]))]
+
+
+def hooks_of(run: Path):
+    """The branch's quant module: calibration_batches, probe_inputs, score, rank, gate, headline."""
+    from facepipe.core.config import load_run_config
+    from facepipe.export.tf_to_tflite_int8 import BRANCH_PACKAGE
+
+    return importlib.import_module(f"{BRANCH_PACKAGE[load_run_config(run).model.name]}.quant")
+
+
+def row_dir(run: Path, row: str) -> Path:
+    return run / INT8_DIR / row
+
+
+def read_ladder(run: Path) -> dict:
+    path = run / INT8_DIR / LADDER_FILE
+    return yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def write_row(run: Path, row: str, entry: dict) -> None:
+    rows = read_ladder(run)
+    rows[row] = entry
+    path = run / INT8_DIR / LADDER_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(rows, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def on_grid(x: np.ndarray, exponent: int) -> np.ndarray:
+    """x moved onto the int8 grid of exponent, as the chip receives it."""
+    return ptq_espdl.to_int8(x, exponent).astype(np.float32) * np.float32(2.0**exponent)
+
+
+def quantised(run: Path, rungs: dict, calib: list[torch.Tensor], model=None):
+    """The run quantised under rungs and its branch's patches."""
+    patches = ptq_espdl.block(ptq_espdl.branch_of(run))["esp_ppq_patches"]
+    with esp_ppq_patches.applied(patches), tempfile.TemporaryDirectory() as work:
+        return ptq_espdl.quantize(run, calib, Path(work), rungs, model)
+
+
+def keep_row(run: Path, row: str, graph) -> Path:
+    """Keep graph as the row: its native file, and the .espdl with a real frame as its test input.
+
+    Refused when esp-dl registers no module for one of its ops.
+    """
+    branch = ptq_espdl.branch_of(run)
+    folder = row_dir(run, row)
+    export_espdl.save_native(graph, folder / GRAPH_FILE)
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    frame = hooks_of(run).probe_inputs(load_cfg(run), device_frames(), 1)
+    test_input = on_grid(frame, port.exponent)
+    with esp_ppq_patches.applied(ptq_espdl.block(branch)["esp_ppq_patches"]):
+        espdl = export_espdl.export(graph, folder / f"{branch}.espdl", test_input)
+    creator = REPO_ROOT / espdl_op_check.CREATOR_HPP
+    missing = sorted(set(espdl_op_check.operators(espdl)) - espdl_op_check.registered(creator))
+    if missing:
+        raise ValueError(f"{espdl}: esp-dl registers no module for {missing}")
+    return espdl
+
+
+def build_row(run: Path, row: str, rungs: dict, calib: list[torch.Tensor], model=None):
+    """The run quantised under rungs and kept as row."""
+    graph = quantised(run, rungs, calib, model)
+    keep_row(run, row, graph)
+    return graph
+
+
+def load_cfg(run: Path):
+    from facepipe.core.config import load_run_config
+
+    return load_run_config(run)
+
+
+def scored(run: Path, runner, ceiling: dict | None) -> dict:
+    """The branch's ruler over runner, with the gate against ceiling when there is one."""
+    hooks = hooks_of(run)
+    metrics = hooks.score(runner, load_cfg(run))
+    entry = {"metrics": metrics, "headline": hooks.headline(metrics)}
+    if ceiling is not None:
+        entry["passes"] = bool(hooks.gate(metrics, ceiling))
+    return entry
+
+
+def ceiling_of(run: Path) -> dict:
+    """Q0, the float model's metrics, scored once and kept as the ladder's first row."""
+    rows = read_ladder(run)
+    if CEILING_ROW not in rows:
+        traced = ptq_espdl.evaluator_of(run).export_spec(run)[1]
+        write_row(run, CEILING_ROW, {"rung": 0, **scored(run, TorchRunner(traced), None)})
+        rows = read_ladder(run)
+    return rows[CEILING_ROW]["metrics"]
+
+
+def verdict(entry: dict) -> str:
+    return {True: "pass", False: "fail"}.get(entry.get("passes"), "")
+
+
+def best_row(run: Path, rungs_wanted: set[int]) -> str:
+    """The row of the rungs wanted that ranks first by the branch's ruler."""
+    hooks, rows = hooks_of(run), read_ladder(run)
+    found = [name for name, e in rows.items() if e.get("rung") in rungs_wanted and "metrics" in e]
+    if not found:
+        raise ValueError(f"{run.name}: no row of rung {sorted(rungs_wanted)} yet")
+    return max(found, key=lambda name: hooks.rank(rows[name]["metrics"]))
+
+
+def step_ptq(run: Path) -> None:
+    branch = ptq_espdl.branch_of(run)
+    knobs = ptq_espdl.block(branch)["ladder"]
+    patches = ptq_espdl.block(branch)["esp_ppq_patches"]
+    ceiling = ceiling_of(run)
+    calib = ptq_espdl.calibration(run, knobs["calib_samples"])
+    for name in knobs["calibrations"]:
+        rungs = {**ptq_espdl.ladder(branch), "calibration": name}
+        graph = build_row(run, name, rungs, calib)
+        entry = scored(run, ptq_espdl.Simulator(graph, patches), ceiling)
+        write_row(run, name, {"rung": 2, "rungs": rungs, **entry})
+        print(f"{name}: {entry['headline']}  gate {verdict(entry)}")
+
+
+def touches_ends(graph, op_name: str) -> bool:
+    """op reads a graph input or writes a graph output, where the firmware feeds and reads int8."""
+    op = graph.operations[op_name]
+    reads_input = any(v.name in graph.inputs for v in op.inputs)
+    return reads_input or any(v.name in graph.outputs for v in op.outputs)
+
+
+def step_int16(run: Path) -> None:
+    branch = ptq_espdl.branch_of(run)
+    knobs = ptq_espdl.block(branch)["ladder"]
+    patches = ptq_espdl.block(branch)["esp_ppq_patches"]
+    ceiling = ceiling_of(run)
+    base = best_row(run, {2})
+    base_rungs = read_ladder(run)[base]["rungs"]
+    graph = export_espdl.load_native(row_dir(run, base) / GRAPH_FILE)
+    calib = ptq_espdl.calibration(run, knobs["calib_samples"])
+    with esp_ppq_patches.applied(patches):
+        ranked = mixed_espdl.ranked_layers(graph, calib[: knobs["layerwise_samples"]])
+    inner = [row for row in ranked if not touches_ends(graph, row[0])]
+    for row, ops in mixed_espdl.int16_rows(inner, knobs["int16_tops"]).items():
+        rungs = {**base_rungs, "int16_ops": ops}
+        quantised = build_row(run, row, rungs, calib)
+        entry = scored(run, ptq_espdl.Simulator(quantised, patches), ceiling)
+        write_row(run, row, {"rung": 3, "base": base, "rungs": rungs, **entry})
+        print(f"{row} over {base}: {entry['headline']}  gate {verdict(entry)}")
+
+
+def batched(calib: list[torch.Tensor], batch: int) -> list[torch.Tensor]:
+    """calib's samples stacked into whole batches of batch."""
+    whole = len(calib) // batch * batch
+    return [torch.cat(calib[i : i + batch]) for i in range(0, whole, batch)]
+
+
+def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
+    """Rung 4: the best row trained on through fake quantisation, distilled from the float model.
+
+    It trains on the calibration source past the calibration samples, in batches, then carries the
+    trained graph onto one of batch 1, the graph the chip runs.
+    """
+    if not allow_train:
+        raise SystemExit("rung 4 trains the model: ALLOW_TRAIN=1 once the owner says so")
+    branch = ptq_espdl.branch_of(run)
+    knobs = ptq_espdl.block(branch)["ladder"]
+    patches = ptq_espdl.block(branch)["esp_ppq_patches"]
+    qat = knobs["qat"]
+    ceiling = ceiling_of(run)
+    base = best_row(run, {2, 3})
+    rungs = read_ladder(run)[base]["rungs"]
+    calib = ptq_espdl.calibration(run, knobs["calib_samples"])
+    taken = knobs["calib_samples"]
+    feed = ptq_espdl.calibration(run, taken + qat["batch"] * 64)[taken:]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    teacher = TorchRunner(ptq_espdl.evaluator_of(run).export_spec(run)[1]).model
+    wide = quantised(run, rungs, batched(calib, qat["batch"]))
+    student = qat_espdl.Trainable(wide, device)
+    optimiser = torch.optim.Adam(student.parameters, lr=qat["learning_rate"])
+    rounds = batched(feed, qat["batch"])
+    for step in range(steps or qat["steps"]):
+        x = rounds[step % len(rounds)].to(device)
+        with torch.no_grad():
+            want = teacher(x)
+        want = want if isinstance(want, (tuple, list)) else (want,)
+        with esp_ppq_patches.applied(patches):
+            got = student(x)
+        loss = sum(torch.nn.functional.mse_loss(g, w) for g, w in zip(got, want, strict=True))
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
+        if step % 100 == 0:
+            print(f"qat step {step}: distillation loss {float(loss):.6f}")
+    student.freeze()
+    one = quantised(run, rungs, calib)
+    qat_espdl.carry(wide, one, calib[0].numpy())
+    keep_row(run, "qat", one)
+    entry = scored(run, ptq_espdl.Simulator(one, patches), ceiling)
+    write_row(run, "qat", {"rung": 4, "base": base, "rungs": rungs, **entry})
+    print(f"qat over {base}: {entry['headline']}  gate {verdict(entry)}")
+
+
+def step_timing(run: Path) -> None:
+    branch = ptq_espdl.branch_of(run)
+    rungs = ptq_espdl.timing_rungs(branch)
+    calib = ptq_espdl.calibration(run, ptq_espdl.block(branch)["ladder"]["calib_samples"])
+    build_row(run, ptq_espdl.TIMING_ROW, rungs, calib)
+    write_row(run, ptq_espdl.TIMING_ROW, {"rung": "timing", "rungs": rungs})
+    print(f"{ptq_espdl.TIMING_ROW}: {row_dir(run, ptq_espdl.TIMING_ROW)}")
+
+
+def step_same_int8(run: Path, against: str) -> int:
+    """KEHOACH 3.7 step 2.4: the run's network as its code stands against its code at against.
+
+    Both are quantised alike; the exit status is 1 when one integer differs.
+    """
+    branch = ptq_espdl.branch_of(run)
+    knobs = ptq_espdl.block(branch)["ladder"]
+    cfg = load_cfg(run)
+    current = ptq_espdl.evaluator_of(run).load_run(run)[1]
+    old_module = ptq_espdl.at_commit(type(current).__module__, against)
+    if old_module is None:
+        print(f"the network code is {against}'s: nothing to check")
+        return 0
+    old = getattr(old_module, type(current).__name__)(**dict(cfg.model.params))
+    old.load_state_dict(current.state_dict())
+    calib = ptq_espdl.calibration(run, knobs["calib_samples"])
+    frames = hooks_of(run).probe_inputs(cfg, device_frames(), knobs["check_samples"])
+    inputs = [x[None] for x in frames]
+    off, worst = ptq_espdl.same_integers(
+        run,
+        [current, old],
+        calib,
+        inputs,
+        ptq_espdl.ladder(branch),
+        ptq_espdl.block(branch)["esp_ppq_patches"],
+    )
+    print(f"{off} values off between {against} and now, {worst} at most")
+    return int(off > 0)
+
+
+def step_deploy(run: Path, row: str) -> None:
+    """The row's .espdl into firmware/models/ and the lock, refused unless every port is int8."""
+    branch = ptq_espdl.branch_of(run)
+    folder = row_dir(run, row)
+    bits = ptq_espdl.port_bits(export_espdl.load_native(folder / GRAPH_FILE))
+    if bits != {ptq_espdl.BITS}:
+        raise SystemExit(f"{row}: the firmware feeds and reads int8, ports carry {sorted(bits)}")
+    espdl = folder / f"{branch}.espdl"
+    run_id = f"{branch}/{run.name}"
+    update_lock.main(
+        ["--branch", branch, "--model", str(espdl), "--run-id", run_id, "--arena-bytes", "0"]
+    )
+
+
+def table(run: Path) -> str:
+    """The ladder of run as text, one row a line: rung, name, the branch's headline and the gate."""
+    lines = []
+    for name, e in read_ladder(run).items():
+        lines.append(f"{e.get('rung')!s:>6}  {name:16s} {e.get('headline', '')}  {verdict(e)}")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    steps = ["ptq", "int16", "qat", "timing", "same-int8", "deploy", "table"]
+    parser.add_argument("step", choices=steps)
+    parser.add_argument("--run", type=Path, required=True)
+    parser.add_argument("--row", help="deploy: the row to lock")
+    parser.add_argument("--against", default="HEAD", help="same-int8: the commit to hold it to")
+    parser.add_argument("--allow-train", action="store_true", help="qat: the owner said go")
+    parser.add_argument("--steps", type=int, help="qat: steps, the config's when left out")
+    args = parser.parse_args(argv)
+    run = args.run.resolve()
+    if args.step == "ptq":
+        step_ptq(run)
+    elif args.step == "int16":
+        step_int16(run)
+    elif args.step == "qat":
+        step_qat(run, args.allow_train, args.steps)
+    elif args.step == "timing":
+        step_timing(run)
+    elif args.step == "same-int8":
+        return step_same_int8(run, args.against)
+    elif args.step == "deploy":
+        if not args.row:
+            raise SystemExit("deploy needs --row")
+        step_deploy(run, args.row)
+    print(table(run))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
