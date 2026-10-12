@@ -8,6 +8,7 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { TOPICS } from "../src/common/generated/topics.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
@@ -148,7 +149,7 @@ describe("enrollment (e2e)", () => {
   }
 
   it("stores what the kiosk reports, sealed rather than in the clear", async () => {
-    await publishAsKiosk(`kiosk/${DEVICE_ID}/up/enroll`, {
+    await publishAsKiosk(TOPICS.enroll_report.build(DEVICE_ID), {
       op: "UPSERT",
       employeeId,
       templateIdx: 0,

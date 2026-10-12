@@ -14,6 +14,7 @@ import { AttendanceService } from "../src/modules/attendance/attendance.service.
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, dayWindow, localDay } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
+import { signIn } from "./fixtures.js";
 
 const WORKER = "E2EPV01";
 const STRANGER = "E2EPV02";
@@ -71,12 +72,6 @@ describe("punch review (e2e)", () => {
 
   function dayRow(code: string, day: string) {
     return db.attendanceDay.findFirst({ where: { employeeId: idOf.get(code), date: dayAsDate(day) } });
-  }
-
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password: PASSWORD });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken;
   }
 
   function decide(token: string, id: bigint, body: object) {
@@ -150,8 +145,8 @@ describe("punch review (e2e)", () => {
         endDate: new Date(Date.UTC(year, month, 0)),
       },
     });
-    reviewer = await signIn(MAIL(REVIEWER));
-    boss = await signIn(MAIL(BOSS));
+    reviewer = await signIn(http, MAIL(REVIEWER), PASSWORD);
+    boss = await signIn(http, MAIL(BOSS), PASSWORD);
   });
 
   after(async () => {

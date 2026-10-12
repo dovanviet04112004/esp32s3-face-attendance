@@ -12,6 +12,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword, verifyPassword } from "../src/modules/auth/password.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
+import { postLogin } from "./fixtures.js";
 
 // Sessions here are replayed and dropped on purpose, on an identity no parallel suite signs in as.
 const SIGNER_EMAIL = "e2eauth@kiosk.local";
@@ -29,10 +30,6 @@ describe("auth (e2e)", () => {
   let password: string;
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
-  async function signIn(email: string, secret: string): Promise<request.Response> {
-    return request(http).post("/auth/login").send({ email, password: secret });
-  }
-
   before(async () => {
     password = SIGNER_PASSWORD;
     void validateEnv();
@@ -54,19 +51,19 @@ describe("auth (e2e)", () => {
   });
 
   it("refuses a wrong password without saying which half was wrong", async () => {
-    const res = await signIn(SIGNER_EMAIL, "not-the-password");
+    const res = await postLogin(http, SIGNER_EMAIL, "not-the-password");
     assert.equal(res.status, 401);
     assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("gives an unknown address the same answer as a wrong password", async () => {
-    const res = await signIn("nobody@kiosk.local", "not-the-password");
+    const res = await postLogin(http, "nobody@kiosk.local", "not-the-password");
     assert.equal(res.status, 401);
     assert.equal(res.body.message, "CREDENTIALS_REJECTED");
   });
 
   it("signs in, hands back an access token and sets an httpOnly refresh cookie", async () => {
-    const res = await signIn(SIGNER_EMAIL, password);
+    const res = await postLogin(http, SIGNER_EMAIL, password);
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
     assert.equal(res.body.email, SIGNER_EMAIL, "the account menu has no address to show");
@@ -76,7 +73,7 @@ describe("auth (e2e)", () => {
   });
 
   it("accepts the access token on a guarded route and reports the role", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const me = await request(http)
       .get("/auth/me")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
@@ -92,7 +89,7 @@ describe("auth (e2e)", () => {
   });
 
   it("refuses a route the caller's role may not use with a code", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const res = await request(http)
       .get("/releases")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
@@ -116,7 +113,7 @@ describe("auth (e2e)", () => {
   });
 
   it("trades the refresh cookie for a new pair", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const res = await request(http).post("/auth/refresh").set("Cookie", cookieFrom(login.headers));
     assert.equal(res.status, 200);
     assert.equal(typeof res.body.accessToken, "string");
@@ -132,7 +129,7 @@ describe("auth (e2e)", () => {
   });
 
   it("lets one of two renewals racing on one cookie win, and refuses the other", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const held = cookieFrom(login.headers);
     const raced = await Promise.all([
       request(http).post("/auth/refresh").set("Cookie", held),
@@ -147,7 +144,7 @@ describe("auth (e2e)", () => {
   });
 
   it("finds the account whatever case the address is typed in", async () => {
-    const res = await signIn(SIGNER_EMAIL.toUpperCase(), password);
+    const res = await postLogin(http, SIGNER_EMAIL.toUpperCase(), password);
     assert.equal(res.status, 200, "a phone keyboard's capital letter locked the owner out");
     assert.equal(res.body.email, SIGNER_EMAIL);
   });
@@ -167,7 +164,7 @@ describe("auth (e2e)", () => {
   });
 
   it("answers an id that is not a number with a code", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const res = await request(http)
       .get("/employees/not-a-number")
       .set("Authorization", `Bearer ${login.body.accessToken}`);
@@ -205,7 +202,7 @@ describe("auth (e2e)", () => {
   });
 
   it("refuses a ticket signed with another algorithm under the right secret", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const claims = JSON.parse(Buffer.from(login.body.accessToken.split(".")[1], "base64url").toString());
     const forged = new JwtService().sign(
       { sub: claims.sub, role: claims.role, sid: claims.sid },
@@ -215,8 +212,8 @@ describe("auth (e2e)", () => {
   });
 
   it("kills the ticket of the device that signs out at once, and only that device's", async () => {
-    const phone = (await signIn(SIGNER_EMAIL, password)).body.accessToken as string;
-    const laptop = (await signIn(SIGNER_EMAIL, password)).body.accessToken as string;
+    const phone = (await postLogin(http, SIGNER_EMAIL, password)).body.accessToken as string;
+    const laptop = (await postLogin(http, SIGNER_EMAIL, password)).body.accessToken as string;
     const out = await request(http).post("/auth/logout").set("Authorization", `Bearer ${phone}`).send({});
     assert.equal(out.status, 204);
     assert.equal((await request(http).get("/auth/me").set("Authorization", `Bearer ${phone}`)).status, 401);
@@ -231,14 +228,14 @@ describe("auth (e2e)", () => {
   });
 
   it("sets the refresh cookie HttpOnly and SameSite=Strict, so a page on another site never sends it", async () => {
-    const jar = ((await signIn(SIGNER_EMAIL, password)).headers["set-cookie"] ?? []) as unknown as string[];
+    const jar = ((await postLogin(http, SIGNER_EMAIL, password)).headers["set-cookie"] ?? []) as unknown as string[];
     const cookie = jar.find((line) => line.startsWith(`${REFRESH_COOKIE}=`)) ?? "";
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Strict/);
   });
 
   it("treats a refresh cookie used twice as a replay and drops the session", async () => {
-    const login = await signIn(SIGNER_EMAIL, password);
+    const login = await postLogin(http, SIGNER_EMAIL, password);
     const used = cookieFrom(login.headers);
     const first = await request(http).post("/auth/refresh").set("Cookie", used);
     assert.equal(first.status, 200);

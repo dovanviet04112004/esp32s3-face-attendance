@@ -13,6 +13,7 @@ import { UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
 import { EmployeesService } from "../src/modules/employees/employees.service.js";
 import { dayAsDate } from "../src/modules/timesheet/local-day.js";
 import { UsersService } from "../src/modules/users/users.service.js";
+import { signIn } from "./fixtures.js";
 
 const LOCKED_ADMIN = "e2e-locked-admin@kiosk.local";
 const SPARE_ADMIN = "e2e-spare-admin@kiosk.local";
@@ -39,12 +40,6 @@ describe("the last active administrator (e2e)", () => {
   let entityId = "";
   let adminToken = "";
   let hrToken = "";
-
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password: validateEnv().SEED_ADMIN_PASSWORD ?? "" });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
 
   function yesterday(): Date {
     return new Date(dayAsDate(employees.today()).getTime() - DAY_MS);
@@ -91,8 +86,9 @@ describe("the last active administrator (e2e)", () => {
       })
     ).id;
     await db.user.update({ where: { id: seedAdmin }, data: { employeeId: adminRecord } });
-    adminToken = await signIn("admin@kiosk.local");
-    hrToken = await signIn("hr@kiosk.local");
+    const password = validateEnv().SEED_ADMIN_PASSWORD ?? "";
+    adminToken = await signIn(http, "admin@kiosk.local", password);
+    hrToken = await signIn(http, "hr@kiosk.local", password);
   });
 
   after(async () => {

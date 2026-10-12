@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { DisputesService } from "../src/modules/disputes/disputes.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
+import { signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const ENTITY = "E2EDS";
@@ -57,7 +58,6 @@ describe("disputing a payslip (e2e)", () => {
   let firstPeriodId = "";
   let nextPeriodId = "";
   let issuedSlipId = "";
-  let draftSlipId = "";
   let disputeId = "";
 
   async function sweep(): Promise<void> {
@@ -126,12 +126,6 @@ describe("disputing a payslip (e2e)", () => {
     return period.id;
   }
 
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password: PASSWORD });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   before(async () => {
     const env = validateEnv();
     answerDays = env.DISPUTE_ANSWER_DAYS;
@@ -167,9 +161,9 @@ describe("disputing a payslip (e2e)", () => {
       },
     });
     await db.employee.update({ where: { id: employeeId }, data: { managerId: bossRow.id } });
-    mine = await signIn(EMAIL);
-    theirs = await signIn(OTHER_EMAIL);
-    boss = await signIn(BOSS_EMAIL);
+    mine = await signIn(http, EMAIL, PASSWORD);
+    theirs = await signIn(http, OTHER_EMAIL, PASSWORD);
+    boss = await signIn(http, BOSS_EMAIL, PASSWORD);
 
     firstPeriodId = await makePeriod(FIRST_MONTH);
     const first = await db.payrollRun.create({
@@ -180,11 +174,6 @@ describe("disputing a payslip (e2e)", () => {
       where: { periodId: firstPeriodId, employeeId },
     });
     issuedSlipId = slip.id;
-    draftSlipId = (
-      await db.payslip.findFirstOrThrow({
-        where: { periodId: firstPeriodId, employeeId: { not: employeeId } },
-      })
-    ).id;
   });
 
   after(async () => {

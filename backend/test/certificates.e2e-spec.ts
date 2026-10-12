@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { CertificatesService } from "../src/modules/certificates/certificates.service.js";
 import type { Viewer } from "../src/common/scope/viewer.js";
+import { signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const CODE = "E2ECT01";
@@ -67,12 +68,6 @@ describe("letters of employment and income (e2e)", () => {
     return made.id;
   }
 
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password: PASSWORD });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   before(async () => {
     const env = validateEnv();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -96,10 +91,10 @@ describe("letters of employment and income (e2e)", () => {
     const bossId = await makePerson(BOSS, BOSS_EMAIL, "MANAGER");
     await db.employee.update({ where: { id: mineId }, data: { managerId: bossId } });
     await makePerson(CLERK, CLERK_EMAIL, "HR");
-    mine = await signIn(EMAIL);
-    theirs = await signIn(OTHER_EMAIL);
-    boss = await signIn(BOSS_EMAIL);
-    clerk = await signIn(CLERK_EMAIL);
+    mine = await signIn(http, EMAIL, PASSWORD);
+    theirs = await signIn(http, OTHER_EMAIL, PASSWORD);
+    boss = await signIn(http, BOSS_EMAIL, PASSWORD);
+    clerk = await signIn(http, CLERK_EMAIL, PASSWORD);
   });
 
   after(async () => {

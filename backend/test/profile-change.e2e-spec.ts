@@ -9,10 +9,12 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { ProfileService } from "../src/modules/profile/profile.service.js";
+import { signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const CODE = "E2EPR01";
@@ -143,12 +145,6 @@ describe("changing a personal detail through an approval (e2e)", () => {
     return made.id;
   }
 
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password: PASSWORD });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   async function held(): Promise<{ bankAccount: string | null; personalEmail: string | null }> {
     return db.employee.findUniqueOrThrow({
       where: { id: employeeId },
@@ -178,9 +174,9 @@ describe("changing a personal detail through an approval (e2e)", () => {
     await db.user.create({
       data: { email: HR_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "HR" },
     });
-    mine = await signIn(EMAIL);
-    theirs = await signIn(OTHER_EMAIL);
-    hr = await signIn(HR_EMAIL);
+    mine = await signIn(http, EMAIL, PASSWORD);
+    theirs = await signIn(http, OTHER_EMAIL, PASSWORD);
+    hr = await signIn(http, HR_EMAIL, PASSWORD);
 
     const policy = await db.payrollPolicy.findFirstOrThrow();
     const period = await db.payrollPeriod.create({
@@ -303,7 +299,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
       .set("Authorization", `Bearer ${desk}`);
     await db.payslip.update({ where: { id: slip.id }, data: { bankName: slip.bankName } });
     assert.equal(res.status, 200);
-    assert.ok(res.text.startsWith("﻿"), "the bank file carries no byte order mark for Excel");
+    assert.ok(res.text.startsWith(BYTE_ORDER_MARK), "the bank file carries no byte order mark for Excel");
     assert.ok(res.text.includes(`"'${payload.replace(/"/g, '""')}"`), "the bank file handed Excel a live formula");
   });
 
@@ -444,7 +440,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
         },
       })
     ).id;
-    const clerk = await signIn(CLERK_EMAIL);
+    const clerk = await signIn(http, CLERK_EMAIL, PASSWORD);
     const asked = await request(http)
       .post("/profile-changes")
       .set("Authorization", `Bearer ${desk}`)

@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { signIn } from "./fixtures.js";
 
 const DEPT = "E2ECE-DEPT";
 const FIRST = "NV9181E";
@@ -60,14 +61,6 @@ describe("catalogue edits and the lists around them (e2e)", () => {
     await db.department.deleteMany({ where: { code: DEPT } });
   }
 
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http)
-      .post("/auth/login")
-      .send({ email, password: validateEnv().SEED_ADMIN_PASSWORD ?? "" });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   function by(who: keyof typeof token) {
     return {
       get: (path: string) => request(http).get(path).set("Authorization", `Bearer ${token[who]}`),
@@ -86,10 +79,11 @@ describe("catalogue edits and the lists around them (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
-    token.admin = await signIn("admin@kiosk.local");
-    token.hr = await signIn("hr@kiosk.local");
-    token.payroll = await signIn("payroll@kiosk.local");
-    token.manager = await signIn("manager@kiosk.local");
+    const password = validateEnv().SEED_ADMIN_PASSWORD ?? "";
+    token.admin = await signIn(http, "admin@kiosk.local", password);
+    token.hr = await signIn(http, "hr@kiosk.local", password);
+    token.payroll = await signIn(http, "payroll@kiosk.local", password);
+    token.manager = await signIn(http, "manager@kiosk.local", password);
 
     const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
     const dept = await db.department.create({

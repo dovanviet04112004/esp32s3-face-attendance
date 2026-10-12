@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 import type { LeaveType } from "@prisma/client";
+import request from "supertest";
 
+import { validateEnv } from "../src/config/env.schema.js";
 import type { PrismaService } from "../src/database/prisma.service.js";
 import type { IssuedTokens, SignedIn } from "../src/modules/auth/auth.service.js";
 
 const LEAVE_CODE = "E2E-ANNUAL";
 const LEAVE_DAYS = 12;
-const DASHBOARD = "http://127.0.0.1:18083/api/v5";
-// A fresh broker, which is what CI starts, still answers to its factory login.
-const FACTORY_PASSWORD = "public";
+
+type Server = Parameters<typeof request>[0];
 
 /** The paid annual leave a suite books against, which the minimal seed lacks. */
 export async function paidLeaveType(db: PrismaService): Promise<LeaveType> {
@@ -22,14 +21,6 @@ export async function paidLeaveType(db: PrismaService): Promise<LeaveType> {
   return db.leaveType.findUniqueOrThrow({ where: { code: LEAVE_CODE } });
 }
 
-function dashboardPassword(): string {
-  const file = resolve(process.cwd(), "../deploy/.env");
-  if (!existsSync(file)) {
-    return FACTORY_PASSWORD;
-  }
-  return /^EMQX_DASHBOARD_PASSWORD=(.*)$/m.exec(readFileSync(file, "utf8"))?.[1]?.trim() ?? FACTORY_PASSWORD;
-}
-
 /** Publish as a kiosk through the broker's admin api, as the acl denies services every up topic.
  *  A null payload with `retain` clears the broker's copy. */
 export async function publishAsKiosk(
@@ -37,13 +28,15 @@ export async function publishAsKiosk(
   payload: unknown,
   options: { qos?: 0 | 1; retain?: boolean } = {},
 ): Promise<void> {
-  const auth = await fetch(`${DASHBOARD}/login`, {
+  const { EMQX_API_URL: api, EMQX_API_USERNAME: username, EMQX_API_PASSWORD: password } = validateEnv();
+  assert.ok(api && password, "publishing as a kiosk needs EMQX_API_URL and EMQX_API_PASSWORD");
+  const auth = await fetch(`${api}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: dashboardPassword() }),
+    body: JSON.stringify({ username, password }),
   });
   const { token } = (await auth.json()) as { token: string };
-  const sent = await fetch(`${DASHBOARD}/publish`, {
+  const sent = await fetch(`${api}/publish`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({
@@ -60,4 +53,19 @@ export async function publishAsKiosk(
 export function tokensOf(signed: SignedIn): IssuedTokens {
   assert.ok(signed.step === "session", "a sign-in stopped at the code step");
   return signed;
+}
+
+export function postLogin(http: Server, email: string, password: string): request.Test {
+  return request(http).post("/auth/login").send({ email, password });
+}
+
+/** The access token of a sign-in the case cannot go on without. */
+export async function signIn(http: Server, email: string, password: string): Promise<string> {
+  const res = await postLogin(http, email, password);
+  assert.equal(res.status, 200, `${email} could not sign in`);
+  return res.body.accessToken as string;
+}
+
+export function cellsOf(line: string): string[] {
+  return line.split('","').map((one) => one.replace(/^"|"$/g, ""));
 }

@@ -7,12 +7,13 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { cellsOf } from "./fixtures.js";
 
 const ON = "2026-06-01";
 const COLUMNS = 27;
-const BOM = "﻿";
 
 const THIN = "NV9601";
 const GONE = "NV9602";
@@ -20,12 +21,6 @@ const LAPSED = "NV9603";
 const ELSEWHERE = "NV9604";
 const MADE_CODES = [THIN, GONE, LAPSED, ELSEWHERE];
 const OTHER_ENTITY = "E2E-OTHER";
-
-function cellsOf(line: string): string[] {
-  return line
-    .split('","')
-    .map((one) => one.replace(/^"|"$/g, ""));
-}
 
 describe("d02-lt extract (e2e)", () => {
   let app: INestApplication;
@@ -45,8 +40,8 @@ describe("d02-lt extract (e2e)", () => {
       .get(`/reports/d02-lt?legalEntityId=${entityId}&on=${ON}`)
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 200);
-    assert.ok(res.text.startsWith(BOM), "Excel needs the byte order mark");
-    return res.text.slice(BOM.length).split("\r\n").map(cellsOf);
+    assert.ok(res.text.startsWith(BYTE_ORDER_MARK), "Excel needs the byte order mark");
+    return res.text.slice(BYTE_ORDER_MARK.length).split("\r\n").map(cellsOf);
   }
 
   function rowOf(rows: string[][], name: string): string[] | undefined {

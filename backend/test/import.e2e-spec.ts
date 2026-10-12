@@ -9,6 +9,7 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { UNUSABLE_PASSWORD } from "../src/modules/auth/password.js";
@@ -724,7 +725,7 @@ describe("employee import (e2e)", () => {
     assert.equal(await trailOf(), trail, "a round trip left audit lines");
 
     const csv = (await request(http).get(`/employees/export?search=${PREFIX}&format=csv`).set("Authorization", `Bearer ${token}`)).text;
-    assert.ok(csv.startsWith("﻿"), "Excel needs the byte order mark");
+    assert.ok(csv.startsWith(BYTE_ORDER_MARK), "Excel needs the byte order mark");
     assert.deepEqual(parseCsv(csv)[0], [...IMPORT_COLUMNS], "the header is the importer's own");
     const back = (await upload(csv, "text/csv")).body as Report;
     assert.deepEqual([back.faults.length, back.toUpdate, back.unchanged], [0, 0, mine.length]);

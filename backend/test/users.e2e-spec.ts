@@ -10,6 +10,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { signIn } from "./fixtures.js";
 
 const MADE_EMAIL = "e2e-hr@kiosk.local";
 const MADE_PASSWORD = "a-long-enough-password";
@@ -32,14 +33,8 @@ describe("users and audit (e2e)", () => {
     db = app.get(PrismaService);
     await db.user.deleteMany({ where: { email: MADE_EMAIL } });
 
-    const sign = async (email: string) => {
-      const res = await request(http)
-        .post("/auth/login")
-        .send({ email, password: env.SEED_ADMIN_PASSWORD });
-      return res.body.accessToken as string;
-    };
-    admin = await sign("admin@kiosk.local");
-    viewer = await sign("viewer@kiosk.local");
+    admin = await signIn(http, "admin@kiosk.local", env.SEED_ADMIN_PASSWORD ?? "");
+    viewer = await signIn(http, "viewer@kiosk.local", env.SEED_ADMIN_PASSWORD ?? "");
   });
 
   async function sweep(): Promise<void> {

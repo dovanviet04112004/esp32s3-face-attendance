@@ -7,8 +7,10 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { cellsOf, signIn } from "./fixtures.js";
 
 const TITLE = "E2ECAT-KTV";
 const ENTITY = "E2ECAT-PN";
@@ -23,16 +25,11 @@ const WORKER = "NV9171C";
 const HR_CODE = "NV0010";
 const D02_ON = "2026-06-01";
 const PAY_FROM = "2026-01-01";
-const BOM = "﻿";
 const LUNCH_CAP = 730_000;
 const LUNCH_AMOUNT = 800_000;
 const PHONE_AMOUNT = 300_000;
 const DUTY_AMOUNT = 500_000;
 const BASE = 20_000_000;
-
-function cellsOf(line: string): string[] {
-  return line.split('","').map((one) => one.replace(/^"|"$/g, ""));
-}
 
 describe("user-maintained catalogues (e2e)", () => {
   let app: INestApplication;
@@ -58,14 +55,6 @@ describe("user-maintained catalogues (e2e)", () => {
     await db.allowanceType.deleteMany({ where: { code: { in: [LUNCH, PHONE, DUTY] } } });
   }
 
-  async function signIn(email: string): Promise<string> {
-    const res = await request(http)
-      .post("/auth/login")
-      .send({ email, password: validateEnv().SEED_ADMIN_PASSWORD ?? "" });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   function by(who: keyof typeof token) {
     return {
       get: (path: string) => request(http).get(path).set("Authorization", `Bearer ${token[who]}`),
@@ -84,9 +73,10 @@ describe("user-maintained catalogues (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
-    token.admin = await signIn("admin@kiosk.local");
-    token.hr = await signIn("hr@kiosk.local");
-    token.payroll = await signIn("payroll@kiosk.local");
+    const password = validateEnv().SEED_ADMIN_PASSWORD ?? "";
+    token.admin = await signIn(http, "admin@kiosk.local", password);
+    token.hr = await signIn(http, "hr@kiosk.local", password);
+    token.payroll = await signIn(http, "payroll@kiosk.local", password);
   });
 
   after(async () => {
@@ -405,7 +395,7 @@ describe("user-maintained catalogues (e2e)", () => {
     await db.employee.update({ where: { id: workerId }, data: { hireDate: new Date(PAY_FROM) } });
     const res = await by("admin").get(`/reports/d02-lt?legalEntityId=${entityId}&on=${D02_ON}`);
     assert.equal(res.status, 200);
-    const rows = res.text.slice(BOM.length).split("\r\n").map(cellsOf);
+    const rows = res.text.slice(BYTE_ORDER_MARK.length).split("\r\n").map(cellsOf);
     const row = rows.slice(1).find((one) => one[1] === "Người của danh mục");
     assert.ok(row, "the worker is missing from the filing");
     assert.equal(row[8], "x", "a high-skilled title belongs in column 9");

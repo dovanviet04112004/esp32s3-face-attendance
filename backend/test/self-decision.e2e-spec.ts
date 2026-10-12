@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { signIn } from "./fixtures.js";
 
 const CODE = "E2ESD01";
 const DESK_CODE = "E2ESD02";
@@ -53,12 +54,6 @@ describe("nobody decides their own request (e2e)", () => {
     assert.equal(res.body.message, "SELF_DECISION", what);
   }
 
-  async function signIn(email: string): Promise<string> {
-    const signed = await request(http).post("/auth/login").send({ email, password: PASSWORD });
-    assert.equal(signed.status, 200, `${email} could not sign in`);
-    return signed.body.accessToken as string;
-  }
-
   async function sweep(): Promise<void> {
     await db.payrollPeriod.deleteMany({ where: { year: { in: [PAY_YEAR, FAR_YEAR] } } });
     await db.user.deleteMany({ where: { email: { in: [EMAIL, DESK_EMAIL, LOOSE_EMAIL] } } });
@@ -88,7 +83,7 @@ describe("nobody decides their own request (e2e)", () => {
     await db.user.create({
       data: { email: EMAIL, role: "PAYROLL", employeeId, passwordHash: await hashPassword(PASSWORD) },
     });
-    token = await signIn(EMAIL);
+    token = await signIn(http, EMAIL, PASSWORD);
 
     const desk = await db.employee.create({
       data: {
@@ -112,8 +107,8 @@ describe("nobody decides their own request (e2e)", () => {
         { email: LOOSE_EMAIL, role: "HR", passwordHash },
       ],
     });
-    deskToken = await signIn(DESK_EMAIL);
-    looseToken = await signIn(LOOSE_EMAIL);
+    deskToken = await signIn(http, DESK_EMAIL, PASSWORD);
+    looseToken = await signIn(http, LOOSE_EMAIL, PASSWORD);
   });
 
   after(async () => {

@@ -23,8 +23,8 @@ const { MqttService } = await import("../src/modules/mqtt/mqtt.service.js");
 
 const KIOSK = "e2e-session-kiosk";
 const CODE = "NV9300";
-const PUNCHES = `kiosk/${KIOSK}/up/attendance`;
-const BEATS = `kiosk/${KIOSK}/up/heartbeat`;
+const PUNCHES = TOPICS.attendance.build(KIOSK);
+const BEATS = TOPICS.heartbeat.build(KIOSK);
 const SETTLE_MS = 20_000;
 const POLL_MS = 100;
 const QUIET_MS = 1500;

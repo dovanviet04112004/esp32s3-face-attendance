@@ -14,7 +14,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { UNUSABLE_PASSWORD, verifyPassword } from "../src/modules/auth/password.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
-import { tokensOf } from "./fixtures.js";
+import { postLogin, tokensOf } from "./fixtures.js";
 
 const CODE = "E2EPS01";
 const EMAIL = "e2eps@kiosk.local";
@@ -38,10 +38,6 @@ describe("first password (e2e)", () => {
   async function sweep(): Promise<void> {
     await db.user.deleteMany({ where: { email: { in: [EMAIL, CAPPED] } } });
     await db.employee.deleteMany({ where: { code: CODE } });
-  }
-
-  async function signIn(password: string): Promise<request.Response> {
-    return request(http).post("/auth/login").send({ email: EMAIL, password });
   }
 
   async function live(): Promise<number> {
@@ -103,7 +99,7 @@ describe("first password (e2e)", () => {
 
   it("leaves that account unable to sign in", async () => {
     for (const guess of [CHOSEN, "the-obvious-guess", "another-long-guess"]) {
-      assert.equal((await signIn(guess)).status, 401, `"${guess}" opened an unset account`);
+      assert.equal((await postLogin(http, EMAIL, guess)).status, 401, `"${guess}" opened an unset account`);
     }
   });
 
@@ -148,7 +144,7 @@ describe("first password (e2e)", () => {
       .send({ token: link, password: CHOSEN });
     assert.equal(set.status, 204);
 
-    const res = await signIn(CHOSEN);
+    const res = await postLogin(http, EMAIL, CHOSEN);
     assert.equal(res.status, 200, "the password they set does not open the account");
     assert.equal(typeof res.body.accessToken, "string");
   });
@@ -159,7 +155,7 @@ describe("first password (e2e)", () => {
       .send({ token: link, password: "a-different-password" });
     assert.equal(again.status, 401);
     assert.equal(again.body.message, "SETUP_LINK_SPENT");
-    assert.equal((await signIn(CHOSEN)).status, 200, "a refused second use changed the password");
+    assert.equal((await postLogin(http, EMAIL, CHOSEN)).status, 200, "a refused second use changed the password");
   });
 
   it("answers a forgotten password the same whether the address exists or not", async () => {

@@ -17,7 +17,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { UsersService } from "../src/modules/users/users.service.js";
-import { tokensOf } from "./fixtures.js";
+import { postLogin, tokensOf } from "./fixtures.js";
 
 const EMAIL = "e2esession@kiosk.local";
 const FIRST_PASSWORD = "kiosk-e2e-password";
@@ -56,10 +56,7 @@ describe("sessions across devices (e2e)", () => {
   // Sign in over http only where the route itself is what is under test: the
   // throttler counts every call and this suite would spend its own allowance.
   async function signIn(agent: string): Promise<Device> {
-    const res = await request(http)
-      .post("/auth/login")
-      .set("User-Agent", agent)
-      .send({ email: EMAIL, password: FIRST_PASSWORD });
+    const res = await postLogin(http, EMAIL, FIRST_PASSWORD).set("User-Agent", agent);
     assert.equal(res.status, 200, `${agent} could not sign in`);
     return { access: res.body.accessToken as string, cookie: cookieFrom(res.headers) };
   }

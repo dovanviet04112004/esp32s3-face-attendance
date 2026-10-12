@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { EmployeesService } from "../src/modules/employees/employees.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
+import { postLogin } from "./fixtures.js";
 
 const LEAVER = "E2EOB01";
 const TODAY_LEAVER = "E2EOB02";
@@ -60,8 +61,6 @@ describe("offboarding (e2e)", () => {
 
   const as = (method: "post" | "patch" | "delete" | "get", path: string) =>
     request(http)[method](path).set("Authorization", `Bearer ${token}`);
-
-  const signIn = (email: string) => request(http).post("/auth/login").send({ email, password: PASSWORD });
 
   async function sweep(): Promise<void> {
     await db.asset.deleteMany({ where: { code: ASSET } });
@@ -159,7 +158,7 @@ describe("offboarding (e2e)", () => {
   });
 
   it("lets the account in while it is open, and keeps a session", async () => {
-    const res = await signIn(EMAIL);
+    const res = await postLogin(http, EMAIL, PASSWORD);
     assert.equal(res.status, 200);
     refreshCookie = cookieOf(res);
     assert.ok(refreshCookie, "the login handed back a refresh cookie");
@@ -189,7 +188,7 @@ describe("offboarding (e2e)", () => {
   });
 
   it("keeps both ways into the account open until the record closes", async () => {
-    assert.equal((await signIn(EMAIL)).status, 200, "a scheduled leaver could not sign in");
+    assert.equal((await postLogin(http, EMAIL, PASSWORD)).status, 200, "a scheduled leaver could not sign in");
     const renewed = await request(http).post("/auth/refresh").set("Cookie", refreshCookie);
     assert.equal(renewed.status, 200, "a session opened before the schedule died with it");
     refreshCookie = cookieOf(renewed);
@@ -221,13 +220,13 @@ describe("offboarding (e2e)", () => {
   });
 
   it("closes a last day of today at once, login and all", async () => {
-    const opened = await signIn(TODAY_EMAIL);
+    const opened = await postLogin(http, TODAY_EMAIL, PASSWORD);
     assert.equal(opened.status, 200);
     const res = await as("post", `/employees/${id[TODAY_LEAVER]}/offboard`).send({ leaveDate: employees.today() });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     assert.equal((res.body as Report).closed, true);
     assert.equal((await db.employee.findUniqueOrThrow({ where: { id: id[TODAY_LEAVER] } })).active, false);
-    assert.equal((await signIn(TODAY_EMAIL)).status, 401, "a closed account still signed in");
+    assert.equal((await postLogin(http, TODAY_EMAIL, PASSWORD)).status, 401, "a closed account still signed in");
     const renewed = await request(http).post("/auth/refresh").set("Cookie", cookieOf(opened));
     assert.equal(renewed.status, 401, "a session outlived the record closing");
   });
@@ -271,7 +270,7 @@ describe("offboarding (e2e)", () => {
     assert.equal(person.active, false);
     assert.equal(person.leaveDate?.toISOString().slice(0, 10), LAST_DAY);
     assert.equal((await db.user.findUniqueOrThrow({ where: { email: EMAIL } })).active, false);
-    assert.equal((await signIn(EMAIL)).status, 401, "a closed account still signed in");
+    assert.equal((await postLogin(http, EMAIL, PASSWORD)).status, 401, "a closed account still signed in");
     const renewed = await request(http).post("/auth/refresh").set("Cookie", refreshCookie);
     assert.equal(renewed.status, 401, "a session outlived the record closing");
     const kiosk = await db.deviceEnrollment.findUniqueOrThrow({

@@ -14,6 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { itemKey } from "../src/modules/notifications/notice-items.service.js";
 import { FEED } from "../src/modules/realtime/realtime.gateway.js";
+import { signIn } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-feed-password";
@@ -38,12 +39,6 @@ describe("who hears a notice on the feed (e2e)", () => {
 
   function settle(): Promise<void> {
     return new Promise((done) => setTimeout(done, SETTLE_MS));
-  }
-
-  async function signIn(who: Who): Promise<string> {
-    const res = await request(app.getHttpServer()).post("/auth/login").send({ email: mailOf(who), password: PASSWORD });
-    assert.equal(res.status, 200, `${who} could not sign in`);
-    return res.body.accessToken as string;
   }
 
   /** Open a socket and gather the notice messages it is told. */
@@ -82,9 +77,9 @@ describe("who hears a notice on the feed (e2e)", () => {
       await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },
       });
-      tokenOf.set(who, await signIn(who));
+      tokenOf.set(who, await signIn(app.getHttpServer(), mailOf(who), PASSWORD));
     }
-    deskAOther = await signIn("deskA");
+    deskAOther = await signIn(app.getHttpServer(), mailOf("deskA"), PASSWORD);
   });
 
   after(async () => {

@@ -14,6 +14,7 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
 import { dayWindow } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
+import { signIn } from "./fixtures.js";
 
 // An entity of its own, so every run and lock here reaches only the people this suite made.
 const ENTITY_CODE = "E2E-PAYC";
@@ -107,12 +108,6 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     await db.legalEntity.deleteMany({ where: { code: ENTITY_CODE } });
   }
 
-  async function signIn(email: string, password: string): Promise<string> {
-    const res = await request(http).post("/auth/login").send({ email, password });
-    assert.equal(res.status, 200, `${email} could not sign in`);
-    return res.body.accessToken as string;
-  }
-
   function as(who: keyof typeof token) {
     return {
       get: (path: string) => request(http).get(path).set("Authorization", `Bearer ${token[who]}`),
@@ -141,9 +136,9 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     await sweep();
 
     const password = env.SEED_ADMIN_PASSWORD ?? "";
-    token.admin = await signIn("admin@kiosk.local", password);
-    token.hr = await signIn("hr@kiosk.local", password);
-    token.payroll = await signIn("payroll@kiosk.local", password);
+    token.admin = await signIn(http, "admin@kiosk.local", password);
+    token.hr = await signIn(http, "hr@kiosk.local", password);
+    token.payroll = await signIn(http, "payroll@kiosk.local", password);
 
     const entity = await db.legalEntity.create({ data: { code: ENTITY_CODE, name: "Pháp nhân thử lương" } });
     entityId = entity.id;
@@ -193,7 +188,7 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
         employeeId: idOf.get(STEADY) as number,
       },
     });
-    token.steady = await signIn(STEADY_EMAIL, STEADY_PASSWORD);
+    token.steady = await signIn(http, STEADY_EMAIL, STEADY_PASSWORD);
 
     const steadyId = idOf.get(STEADY) as number;
     await db.attendanceDay.createMany({

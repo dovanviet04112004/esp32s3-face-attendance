@@ -11,6 +11,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { GUARD } from "../src/common/cache/cache-keys.js";
 import type { DeviceEvent } from "../src/common/generated/device_event.js";
+import { TOPICS } from "../src/common/generated/topics.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { RedisService } from "../src/database/redis.service.js";
@@ -73,7 +74,7 @@ describe("realtime and reports (e2e)", () => {
   }
 
   function fault(deviceId: string): Promise<void> {
-    return publishAsKiosk(`kiosk/${deviceId}/up/event`, {
+    return publishAsKiosk(TOPICS.event.build(deviceId), {
       deviceId,
       ts: Date.now(),
       type: "CAMERA_FAULT",
@@ -163,10 +164,10 @@ describe("realtime and reports (e2e)", () => {
   it("keeps one row for an event its kiosk sends ten times", async () => {
     const event = doorOpened(Date.now(), REPEATED_SEQ);
     for (let sent = 0; sent < REPEATS; sent += 1) {
-      await publishAsKiosk(`kiosk/${DEVICE_ID}/up/event`, event);
+      await publishAsKiosk(TOPICS.event.build(DEVICE_ID), event);
     }
     // A kiosk's messages are handled in arrival order, so the next seq landing means the ten are done.
-    await publishAsKiosk(`kiosk/${DEVICE_ID}/up/event`, { ...event, seq: REPEATED_SEQ + 1 });
+    await publishAsKiosk(TOPICS.event.build(DEVICE_ID), { ...event, seq: REPEATED_SEQ + 1 });
     await until(async () => (await stored(REPEATED_SEQ + 1)) === 1, "the event after the ten");
     assert.equal(await stored(REPEATED_SEQ), 1, "a redelivered event became a second row");
   });
