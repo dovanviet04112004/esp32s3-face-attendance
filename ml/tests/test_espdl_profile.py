@@ -21,7 +21,12 @@ I (802) dl::Model: | total          | 3.25KB       | 140.75KB  | 12.50KB |
 """
 
 
-def module(op: str, inputs: list[str], outputs: list[str], us: int = 1200, attrs: str = ""):
+POINTWISE = (
+    "dilations = [1, 1], group = 1, kernel_shape = [1, 1], pads = [0, 0, 0, 0], strides = [1, 1]"
+)
+
+
+def module(op: str, inputs: list[str], outputs: list[str], us: int = 1200, attrs: str = POINTWISE):
     return espdl_profile.Module("m", op, us, inputs, outputs, attrs)
 
 
@@ -45,10 +50,22 @@ def test_the_chip_is_the_firmware_s() -> None:
 
 
 def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
+    three = POINTWISE.replace("[1, 1], pads", "[3, 3], pads").replace(
+        "[0, 0, 0, 0]", "[1, 1, 1, 1]"
+    )
     laid = {"x": [1, 16, 16, 3], "w": [3, 3, 3, 24], "y": [1, 8, 8, 24]}
-    tags, rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
+    stem = module("Conv", ["x", "w"], ["y"], attrs=three)
+    tags, rate = espdl_profile.conv_tags(stem, laid, 240, 65536)
     assert tags == ["unaligned 3 -> 24 channels (no export patch)"]
     assert rate == pytest.approx(1200 * 240 / (8 * 8 * 24 * 3 * 9))
+
+    laid = {"x": [1, 8, 8, 24], "w": [1, 1, 24, 24], "y": [1, 8, 8, 24]}
+    tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
+    assert tags == ["unaligned 24 -> 24 channels (aligned_pointwise, 2 columns)"]
+
+    laid = {"x": [1, 7, 7, 32], "w": [1, 1, 32, 103], "y": [1, 7, 7, 103]}
+    tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
+    assert tags == ["unaligned 32 -> 103 channels (no export patch)"]
 
     laid = {"x": [1, 7, 7, 512], "w": [1, 1, 512, 512], "y": [1, 7, 7, 512]}
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
@@ -70,6 +87,12 @@ def test_the_other_slow_paths_name_their_patch() -> None:
         "8 output columns run in C (lay the product transposed)"
     ]
     assert tags("Add", attrs="quant_type = 'F32'") == ["runs in float"]
+    assert tags("Clip", attrs="lut = 'Clip_lut_0', quant_type = 'S8'") == [
+        "activation alone, one table lookup a value (no export patch)"
+    ]
+    assert tags("PRelu", attrs="quant_type = 'S8'") == [
+        "activation alone, ESP-PPQ fuses only Relu (no export patch)"
+    ]
     assert tags("Add") == []
 
 

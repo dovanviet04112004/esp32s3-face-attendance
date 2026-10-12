@@ -23,6 +23,9 @@ MATMUL_STEP = 16  # dl_base_matmul.cpp: vector path, 16 output columns
 LAYOUT_OPS = frozenset({"Transpose"})
 GRID_OPS = frozenset({"QuantizeLinear", "RequantizeLinear", "DequantizeLinear"})
 FLOAT_KERNEL_OPS = frozenset({"LayerNormalization", "Softmax"})
+# ESP-PPQ fuses only Relu into a convolution; esp-dl 3.3's activation_type_t has no ReLU6.
+LUT_MARK = "lut = "
+UNFUSED_ACTIVATIONS = frozenset({"PRelu", "LeakyRelu"})
 PROFILE_ROW = re.compile(r"\|\s*(?P<name>\S+)\s*\|\s*(?P<op>\w+)\s*\|\s*(?P<us>\d+)us\s*\|")
 # esp-dl's profile_memory leaves a cell blank when it holds 0.00KB.
 MEMORY_TOTAL = re.compile(r"\|\s*total\s*\|" + r"\s*(?:([0-9.]+)KB)?\s*\|" * 3)
@@ -98,6 +101,31 @@ def shapes(info_text: str, info: espdl_shapes.Info) -> dict[str, list[int]]:
     return found | info.inputs | info.declared
 
 
+def column_merge(x: list[int], y: list[int], attrs: str, cache_bytes: int) -> int | None:
+    """How many columns aligned_pointwise lays as channels to align a convolution, or None.
+
+    The kernel must span s columns at a stride of s and one of all else; the k columns then merged
+    must align both channel counts with block-diagonal weights inside the data cache.
+    """
+    kernel = espdl_shapes.attribute(attrs, "kernel_shape", [])
+    if not kernel:
+        return None
+    s, rest = kernel[-1], [*kernel[:-1], *espdl_shapes.attribute(attrs, "dilations", [])]
+    strides = espdl_shapes.attribute(attrs, "strides", [1] * len(kernel))
+    group, (c_in, c_out) = espdl_shapes.attribute(attrs, "group", 1), (x[-1], y[-1])
+    if strides != [1] * (len(kernel) - 1) + [s] or any(v != 1 for v in rest):
+        return None
+    if any(espdl_shapes.attribute(attrs, "pads", [])) or x[-2] != s * y[-2]:
+        return None
+    if group != 1 and (group != c_in or c_in != c_out or s != 1):
+        return None
+    for k in (1, 2, 4, 8, CHANNEL_STEP):
+        if y[-2] % k == 0 and not (k * s * c_in % CHANNEL_STEP or k * c_out % CHANNEL_STEP):
+            weight_bytes = k * c_out * (1 if group != 1 else k * s * c_in)
+            return k if weight_bytes <= cache_bytes else None
+    return None
+
+
 def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_bytes: int):
     """A convolution's slow paths and its cycles a multiply-add, None when shapes are unknown."""
     x, w, y = (laid.get(name) for name in (*module.inputs[:2], module.outputs[0]))
@@ -109,10 +137,12 @@ def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_by
     macs = math.prod(y) * (c_in // group) * taps
     tags = []
     if c_in % CHANNEL_STEP or c_out % CHANNEL_STEP:
-        fix = "aligned_pointwise" if taps == 1 else "no export patch"
+        k = column_merge(x, y, module.attrs, cache_bytes)
+        fix = f"aligned_pointwise, {k} columns" if k else "no export patch"
         tags.append(f"unaligned {c_in} -> {c_out} channels ({fix})")
     weight_bytes = math.prod(w)
-    if group == 1 and weight_bytes > cache_bytes and math.prod(y[:-1]) > 1:
+    pointwise_rows = group == 1 and taps == 1 and math.prod(y[:-1]) > 1
+    if pointwise_rows and weight_bytes > cache_bytes and not c_out % CHANNEL_STEP:
         tags.append(
             f"{weight_bytes // 1024} KB of weights outgrow the cache (cache_sized_convolutions)"
         )
@@ -131,6 +161,10 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
         tags.append("runs in float")
     if module.op in FLOAT_KERNEL_OPS:
         tags.append("esp-dl's int8 kernel works in float32 per value (no export patch)")
+    if LUT_MARK in module.attrs:
+        tags.append("activation alone, one table lookup a value (no export patch)")
+    if module.op in UNFUSED_ACTIVATIONS:
+        tags.append("activation alone, ESP-PPQ fuses only Relu (no export patch)")
     if module.op == "MatMul" and (y := laid.get(module.outputs[0])) and y[-1] < MATMUL_STEP:
         tags.append(f"{y[-1]} output columns run in C (lay the product transposed)")
     if module.op in LAYOUT_OPS:
