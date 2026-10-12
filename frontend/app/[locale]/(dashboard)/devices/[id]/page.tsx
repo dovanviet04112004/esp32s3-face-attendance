@@ -27,7 +27,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { clockDrifts, stampOptions } from "@/lib/format";
-import { useFeed, type FeedItem } from "@/lib/ws";
+import { isDeviceEvent, useFeed, type FeedItem } from "@/lib/ws";
 
 interface Device {
   id: string;
@@ -77,31 +77,6 @@ const kEventsShown = 12;
 
 const STATUS_TONE: Record<Device["status"], Tone> = { PENDING: "waiting", APPROVED: "good", REVOKED: "idle" };
 const kNameMax = 64;
-const EVENTS = [
-  "SPOOF_DETECTED",
-  "UNKNOWN_FACE",
-  "QUALITY_REJECTED",
-  "DOOR_OPENED_MANUALLY",
-  "DOOR_FAULT",
-  "CAMERA_FAULT",
-  "TOF_FAULT",
-  "LCD_FAULT",
-  "AUDIO_FAULT",
-  "STORAGE_FAULT",
-  "FACEDB_CORRUPT",
-  "MODEL_LOAD_FAILED",
-  "OTA_FAILED",
-  "OTA_ROLLED_BACK",
-  "TIME_UNSYNCED",
-  "BOOTED",
-  "COMMAND_DONE",
-  "COMMAND_REJECTED",
-  "ROSTER_REJECTED",
-] as const;
-
-function isEvent(raw: unknown): raw is (typeof EVENTS)[number] {
-  return typeof raw === "string" && (EVENTS as readonly string[]).includes(raw);
-}
 
 export default function DevicePage() {
   const t = useTranslations("devices");
@@ -430,7 +405,7 @@ export default function DevicePage() {
                         {format.dateTime(feedAt(item), stampOptions(feedAt(item)))}
                       </span>
                       <span className="min-w-0 flex-1 truncate">
-                        {isEvent(item.body.type)
+                        {isDeviceEvent(item.body.type)
                           ? t(`event_${item.body.type}`)
                           : item.feed === "attendance"
                             ? t("feedAttendance")

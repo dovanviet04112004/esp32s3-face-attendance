@@ -18,7 +18,7 @@ import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { clockDrifts, stampOptions } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
-import { useFeed, type FeedItem, type FeedStatus } from "@/lib/ws";
+import { isDeviceEvent, useFeed, type FeedItem, type FeedStatus } from "@/lib/ws";
 
 interface Release {
   releaseId: string;
@@ -74,28 +74,6 @@ const FEED_KEY: Record<FeedItem["feed"], "feedAttendance" | "feedEvent" | "feedD
   event: "feedEvent",
   device: "feedDevice",
 };
-const EVENTS = [
-  "SPOOF_DETECTED",
-  "UNKNOWN_FACE",
-  "QUALITY_REJECTED",
-  "DOOR_OPENED_MANUALLY",
-  "DOOR_FAULT",
-  "CAMERA_FAULT",
-  "TOF_FAULT",
-  "LCD_FAULT",
-  "AUDIO_FAULT",
-  "STORAGE_FAULT",
-  "FACEDB_CORRUPT",
-  "MODEL_LOAD_FAILED",
-  "OTA_FAILED",
-  "OTA_ROLLED_BACK",
-  "TIME_UNSYNCED",
-  "BOOTED",
-  "COMMAND_DONE",
-  "COMMAND_REJECTED",
-  "ROSTER_REJECTED",
-] as const;
-type EventType = (typeof EVENTS)[number];
 
 const FLEET_POLL_MS = 5_000;
 const kPage = 50;
@@ -106,10 +84,6 @@ const kTickMs = 60_000;
 
 function showOf(raw: string): Show {
   return (SHOWS as readonly string[]).includes(raw) ? (raw as Show) : "";
-}
-
-function isEvent(raw: unknown): raw is EventType {
-  return typeof raw === "string" && (EVENTS as readonly string[]).includes(raw);
 }
 
 function Devices() {
@@ -277,7 +251,7 @@ function Devices() {
       return [personOf(body.employeeId) ?? t("feedPerson", { id: String(body.employeeId ?? "") }), way, kioskOf(body.deviceId)].join(" · ");
     }
     if (item.feed === "event") {
-      const what = isEvent(body.type) ? t(`event_${body.type}`) : String(body.type ?? "");
+      const what = isDeviceEvent(body.type) ? t(`event_${body.type}`) : String(body.type ?? "");
       return [what, kioskOf(body.deviceId)].filter(Boolean).join(" · ");
     }
     const state =

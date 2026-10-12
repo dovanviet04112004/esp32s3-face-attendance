@@ -5,14 +5,16 @@ import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { create } from "zustand";
 
+import type { DeviceEvent } from "@/types/generated/device_event";
+
 import { reopenSession } from "./api";
 import { useSession, whenSignedOut } from "./auth";
 import { env } from "./env";
 
 /** The kiosk's own news, which pages list as it arrives. */
-export type ListedFeed = "attendance" | "event" | "device";
+type ListedFeed = "attendance" | "event" | "device";
 
-export type FeedName = ListedFeed | "change" | "notice";
+type FeedName = ListedFeed | "change" | "notice";
 
 export type FeedStatus = "live" | "reconnecting" | "dropped";
 
@@ -29,6 +31,35 @@ export interface FeedItem {
   body: Record<string, unknown>;
   /** Epoch ms the browser heard it, for news that carries no ts of its own. */
   heardAt: number;
+}
+
+// Keyed by the contract's own union, so a type added to or dropped from the schema fails tsc.
+const DEVICE_EVENTS: Record<DeviceEvent["type"], true> = {
+  SPOOF_DETECTED: true,
+  UNKNOWN_FACE: true,
+  QUALITY_REJECTED: true,
+  DOOR_OPENED_MANUALLY: true,
+  DOOR_FAULT: true,
+  CAMERA_FAULT: true,
+  TOF_FAULT: true,
+  LCD_FAULT: true,
+  AUDIO_FAULT: true,
+  STORAGE_FAULT: true,
+  FACEDB_CORRUPT: true,
+  MODEL_LOAD_FAILED: true,
+  OTA_FAILED: true,
+  OTA_ROLLED_BACK: true,
+  TIME_UNSYNCED: true,
+  BOOTED: true,
+  COMMAND_DONE: true,
+  COMMAND_REJECTED: true,
+  ROSTER_REJECTED: true,
+};
+const DEVICE_EVENT_TYPES: readonly string[] = Object.keys(DEVICE_EVENTS);
+
+/** The kiosk event an event feed body names, when the contract knows its type. */
+export function isDeviceEvent(raw: unknown): raw is DeviceEvent["type"] {
+  return typeof raw === "string" && DEVICE_EVENT_TYPES.includes(raw);
 }
 
 const LISTED: readonly FeedName[] = ["attendance", "event", "device"];
