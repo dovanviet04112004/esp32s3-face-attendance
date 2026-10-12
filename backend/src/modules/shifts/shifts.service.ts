@@ -7,7 +7,13 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { namedFilter, PrismaService } from "../../database/prisma.service.js";
+import {
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  namedFilter,
+  PrismaService,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
@@ -42,8 +48,6 @@ export interface ShiftBatch {
 
 // One person rarely holds more than a handful; the rest stay on the shift's own roster.
 const HELD_SHOWN = 50;
-const UNIQUE_VIOLATION = "P2002";
-const FOREIGN_KEY_VIOLATION = "P2003";
 const SATURDAY = 6;
 const SUNDAY = 0;
 
@@ -160,7 +164,7 @@ export class ShiftsService {
     try {
       return await this.db.shift.create({ data: body });
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("SHIFT_NAME_TAKEN");
       }
       throw error;
@@ -170,7 +174,7 @@ export class ShiftsService {
   async update(id: string, body: UpdateShiftDto): Promise<Shift> {
     const held = await this.get(id);
     const updated = await this.db.shift.update({ where: { id }, data: body }).catch((error: unknown) => {
-      throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("SHIFT_NAME_TAKEN") : error;
+      throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("SHIFT_NAME_TAKEN") : error;
     });
     if (updated.startTime !== held.startTime || updated.endTime !== held.endTime || updated.graceMinutes !== held.graceMinutes) {
       await this.tellChanged(
@@ -290,10 +294,10 @@ export class ShiftsService {
         },
       });
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("SHIFT_ALREADY_ASSIGNED");
       }
-      if (isCode(error, FOREIGN_KEY_VIOLATION)) {
+      if (isPrismaCode(error, FOREIGN_KEY_VIOLATION)) {
         throw new NotFoundException("EMPLOYEE_NOT_FOUND");
       }
       throw error;
@@ -326,10 +330,6 @@ export class ShiftsService {
       ahead.map((one) => ({ employeeId: one.employeeId, facts: { day: asDay(one.validFrom) > today ? asDay(one.validFrom) : today } })),
     );
   }
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 function asDay(value: Date): string {

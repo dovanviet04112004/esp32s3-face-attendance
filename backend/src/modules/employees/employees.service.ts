@@ -18,7 +18,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import { isUnlinkedDesk, refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
 import type { Env } from "../../config/env.schema.js";
-import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
+import { isPrismaCode, namedFilter, PrismaService, UNIQUE_VIOLATION, type IdFilter } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type LeavingsNowJob, type PasswordSetupJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -72,8 +72,6 @@ import {
   type RowPlan,
 } from "./import.js";
 import { readWorkbook, writeWorkbook, XLSX_MIME } from "./workbook.js";
-
-const UNIQUE_VIOLATION = "P2002";
 
 // A trailing run of digits is what makes a code a series; the width caps it at
 // what an int holds, since the answer is read back as one.
@@ -1090,7 +1088,7 @@ export class EmployeesService implements OnModuleInit {
         return { made, flips: await this.users.syncManagerRoles([made.managerId], tx) };
       });
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("EMPLOYEE_CODE_TAKEN");
       }
       throw error;
@@ -1575,7 +1573,7 @@ export class EmployeesService implements OnModuleInit {
         return { saved, flips: await this.users.syncManagerRoles([before.managerId, saved.managerId], tx) };
       });
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("EMPLOYEE_CODE_TAKEN");
       }
       throw error;
@@ -1613,8 +1611,4 @@ function dated<T extends { hireDate?: string; dateOfBirth?: string }>(body: T) {
     ...(body.hireDate ? { hireDate: new Date(body.hireDate) } : {}),
     ...(body.dateOfBirth ? { dateOfBirth: new Date(body.dateOfBirth) } : {}),
   };
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

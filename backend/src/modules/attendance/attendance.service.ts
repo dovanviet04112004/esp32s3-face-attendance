@@ -16,7 +16,12 @@ import type { AttendanceRecord } from "../../common/generated/attendance_record.
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import {
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  PrismaService,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DevicesService, EARLIEST_BELIEVABLE_MS } from "../devices/devices.service.js";
@@ -26,7 +31,6 @@ import { dayAsDate, localDay } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import { PUNCH_ID, type DecidePunchesDto, type ListAttendanceDto, type ListHeldDto } from "./dto/attendance.dto.js";
 
-const FOREIGN_KEY_VIOLATION = "P2003";
 const kDayMs = 86_400_000;
 // How far past its receipt a punch may claim to be (KEHOACH 9.8).
 const kAheadOfReceiptMs = kDayMs;
@@ -326,7 +330,7 @@ export class AttendanceService {
       }
       // A second delivery can land between the read above and this write, and
       // the unique index is what settles it (CLAUDE.md 4.3).
-      if (isPrismaCode(error, "P2002")) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         return "duplicate";
       }
       throw error;
@@ -372,8 +376,4 @@ export class AttendanceService {
     });
     return closed > 0 ? "CLOSED_PERIOD" : null;
   }
-}
-
-function isPrismaCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

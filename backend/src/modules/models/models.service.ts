@@ -20,7 +20,7 @@ import type { Device, DeviceEvent, Release } from "@prisma/client";
 
 import type { OtaManifest } from "../../common/generated/ota_manifest.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { isPrismaCode, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
@@ -93,7 +93,6 @@ const RECOGNITION_ENTRY = "recog";
 const EMBEDDING_SHA_BYTES = 8;
 const HEAD_BYTES = Math.max(APP_HEAD_BYTES, MODELS_HEAD_BYTES);
 const KEEP_FILES = 5;
-const UNIQUE_VIOLATION = "P2002";
 const OTA_FAILED = "OTA_FAILED";
 const OTA_ROLLED_BACK = "OTA_ROLLED_BACK";
 const OTA_REPORTS = [OTA_ROLLED_BACK, OTA_FAILED];
@@ -166,10 +165,6 @@ function embeddingOf(head: Buffer): string | null {
 function view(release: Release): ReleaseView {
   const { path, ...rest } = release;
   return { ...rest, available: path !== null };
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 @Injectable()
@@ -288,7 +283,7 @@ export class ModelsService implements OnModuleInit {
     } catch (error) {
       await rm(`${this.dir}/${file}.part`, { force: true });
       await rm(`${this.dir}/${file}`, { force: true });
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         const raced = await this.db.release.findUniqueOrThrow({
           where: { target_version: { target: facts.target, version: facts.version } },
         });

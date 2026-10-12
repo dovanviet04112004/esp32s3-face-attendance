@@ -22,7 +22,13 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import {
+  EXCLUSION_VIOLATION,
+  isPrismaCode,
+  isSqlState,
+  PrismaService,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -54,8 +60,6 @@ import {
 
 export { THE_DESK } from "./queue-filter.js";
 
-const EXCLUSION_VIOLATION = "23P01";
-const UNIQUE_VIOLATION = "P2002";
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
 const MS_PER_MINUTE = 60_000;
@@ -234,7 +238,7 @@ export class LeaveService {
       });
       return made;
     } catch (error: unknown) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("LEAVE_TYPE_CODE_TAKEN");
       }
       throw error;
@@ -383,7 +387,7 @@ export class LeaveService {
           },
         });
       } catch (error) {
-        if (isCode(error, EXCLUSION_VIOLATION)) {
+        if (isSqlState(error, EXCLUSION_VIOLATION)) {
           throw new ConflictException("LEAVE_OVERLAP");
         }
         throw error;
@@ -397,7 +401,7 @@ export class LeaveService {
       // Two redeliveries can both miss the read above. Letting this throw is
       // what rolls back the leave days the loser had already reserved.
       const raced =
-        body.clientKey !== undefined && isCode(error, UNIQUE_VIOLATION)
+        body.clientKey !== undefined && isPrismaCode(error, UNIQUE_VIOLATION)
           ? await this.db.request.findUnique({ where: { clientKey: body.clientKey } })
           : null;
       if (!raced) {
@@ -966,20 +970,6 @@ export class LeaveService {
   private keyOf(held: LeaveRequest, year: number): { employeeId: number; leaveTypeId: string; year: number } {
     return { employeeId: held.employeeId, leaveTypeId: held.leaveTypeId as string, year };
   }
-}
-
-// Prisma wraps a raw SQLSTATE in the message rather than surfacing it as a
-// field, so the constraint name is what identifies it.
-function isCode(error: unknown, code: string): boolean {
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-  const meta = (error as { meta?: { code?: string } }).meta;
-  if (meta?.code === code || (error as { code?: string }).code === code) {
-    return true;
-  }
-  const message = (error as { message?: string }).message ?? "";
-  return message.includes(code);
 }
 
 function everyDay(from: Date, to: Date): Date[] {

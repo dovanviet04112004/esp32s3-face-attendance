@@ -20,7 +20,7 @@ import type { Env } from "../../config/env.schema.js";
 import { COUNT_CEILING, countedTo, decodeCursor, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { LINKED_DESKS } from "../../common/scope/viewer.js";
-import { namedFilter, PrismaService, type IdFilter } from "../../database/prisma.service.js";
+import { isPrismaCode, namedFilter, PrismaService, UNIQUE_VIOLATION, type IdFilter } from "../../database/prisma.service.js";
 
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -42,7 +42,6 @@ import type {
   UserFilterDto,
 } from "./dto/user.dto.js";
 
-const UNIQUE_VIOLATION = "P2002";
 const HOUR_MS = 3_600_000;
 
 // Roles that read as one particular person in the company (KEHOACH 9.4).
@@ -415,7 +414,7 @@ export class UsersService {
       await this.sendSetup(made.id, person.locale, "opened");
       return { userId: made.id };
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         return { skipped: "EMAIL_TAKEN" };
       }
       throw error;
@@ -820,13 +819,9 @@ function settledRole(asked: Role, person: Linkable | null): Role {
 }
 
 function asTaken(error: unknown): unknown {
-  if (!isCode(error, UNIQUE_VIOLATION)) {
+  if (!isPrismaCode(error, UNIQUE_VIOLATION)) {
     return error;
   }
   const onEmployee = JSON.stringify((error as { meta?: unknown }).meta ?? "").includes("employeeId");
   return new ConflictException(onEmployee ? "EMPLOYEE_HAS_ACCOUNT" : "EMAIL_ALREADY_HAS_ACCOUNT");
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

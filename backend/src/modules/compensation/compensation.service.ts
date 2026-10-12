@@ -20,7 +20,13 @@ import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import {
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  PrismaService,
+  RECORD_NOT_FOUND,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -70,14 +76,6 @@ export interface RaisePreview {
   nextBase: string;
   currentInsurance: string;
   nextInsurance: string;
-}
-
-const UNIQUE_VIOLATION = "P2002";
-const FOREIGN_KEY_VIOLATION = "P2003";
-const NOT_FOUND = "P2025";
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 type Scalar = string | number | boolean | null;
@@ -141,7 +139,7 @@ export class CompensationService {
         },
       })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ALLOWANCE_CODE_TAKEN") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("ALLOWANCE_CODE_TAKEN") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,
@@ -160,10 +158,10 @@ export class CompensationService {
       throw new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND");
     }
     const saved = await this.db.allowanceType.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("ALLOWANCE_CODE_TAKEN");
       }
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("ALLOWANCE_TYPE_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -260,10 +258,10 @@ export class CompensationService {
         include: { allowances: true },
       })
       .catch((error: unknown) => {
-        if (isCode(error, UNIQUE_VIOLATION)) {
+        if (isPrismaCode(error, UNIQUE_VIOLATION)) {
           throw new ConflictException("PAY_DATE_TAKEN");
         }
-        throw isCode(error, FOREIGN_KEY_VIOLATION) || isCode(error, NOT_FOUND)
+        throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) || isPrismaCode(error, RECORD_NOT_FOUND)
           ? new NotFoundException("EMPLOYEE_NOT_FOUND")
           : error;
       });
@@ -520,7 +518,7 @@ export class CompensationService {
         },
       })
       .catch((error: unknown) => {
-        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
+        throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
       });
     await this.items.open("DEPENDENTS", made);
     return made;

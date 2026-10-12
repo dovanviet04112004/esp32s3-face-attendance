@@ -9,7 +9,16 @@ import { toExcelCsv } from "../../common/csv.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { codeHas, employeesNamed, foldedHas, PrismaService } from "../../database/prisma.service.js";
+import {
+  codeHas,
+  employeesNamed,
+  foldedHas,
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  PrismaService,
+  RECORD_NOT_FOUND,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { localDay } from "../timesheet/local-day.js";
@@ -42,16 +51,9 @@ export interface AssetCounts {
   kinds: string[];
 }
 
-const UNIQUE_VIOLATION = "P2002";
-const FOREIGN_KEY_VIOLATION = "P2003";
-const NOT_FOUND = "P2025";
 // A register this long is a data problem, not a spreadsheet; the export says so by stopping.
 const kExportMax = 50_000;
 const EXPORT_HEADER = ["code", "name", "kind", "serialNo", "state", "holderCode", "holderName", "department", "issuedAt"];
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
 
 function asRow(row: RegisterRow): AssetRow {
   const { transfers, ...asset } = row;
@@ -157,7 +159,7 @@ export class AssetsService {
     const made = await this.db.asset
       .create({ data: { code: body.code, name: body.name, kind: body.kind, serialNo: body.serialNo ?? null } })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ASSET_CODE_TAKEN") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("ASSET_CODE_TAKEN") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,
@@ -173,7 +175,7 @@ export class AssetsService {
   async update(viewer: Viewer, id: string, body: UpdateAssetDto): Promise<Asset> {
     const held = await this.require(id);
     const saved = await this.db.asset.update({ where: { id }, data: body }).catch((error: unknown) => {
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("ASSET_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("ASSET_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -253,7 +255,7 @@ export class AssetsService {
       });
       return tx.asset.findUniqueOrThrow({ where: { id: assetId }, include: { holder: HOLDER } });
     }).catch((error: unknown) => {
-      throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
+      throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,

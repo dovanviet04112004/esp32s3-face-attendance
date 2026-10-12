@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PayrollPolicy, TaxBracket } from "@prisma/client";
 
-import { PrismaService } from "../../database/prisma.service.js";
+import { isPrismaCode, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import type { CalcPolicy } from "../payroll/calculate.js";
@@ -9,8 +9,6 @@ import { toDong, toHundredths } from "../payroll/money.js";
 import type { CreatePolicyDto } from "./dto/policy.dto.js";
 
 export type PolicyWithBrackets = PayrollPolicy & { brackets: TaxBracket[] };
-
-const UNIQUE_VIOLATION = "P2002";
 
 /** Bands climb strictly and only the last one is open-ended, or the tax walk skips or repeats a slice. */
 function bandsInOrder(brackets: CreatePolicyDto["brackets"]): boolean {
@@ -96,7 +94,7 @@ export class PolicyService {
       },
       include: { brackets: { orderBy: { ordinal: "asc" } } },
     }).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === UNIQUE_VIOLATION) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("POLICY_DATE_TAKEN");
       }
       throw error;

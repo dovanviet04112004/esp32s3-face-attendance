@@ -17,7 +17,7 @@ import type {
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { isPrismaCode, PrismaService, RECORD_NOT_FOUND, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
@@ -39,9 +39,6 @@ import type {
   UpdateJobTitleDto,
   UpdateLegalEntityDto,
 } from "./dto/org.dto.js";
-
-const UNIQUE_VIOLATION = "P2002";
-const NOT_FOUND = "P2025";
 
 type Scalar = string | number | boolean | null;
 
@@ -282,7 +279,7 @@ export class OrgService {
       });
       return made;
     } catch (error) {
-      if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("HOLIDAY_ALREADY_SET");
       }
       throw error;
@@ -295,7 +292,7 @@ export class OrgService {
       throw new NotFoundException("HOLIDAY_NOT_FOUND");
     }
     const saved = await this.db.holiday.update({ where: { id }, data: body }).catch((error: unknown) => {
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId,
@@ -309,7 +306,7 @@ export class OrgService {
 
   async removeHoliday(id: string, actorId: string): Promise<{ done: true }> {
     await this.db.holiday.delete({ where: { id } }).catch((error: unknown) => {
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId,
@@ -417,7 +414,7 @@ export class OrgService {
     const made = await this.db.legalEntity
       .create({ data: { code: body.code, name: body.name, taxCode: body.taxCode ?? null, address: body.address ?? null } })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("ENTITY_CODE_TAKEN") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("ENTITY_CODE_TAKEN") : error;
       });
     await this.audit.record({
       actorId,
@@ -448,10 +445,10 @@ export class OrgService {
       }
     }
     const saved = await this.db.legalEntity.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("ENTITY_CODE_TAKEN");
       }
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("LEGAL_ENTITY_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("LEGAL_ENTITY_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId,
@@ -487,7 +484,7 @@ export class OrgService {
         },
       })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("JOB_TITLE_CODE_TAKEN") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("JOB_TITLE_CODE_TAKEN") : error;
       });
     await this.audit.record({
       actorId,
@@ -506,10 +503,10 @@ export class OrgService {
       throw new NotFoundException("JOB_TITLE_NOT_FOUND");
     }
     const saved = await this.db.jobTitle.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("JOB_TITLE_CODE_TAKEN");
       }
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("JOB_TITLE_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("JOB_TITLE_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId,
@@ -558,7 +555,7 @@ export class OrgService {
     await this.mustBeParent(body.parentId, body.legalEntityId);
     await this.mustBeHead(body.headId);
     const made = await this.db.department.create({ data: body }).catch((error: unknown) => {
-      throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("DEPARTMENT_CODE_TAKEN") : error;
+      throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("DEPARTMENT_CODE_TAKEN") : error;
     });
     await this.audit.record({
       actorId,
@@ -593,10 +590,10 @@ export class OrgService {
       }
     }
     const saved = await this.db.department.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("DEPARTMENT_CODE_TAKEN");
       }
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId,
@@ -646,8 +643,4 @@ export class OrgService {
       at = up?.parentId ?? null;
     }
   }
-}
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

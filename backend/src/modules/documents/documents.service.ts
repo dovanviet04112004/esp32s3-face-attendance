@@ -13,7 +13,15 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
+import {
+  codeHas,
+  foldedHas,
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  PrismaService,
+  RECORD_NOT_FOUND,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type NoticeDocumentsJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -32,10 +40,6 @@ import type {
   UpdateDocumentDto,
   UpdateFileTypeDto,
 } from "./dto/documents.dto.js";
-
-const UNIQUE_VIOLATION = "P2002";
-const FOREIGN_KEY_VIOLATION = "P2003";
-const NOT_FOUND = "P2025";
 
 /** The same day some months on, held to the last day of a shorter month:
  *  31 January plus one month is 28 February, not 3 March.
@@ -88,10 +92,6 @@ export interface ReaderRow {
 /** The readers of one version, and how many of all of them have not signed it yet. */
 export type ReaderPage = Page<ReaderRow> & { unread: number; unreadIsExact: boolean };
 
-function isCode(error: unknown, code: string): boolean {
-  return (error as { code?: string }).code === code;
-}
-
 @Injectable()
 export class DocumentsService {
   private readonly log = new Logger(DocumentsService.name);
@@ -134,10 +134,10 @@ export class DocumentsService {
       });
       return made;
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("DOCUMENT_CODE_TAKEN");
       }
-      if (isCode(error, FOREIGN_KEY_VIOLATION)) {
+      if (isPrismaCode(error, FOREIGN_KEY_VIOLATION)) {
         throw new NotFoundException("AUDIENCE_NOT_FOUND");
       }
       throw error;
@@ -153,10 +153,10 @@ export class DocumentsService {
       throw new NotFoundException("DOCUMENT_NOT_FOUND");
     }
     const saved = await this.db.document.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isCode(error, FOREIGN_KEY_VIOLATION)) {
+      if (isPrismaCode(error, FOREIGN_KEY_VIOLATION)) {
         throw new NotFoundException("AUDIENCE_NOT_FOUND");
       }
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("DOCUMENT_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("DOCUMENT_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -216,7 +216,7 @@ export class DocumentsService {
         });
       })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("DOCUMENT_VERSION_TAKEN") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("DOCUMENT_VERSION_TAKEN") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,
@@ -376,7 +376,7 @@ export class DocumentsService {
       throw new NotFoundException("FILE_TYPE_NOT_FOUND");
     }
     const saved = await this.db.personnelFileType.update({ where: { id }, data: body }).catch((error: unknown) => {
-      throw isCode(error, NOT_FOUND) ? new NotFoundException("FILE_TYPE_NOT_FOUND") : error;
+      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("FILE_TYPE_NOT_FOUND") : error;
     });
     await this.audit.record({
       actorId: viewer.userId,
@@ -408,7 +408,7 @@ export class DocumentsService {
       });
       return made;
     } catch (error) {
-      if (isCode(error, UNIQUE_VIOLATION)) {
+      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         throw new ConflictException("FILE_TYPE_CODE_TAKEN");
       }
       throw error;
@@ -439,7 +439,7 @@ export class DocumentsService {
         },
       })
       .catch((error: unknown) => {
-        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
+        throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("EMPLOYEE_NOT_FOUND") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,

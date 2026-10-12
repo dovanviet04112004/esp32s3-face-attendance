@@ -9,6 +9,11 @@ const LIKE_WILDCARDS = String.raw`([\\%_])`;
 const LIKE_AS_ITSELF = String.raw`\\\1`;
 const kIdListMax = 16_000;
 
+export const UNIQUE_VIOLATION = "P2002";
+export const FOREIGN_KEY_VIOLATION = "P2003";
+export const RECORD_NOT_FOUND = "P2025";
+export const EXCLUSION_VIOLATION = "23P01";
+
 export type IdFilter = { in: number[] } | { notIn: number[] };
 
 /** The one Prisma connection, opened with the app and closed with it. */
@@ -29,6 +34,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }
+}
+
+/** Whether a failed query ended with this Prisma error code. */
+export function isPrismaCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+/** Whether a failed query ended with this SQLSTATE, which Prisma may name only in its message. */
+export function isSqlState(error: unknown, state: string): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const meta = (error as { meta?: { code?: string } }).meta;
+  if (meta?.code === state || (error as { code?: string }).code === state) {
+    return true;
+  }
+  const message = (error as { message?: string }).message ?? "";
+  return message.includes(state);
 }
 
 /** Text as the trigram indexes hold it; a query must spell this expression for one to serve it (KEHOACH 9.9 rule 4). */

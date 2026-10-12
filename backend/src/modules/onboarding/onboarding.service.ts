@@ -13,7 +13,14 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { foldedHas, namedFilter, PrismaService } from "../../database/prisma.service.js";
+import {
+  foldedHas,
+  FOREIGN_KEY_VIOLATION,
+  isPrismaCode,
+  namedFilter,
+  PrismaService,
+  UNIQUE_VIOLATION,
+} from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
@@ -29,13 +36,6 @@ import type {
   TemplateItemDto,
   UpdateTemplateDto,
 } from "./dto/onboarding.dto.js";
-
-const UNIQUE_VIOLATION = "P2002";
-const FOREIGN_KEY_VIOLATION = "P2003";
-
-function isCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
 
 const TEMPLATE_VIEW = {
   items: { orderBy: { ordinal: "asc" } },
@@ -117,7 +117,7 @@ export class OnboardingService {
         include: TEMPLATE_VIEW,
       })
       .catch((error: unknown) => {
-        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
+        throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,
@@ -148,7 +148,7 @@ export class OnboardingService {
         });
       })
       .catch((error: unknown) => {
-        throw isCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
+        throw isPrismaCode(error, FOREIGN_KEY_VIOLATION) ? new NotFoundException("AUDIENCE_NOT_FOUND") : error;
       });
     await this.audit.record({
       actorId: viewer.userId,
@@ -256,7 +256,7 @@ export class OnboardingService {
         include: { tasks: { orderBy: { ordinal: "asc" } }, template: { select: { name: true } } },
       })
       .catch((error: unknown) => {
-        throw isCode(error, UNIQUE_VIOLATION) ? new ConflictException("CHECKLIST_ALREADY_STARTED") : error;
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("CHECKLIST_ALREADY_STARTED") : error;
       });
     await this.openWork(made.id);
     return made;

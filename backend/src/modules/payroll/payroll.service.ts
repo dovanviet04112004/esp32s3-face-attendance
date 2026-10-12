@@ -25,7 +25,7 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
-import { namedFilter, PrismaService } from "../../database/prisma.service.js";
+import { isPrismaCode, namedFilter, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -62,7 +62,6 @@ const WRITERS: ReadonlySet<string> = new Set(["ADMIN", "PAYROLL"]);
 const kChunk = 500;
 const kHundred = 100n;
 const kChunkTxMs = 60_000;
-const UNIQUE_VIOLATION = "P2002";
 const LINE_ADVANCE = "ADVANCE";
 
 interface Leaver {
@@ -234,10 +233,6 @@ type PayslipWithRow = Prisma.PayslipGetPayload<{ include: typeof PAYSLIP_ROW }>;
 function asPayslipRow(row: PayslipWithRow): PayslipRow {
   const { lines, ...rest } = row;
   return { ...rest, advance: sumOf(lines, LINE_ADVANCE).toString() };
-}
-
-function isPrismaCode(error: unknown, code: string): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 @Injectable()
