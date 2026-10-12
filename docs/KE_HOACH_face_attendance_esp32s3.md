@@ -4577,7 +4577,8 @@ backend/
 │                                     #   đối soát trên dữ liệu mọi bộ khác để lại là
 │                                     #   notice-reconcile.e2e-alone-spec.ts
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
-├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
+├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk;
+│                                     #   một cách đăng nhập (postLogin, signIn) và tách ô CSV cho mọi suite
 └── src/
     ├── main.ts                       # chỉ mở cổng; mọi cấu hình nằm ở bootstrap.ts
     ├── bootstrap.ts                  # ★ helmet, CORS, cookie, ValidationPipe, Swagger
