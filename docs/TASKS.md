@@ -210,8 +210,8 @@ Vào epic này **chỉ khi** E8 chỉ ra vấn đề cụ thể. Không tối ư
 | Vẫn không vừa | E9-T2 — hạ `input_hw` trong YAML, train lại nhánh đó | Chỉ đổi config nhờ E2-T8 |
 | Latency quá cao | E9-T3 — đọc `latency.md`, tìm op không có kernel ESP-NN, thay op ở tầng kiến trúc rồi train lại | Sửa `model/blocks.py` |
 | Latency vẫn cao | E9-T4 — siết ngưỡng thoát sớm, giảm tần suất chạy recognition | Sửa `svc_vision` |
-| Accuracy INT8 tụt | E9-T5 — sensitivity analysis → mixed-precision giữ float layer đầu và cuối | `compress/sensitivity/` |
-| Accuracy vẫn tụt | E9-T6 — thu nhỏ hoặc đổi kiến trúc; §3.7 không có mốc lượng tử hoá nào đắt hơn Q1 | Train lại nhánh đó |
+| Accuracy INT8 tụt | E9-T5 — bậc 3 rồi bậc 4 của thang KẾ HOẠCH §3.7: lớp nhạy nhất theo SNR từng lớp lên int16 (`make quant-int16`), QAT khi chủ repo cho train (`make quant-qat`); lớp chạm đầu vào hay đầu ra giữ int8 vì firmware nạp và đọc int8 | `compress/quant/mixed_espdl.py`, `qat_espdl.py` |
+| Accuracy vẫn tụt | E9-T6 — thu nhỏ hoặc đổi kiến trúc khi cả bốn bậc của §3.7 đều trượt cửa của nhánh | Train lại nhánh đó |
 | Landmark lệch | E9-T7 — đổi student detection sang RetinaFace-MobileNet0.25 | Train lại nhánh detection |
 | Sai số parity C ↔ Python | E9-T8 — sửa bản C cho khớp bản Python, không sửa ngược | `ai_engine/src/<nhánh>/` |
 
