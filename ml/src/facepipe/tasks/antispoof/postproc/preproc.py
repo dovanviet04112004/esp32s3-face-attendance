@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-FACE_SCALE = 1.0
 CHANNELS = 3
 
 
@@ -83,14 +82,18 @@ def quantize(
 def crop_face(
     words: np.ndarray,
     box: np.ndarray,
+    face_scale: float,
     size: int,
     scale: float,
     zero_point: int,
     mean: float = 0.0,
     span: float = 255.0,
 ) -> np.ndarray:
-    """The int8 block crop_face hands the interpreter, from one RGB565 frame."""
+    """The int8 block crop_face hands the interpreter, from one RGB565 frame.
+
+    face_scale is preproc.cpp's kFaceScale, read from there by the caller.
+    """
     height, width = words.shape
-    left, top, side = fitted_square(box, FACE_SCALE, width, height)
+    left, top, side = fitted_square(box, face_scale, width, height)
     block = resample_square(unpack_rgb565(words), left, top, side, size)
     return quantize(block, scale, zero_point, mean, span)

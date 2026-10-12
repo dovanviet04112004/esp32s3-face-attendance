@@ -12,9 +12,11 @@ from pathlib import Path
 
 import numpy as np
 
+from facepipe.compress.quant.ladder import firmware_constant
 from facepipe.export.emit_golden import write_case
 
-from .preproc import FACE_SCALE, crop_face, fitted_square
+from ..quant import FACE_SCALE, PREPROC_CPP
+from .preproc import crop_face, fitted_square
 
 # Detector-sized rather than HVGA: the square maths does not care, and a full
 # frame would put 307 KB in every case file.
@@ -45,8 +47,9 @@ def main(argv: list[str] | None = None) -> int:
 
     rng = np.random.default_rng(args.seed)
     words = rng.integers(0, 1 << 16, FRAME_HW, dtype=np.uint16)
+    face_scale = firmware_constant(PREPROC_CPP, FACE_SCALE)
     for index, box in enumerate(boxes()):
-        left, top, side = fitted_square(box, FACE_SCALE, FRAME_HW[1], FRAME_HW[0])
+        left, top, side = fitted_square(box, face_scale, FRAME_HW[1], FRAME_HW[0])
         write_case(
             args.out / "preproc" / f"case_{index:03d}.gold",
             {
@@ -56,7 +59,14 @@ def main(argv: list[str] | None = None) -> int:
                 "quant": np.array([INPUT_SCALE, float(INPUT_ZERO)], dtype=np.float32),
                 "square": np.array([left, top, side], dtype=np.float32),
                 "cropped": crop_face(
-                    words, box, CROP_SIZE, INPUT_SCALE, INPUT_ZERO, PIXEL_MEAN, PIXEL_SPAN
+                    words,
+                    box,
+                    face_scale,
+                    CROP_SIZE,
+                    INPUT_SCALE,
+                    INPUT_ZERO,
+                    PIXEL_MEAN,
+                    PIXEL_SPAN,
                 ),
             },
         )
