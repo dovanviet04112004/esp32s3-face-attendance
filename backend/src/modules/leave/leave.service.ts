@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -186,8 +185,6 @@ export function partsOf(held: { fromDate: Date; days: Prisma.Decimal | number; n
 
 @Injectable()
 export class LeaveService {
-  private readonly log = new Logger(LeaveService.name);
-
   constructor(
     private readonly db: PrismaService,
     private readonly scope: ScopeService,

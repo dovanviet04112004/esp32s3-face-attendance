@@ -2,10 +2,6 @@
   "name": "kiosk-attendance-api",
   "version": "0.1.0",
   "description": "Attendance kiosk API",
-  "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
@@ -18,7 +14,6 @@
     "test:e2e": "rm -rf dist-test && tsc -p tsconfig.json --outDir dist-test && node --test 'dist-test/test/**/*.e2e-spec.js' && node --test --test-concurrency=1 'dist-test/test/**/*.e2e-alone-spec.js'",
     "test": "npm run test:e2e"
   },
-  "keywords": [],
   "type": "module",
   "dependencies": {
     "@nestjs/common": "^12.0.3",

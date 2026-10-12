@@ -11,7 +11,6 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { COUNT_CEILING, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
 
-const TAKE = 20;
 const DEVICE = "e2e-paging-door";
 const CODE = "E2EPG01";
 const FILLER = "E2EPG02";
