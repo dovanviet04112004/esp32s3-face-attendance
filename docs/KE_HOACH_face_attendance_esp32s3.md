@@ -2744,7 +2744,7 @@ ml/
 ├── .env                                   # ❌ gitignore — giá trị thật (§4.9)
 │
 ├── configs/
-│   ├── common/{paths.yaml, hardware.yaml,
+│   ├── common/{paths.yaml,
 │   │           quant.yaml}                # thang ESP-DL: mặc định, hàng timing, khối mỗi nhánh (§3.7)
 │   ├── detection/yunet.yaml
 │   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, minifasnet_distill.yaml}  # v2: trọng số nhập; distill: student w32 (ADR-0003)
@@ -5498,7 +5498,7 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | File model đang deploy, sha256 | `contracts/models.lock.json` | đọc file |
 | Đường dẫn dataset | `ml/configs/common/paths.yaml` | nạp config |
 | Siêu tham số train, `input_hw` | `ml/configs/<nhánh>/*.yaml` | nạp config |
-| Ngân sách phần cứng, ngưỡng arena | `ml/configs/common/hardware.yaml` | nạp config |
+| Thang lượng tử hoá: bậc, cỡ bộ calib, bản vá ESP-PPQ của từng nhánh | `ml/configs/common/quant.yaml` | nạp config — đường TFLite lấy cùng `calib_samples` |
 | URL, host, port, secret, chuỗi kết nối — backend và frontend | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` · `lib/env.ts` |
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
