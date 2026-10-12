@@ -267,6 +267,8 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "cache_sized_convolutions": cache_sized_convolutions,
     "fused_prelu": fused_prelu,
 }
+# Patches that change an integer the chip computes: ladder variants only (KEHOACH 3.7).
+ROUNDING = frozenset({"fused_prelu"})
 
 
 @contextlib.contextmanager

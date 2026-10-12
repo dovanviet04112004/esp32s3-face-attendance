@@ -21,7 +21,8 @@ def test_every_branch_climbs_from_the_default_rungs() -> None:
     for branch in BRANCHES:
         assert set(ptq_espdl.ladder(branch)) == set(default)
         block = ptq_espdl.block(branch)
-        assert {"rungs", "ladder", "esp_ppq_patches", "probe", "chosen"} <= set(block)
+        keys = {"rungs", "ladder", "esp_ppq_patches", "rounding_patches", "probe", "chosen"}
+        assert keys <= set(block)
         assert set(block["esp_ppq_patches"]) <= set(esp_ppq_patches.PATCHES)
         assert sorted(block["ladder"]["calibrations"]) == ["kl", "minmax", "mse", "percentile"]
 

@@ -5,7 +5,7 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
-        quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
+        quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
@@ -328,6 +328,9 @@ quant-int16: ## Rung 3: the most sensitive layers of the best calibration at 16 
 
 quant-qat: ## Rung 4, which trains: only with ALLOW_TRAIN=1 once the owner says so (STEPS= overrides the config)
 	$(call ladder_step,qat) $(if $(ALLOW_TRAIN),--allow-train) $(if $(STEPS),--steps $(STEPS))
+
+quant-variants: ## Each rounding patch of the branch over its best row, scored like any row
+	$(call ladder_step,variants)
 
 quant-timing: ## The row make speed times: minmax, no equalization, no bias correction
 	$(call ladder_step,timing)

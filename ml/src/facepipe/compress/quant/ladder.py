@@ -139,15 +139,26 @@ def quantised(run: Path, rungs: dict, calib: list[torch.Tensor], model=None):
         return ptq_espdl.quantize(run, calib, Path(work), rungs, model)
 
 
-def keep_row(run: Path, row: str, graph) -> Path:
+def is_variant(entry: dict) -> bool:
+    """The row is a rounding patch over another row, which only step_variants builds."""
+    return "patches" in entry
+
+
+def row_patches(run: Path, row: str) -> list[str]:
+    """The ESP-PPQ patches the row was simulated and exported under."""
+    entry = read_ladder(run).get(row, {})
+    return entry.get("patches") or ptq_espdl.block(tasks.branch_of(run))["esp_ppq_patches"]
+
+
+def keep_row(run: Path, row: str, graph, patches: list[str] | None = None) -> Path:
     """Keep graph as the row: its native file, and the .espdl with a real frame as its test input.
 
-    Refused by the same op check update_lock runs before a deploy.
+    patches default to the branch's. Refused by the same op check update_lock runs before a deploy.
     """
     branch = tasks.branch_of(run)
     folder = row_dir(run, row)
     export_espdl.save_native(graph, folder / GRAPH_FILE)
-    with esp_ppq_patches.applied(ptq_espdl.block(branch)["esp_ppq_patches"]):
+    with esp_ppq_patches.applied(patches or ptq_espdl.block(branch)["esp_ppq_patches"]):
         espdl = export_espdl.export(graph, folder / f"{branch}.espdl", real_inputs(run, graph, 1))
     if espdl_op_check.main(["--model", str(espdl)]) != 0:
         raise ValueError(f"{espdl}: esp-dl registers no module for one of its operators")
@@ -195,9 +206,13 @@ def verdict(entry: dict) -> str:
 
 
 def best_row(run: Path, rungs_wanted: set[int]) -> str:
-    """The row of the rungs wanted that ranks first by the branch's ruler."""
+    """The row of the rungs wanted that ranks first by the branch's ruler, variants left out."""
     hooks, rows = hooks_of(run), read_ladder(run)
-    found = [name for name, e in rows.items() if e.get("rung") in rungs_wanted and current(run, e)]
+    found = [
+        name
+        for name, e in rows.items()
+        if e.get("rung") in rungs_wanted and current(run, e) and not is_variant(e)
+    ]
     if not found:
         raise ValueError(f"{run.name}: no row of rung {sorted(rungs_wanted)} yet")
     return max(found, key=lambda name: hooks.rank(rows[name]["metrics"]))
@@ -296,13 +311,50 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
     print(f"qat over {base}: {entry['headline']}  gate {verdict(entry)}")
 
 
-def step_timing(run: Path) -> None:
+def step_variants(run: Path) -> None:
+    """Each rounding patch of the branch over its best row: the row's integers, simulated and
+    exported as that patch has the chip compute them, then scored like any row (KEHOACH 3.7).
+    """
     branch = tasks.branch_of(run)
+    knobs = ptq_espdl.block(branch)
+    ceiling = ceiling_of(run)
+    base = best_row(run, {2, 3, 4})
+    entry = read_ladder(run)[base]
+    graph = export_espdl.load_native(row_dir(run, base) / GRAPH_FILE)
+    for name in knobs["rounding_patches"]:
+        row, patches = f"{base}+{name}", [*knobs["esp_ppq_patches"], name]
+        keep_row(run, row, graph, patches)
+        result = scored(run, ptq_espdl.Simulator(graph, patches), ceiling)
+        write_row(
+            run,
+            row,
+            {
+                "rung": entry["rung"],
+                "base": base,
+                "rungs": entry["rungs"],
+                "patches": patches,
+                **result,
+            },
+        )
+        print(f"{row}: {result['headline']}  gate {verdict(result)}")
+
+
+def step_timing(run: Path) -> None:
+    """The timing row, and beside it one row a rounding patch for the probe to check and time."""
+    branch = tasks.branch_of(run)
+    knobs = ptq_espdl.block(branch)
     rungs = ptq_espdl.timing_rungs(branch)
-    calib = ptq_espdl.calibration(run, ptq_espdl.block(branch)["ladder"]["calib_samples"])
-    build_row(run, ptq_espdl.TIMING_ROW, rungs, calib)
-    write_row(run, ptq_espdl.TIMING_ROW, {"rung": "timing", "rungs": rungs})
-    print(f"{ptq_espdl.TIMING_ROW}: {row_dir(run, ptq_espdl.TIMING_ROW)}")
+    calib = ptq_espdl.calibration(run, knobs["ladder"]["calib_samples"])
+    graph = quantised(run, rungs, calib)
+    rows = {ptq_espdl.TIMING_ROW: None}
+    rows.update({f"{ptq_espdl.TIMING_ROW}+{name}": name for name in knobs["rounding_patches"]})
+    for row, name in rows.items():
+        patches = [*knobs["esp_ppq_patches"], name] if name else None
+        keep_row(run, row, graph, patches)
+        write_row(
+            run, row, {"rung": "timing", "rungs": rungs, **({"patches": patches} if name else {})}
+        )
+        print(f"{row}: {row_dir(run, row)}")
 
 
 def step_same_int8(run: Path, against: str) -> int:
@@ -396,7 +448,7 @@ def table(run: Path) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    steps = ["ptq", "int16", "qat", "timing", "same-int8", "choose", "deploy", "table"]
+    steps = ["ptq", "int16", "qat", "variants", "timing", "same-int8", "choose", "deploy", "table"]
     parser.add_argument("step", choices=steps)
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--row", help="deploy: the row to lock")
@@ -411,6 +463,8 @@ def main(argv: list[str] | None = None) -> int:
         step_int16(run)
     elif args.step == "qat":
         step_qat(run, args.allow_train, args.steps)
+    elif args.step == "variants":
+        step_variants(run)
     elif args.step == "timing":
         step_timing(run)
     elif args.step == "same-int8":

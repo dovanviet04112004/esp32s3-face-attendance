@@ -65,8 +65,16 @@ def test_no_patch_at_all_changes_nothing() -> None:
 
 def test_every_branch_names_only_patches_that_exist() -> None:
     for branch in ("detection", "antispoof", "recognition"):
-        names = ptq_espdl.block(branch)["esp_ppq_patches"]
-        assert set(names) <= set(esp_ppq_patches.PATCHES), branch
+        knobs = ptq_espdl.block(branch)
+        assert set(knobs["esp_ppq_patches"]) <= set(esp_ppq_patches.PATCHES), branch
+        assert set(knobs["rounding_patches"]) <= esp_ppq_patches.ROUNDING, branch
+
+
+def test_a_patch_that_changes_integers_is_refused_for_every_row(monkeypatch) -> None:
+    knobs = {"esp_ppq_patches": ["fused_prelu"], "rounding_patches": []}
+    monkeypatch.setattr(ptq_espdl, "load_ladder", lambda: {"branches": {"antispoof": knobs}})
+    with pytest.raises(ValueError, match="rounding_patches"):
+        ptq_espdl.block("antispoof")
 
 
 def espdl_graph(path: Path) -> tuple[dict, dict, dict]:

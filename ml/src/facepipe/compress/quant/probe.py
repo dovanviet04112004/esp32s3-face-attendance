@@ -154,7 +154,7 @@ def probe(run: Path, row: str, span: tuple[int, int] | None = None) -> Path:
     """Write the probe of the run's row and return the manifest make ai-unit reads."""
     branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)
-    patches = knobs["esp_ppq_patches"]
+    patches = ladder.row_patches(run, row)
     entry = pack_models_partition.BRANCH_ENTRY[branch]
     folder = ladder.row_dir(run, row)
     out = folder / "probe"

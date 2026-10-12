@@ -45,8 +45,17 @@ def load_ladder() -> dict:
 
 
 def block(branch: str) -> dict:
-    """The branch's block of quant.yaml: rungs, ladder, patches, probe, chosen row."""
-    return load_ladder()["branches"][branch]
+    """The branch's block of quant.yaml: rungs, ladder, patches, probe, chosen row.
+
+    A patch that changes integers builds ladder variants only; one named for every row is refused.
+    """
+    found = load_ladder()["branches"][branch]
+    everywhere = set(found["esp_ppq_patches"]) & esp_ppq_patches.ROUNDING
+    if everywhere:
+        raise ValueError(
+            f"{branch}: {sorted(everywhere)} change integers, list them as rounding_patches"
+        )
+    return found
 
 
 def ladder(branch: str) -> dict:

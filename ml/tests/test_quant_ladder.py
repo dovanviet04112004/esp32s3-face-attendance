@@ -49,6 +49,8 @@ def test_the_best_row_is_first_by_the_branch_ruler(tmp_path: Path, monkeypatch) 
     for name, rung, m in (("minmax", 2, 0.8), ("kl", 2, 0.9), ("int16_top1", 3, 0.95)):
         ladder.write_row(tmp_path, name, {"rung": rung, "metrics": {"m": m}})
     ladder.write_row(tmp_path, "timing", {"rung": "timing"})
+    variant = {"rung": 3, "metrics": {"m": 0.99}, "patches": ["fused_prelu"]}
+    ladder.write_row(tmp_path, "int16_top1+fused_prelu", variant)
     assert ladder.best_row(tmp_path, {2}) == "kl"
     assert ladder.best_row(tmp_path, {2, 3}) == "int16_top1"
     with pytest.raises(ValueError, match="no row of rung"):
@@ -215,6 +217,70 @@ def test_the_choice_takes_a_faster_row_within_one_step_of_the_best(
     assert ladder.board_ms(tmp_path, "int16_top2") == 310.0
     (ladder.row_dir(tmp_path, "int16_top2") / "probe" / "models_0.log").unlink()
     assert ladder.step_choose(tmp_path) == 1
+
+
+def test_a_variant_carries_its_patches_and_a_plain_row_the_branch_s(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
+    ladder.write_row(tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.9}})
+    patches = ["cache_sized_convolutions", "fused_prelu"]
+    ladder.write_row(tmp_path, "kl+fused_prelu", {"rung": 2, "patches": patches})
+    assert ladder.row_patches(tmp_path, "kl+fused_prelu") == patches
+    assert ladder.row_patches(tmp_path, "kl") == ["cache_sized_convolutions"]
+    assert ladder.row_patches(tmp_path, "timing") == ["cache_sized_convolutions"]
+
+
+def test_variants_score_the_best_row_under_each_rounding_patch(tmp_path: Path, monkeypatch) -> None:
+    knobs = {"esp_ppq_patches": ["cache_sized_convolutions"], "rounding_patches": ["fused_prelu"]}
+    hooks = SimpleNamespace(rank=lambda m: (m["m"],))
+    kept, simulated = {}, []
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
+    monkeypatch.setattr(ptq_espdl, "block", lambda _branch: knobs)
+    monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
+    monkeypatch.setattr(ladder, "ceiling_of", lambda _run: {"m": 1.0})
+    monkeypatch.setattr(export_espdl, "load_native", lambda path: path.parent.name)
+    monkeypatch.setattr(
+        ladder, "keep_row", lambda _run, row, graph, p: kept.update({row: (graph, p)})
+    )
+    monkeypatch.setattr(ptq_espdl, "Simulator", lambda graph, p: simulated.append((graph, p)))
+    monkeypatch.setattr(
+        ladder,
+        "scored",
+        lambda _run, _sim, _ceiling: {"metrics": {"m": 0.97}, "headline": "h", "passes": True},
+    )
+    ladder.write_row(tmp_path, "kl", {"rung": 2, "rungs": {"c": "kl"}, "metrics": {"m": 0.98}})
+    ladder.write_row(tmp_path, "qat", {"rung": 4, "rungs": {"c": "kl"}, "metrics": {"m": 0.96}})
+    ladder.step_variants(tmp_path)
+    patches = ["cache_sized_convolutions", "fused_prelu"]
+    assert kept == {"kl+fused_prelu": ("kl", patches)}
+    assert simulated == [("kl", patches)]
+    row = ladder.read_ladder(tmp_path)["kl+fused_prelu"]
+    assert (row["rung"], row["base"], row["patches"], row["passes"]) == (2, "kl", patches, True)
+    assert ladder.is_variant(row) and not ladder.is_variant(ladder.read_ladder(tmp_path)["kl"])
+
+
+def test_timing_keeps_one_row_a_rounding_patch_beside_its_own(tmp_path: Path, monkeypatch) -> None:
+    knobs = {
+        "esp_ppq_patches": ["cache_sized_convolutions"],
+        "rounding_patches": ["fused_prelu"],
+        "ladder": {"calib_samples": 4},
+    }
+    kept = {}
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
+    monkeypatch.setattr(ptq_espdl, "block", lambda _branch: knobs)
+    monkeypatch.setattr(ptq_espdl, "timing_rungs", lambda _branch: {"c": "minmax"})
+    monkeypatch.setattr(ptq_espdl, "calibration", lambda _run, n: list(range(n)))
+    monkeypatch.setattr(ladder, "quantised", lambda _run, _rungs, calib: f"graph of {len(calib)}")
+    monkeypatch.setattr(
+        ladder, "keep_row", lambda _run, row, graph, p: kept.update({row: (graph, p)})
+    )
+    ladder.step_timing(tmp_path)
+    patches = ["cache_sized_convolutions", "fused_prelu"]
+    assert kept == {"timing": ("graph of 4", None), "timing+fused_prelu": ("graph of 4", patches)}
+    rows = ladder.read_ladder(tmp_path)
+    assert rows["timing+fused_prelu"]["patches"] == patches and "patches" not in rows["timing"]
+    assert ladder.row_patches(tmp_path, "timing+fused_prelu") == patches
 
 
 def test_antispoof_reads_live_from_the_softmax() -> None:
