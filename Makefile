@@ -8,7 +8,7 @@ SHELL := /bin/bash
         quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
-        be-dev be-build be-prisma be-migrate be-seed be-demo fe-dev fe-build \
+        be-dev be-build be-prisma be-migrate be-seed be-demo fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
 # uv lives in ~/.local/bin, which the login shell here leaves off PATH.
@@ -79,6 +79,10 @@ be-install: ## Install backend/ from its lockfile
 
 fe-install: ## Install frontend/ from its lockfile
 	cd frontend && npm ci
+
+fe-remove: ## Remove packages PKG="a b" from frontend/ and from its lockfile
+	$(call need,PKG,the package names to remove)
+	cd frontend && npm uninstall $(PKG)
 
 ##@ Contracts and checks
 gen: ## Generate DTOs and firmware headers from contracts/
