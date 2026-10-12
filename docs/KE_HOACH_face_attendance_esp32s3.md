@@ -2202,6 +2202,7 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 | Bản vá làm tròn | Nhận đồ thị chỗ nào | Chip tính khác chỗ nào, mô phỏng theo thế nào |
 |---|---|---|
 | `fused_prelu` | `PRelu` là đầu đọc duy nhất của một `Conv` 2-D int8, alpha int8 theo từng kênh trên lưới số mũ âm, và đầu ra `Conv`, đầu vào lẫn đầu ra `PRelu` cùng một lưới | cặp thành một op `ConvPRelu`. Nhân int8 của esp-dl trên S3 làm tròn tích chập half-up ra int8 theo số mũ đầu ra, rồi áp `EE.VPRELU.S8`: tích int8 của giá trị âm với alpha **dịch phải**, tức làm tròn xuống (bản dò khớp từng bit, `latency.md` §14.3). Op `PRelu` đứng riêng lại tính bằng `vmulas` rồi làm tròn half-up như ESP-PPQ, nên gộp đổi số ở nhánh âm. Mô phỏng của bản vá làm tròn xuống nhánh âm của đúng các `PRelu` ấy, gradient đi thẳng qua cho QAT |
+| `clip_as_relu` | `Clip` từ 0 là đầu đọc duy nhất của một `Conv` int8, cùng một lưới ở đầu ra `Conv`, đầu vào và đầu ra `Clip` | thành `Relu`, mà ESP-PPQ gộp vào `Conv`: nhân esp-dl không có cận trên, nên đầu ra bão hoà ở đỉnh int8 của lưới (7,94 ở lưới 2^-4 của ReLU6) thay vì cắt ở cận trên. `Clip` đứng riêng chạy bằng bảng tra từng giá trị và đọc ghi lại cả tensor qua PSRAM. Mô phỏng của bản vá bỏ cận trên của đúng các `Clip` ấy |
 
 Module `Conv` của esp-dl 3.3.11 dựng tham số nhân với con trỏ alpha để trống ("Do not support PReLU"),
 dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.5.6): nó dựng tham số qua
