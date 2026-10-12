@@ -16,6 +16,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from check_schematic import children, first, parse_sexp
+
 SCHEMATIC = "hardware/kicad/kiosk.kicad_sch"
 BOARD = "hardware/kicad/kiosk.kicad_pcb"
 TOLERANCE = 0.01
@@ -29,28 +31,6 @@ POLARISED = "CP_Radial"
 MIN_DRILL_MM, MIN_RING_MM = 0.3, 0.2
 # The two classes of kiosk.kicad_pro, which section 2.5 sizes from the peak amps.
 POWER_WIDTH_MM, SIGNAL_WIDTH_MM = 1.0, 0.25
-
-
-def parse_sexp(text: str) -> list:
-    """The whole file as nested lists, strings unquoted."""
-    stack: list[list] = [[]]
-    for token in re.findall(r'\(|\)|"(?:[^"\\]|\\.)*"|[^\s()]+', text):
-        if token == "(":
-            stack.append([])
-        elif token == ")":
-            stack[-2].append(stack.pop())
-        else:
-            stack[-1].append(token[1:-1] if token.startswith('"') else token)
-    return stack[0][0]
-
-
-def children(node: list, tag: str) -> list[list]:
-    return [c for c in node if isinstance(c, list) and c and c[0] == tag]
-
-
-def first(node: list, tag: str):
-    found = children(node, tag)
-    return found[0] if found else None
 
 
 def place(ox: float, oy: float, deg: float, lx: float, ly: float) -> tuple[float, float]:

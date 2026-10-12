@@ -12,22 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from check_comments import SCANNED_SUFFIXES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHECKER = REPO_ROOT / "tools" / "check_comments.py"
-SUFFIXES = {
-    ".py",
-    ".c",
-    ".cc",
-    ".cpp",
-    ".h",
-    ".hpp",
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx",
-    ".yaml",
-    ".yml",
-}
 
 
 def edited_path(payload: dict) -> Path | None:
@@ -43,7 +31,7 @@ def main() -> int:
     except (json.JSONDecodeError, ValueError):
         return 0
     path = edited_path(payload)
-    if path is None or path.suffix not in SUFFIXES or not path.is_file():
+    if path is None or path.suffix not in SCANNED_SUFFIXES or not path.is_file():
         return 0
     if REPO_ROOT not in path.resolve().parents:
         return 0

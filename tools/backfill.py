@@ -9,39 +9,10 @@ Dry by default. Needs DATABASE_URL, which backend/.env already carries.
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 import time
-from pathlib import Path
 
-ENV_FILE = Path("backend/.env")
-COMPOSE = ["docker", "compose", "-f", "deploy/docker-compose.yml"]
-
-
-def psql(url: str, sql: str) -> str:
-    done = subprocess.run(
-        [*COMPOSE, "exec", "-T", "postgres", "psql", "-qAtX", url, "-c", sql],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if done.returncode != 0:
-        raise RuntimeError(done.stderr.strip() or "psql failed")
-    return done.stdout.strip()
-
-
-def read_url() -> str:
-    held = os.environ.get("DATABASE_URL")
-    if not held:
-        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-            if line.startswith("DATABASE_URL="):
-                held = line.split("=", 1)[1].strip().strip('"')
-                break
-    if not held:
-        raise RuntimeError(f"no DATABASE_URL in the environment or {ENV_FILE}")
-    # `?schema=` is Prisma's; libpq refuses a query parameter it does not know.
-    return held.split("?", 1)[0]
+from check_plans import psql, read_url
 
 
 def main() -> int:
