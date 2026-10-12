@@ -2588,8 +2588,7 @@ chiếm ~2,5 GB, nên phần còn lại cho page cache là **~7 GB**.
 
 **Symlink không cứu được gì.** Một symlink đặt trên drvfs trỏ sang ext4 vẫn bắt mỗi lần
 `open()` trả tiền tra cứu drvfs trước. Muốn drvfs ra khỏi vòng lặp thì **cả mục lục lẫn
-payload** phải nằm trên `fast_drive`. Khi bố cục Ultralytics và ảnh gốc cùng nằm trên
-`fast_drive` thì dùng **hardlink**: cùng inode, tốn 0 byte và 0 lần tra cứu thêm.
+payload** phải nằm trên `fast_drive`.
 
 **Luật xếp dữ liệu**
 
@@ -2618,8 +2617,8 @@ số ở mọi khuôn mặt** — không có gì báo lỗi.
 
 Mọi run của cùng một nhánh phải dùng **cùng một** tập đã thu nhỏ, nếu không thì hai run không so được với nhau.
 
-Detection là nhánh **duy nhất** không đóng shard được, vì Ultralytics đọc file lẻ; may là
-nó cũng là nhánh duy nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
+Detection là nhánh **duy nhất** đọc file lẻ (lý do ở trên); may là nó cũng là nhánh duy
+nhất đủ nhỏ để nằm trọn trong page cache. Hai nhánh còn lại vượt xa
 trần 7 GB nên đặt trên `fast_drive` chỉ đổi băng thông 197 MB/s lấy 33 MB/s: recognition
 sẽ mất **18,6 phút mỗi epoch** thay vì **3,1 phút**, đổi lại không được gì.
 
