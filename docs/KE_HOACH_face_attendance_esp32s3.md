@@ -4971,6 +4971,8 @@ frontend/
 │       ├── layout.tsx                # layout gốc: <html lang={locale}> + provider
 │       ├── page.tsx                  # gốc: đưa thẳng mỗi vai về trang chủ của nó
 │       ├── error.tsx                 # ★ §9.21.6 — trang lỗi của hệ, có thử lại và về trang chủ
+│       ├── not-found.tsx             # ★ §9.21.6 — trang "không có địa chỉ này" của hệ, đúng thứ tiếng
+│       ├── [...rest]/page.tsx        # địa chỉ không route nào nhận → not-found ở trên, không phải của Next
 │       ├── (auth)/{layout.tsx, {login, set-password, forgot-password, change-password}/page.tsx}
 │       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
 │       │                                 #   cả lần đặt đầu lẫn lần quên. Cả bốn cửa
@@ -5160,8 +5162,9 @@ trả số lượt theo người — đủ cho biểu đồ và bảng công, **
 `attendance` của backend có controller riêng trả chính các bản ghi, lọc theo người, theo máy và
 theo khoảng, phân trang chặn ở 200 dòng. Thiếu nó thì một lượt chấm công chỉ nhìn thấy được
 đúng một lần, lúc nó chạy qua feed realtime, và sau đó không ai tra lại được — trong khi dữ
-liệu vẫn nằm nguyên trong bảng. Hai chỉ mục `@@index([employeeId, ts])` và `@@index([ts])` của
-§6 có sẵn cho đúng hai phép lọc này.
+liệu vẫn nằm nguyên trong bảng. Hai chỉ mục `@@index([employeeId, ts, id])` và `@@index([ts, id])` của
+`AttendanceRecord` (§4.6) có sẵn cho đúng hai phép lọc này; `id` đứng cuối để con trỏ phân trang có thứ
+tự toàn phần khi hai lượt trùng giây.
 
 **Locale nằm trên URL chứ không nằm trong cookie.** Giá phải trả là mọi route thụt vào một cấp
 và mọi `<Link>` phải đi qua `i18n/navigation.ts`; đổi lại, một link gửi cho người khác mở ra
@@ -5171,7 +5174,7 @@ render sẵn. `proxy.ts` đẩy `/` về `/vi` để địa chỉ trần vẫn m
 ấy mở lần trước khi có cookie `home` (§9.21.6); theo cookie `signed` nó đưa trình duyệt đã đăng
 xuất tới form và trình duyệt đã đăng nhập ra khỏi form, trước khi vẽ (§9.12) — tên file là quy ước
 Next 16 đặt cho thứ vẫn gọi là middleware, chạy trong chính tiến trình Next; lớp proxy thật
-của hệ là Traefik ở §11, hai thứ không dính nhau.
+của hệ là Traefik ở §4.8, hai thứ không dính nhau.
 
 **Ngôn ngữ chọn tay chỉ giữ nút lùi và tiến.** Bấm đổi ngôn ngữ ghi thêm cookie `lang`. Cookie
 ấy không quyết định trang vẽ bằng thứ tiếng nào — URL quyết — mà chỉ quyết định lịch sử: một mục
@@ -5200,12 +5203,15 @@ chính lệnh kiểm. Một lượt kiểm lạnh tốn 0,25 s, nên không mấ
 
 **Biến môi trường của frontend là công khai.** Mọi thứ có tiền tố `NEXT_PUBLIC_` đi thẳng vào
 bundle mà trình duyệt tải về. Không bao giờ đặt secret ở đó — không JWT ký, không khoá MinIO,
-không mật khẩu broker. Frontend chỉ cần đúng hai biến:
+không mật khẩu broker. Frontend đọc năm biến, khai một lần ở `lib/env.ts`:
 
 | Biến | Ví dụ | Công khai được không |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `https://api.example.com` | Được, chỉ là địa chỉ |
 | `NEXT_PUBLIC_WS_URL` | `wss://api.example.com` | Được |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | khoá công khai VAPID | Được: nó chỉ cho trình duyệt đăng ký nhận tin đẩy, không cho gửi |
+| `NEXT_PUBLIC_APP_TIMEZONE` | `Asia/Ho_Chi_Minh` | Được; phải trùng `APP_TIMEZONE` của api (§9.8) |
+| `NEXT_PUBLIC_ANDROID_APK_URL` | để trống là bản phát hành mới nhất trên GitHub | Được |
 
 Thứ cần bí mật thì gọi vòng qua Route Handler chạy trên server của Next, không nhúng vào client.
 
