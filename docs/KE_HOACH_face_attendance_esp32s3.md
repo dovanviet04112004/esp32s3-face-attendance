@@ -2870,7 +2870,7 @@ ml/
 │       └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │
 ├── bench/{host_bench.py,                  # ★ chấm onnx | tflite | espdl, ba nhánh, cùng metric với torch
-│          device_client.py, accuracy_on_device.py,
+│          device_client.py,
 │          live_demo.py,                   # ★ detect → align → spoof → recog, webcam host
 │          cam_bridge.py}                  # ★ chạy trên Windows: virtual cam → MJPEG
 │       ★ Điểm vào chạy thẳng, KHÔNG phải thư viện. Nằm ngoài src/facepipe/ vì gói cài
