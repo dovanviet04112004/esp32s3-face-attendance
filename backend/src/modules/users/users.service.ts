@@ -289,7 +289,7 @@ export class UsersService {
       this.db.user.findMany({
         where: resumed,
         select: ACCOUNT,
-        skip: from ? 0 : query.skip,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
         orderBy: [{ email: "asc" }, { id: "asc" }],
       }),

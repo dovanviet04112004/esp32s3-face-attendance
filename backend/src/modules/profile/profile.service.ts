@@ -167,7 +167,7 @@ export class ProfileService {
   async one(viewer: Viewer, id: string): Promise<ProfileChangeDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.profileChange.findUnique({ where: { id }, include: { employee: PERSON_VIEW, decidedBy: NAMED } });
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+    if (!held || !ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
     }
     const { decidedBy, ...row } = held;
@@ -290,7 +290,7 @@ export class ProfileService {
 
   private async reachable(viewer: Viewer, employeeId: number): Promise<Person> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(employeeId)) {
+    if (!ScopeService.sees(visible, employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const person = await this.db.employee.findUnique({

@@ -24,6 +24,27 @@ export interface AuditEntry {
   meta?: Prisma.InputJsonValue;
 }
 
+type Scalar = string | number | boolean | null;
+
+function asScalar(value: unknown): Scalar {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return typeof value === "number" || typeof value === "boolean" ? value : String(value);
+}
+
+/** Each field a patch moved, as a from and to pair (KEHOACH 9.24 rule 4). */
+export function trail(before: object, patch: object): Prisma.InputJsonObject {
+  const held = before as Record<string, unknown>;
+  const moved: Record<string, { from: Scalar; to: Scalar }> = {};
+  for (const [key, to] of Object.entries(patch)) {
+    if (to !== undefined && asScalar(held[key]) !== asScalar(to)) {
+      moved[key] = { from: asScalar(held[key]), to: asScalar(to) };
+    }
+  }
+  return moved;
+}
+
 @Injectable()
 export class AuditService {
   private readonly log = new Logger(AuditService.name);
@@ -96,7 +117,7 @@ export class AuditService {
     const [rows, found] = await Promise.all([
       this.db.auditLog.findMany({
         where: resumed,
-        skip: from ? 0 : query.skip,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
         orderBy: [{ ts: "desc" }, { id: "desc" }],
         include: {

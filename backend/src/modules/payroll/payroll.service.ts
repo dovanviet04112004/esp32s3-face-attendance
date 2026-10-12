@@ -34,6 +34,7 @@ import { freeDays } from "../leave/leave.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
+import { asDay } from "../timesheet/local-day.js";
 import {
   calculate,
   taxOn,
@@ -1188,7 +1189,7 @@ export class PayrollService {
    */
   async taxYear(viewer: Viewer, employeeId: number, year: number): Promise<TaxYearStatement> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(employeeId)) {
+    if (!ScopeService.sees(visible, employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const who = await this.db.employee.findUnique({
@@ -1256,7 +1257,7 @@ export class PayrollService {
 
   async payslips(viewer: Viewer, query: ListPayslipsDto): Promise<Page<PayslipRow>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (query.employeeId !== undefined && visible !== null && !visible.includes(query.employeeId)) {
+    if (query.employeeId !== undefined && !ScopeService.sees(visible, query.employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const where = await this.payslipWhere(query, visible);
@@ -1571,7 +1572,7 @@ export class PayrollService {
           employeeId: one.id,
           code: one.code,
           fullName: one.fullName,
-          leaveDate: one.leaveDate === null ? null : one.leaveDate.toISOString().slice(0, 10),
+          leaveDate: asDay(one.leaveDate),
           tenureMonths: one.tenureMonths,
           baseSalary: toDong(one.baseSalary).toString(),
           halfMonthPay: mulDiv(toDong(one.baseSalary), 1n, 2n).toString(),

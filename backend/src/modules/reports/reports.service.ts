@@ -12,6 +12,7 @@ import {
   encodeCursor,
 } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { branchOf } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { toExcelCsv } from "../../common/csv.js";
@@ -25,8 +26,8 @@ import { PolicyService } from "../policy/policy.service.js";
 import { TallyRangeDto, type D02QueryDto } from "./dto/report.dto.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
-import { dayAsDate, dayWindow, localDay, localMinutesSql, minutesIntoDay } from "../timesheet/local-day.js";
-import { branchOf, countedPunchSql } from "../timesheet/timesheet.service.js";
+import { asDay, dayAsDate, dayWindow, localDay, localMinutesSql, minutesIntoDay } from "../timesheet/local-day.js";
+import { countedPunchSql } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 
@@ -136,7 +137,7 @@ function asChange(one: Person, reason: ChangeReason, on: Date): InsuranceChange 
     fullName: one.fullName,
     socialInsuranceNo: one.socialInsuranceNo,
     reason,
-    effectiveFrom: asDate(on),
+    effectiveFrom: asDay(on),
     fromSalary: null,
     toSalary: null,
   };
@@ -186,10 +187,6 @@ function missingFrom(one: Fillable, hasContract: boolean): string {
     gaps.push("đã nghỉ nhưng chưa ghi ngày nghỉ");
   }
   return gaps.join("; ");
-}
-
-function asDate(value: Date | null | undefined): string {
-  return value ? value.toISOString().slice(0, 10) : "";
 }
 
 /** The form wants a month, written the way the form writes one. */
@@ -863,7 +860,7 @@ export class ReportsService {
       cells.set(1, String(index + 1));
       cells.set(2, one.fullName);
       cells.set(3, one.socialInsuranceNo ?? "");
-      cells.set(4, asDate(one.dateOfBirth));
+      cells.set(4, asDay(one.dateOfBirth) ?? "");
       cells.set(5, one.gender ? (GENDER_WORD[one.gender] ?? "") : "");
       cells.set(6, one.nationalId ?? "");
       cells.set(7, one.jobTitle?.name ?? "");
@@ -881,13 +878,13 @@ export class ReportsService {
       }
       const contract = one.contracts[0];
       if (contract?.kind === "INDEFINITE") {
-        cells.set(20, asDate(contract.startDate));
+        cells.set(20, asDay(contract.startDate));
       } else if (contract?.kind === "FIXED_TERM") {
-        cells.set(21, asDate(contract.startDate));
-        cells.set(22, asDate(contract.endDate));
+        cells.set(21, asDay(contract.startDate));
+        cells.set(22, asDay(contract.endDate) ?? "");
       } else if (contract) {
-        cells.set(23, asDate(contract.startDate));
-        cells.set(24, asDate(contract.endDate));
+        cells.set(23, asDay(contract.startDate));
+        cells.set(24, asDay(contract.endDate) ?? "");
       }
       cells.set(25, asMonth(one.hireDate));
       cells.set(26, asMonth(one.leaveDate));
@@ -987,7 +984,7 @@ export class ReportsService {
         fullName: row.fullName,
         socialInsuranceNo: row.socialInsuranceNo,
         reason: wentUp(row.fromSalary, row.toSalary) ? ("SALARY_UP" as const) : ("SALARY_DOWN" as const),
-        effectiveFrom: asDate(row.effectiveFrom),
+        effectiveFrom: asDay(row.effectiveFrom),
         fromSalary: row.fromSalary,
         toSalary: row.toSalary,
       }));

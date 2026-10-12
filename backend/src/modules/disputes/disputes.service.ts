@@ -144,7 +144,7 @@ export class DisputesService {
   async one(viewer: Viewer, id: string): Promise<DisputeDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.payslipDispute.findUnique({ where: { id }, include: { ...DISPUTE_VIEW, answeredBy: NAMED } });
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+    if (!held || !ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("DISPUTE_NOT_FOUND");
     }
     const { answeredBy, ...row } = held;

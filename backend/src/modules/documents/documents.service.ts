@@ -29,7 +29,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { DocumentsSweep } from "../notifications/sweeps/documents.sweep.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
-import { localDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
 import type {
   CreateDocumentDto,
   CreateFileTypeDto,
@@ -519,7 +519,7 @@ export class DocumentsService {
       };
       const named = { typeId: row.typeId, code: row.typeCode, name: row.typeName };
       if (row.filed && row.expiresAt !== null) {
-        held.expired.push({ ...named, expiresAt: row.expiresAt.toISOString().slice(0, 10) });
+        held.expired.push({ ...named, expiresAt: asDay(row.expiresAt) });
       } else {
         held.missing.push(named);
       }

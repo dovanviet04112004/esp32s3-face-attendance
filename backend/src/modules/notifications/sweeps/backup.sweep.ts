@@ -8,7 +8,7 @@ import { RedisService } from "../../../database/redis.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
 import { backupAlarmMail, DEFAULT_MAIL_LOCALE, type BackupProblem } from "../../payroll/mail-text.js";
-import { localDay } from "../../timesheet/local-day.js";
+import { localDay, localStamp } from "../../timesheet/local-day.js";
 import { MailerService } from "../mailer.service.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 
@@ -150,10 +150,11 @@ export class BackupSweep implements OnModuleInit {
       select: { email: true },
       orderBy: { email: "asc" },
     });
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const body = backupAlarmMail(DEFAULT_MAIL_LOCALE, {
       problem: finding.problem,
-      checkedAt: this.local(now),
-      lastGood: finding.lastGood ? this.local(finding.lastGood) : null,
+      checkedAt: localStamp(now, zone),
+      lastGood: finding.lastGood ? localStamp(finding.lastGood, zone) : null,
       detail: finding.detail,
     });
     // One address refusing must neither silence the rest nor make the retry resend to them.
@@ -174,10 +175,5 @@ export class BackupSweep implements OnModuleInit {
       return;
     }
     await this.redis.client.set(key, now.toISOString(), "EX", kRemindSeconds);
-  }
-
-  private local(at: Date): string {
-    const zone = this.config.get("APP_TIMEZONE", { infer: true });
-    return `${at.toLocaleString("sv-SE", { timeZone: zone })} (${zone})`;
   }
 }

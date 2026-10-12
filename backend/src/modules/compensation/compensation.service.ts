@@ -28,7 +28,7 @@ import {
   UNIQUE_VIOLATION,
 } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService, type AuditEntry } from "../audit/audit.service.js";
+import { AuditService, trail, type AuditEntry } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
@@ -42,6 +42,7 @@ import {
   sortedBy,
   whoseRows,
 } from "../leave/queue-filter.js";
+import { asDay } from "../timesheet/local-day.js";
 
 import {
   PAY_WRITERS,
@@ -76,27 +77,6 @@ export interface RaisePreview {
   nextBase: string;
   currentInsurance: string;
   nextInsurance: string;
-}
-
-type Scalar = string | number | boolean | null;
-
-function asScalar(value: unknown): Scalar {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return typeof value === "number" || typeof value === "boolean" ? value : String(value);
-}
-
-/** Each field a patch moved, as a from and to pair (KEHOACH 9.24 rule 4). */
-function trail(before: object, patch: object): Prisma.InputJsonObject {
-  const held = before as Record<string, unknown>;
-  const moved: Record<string, { from: Scalar; to: Scalar }> = {};
-  for (const [key, to] of Object.entries(patch)) {
-    if (to !== undefined && asScalar(held[key]) !== asScalar(to)) {
-      moved[key] = { from: asScalar(held[key]), to: asScalar(to) };
-    }
-  }
-  return moved;
 }
 
 // A first record has no earlier one, so its from is null (KEHOACH 9.24 rule 4).
@@ -207,7 +187,7 @@ export class CompensationService {
 
   private async mayRead(viewer: Viewer, employeeId: number): Promise<void> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(employeeId)) {
+    if (!ScopeService.sees(visible, employeeId)) {
       // Not 403: a viewer who cannot see somebody should not learn they exist.
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
@@ -314,7 +294,7 @@ export class CompensationService {
         createdById: viewer.userId,
       },
     });
-    const day = made.effectiveFrom.toISOString().slice(0, 10);
+    const day = asDay(made.effectiveFrom);
     return { id: made.id, line: firstLine(viewer.userId, employeeId, day, made.baseSalary.toFixed(0)) };
   }
 
@@ -491,7 +471,7 @@ export class CompensationService {
   async oneDependent(viewer: Viewer, id: string): Promise<DependentDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.dependent.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+    if (!held || !ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
     const decider = held.decidedById ? await this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null;

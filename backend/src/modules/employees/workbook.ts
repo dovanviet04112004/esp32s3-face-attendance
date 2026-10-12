@@ -4,6 +4,7 @@ import { crc32, inflateRawSync } from "node:zlib";
 import { BadRequestException, HttpException, PayloadTooLargeException } from "@nestjs/common";
 import ExcelJS from "exceljs";
 
+import { asDay } from "../timesheet/local-day.js";
 import { IMPORT_COLUMNS, IMPORT_MAX_ROWS, type SheetLine } from "./import.js";
 
 export const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -265,7 +266,7 @@ function textOf(value: ExcelJS.CellValue): string {
     return "";
   }
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    return asDay(value);
   }
   if (typeof value === "boolean") {
     return value ? "YES" : "NO";

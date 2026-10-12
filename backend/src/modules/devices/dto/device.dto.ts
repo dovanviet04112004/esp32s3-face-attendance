@@ -3,6 +3,7 @@ import { Transform } from "class-transformer";
 import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 import { OffsetPageDto } from "../../../common/dto/pagination.dto.js";
+import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
 
 const DEVICE_STATUS = ["PENDING", "APPROVED", "REVOKED"] as const;
 const CLAIM_CODE = /^\d{6}$/;
@@ -28,7 +29,6 @@ export class ApproveDeviceDto extends UpdateDeviceDto {
   claimCode!: string;
 }
 
-const DEVICE_ID_MAX = 32;
 const BOOTSTRAP_MIN = 16;
 const BOOTSTRAP_MAX = 256;
 const VERSION_MAX = 32;
@@ -40,12 +40,12 @@ const BROKER_SECRET_MAX = 2048;
  */
 export class RegisterDeviceDto {
   @ApiProperty({
-    maxLength: DEVICE_ID_MAX,
+    maxLength: DEVICE_ID_MAX_LEN,
     example: "kiosk-2884859fd3c8",
     description: "Id derived from the chip's eFuse MAC; 4 to 32 letters, digits, dash or underscore",
   })
   @IsString()
-  @MaxLength(DEVICE_ID_MAX)
+  @MaxLength(DEVICE_ID_MAX_LEN)
   deviceId!: string;
 
   @ApiProperty({

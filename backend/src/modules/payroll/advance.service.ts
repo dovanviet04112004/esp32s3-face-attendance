@@ -126,7 +126,7 @@ export class AdvanceService {
   async one(viewer: Viewer, id: string): Promise<AdvanceDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.salaryAdvance.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+    if (!held || !ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("ADVANCE_NOT_FOUND");
     }
     const [[row], decider] = await Promise.all([

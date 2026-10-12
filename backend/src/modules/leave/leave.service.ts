@@ -33,7 +33,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
-import { dayAsDate } from "../timesheet/local-day.js";
+import { asDay, dayAsDate } from "../timesheet/local-day.js";
 import { TimesheetService } from "../timesheet/timesheet.service.js";
 import type { CreateLeaveTypeDto, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
 import type { Order } from "./dto/queue.dto.js";
@@ -265,7 +265,7 @@ export class LeaveService {
       return [];
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(whose)) {
+    if (!ScopeService.sees(visible, whose)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.balancesAsOf(whose, asOf);
@@ -416,7 +416,7 @@ export class LeaveService {
     if (from.getTime() !== to.getTime()) {
       throw new BadRequestException("FIX_ONE_DAY_ONLY");
     }
-    if (from.toISOString().slice(0, 10) >= this.timesheet.today()) {
+    if (asDay(from) >= this.timesheet.today()) {
       throw new BadRequestException("FIX_DAY_NOT_FINISHED");
     }
   }
@@ -500,7 +500,7 @@ export class LeaveService {
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const refusal = held.state === "PENDING" ? await this.refusal(viewer, held) : "NOT_PENDING";
-    if (visible !== null && !visible.includes(held.employeeId) && refusal !== null) {
+    if (!ScopeService.sees(visible, held.employeeId) && refusal !== null) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
     const balanceOn = (asOf: Date): Promise<BalanceAsOf | null> =>
@@ -725,7 +725,7 @@ export class LeaveService {
     const whose =
       asked === undefined
         ? ScopeService.narrow("employeeId", visible)
-        : { employeeId: visible === null || visible.includes(asked) ? asked : { in: [] } };
+        : { employeeId: ScopeService.sees(visible, asked) ? asked : { in: [] } };
     return {
       AND: [whose, query.state ? { state: query.state } : {}, ...(await this.filters(query))],
     };
@@ -970,8 +970,4 @@ function everyDay(from: Date, to: Date): Date[] {
     days.push(new Date(at));
   }
   return days;
-}
-
-function asDay(value: Date): string {
-  return value.toISOString().slice(0, 10);
 }

@@ -11,7 +11,6 @@ import type {
   Holiday,
   JobTitle,
   LegalEntity,
-  Prisma,
 } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -19,7 +18,7 @@ import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { isPrismaCode, PrismaService, RECORD_NOT_FOUND, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService } from "../audit/audit.service.js";
+import { AuditService, trail } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { ContractsSweep } from "../notifications/sweeps/contracts.sweep.js";
 import { ProbationSweep } from "../notifications/sweeps/probation.sweep.js";
@@ -39,27 +38,6 @@ import type {
   UpdateJobTitleDto,
   UpdateLegalEntityDto,
 } from "./dto/org.dto.js";
-
-type Scalar = string | number | boolean | null;
-
-function asScalar(value: unknown): Scalar {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return typeof value === "number" || typeof value === "boolean" ? value : String(value);
-}
-
-/** Each field a patch moved, as a from and to pair (KEHOACH 9.24 rule 4). */
-function trail(before: object, patch: object): Prisma.InputJsonObject {
-  const held = before as Record<string, unknown>;
-  const moved: Record<string, { from: Scalar; to: Scalar }> = {};
-  for (const [key, to] of Object.entries(patch)) {
-    if (to !== undefined && asScalar(held[key]) !== asScalar(to)) {
-      moved[key] = { from: asScalar(held[key]), to: asScalar(to) };
-    }
-  }
-  return moved;
-}
 
 function byManager(
   rows: ReorgRow[],

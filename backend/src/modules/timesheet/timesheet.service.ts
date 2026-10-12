@@ -18,7 +18,7 @@ import {
   encodeCursor,
 } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
-import { departmentSubtree } from "../../common/scope/department-subtree.js";
+import { branchOf, departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
@@ -29,7 +29,7 @@ import { JOB, QUEUE, type RebuildJob, type TimesheetJob } from "../../queue/queu
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { MAX_DAY_ROWS, type CorrectDayDto, type ListDaysDto, type SummaryQueryDto } from "./dto/timesheet.dto.js";
-import { clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
+import { asDay, clockToMinutes, dayAsDate, dayWindow, localDay, minutesIntoDay } from "./local-day.js";
 
 /** What makes a punch count toward a day: a believable time, and no HR hold left on it (KEHOACH 9.8). */
 export const COUNTED_PUNCH = {
@@ -62,17 +62,6 @@ const SUMMED = Prisma.sql`
 
 // What a desk has to look at: nobody came, somebody came late, or the day holds a hand correction.
 const EXCEPTION_DAY = Prisma.sql`(d."state" = 'ABSENT' OR d."lateMinutes" > 0 OR d."adjustedById" IS NOT NULL)`;
-
-/** A department and every department under it, as a subquery for `IN (...)`. */
-export function branchOf(departmentId: string): Prisma.Sql {
-  return Prisma.sql`
-    WITH RECURSIVE branch AS (
-      SELECT "id" FROM "Department" WHERE "id" = ${departmentId}
-      UNION
-      SELECT c."id" FROM "Department" c JOIN branch b ON c."parentId" = b."id"
-    )
-    SELECT "id" FROM branch`;
-}
 
 type DatedHoliday = { legalEntityId: string | null; paid: boolean };
 
@@ -185,7 +174,7 @@ export class TimesheetService implements OnModuleInit {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const wanted =
       query.employeeId !== undefined
-        ? visible === null || visible.includes(query.employeeId)
+        ? ScopeService.sees(visible, query.employeeId)
           ? [query.employeeId]
           : []
         : visible;
@@ -390,13 +379,13 @@ export class TimesheetService implements OnModuleInit {
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(held.employeeId),
       meta: {
-        date: held.date.toISOString().slice(0, 10),
+        date: asDay(held.date),
         from: { state: held.state, workedMinutes: held.workedMinutes },
         to: { state: corrected.state, workedMinutes: corrected.workedMinutes },
       },
     });
     await this.attendance.closeVanished(held.employeeId);
-    const day = held.date.toISOString().slice(0, 10);
+    const day = asDay(held.date);
     await this.notices.raiseFor(held.employeeId, "DAY_CORRECTED", {
       personDay: `${held.employeeId}:${day}`,
       day,
@@ -511,7 +500,7 @@ export class TimesheetService implements OnModuleInit {
     let days = 0;
     let rows = 0;
     for (let at = dayAsDate(from); at <= dayAsDate(to); at.setUTCDate(at.getUTCDate() + 1)) {
-      const day = at.toISOString().slice(0, 10);
+      const day = asDay(at);
       const built = await this.build(day);
       if (built > 0) {
         days += 1;
@@ -527,7 +516,7 @@ export class TimesheetService implements OnModuleInit {
   }
 
   yesterday(): string {
-    return new Date(dayAsDate(this.today()).getTime() - kMsPerDay).toISOString().slice(0, 10);
+    return asDay(new Date(dayAsDate(this.today()).getTime() - kMsPerDay));
   }
 
   /** The dates in a range this person is expected at work, in order, by `calendarOn`.

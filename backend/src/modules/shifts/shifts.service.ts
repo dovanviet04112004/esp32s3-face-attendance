@@ -18,7 +18,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
-import { localDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
 import type {
   AssignManyDto,
   AssignShiftDto,
@@ -142,7 +142,7 @@ export class ShiftsService {
       return viewer.employeeId;
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(asked)) {
+    if (!ScopeService.sees(visible, asked)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return asked;
@@ -215,7 +215,7 @@ export class ShiftsService {
         include: ROSTERED,
         orderBy: [{ validFrom: "desc" }, { id: "desc" }],
         take: query.take,
-        ...(after ? {} : { skip: query.skip }),
+        ...(query.cursor ? {} : { skip: query.skip }),
       }),
       this.db.shiftAssignment.count({ where, take: COUNT_CEILING + 1 }),
     ]);
@@ -330,8 +330,4 @@ export class ShiftsService {
       ahead.map((one) => ({ employeeId: one.employeeId, facts: { day: asDay(one.validFrom) > today ? asDay(one.validFrom) : today } })),
     );
   }
-}
-
-function asDay(value: Date): string {
-  return value.toISOString().slice(0, 10);
 }

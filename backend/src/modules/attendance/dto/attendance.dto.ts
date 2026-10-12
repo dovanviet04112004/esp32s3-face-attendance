@@ -15,6 +15,7 @@ import {
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
+import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
 import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 
 /** A punch id as the API carries it: a BIGINT in decimal. */
@@ -33,7 +34,7 @@ export class ListAttendanceDto extends PaginationDto {
   @ApiPropertyOptional({ description: "Only punches taken on this kiosk" })
   @IsOptional()
   @IsString()
-  @MaxLength(32)
+  @MaxLength(DEVICE_ID_MAX_LEN)
   deviceId?: string;
 
   @ApiPropertyOptional({

@@ -102,5 +102,5 @@ export function whoseRows(visible: number[] | null, asked: number | undefined): 
   if (asked === undefined) {
     return visible === null ? {} : { employeeId: { in: visible } };
   }
-  return { employeeId: visible === null || visible.includes(asked) ? asked : { in: [] } };
+  return { employeeId: ScopeService.sees(visible, asked) ? asked : { in: [] } };
 }

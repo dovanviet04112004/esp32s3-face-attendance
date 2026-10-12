@@ -83,7 +83,7 @@ export class SubjectsService {
     const reach = await this.reach(viewer);
     const sees = (row: Subjected): boolean => {
       const ids = row.subjectType !== null && BY_TREE.has(row.subjectType) ? reach.byTree : reach.byDesk;
-      return row.subjectEmployeeId === null || ids === null || ids.includes(row.subjectEmployeeId);
+      return row.subjectEmployeeId === null || ScopeService.sees(ids, row.subjectEmployeeId);
     };
     const shown = rows.filter((row) => row.subjectType !== null && sees(row));
     const people = [...new Set(shown.flatMap((row) => (row.subjectEmployeeId === null ? [] : [row.subjectEmployeeId])))];

@@ -30,7 +30,7 @@ import { ConsentService } from "../enrollment/consent.service.js";
 import { EnrollmentService } from "../enrollment/enrollment.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { OnboardingService } from "../onboarding/onboarding.service.js";
-import { dayAsDate, localDay } from "../timesheet/local-day.js";
+import { asDay, dayAsDate, localDay } from "../timesheet/local-day.js";
 import { statusWhere, UsersService, type LoginOpened, type RoleFlip } from "../users/users.service.js";
 import {
   ACCOUNT_FILTERS,
@@ -126,17 +126,13 @@ const kWriteChunk = 2_000;
 const kTransactionMs = 600_000;
 // Read in APP_TIMEZONE: the first minutes of the day after a last day (KEHOACH 9.14).
 const kLeavingsCron = "5 0 * * *";
-function asDay(value: Date | null): string {
-  return value ? value.toISOString().slice(0, 10) : "";
-}
-
 function earliestDay(days: (Date | null)[]): string {
-  const known = days.filter((one): one is Date => one !== null).map((one) => one.toISOString().slice(0, 10));
+  const known = days.filter((one): one is Date => one !== null).map((one) => asDay(one));
   return known.sort()[0] ?? "";
 }
 
 function dayBefore(day: string): string {
-  return new Date(dayAsDate(day).getTime() - kMsPerDay).toISOString().slice(0, 10);
+  return asDay(new Date(dayAsDate(day).getTime() - kMsPerDay));
 }
 
 // One join rather than a lookup per row: the table shows a department by name.
@@ -256,12 +252,12 @@ function profileOf(one: Pick<Employee, HeldColumn>): Record<HeldColumn, string> 
   return {
     fullName: one.fullName,
     phone: one.phone ?? "",
-    dateOfBirth: asDay(one.dateOfBirth),
+    dateOfBirth: asDay(one.dateOfBirth) ?? "",
     gender: one.gender ?? "",
     nationalId: one.nationalId ?? "",
     taxCode: one.taxCode ?? "",
     socialInsuranceNo: one.socialInsuranceNo ?? "",
-    hireDate: asDay(one.hireDate),
+    hireDate: asDay(one.hireDate) ?? "",
     personalEmail: one.personalEmail ?? "",
     bankAccount: one.bankAccount ?? "",
     bankName: one.bankName ?? "",
@@ -786,7 +782,7 @@ export class EmployeesService implements OnModuleInit {
         baseSalary: one.compensation[0]?.baseSalary.toFixed(0) ?? "",
         insuranceSalary: one.compensation[0]?.insuranceSalary.toFixed(0) ?? "",
         shiftName: one.shifts[0]?.shift.name ?? "",
-        shiftFrom: asDay(one.shifts[0]?.validFrom ?? null),
+        shiftFrom: asDay(one.shifts[0]?.validFrom ?? null) ?? "",
         kioskId: kiosk?.deviceId ?? "",
         consentPaper: one._count.consents > 0 ? "YES" : "NO",
         openLogin: one.login ? "YES" : "NO",
@@ -1038,7 +1034,7 @@ export class EmployeesService implements OnModuleInit {
   async get(id: number, viewer: Viewer): Promise<Employee> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     // Out of scope answers the same as absent: 403 would confirm they exist.
-    if (visible !== null && !visible.includes(id)) {
+    if (!ScopeService.sees(visible, id)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const found = await this.db.employee.findUnique({ where: { id }, include: EMPLOYEE_VIEW });
@@ -1374,7 +1370,7 @@ export class EmployeesService implements OnModuleInit {
       action: AUDIT_ACTIONS.EMPLOYEE_LEAVING_MOVE,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(id),
-      meta: { code: person.code, from: asDay(person.leaveDate), to: lastDay },
+      meta: { code: person.code, from: asDay(person.leaveDate) ?? "", to: lastDay },
     });
     return this.settleLeaving(id, person.code, lastDay, viewer.userId);
   }
@@ -1396,7 +1392,7 @@ export class EmployeesService implements OnModuleInit {
       action: AUDIT_ACTIONS.EMPLOYEE_LEAVING_CANCEL,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(id),
-      meta: { code: person.code, leaveDate: asDay(person.leaveDate) },
+      meta: { code: person.code, leaveDate: asDay(person.leaveDate) ?? "" },
     });
     return this.get(id, viewer);
   }
@@ -1526,7 +1522,7 @@ export class EmployeesService implements OnModuleInit {
       action: AUDIT_ACTIONS.EMPLOYEE_DEACTIVATE,
       subject: AUDIT_SUBJECTS.EMPLOYEE,
       subjectId: String(id),
-      meta: { code: shut.person.code, leaveDate: asDay(shut.person.leaveDate) },
+      meta: { code: shut.person.code, leaveDate: asDay(shut.person.leaveDate) ?? "" },
     });
     return true;
   }

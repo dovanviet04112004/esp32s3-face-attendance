@@ -7,7 +7,7 @@ import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { codeHas, codeLeads, foldedHas, foldedLeads, PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_DESKS } from "../leave/queue-filter.js";
-import { localDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
 import type { HitKind } from "./dto/search.dto.js";
 
 export interface Hit {
@@ -114,7 +114,7 @@ function dayOf(term: string, thisYear: number): string | null {
   const [year, month, date] = parts;
   const at = new Date(Date.UTC(year, month - 1, date));
   const real = at.getUTCFullYear() === year && at.getUTCMonth() === month - 1 && at.getUTCDate() === date;
-  return real ? at.toISOString().slice(0, 10) : null;
+  return real ? asDay(at) : null;
 }
 
 /** 08/2026 or 2026-08 as a pay month, or null. */
@@ -127,10 +127,6 @@ function monthOf(term: string): { year: number; month: number } | null {
       ? [Number(yearFirst[1]), Number(yearFirst[2])]
       : [0, 0];
   return month >= 1 && month <= 12 ? { year, month } : null;
-}
-
-function day(at: Date): string {
-  return at.toISOString().slice(0, 10);
 }
 
 function monthName(at: { year: number; month: number }): string {
@@ -332,7 +328,7 @@ export class SearchService {
         kind: "request",
         id: row.id,
         title: row.employee.fullName,
-        detail: `${row.employee.code} · ${row.toDate > row.fromDate ? `${day(row.fromDate)} – ${day(row.toDate)}` : day(row.fromDate)}`,
+        detail: `${row.employee.code} · ${row.toDate > row.fromDate ? `${asDay(row.fromDate)} – ${asDay(row.toDate)}` : asDay(row.fromDate)}`,
         href: row.employeeId === viewer.employeeId ? `/me/requests?open=${row.id}` : `/leave/${row.id}`,
         requestKind: row.kind,
       })),
@@ -359,7 +355,7 @@ export class SearchService {
         kind: "certificate",
         id: row.id,
         title: row.employee.fullName,
-        detail: `${row.employee.code} · ${day(row.createdAt)}`,
+        detail: `${row.employee.code} · ${asDay(row.createdAt)}`,
         href:
           row.employeeId === viewer.employeeId
             ? `/me/letters?open=${row.id}`
@@ -389,7 +385,7 @@ export class SearchService {
         kind: "profileChange",
         id: row.id,
         title: row.employee.fullName,
-        detail: `${row.employee.code} · ${day(row.createdAt)}`,
+        detail: `${row.employee.code} · ${asDay(row.createdAt)}`,
         href: row.employeeId === viewer.employeeId ? "/me/profile" : `/approvals?tab=profileChanges&q=${q(row.employee.code)}`,
         profileField: row.field,
       })),
@@ -479,7 +475,7 @@ export class SearchService {
         kind: "advance",
         id: row.id,
         title: row.employee.fullName,
-        detail: `${row.employee.code} · ${day(row.requestedAt)}`,
+        detail: `${row.employee.code} · ${asDay(row.requestedAt)}`,
         href:
           row.employeeId === viewer.employeeId
             ? `/me/requests?tab=advances&advance=${row.id}`

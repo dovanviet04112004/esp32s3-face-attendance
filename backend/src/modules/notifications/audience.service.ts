@@ -6,7 +6,7 @@ import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_DESKS, THE_DESK } from "../leave/queue-filter.js";
-import { dayAsDate, dayWindow, localDay } from "../timesheet/local-day.js";
+import { asDay, dayAsDate, dayWindow, localDay } from "../timesheet/local-day.js";
 import { INBOX_ROLES, TEAM_READERS } from "./notice-kinds.js";
 
 /** The where clause each queue's table takes. */
@@ -238,7 +238,7 @@ export class AudienceService {
   escalatedBefore(): Date {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const today = dayAsDate(localDay(new Date(), zone));
-    const first = new Date(today.getTime() - (ESCALATE_ON_DAY - 2) * 86_400_000).toISOString().slice(0, 10);
+    const first = asDay(new Date(today.getTime() - (ESCALATE_ON_DAY - 2) * 86_400_000));
     return dayWindow(first, zone).from;
   }
 

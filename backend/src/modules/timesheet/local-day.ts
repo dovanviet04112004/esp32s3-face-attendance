@@ -12,6 +12,10 @@ export function localDay(at: Date, zone: string): string {
   }).format(at);
 }
 
+export function localStamp(at: Date, zone: string): string {
+  return `${at.toLocaleString("sv-SE", { timeZone: zone })} (${zone})`;
+}
+
 /** Minutes past local midnight, what a shift's "08:00" compares to. */
 export function minutesIntoDay(at: Date, zone: string): number {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -49,10 +53,17 @@ export function dayAsDate(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`);
 }
 
+/** The UTC calendar day of an instant, which is the day a date column holds; null stays null. */
+export function asDay(value: Date): string;
+export function asDay(value: Date | null): string | null;
+export function asDay(value: Date | null): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
 function nextDay(day: string): string {
   const at = new Date(`${day}T00:00:00.000Z`);
   at.setUTCDate(at.getUTCDate() + 1);
-  return at.toISOString().slice(0, 10);
+  return asDay(at);
 }
 
 // Guess the offset, then correct once: exact without a timezone library.
@@ -62,7 +73,7 @@ function startOfLocalDay(day: string, zone: string): Date {
   return new Date(naive.getTime() - offsetMinutes(guess, zone) * 60_000);
 }
 
-function offsetMinutes(at: Date, zone: string): number {
+export function offsetMinutes(at: Date, zone: string): number {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: zone,
     year: "numeric",

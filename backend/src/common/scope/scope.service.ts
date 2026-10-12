@@ -84,4 +84,9 @@ export class ScopeService {
   static narrow<T extends string>(field: T, ids: number[] | null): Record<T, { in: number[] }> | object {
     return ids === null ? {} : ({ [field]: { in: ids } } as Record<T, { in: number[] }>);
   }
+
+  /** Whether a viewer who sees `visible` sees this employee; null sees everyone. */
+  static sees(visible: number[] | null, employeeId: number): boolean {
+    return visible === null || visible.includes(employeeId);
+  }
 }

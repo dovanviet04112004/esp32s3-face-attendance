@@ -281,7 +281,7 @@ export class OnboardingService {
   /** One person's run, or null while none has been started: an empty tab, not a fault. */
   async run(viewer: Viewer, employeeId: number, kind: ChecklistKind): Promise<RunWithTasks | null> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(employeeId)) {
+    if (!ScopeService.sees(visible, employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.db.checklistRun.findUnique({
@@ -355,7 +355,7 @@ export class OnboardingService {
       throw new NotFoundException("TASK_NOT_FOUND");
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(task.run.employeeId)) {
+    if (!ScopeService.sees(visible, task.run.employeeId)) {
       throw new NotFoundException("TASK_NOT_FOUND");
     }
     if (task.doneAt !== null) {

@@ -9,7 +9,6 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -25,7 +24,6 @@ import {
   ApiParam,
   ApiTags,
 } from "@nestjs/swagger";
-import type { Request } from "express";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
@@ -36,7 +34,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
-import { THROTTLE, type AccessClaims } from "../auth/auth.types.js";
+import { THROTTLE } from "../auth/auth.types.js";
 import {
   AccountCounts,
   AccountPage,
@@ -51,10 +49,6 @@ import {
 import { UsersService, type Provisioning } from "./users.service.js";
 
 const ACCOUNT_ID = { name: "id", description: "Account id", example: "b5f0c3d2-8a41-4e6b-9c2d-7f1e3a5b9c04" };
-
-function actorOf(req: Request): string {
-  return (req.user as AccessClaims).sub;
-}
 
 @ApiTags("users")
 @ApiBearerAuth()
@@ -110,8 +104,8 @@ export class UsersController {
   })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT, EMPLOYEE_HAS_LEFT" })
-  create(@Body() body: CreateUserDto, @Req() req: Request): Promise<AccountView> {
-    return this.users.create(actorOf(req), body);
+  create(@Body() body: CreateUserDto, @CurrentViewer() viewer: Viewer): Promise<AccountView> {
+    return this.users.create(viewer.userId, body);
   }
 
   @Post(":id/invite")
@@ -123,8 +117,8 @@ export class UsersController {
   @ApiParam(ACCOUNT_ID)
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, also for a locked account" })
-  invite(@Param("id") id: string, @Req() req: Request): Promise<void> {
-    return this.users.invite(actorOf(req), id);
+  invite(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<void> {
+    return this.users.invite(viewer.userId, id);
   }
 
   @Patch(":id")
@@ -146,9 +140,9 @@ export class UsersController {
   update(
     @Param("id") id: string,
     @Body() body: UpdateUserDto,
-    @Req() req: Request,
+    @CurrentViewer() viewer: Viewer,
   ): Promise<AccountView> {
-    return this.users.update(actorOf(req), id, body);
+    return this.users.update(viewer.userId, id, body);
   }
 
   @Delete(":id")
@@ -163,8 +157,8 @@ export class UsersController {
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "ACCOUNT_HAS_HISTORY" })
-  remove(@Param("id") id: string, @Req() req: Request): Promise<void> {
-    return this.users.remove(id, actorOf(req));
+  remove(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<void> {
+    return this.users.remove(id, viewer.userId);
   }
 
   @Delete(":id/mfa")
@@ -180,7 +174,7 @@ export class UsersController {
   @ApiNoContentResponse()
   @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "MFA_NOT_ON: the account has no authenticator to reset" })
-  resetMfa(@Param("id") id: string, @Req() req: Request): Promise<void> {
-    return this.users.resetMfa(actorOf(req), id);
+  resetMfa(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<void> {
+    return this.users.resetMfa(viewer.userId, id);
   }
 }

@@ -24,7 +24,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { NAMED, nameOf } from "../notifications/notifications.service.js";
-import { localDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
 
@@ -33,10 +33,6 @@ const SERIAL_DIGITS = 5;
 const DEFAULT_MONTHS = 3;
 // Every state a slip reaches once it has gone out; opening it does not unsay the income.
 const ISSUED_SLIPS: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
-
-function asDay(value: Date | null): string | null {
-  return value ? value.toISOString().slice(0, 10) : null;
-}
 
 type Listed = Prisma.CertificateGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
@@ -126,7 +122,7 @@ export class CertificatesService {
   async one(viewer: Viewer, id: string): Promise<CertificateDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.certificate.findUnique({ where: { id }, include: { employee: PERSON_VIEW, issuedBy: NAMED } });
-    if (!held || (visible !== null && !visible.includes(held.employeeId))) {
+    if (!held || !ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     const { issuedBy, ...row } = held;
@@ -231,7 +227,7 @@ export class CertificatesService {
     }
     // It carries pay, a national id and a birth date, so a manager's tree does not reach it (KEHOACH 9.4).
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(held.employeeId)) {
+    if (!ScopeService.sees(visible, held.employeeId)) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     if (held.state !== "ISSUED" || held.serial === null) {

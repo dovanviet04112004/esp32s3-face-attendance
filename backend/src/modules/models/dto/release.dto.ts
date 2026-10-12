@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
+import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
 import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -46,7 +47,7 @@ export class OfferAllDto {
 export class ImageLinkDto {
   @ApiProperty({ example: "kiosk-2884859fd3c8", description: "The kiosk the link was signed for; it must be approved" })
   @IsString()
-  @MaxLength(32)
+  @MaxLength(DEVICE_ID_MAX_LEN)
   device!: string;
 
   @ApiProperty({ description: "Unix seconds after which the link is refused" })

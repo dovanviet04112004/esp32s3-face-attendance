@@ -200,7 +200,7 @@ export class AssetsService {
   /** What one person is still holding, which is what offboarding reads. */
   async heldBy(viewer: Viewer, employeeId: number): Promise<AssetWithHolder[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (visible !== null && !visible.includes(employeeId)) {
+    if (!ScopeService.sees(visible, employeeId)) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.db.asset.findMany({

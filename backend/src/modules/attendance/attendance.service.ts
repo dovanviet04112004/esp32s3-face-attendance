@@ -123,7 +123,7 @@ export class AttendanceService {
         where: resumed,
         include: { employee: PERSON_VIEW },
         orderBy: [{ receivedAt: order }, { id: order }],
-        skip: after ? 0 : query.skip,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
       }),
       this.db.attendanceRecord.count({ where, take: COUNT_CEILING + 1 }),
@@ -202,7 +202,7 @@ export class AttendanceService {
       ...ScopeService.narrow("employeeId", visible),
     };
     // An explicit filter narrows further, it never widens past the scope.
-    if (query.employeeId !== undefined && (visible === null || visible.includes(query.employeeId))) {
+    if (query.employeeId !== undefined && ScopeService.sees(visible, query.employeeId)) {
       where.employeeId = query.employeeId;
     } else if (query.employeeId !== undefined) {
       return { rows: [], total: 0, totalIsExact: true, next: null };
@@ -247,7 +247,7 @@ export class AttendanceService {
       this.db.attendanceRecord.findMany({
         where: resumed,
         orderBy: [{ ts: "desc" }, { id: "desc" }],
-        skip: from ? 0 : query.skip,
+        skip: query.cursor ? 0 : query.skip,
         take: query.take,
       }),
       this.db.attendanceRecord.count({ where, take: COUNT_CEILING + 1 }),
@@ -262,7 +262,7 @@ export class AttendanceService {
   /** The counts a person's punch filter shows beside each choice, over the same range and scope. */
   async counts(query: ListAttendanceDto, viewer: Viewer): Promise<PunchCounts> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (query.employeeId !== undefined && visible !== null && !visible.includes(query.employeeId)) {
+    if (query.employeeId !== undefined && !ScopeService.sees(visible, query.employeeId)) {
       return { all: 0, capturedOffline: 0, clockUnsynced: 0, questionableTime: 0, held: 0 };
     }
     const whose: Prisma.AttendanceRecordWhereInput = {

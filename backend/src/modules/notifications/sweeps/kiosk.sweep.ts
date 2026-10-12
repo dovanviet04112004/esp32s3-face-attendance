@@ -9,6 +9,7 @@ import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
 import { KIOSK_EVENT, type KioskMessage } from "../../mqtt/mqtt.events.js";
 import { DEFAULT_MAIL_LOCALE, kioskSilentMail } from "../../payroll/mail-text.js";
+import { localStamp } from "../../timesheet/local-day.js";
 import { MailerService } from "../mailer.service.js";
 import { itemKey, NoticeItemsService } from "../notice-items.service.js";
 import { kebab, KIOSK_BURST_QUIET_MINUTES } from "../notice-kinds.js";
@@ -205,7 +206,7 @@ export class KioskSweep implements OnModuleInit {
       name: device.name,
       location: device.location,
       minutes,
-      lastSeen: device.lastSeenAt ? `${device.lastSeenAt.toLocaleString("sv-SE", { timeZone: zone })} (${zone})` : "—",
+      lastSeen: device.lastSeenAt ? localStamp(device.lastSeenAt, zone) : "—",
       url: `${root}/${DEFAULT_MAIL_LOCALE}/devices/${device.id}`,
     });
     const admins = await this.db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });

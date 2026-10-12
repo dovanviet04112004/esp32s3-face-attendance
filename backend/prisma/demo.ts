@@ -7,7 +7,7 @@ import "dotenv/config";
 import { validateEnv } from "../src/config/env.schema.js";
 import { calculate, type CalcAllowance } from "../src/modules/payroll/calculate.js";
 import { asCalcPolicy } from "../src/modules/policy/policy.service.js";
-import { localDay } from "../src/modules/timesheet/local-day.js";
+import { asDay, localDay, offsetMinutes } from "../src/modules/timesheet/local-day.js";
 
 const HEADCOUNT = 5000;
 // One company per seed: a screenshot in the report has to match the machine.
@@ -384,30 +384,8 @@ function dateOf(year: number, month: number, day: number): Date {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-function isoDay(at: Date): string {
-  return at.toISOString().slice(0, 10);
-}
-
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/** Minutes the wall clock at `zone` runs ahead of UTC, read from the zone
- *  itself so the punch times agree with what the interface prints.
- */
-function zoneOffsetMinutes(zone: string, at: Date): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: zone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(at);
-  const field = (type: string): number => Number(parts.find((one) => one.type === type)?.value ?? 0);
-  const wall = Date.UTC(field("year"), field("month") - 1, field("day"), field("hour"), field("minute"));
-  return Math.round((wall - at.getTime()) / 60_000);
 }
 
 async function inChunks<T>(rows: T[], size: number, write: (slice: T[]) => Promise<unknown>): Promise<void> {
@@ -420,12 +398,12 @@ const env = validateEnv();
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: env.DATABASE_URL }),
 });
-const OFFSET_MINUTES = zoneOffsetMinutes(env.APP_TIMEZONE, dateOf(YEAR, 7, 1));
+const OFFSET_MINUTES = offsetMinutes(dateOf(YEAR, 7, 1), env.APP_TIMEZONE);
 // The wall clock, not the demo calendar: a last day still ahead leaves the record open (KEHOACH 9.14).
 const TODAY = localDay(new Date(), env.APP_TIMEZONE);
 
 function stillWorks(person: { leaveDate: Date | null }): boolean {
-  return person.leaveDate === null || isoDay(person.leaveDate) >= TODAY;
+  return person.leaveDate === null || asDay(person.leaveDate) >= TODAY;
 }
 
 function punchAt(day: Date, hour: number, minute: number): Date {
@@ -1125,7 +1103,7 @@ function planMonth(person: Person, month: number, holidays: Set<string>): DayPla
       }
       continue;
     }
-    if (holidays.has(isoDay(at))) {
+    if (holidays.has(asDay(at))) {
       plan.push({ date: at, state: "HOLIDAY", overtimeMinutes: 0, leaveCode: null });
       continue;
     }

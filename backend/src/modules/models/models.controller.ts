@@ -30,7 +30,7 @@ import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
-import type { AccessClaims } from "../auth/auth.types.js";
+import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   FleetUpdateView,
   ImageLinkDto,
@@ -45,10 +45,6 @@ import {
 } from "./dto/release.dto.js";
 import { ModelsService, type FleetUpdate, type OfferStatus, type ReleaseView } from "./models.service.js";
 import { PublishGuard } from "./publish.guard.js";
-
-function actorOf(req: Request): string {
-  return (req.user as AccessClaims).sub;
-}
 
 /** What people do with releases: see them and offer them to kiosks (KEHOACH 7.7). */
 @ApiTags("releases")
@@ -101,9 +97,9 @@ export class ModelsController {
   offerAll(
     @Param("releaseId") releaseId: string,
     @Body() body: OfferAllDto,
-    @Req() req: Request,
+    @CurrentViewer() viewer: Viewer,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
-    return this.models.offerAll(releaseId, actorOf(req), body.recapture ?? false);
+    return this.models.offerAll(releaseId, viewer.userId, body.recapture ?? false);
   }
 
   @Post(":releaseId/offer/:deviceId")
@@ -117,9 +113,9 @@ export class ModelsController {
   offer(
     @Param("releaseId") releaseId: string,
     @Param("deviceId") deviceId: string,
-    @Req() req: Request,
+    @CurrentViewer() viewer: Viewer,
   ): Promise<{ deviceId: string; offeredAt: Date }> {
-    return this.models.offer(releaseId, deviceId, actorOf(req));
+    return this.models.offer(releaseId, deviceId, viewer.userId);
   }
 }
 
