@@ -115,9 +115,6 @@ def main(argv: list[str] | None = None) -> int:
     ordered = {branch: lock[branch] for branch in BRANCH_ENTRY if branch in lock}
     args.lock.parent.mkdir(parents=True, exist_ok=True)
     args.lock.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
-    mirror = args.models_dir / args.lock.name
-    if mirror.resolve() != args.lock.resolve():
-        shutil.copyfile(args.lock, mirror)
 
     print(
         f"{args.branch}: {deployed} {height}x{width} {runtime} sha256 {digest[:12]} "
