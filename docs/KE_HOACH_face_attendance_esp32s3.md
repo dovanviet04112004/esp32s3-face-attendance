@@ -4924,7 +4924,7 @@ sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất
 
 ### 4.7 `frontend/` — Next.js trên Vercel
 
-**Stack**: Next.js 16 (App Router) · React 19 · TypeScript · TailwindCSS 4 · Kumo (`@cloudflare/kumo`, trên Base UI) · Phosphor icons · Inter · next-intl · TanStack Query · Zustand · Recharts · socket.io-client
+**Stack**: Next.js 16 (App Router) · React 19 · TypeScript · TailwindCSS 4 · Kumo (`@cloudflare/kumo`, trên Base UI) · Phosphor icons · Inter · next-intl · TanStack Query · Zustand · socket.io-client
 
 **Giao diện dựng bằng Kumo, thư viện component của chính dashboard Cloudflare** (MIT). Mốc chủ
 repo đặt ra là trông **giống dashboard Cloudflare**, và mốc ấy chỉ đạt trọn bằng chính code của
