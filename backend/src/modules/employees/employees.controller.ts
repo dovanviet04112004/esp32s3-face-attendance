@@ -9,7 +9,6 @@ import {
   Param,
   ParseIntPipe,
   Patch,
-  Header,
   Post,
   Query,
   StreamableFile,

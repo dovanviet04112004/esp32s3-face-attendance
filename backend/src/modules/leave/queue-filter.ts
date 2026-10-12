@@ -3,7 +3,7 @@ import type { Prisma, Role } from "@prisma/client";
 
 import { decodeCursor } from "../../common/dto/cursor.dto.js";
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
 import { namedFilter, type PrismaService } from "../../database/prisma.service.js";
 import { dayWindow } from "../timesheet/local-day.js";
 import type { Order, QueueQueryDto } from "./dto/queue.dto.js";

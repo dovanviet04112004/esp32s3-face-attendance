@@ -6,7 +6,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import type {
   LeaveBalance,
   LeaveType,
@@ -21,7 +20,6 @@ import { COUNT_CEILING, countedTo, nextCursor } from "../../common/dto/cursor.dt
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
-import type { Env } from "../../config/env.schema.js";
 import {
   EXCLUSION_VIOLATION,
   isPrismaCode,
@@ -51,7 +49,6 @@ import { LeaveYearService } from "./leave-year.service.js";
 import {
   PERSON_VIEW,
   THE_DESK,
-  filedBetween,
   personWhere,
   resumeAfter,
   sortedBy,
@@ -197,14 +194,9 @@ export class LeaveService {
     private readonly items: NoticeItemsService,
     private readonly timesheet: TimesheetService,
     private readonly audit: AuditService,
-    private readonly config: ConfigService<Env, true>,
     private readonly years: LeaveYearService,
     private readonly attendance: AttendanceSweep,
   ) {}
-
-  private get zone(): string {
-    return this.config.get("APP_TIMEZONE", { infer: true });
-  }
 
   types(): Promise<LeaveType[]> {
     return this.db.leaveType.findMany({ where: { active: true }, orderBy: { code: "asc" } });
