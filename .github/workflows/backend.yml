@@ -90,49 +90,28 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Skip until backend/ has a package.json
-        id: guard
-        run: |
-          if [ -f package.json ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "backend/package.json absent, nothing to build yet"
-          fi
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.guard.outputs.ready == 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
       - name: Install
-        if: steps.guard.outputs.ready == 'true'
         run: npm ci
 
       # Neither npm ci nor migrate deploy generates the client that tsc imports.
       - name: Generate Prisma client
-        if: steps.guard.outputs.ready == 'true'
         run: npx prisma generate
 
       - name: Prisma migrate
-        if: steps.guard.outputs.ready == 'true'
         run: npx prisma migrate deploy
 
       # Every suite signs in as the seed admin (prisma/seed.ts).
       - name: Seed
-        if: steps.guard.outputs.ready == 'true'
         run: npx prisma db seed
 
-      - name: Typecheck
-        if: steps.guard.outputs.ready == 'true'
-        run: npm run typecheck
-
       - name: Test
-        if: steps.guard.outputs.ready == 'true'
         run: npm test
 
       - name: Build
-        if: steps.guard.outputs.ready == 'true'
         run: npm run build

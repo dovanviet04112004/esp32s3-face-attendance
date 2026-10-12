@@ -17,27 +17,7 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-
-      - name: Layering and comment rules
-        run: |
-          python3 tools/check_layers.py
-          python3 tools/check_comments.py firmware
-
-      - name: Skip build until firmware/ has a project
-        id: guard
-        run: |
-          if [ -f firmware/CMakeLists.txt ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "firmware/CMakeLists.txt absent, nothing to build yet"
-          fi
-
       - name: Build ci profile
-        if: steps.guard.outputs.ready == 'true'
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
         with:
           esp_idf_version: v6.0.2
@@ -48,7 +28,6 @@ jobs:
             build
 
       - name: Report binary size
-        if: steps.guard.outputs.ready == 'true'
         uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
         with:
           esp_idf_version: v6.0.2

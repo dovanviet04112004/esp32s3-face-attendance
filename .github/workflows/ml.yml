@@ -19,31 +19,17 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Skip until ml/ has a project file
-        id: guard
-        run: |
-          if [ -f pyproject.toml ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "ml/pyproject.toml absent, nothing to build yet"
-          fi
-
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
-        if: steps.guard.outputs.ready == 'true'
         with:
           enable-cache: true
 
       - name: Sync environment
-        if: steps.guard.outputs.ready == 'true'
         run: uv sync --frozen --extra cpu
 
       - name: Lint
-        if: steps.guard.outputs.ready == 'true'
         run: |
           uv run ruff check .
           uv run ruff format --check .
 
       - name: Test
-        if: steps.guard.outputs.ready == 'true'
         run: uv run pytest -q
