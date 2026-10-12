@@ -736,13 +736,13 @@ phải đọc lại từ PSRAM) cắt mỗi tích chập theo kênh ra thành t�
 Recog nhanh hơn 34,6 ms một khung (−11,6%), spoof nhanh hơn 3,3 ms (−4,0%), đổi lấy chưa tới 2 KB RAM
 nội. Bản vá được giữ, bật trong khối hai nhánh của `quant.yaml`. Detect không có tích chập nào cỡ ấy.
 
-**Còn lại chỉ là nhãn không có bản vá, nên cả ba nhánh dừng ở bước 2.5:**
+**PRelu đứng riêng** (spoof 14,5 ms, recog 51,1 ms) có bản vá làm tròn `fused_prelu`, đo ở §14.3.
+
+**Còn lại chỉ là nhãn không có bản vá:**
 
 - *Tích chập đầu 3 kênh vào* (detect 8,4 ms, spoof 5,0 ms, recog 17,4 ms): ảnh RGB có đúng 3 kênh.
 - *Clip của ReLU6 ở detect* (15,2 ms): ESP-PPQ chỉ gộp `Relu` vào tích chập, còn `activation_type_t` của
   esp-dl 3.3.11 chưa có ReLU6. Mỗi `Clip` chạy riêng qua một bảng tra 256 giá trị.
-- *PRelu đứng riêng* (spoof 14,5 ms, recog 51,1 ms): esp-dl gộp được PReLU vào `Conv`, nhưng ESP-PPQ
-  không gộp. Gộp ở bước xuất sẽ dời chỗ làm tròn, nên đổi số nguyên; đó không còn là bản vá xuất.
 - *Kênh lệch 16 ở spoof* (103, 231, 308, 13, 26…): `aligned_pointwise` chỉ nhận một tích chập khi ghép
   `k` cột mà trọng số khối chéo vẫn vừa cache. Hai cái nhận được (64→52 và 52→64, ghép 4 cột) tốn 2,6 ms
   và đã chạy ở 0,21–0,25 chu kỳ. Ghép 4 cột thì số phép nhân-cộng nhân bốn; ở tốc độ đường vector đo được
@@ -750,3 +750,44 @@ nội. Bản vá được giữ, bật trong khối hai nhánh của `quant.yaml
 
 Tái lập: `make board-save DIR=…`, `make speed BRANCH=<nhánh>` (hàng `timing`, bản dò, bảng xếp hạng),
 `make board-restore DIR=…`. Log từng ảnh nằm ở `<run>/int8/timing/probe/models_<n>.log`.
+
+### 14.3 PReLU gộp vào tích chập — đo 13/10 (E9-T38)
+
+Cùng kiosk, cùng app dò. `make quant-timing` dựng lại hàng `timing` của hai run đang deploy và hàng
+`timing+fused_prelu` từ **cùng một đồ thị lượng tử**, nên hai hàng chỉ khác ở bản vá. Hàng gộp chạy
+module `ConvPRelu` của `ai_engine`, tức nhân int8 của esp-dl với con trỏ alpha được điền.
+
+| Hàng | `model->test()`, đồ thị + 4 bản cắt | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | RAM nội | PSRAM | flash |
+|---|---|---|---:|---:|---:|---:|
+| recog `timing` | PASS cả 5 | 24 khung, **0 / 12.288** | 266,2 / 268,9 ms | 65,0 KB | 2.071,9 KB | 1.390,0 KB |
+| recog `timing+fused_prelu` | PASS cả 5 | 24 khung, **0 / 12.288** | **230,7** / 233,4 ms | 60,9 KB | 2.064,2 KB | 1.380,4 KB |
+| spoof `timing` | PASS cả 5 | 40 khung, **0 / 120** | 80,4 / 82,5 ms | 38,9 KB | 747,3 KB | 549,6 KB |
+| spoof `timing+fused_prelu` | PASS cả 5 | 40 khung, **0 / 120** | **73,2** / 75,1 ms | 33,1 KB | 739,2 KB | 536,0 KB |
+
+Recog nhanh hơn **35,5 ms một khung (−13,3%)**, spoof nhanh hơn **7,2 ms (−9,0%)**. Hàng gộp của recog
+chạy hai lần, mean 230,740 và 230,749 ms.
+
+**Chip làm tròn xuống, và mô phỏng làm đúng thế.** Mô phỏng của bản vá lấy nhánh âm là
+`floor(x·a / 2^-e_a)` theo số nguyên, tức `EE.VPRELU.S8` dịch phải tích int8; `PRelu` đứng riêng thì làm
+tròn half-up. Đồ thị gộp khớp từng bit trên mọi khung thật và mọi bản cắt, nên phép làm tròn xuống là
+đúng như chip tính, không phải đoán.
+
+| Op | recog `timing` | recog gộp | spoof `timing` | spoof gộp |
+|---|---:|---:|---:|---:|
+| Conv | 184,6 ms (67) | 96,4 ms (46) | 61,1 ms (56) | 27,4 ms (26) |
+| ConvPRelu | — | 89,6 ms (21) | — | 35,2 ms (30) |
+| PRelu | 51,3 ms (33) | 14,1 ms (13) | 14,5 ms (33) | 5,6 ms (4) |
+
+Các tích chập được gộp tốn 88,2 ms khi còn là `Conv` và 89,6 ms khi là `ConvPRelu` ở recog: nhân gộp gần
+như không thêm giờ, phần thu được là các module PReLU biến mất. Spoof có 29 PReLU gộp thành 30
+`ConvPRelu`, vì `cache_sized_convolutions` cắt đôi một tích chập đã gộp. PReLU còn lại (recog 13, spoof
+4) có đầu ra khác lưới với đầu vào: gộp chúng là cắt giá trị âm ở lưới mịn của đầu ra trước khi nhân
+alpha, sai ngay cả trước chuyện làm tròn.
+
+Chất lượng chưa đo ở đây. Gộp đổi số nguyên ở nhánh âm, nên hàng biến thể `<hàng>+fused_prelu` của thang
+chất lượng (KẾ HOẠCH §3.7, `make quant-variants`) chấm nó bằng thước của nhánh, và `make quant-choose`
+quyết.
+
+Tái lập: `make quant-timing BRANCH=<nhánh>`, rồi trong một phiên `board-save`/`board-restore` chạy
+`make ai-unit BRANCH=<nhánh> ROW=timing` và `ROW=timing+fused_prelu`; `make ai-profile` trên
+`models_0.log` của mỗi hàng ra bảng theo op.
