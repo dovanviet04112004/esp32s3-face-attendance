@@ -2157,10 +2157,12 @@ chấm, kể cả khi bậc trước đã đạt cửa — rồi chọn **một*
 chính cao nhất. Một hàng khác chỉ thay nó khi thước chính kém không quá **một bước phân giải** của
 thước — detection 0,1 điểm AP, recognition 0,1 điểm TAR, anti-spoof 0,001 AUC — **và** chạy nhanh hơn
 trên chip. Bản vá xuất không đổi số nguyên (dưới) nên bật ở mọi hàng của nhánh. Bản vá **làm tròn** thì
-đổi số nguyên, nên không bao giờ bật cho cả nhánh: `make quant-variants` dựng từ hàng tốt nhất một **hàng
-biến thể** `<hàng>+<bản vá>` cho mỗi bản vá ấy, cùng số nguyên trọng số với hàng gốc nhưng mô phỏng và
-xuất đúng như chip tính khi có bản vá, rồi chấm bằng cùng thước. Luật trên tự quyết biến thể có thay hàng
-gốc không. Giờ của các hàng vì thế khác nhau ở lớp int16 và ở bản vá làm tròn. Giờ đo bằng bản dò trên
+đổi số nguyên, nên không bao giờ bật cho cả nhánh. Các bản vá ấy **xếp chồng** theo thứ tự khai ở
+`rounding_patches`: `make quant-variants` dựng từ hàng tốt nhất các **hàng biến thể** `<hàng>+p1`,
+`<hàng>+p1+p2`…, mỗi hàng thêm một bản vá trên hàng trước, cùng số nguyên trọng số với hàng gốc nhưng mô
+phỏng và xuất đúng như chip tính khi có các bản vá ấy, rồi chấm bằng cùng thước. Bản vá nào phải đổi cấu
+hình lượng tử thì viết lại đồ thị một lần lúc dựng hàng của nó. Luật trên tự quyết biến thể nào thay hàng
+gốc. Giờ của các hàng vì thế khác nhau ở lớp int16 và ở bản vá làm tròn. Giờ đo bằng bản dò trên
 chính hàng ấy. Arena không phải cửa của ESP-DL (§3.8).
 
 Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi file một bước:
@@ -2203,6 +2205,7 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 |---|---|---|
 | `fused_prelu` | `PRelu` là đầu đọc duy nhất của một `Conv` 2-D int8, alpha int8 theo từng kênh trên lưới số mũ âm, và đầu ra `Conv`, đầu vào lẫn đầu ra `PRelu` cùng một lưới | cặp thành một op `ConvPRelu`. Nhân int8 của esp-dl trên S3 làm tròn tích chập half-up ra int8 theo số mũ đầu ra, rồi áp `EE.VPRELU.S8`: tích int8 của giá trị âm với alpha **dịch phải**, tức làm tròn xuống (bản dò khớp từng bit, `latency.md` §14.3). Op `PRelu` đứng riêng lại tính bằng `vmulas` rồi làm tròn half-up như ESP-PPQ, nên gộp đổi số ở nhánh âm. Mô phỏng của bản vá làm tròn xuống nhánh âm của đúng các `PRelu` ấy, gradient đi thẳng qua cho QAT |
 | `clip_as_relu` | `Clip` từ 0 là đầu đọc duy nhất của một `Conv` int8, cùng một lưới ở đầu ra `Conv`, đầu vào và đầu ra `Clip` | thành `Relu`, mà ESP-PPQ gộp vào `Conv`: nhân esp-dl không có cận trên, nên đầu ra bão hoà ở đỉnh int8 của lưới (7,94 ở lưới 2^-4 của ReLU6) thay vì cắt ở cận trên. `Clip` đứng riêng chạy bằng bảng tra từng giá trị và đọc ghi lại cả tensor qua PSRAM. Mô phỏng của bản vá bỏ cận trên của đúng các `Clip` ấy |
+| `prelu_on_input_grid` | `PRelu` mà `fused_prelu` chỉ từ chối vì lưới đầu ra mịn hơn lưới của `Conv` (17 cái, đều mịn hơn 1 bậc, riêng một cái 2 bậc) | dời lưới đầu ra về lưới đầu vào, rồi tính lại tham số bị động (bias của tích chập phía sau) như ESP-PPQ tính lúc lượng tử. Đầu ra mất bước mịn ở mặt dương, đổi lấy việc `fused_prelu` gộp được nó. Đổi cấu hình lượng tử nên viết lại đồ thị lúc dựng hàng, và chỉ đứng sau `fused_prelu` trong `rounding_patches` |
 
 Module `Conv` của esp-dl 3.3.11 dựng tham số nhân với con trỏ alpha để trống ("Do not support PReLU"),
 dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.5.6): nó dựng tham số qua
@@ -2241,8 +2244,8 @@ không sập theo. Thước đọc tập chấm theo lô, không bao giờ giữ
       Bảng ấy là danh sách việc của bước 3–4: không lớp nào bị bỏ qua chỉ vì không lọt top.
    3. Bật bản vá của nhãn trong `esp_ppq_patches` của nhánh, chạy lại chuỗi. Giữ bản vá khi bản dò vẫn
       khớp từng bit **và** giờ giảm. Nhãn trỏ tới bản vá làm tròn thì bản vá vào `rounding_patches`:
-      `make quant-timing` dựng thêm `timing+<bản vá>` để bản dò của nó (`ROW=timing+<bản vá>`) kiểm
-      từng bit và đo giờ, còn thước cân nó ở bước 3.
+      `make quant-timing` dựng thêm `timing+p1`, `timing+p1+p2`… theo cùng cách xếp chồng, để bản dò
+      (`ROW=timing+…`) kiểm từng bit và đo giờ từng nấc, còn thước cân chúng ở bước 3.
    4. Nhãn không có bản vá thì viết lại mạng; `make quant-same-int8 BRANCH=<nhánh> RUN=<run>
       AGAINST=<commit>` phải báo 0 số lệch.
    5. Dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
