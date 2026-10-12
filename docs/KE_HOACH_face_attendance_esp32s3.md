@@ -3144,9 +3144,8 @@ firmware/
 │   ├── icons/  ├── sounds/{ok.wav, denied.wav, spoof.wav}
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
-├── models/                           # ❌ gitignore trừ 3 file ✅
+├── models/                           # ❌ gitignore trừ README và meta.json ✅; lock chỉ ở contracts/
 │   ├── README.md                     # ✅ lệnh kéo model từ ml/artifacts về
-│   ├── models.lock.json              # ✅ copy từ contracts/ lúc build
 │   ├── detection/
 │   │   ├── yunet_s8.espdl            # artifact của ml/, KHÔNG commit — đúng runtime của lock
 │   │   └── meta.json                 # ✅ in_h, in_w, arena_hint, sha256, run_id
