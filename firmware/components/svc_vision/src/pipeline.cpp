@@ -24,19 +24,6 @@ constexpr int kMissesLost = 2;
 // A face leaves the guide below this part of the share that let it in (KEHOACH 4.5.5d).
 constexpr float kLeaveShareRatio = 0.5f;
 
-float iou(const float *a, const float *b) noexcept
-{
-    const float left = a[0] > b[0] ? a[0] : b[0];
-    const float top = a[1] > b[1] ? a[1] : b[1];
-    const float right = a[2] < b[2] ? a[2] : b[2];
-    const float bottom = a[3] < b[3] ? a[3] : b[3];
-    const float width = right > left ? right - left : 0.0f;
-    const float height = bottom > top ? bottom - top : 0.0f;
-    const float inter = width * height;
-    const float joined = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter;
-    return joined > 0.0f ? inter / joined : 0.0f;
-}
-
 float share_inside(const float *box, const float *region) noexcept
 {
     const float area = (box[2] - box[0]) * (box[3] - box[1]);
@@ -130,7 +117,7 @@ const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
         size_t best = count;
         float best_iou = kSameFaceIou;
         for (size_t i = 0; i < count; ++i) {
-            const float overlap = iou(tracked_, faces_[i].box);
+            const float overlap = ai_engine_box_iou(tracked_, faces_[i].box);
             if (overlap >= best_iou) {
                 best_iou = overlap;
                 best = i;
@@ -165,7 +152,7 @@ bool VisionPipeline::holds_guide(const float *box) const noexcept
 void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 {
     // Overlap alone decides identity, so zeroing stable_ never ends a track.
-    if (tracking_ && iou(tracked_, primary.box) >= kSameFaceIou) {
+    if (tracking_ && ai_engine_box_iou(tracked_, primary.box) >= kSameFaceIou) {
         ++stable_;
         if (since_verdict_ >= 0) {
             ++since_verdict_;

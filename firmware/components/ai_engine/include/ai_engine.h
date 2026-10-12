@@ -100,6 +100,12 @@ size_t ai_engine_faces(float min_score, ai_engine_face_t *out, size_t cap);
  */
 void ai_engine_face_to_frame(const ai_engine_letterbox_t *geometry, ai_engine_face_t *face);
 
+/** Intersection over union of two x1, y1, x2, y2 boxes in the same pixels.
+ *  @ctx any | non-blocking
+ *  @ret 0..1, and 0 when the union has no area
+ */
+float ai_engine_box_iou(const float a[4], const float b[4]);
+
 /** Align a face by its five landmarks in frame pixels and embed it.
  *  @ctx ai_task | blocking for the warp and the whole graph
  *  @param out unit-length embedding as symmetric int8, cap_bytes at least ai_engine_recog_output_bytes
