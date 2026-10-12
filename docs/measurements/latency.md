@@ -791,3 +791,21 @@ quyết.
 Tái lập: `make quant-timing BRANCH=<nhánh>`, rồi trong một phiên `board-save`/`board-restore` chạy
 `make ai-unit BRANCH=<nhánh> ROW=timing` và `ROW=timing+fused_prelu`; `make ai-profile` trên
 `models_0.log` của mỗi hàng ra bảng theo op.
+
+### 14.4 Đệm kênh lệch 16 bằng 0 — đo 13/10
+
+`make ai-profile ALL=1` xếp mọi module theo lớp kernel. Ở spoof, pointwise lệch 16 kênh chiếm 42,1 ms
+trong 74,7 ms (0,14–1,35 chu kỳ một phép nhân-cộng), depthwise lệch 16 kênh thêm 10,9 ms. Mọi số kênh lệch
+của spoof (13, 26, 52, 103, 154, 231, 308) là kênh giữa của một khối 1×1 → `PRelu` → depthwise → `PRelu` →
+1×1, không tensor nào của đường ấy ra khỏi đồ thị. `padded_channels` đệm chúng lên bội 16 bằng bộ lọc, bias
+và alpha 0; cả 15 đường của spoof nhận được, detect chỉ ba đường nhỏ ở head, recog không đường nào.
+
+| Hàng | `model->test()`, đồ thị + 4 bản cắt | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh |
+|---|---|---|---:|
+| spoof `timing`, đệm | PASS cả 5 | 40 khung, **0 / 120** | **62,4** / 64,5 ms (từ 80,4) |
+| spoof `timing+fused_prelu`, đệm | PASS cả 5 | 40 khung, **0 / 120** | **55,6** / 57,7 ms (từ 73,2) |
+| detect `timing`, đệm | PASS cả 5 | 8 khung, **0 / 46.200** | 62,9 / 64,0 ms (từ 62,5) |
+
+Spoof nhanh hơn 18 ms (−22%) mà không đổi số nguyên nào, nên bản vá vào `esp_ppq_patches` của spoof. Sau
+đệm, mọi tích chập của spoof đều căn 16 kênh: pointwise còn 29,1 ms ở trung vị 0,21 chu kỳ. Ba đường của
+detect không bớt được giờ nào, nên detect không bật bản vá.
