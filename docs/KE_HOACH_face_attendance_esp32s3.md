@@ -4951,7 +4951,7 @@ quy ước của repo:
 | File | Giữ gì | Vì sao Kumo không đủ |
 |---|---|---|
 | `page.tsx` | đầu trang và bố cục hai cột có cột phải dính; khuôn thẻ của hai trang chủ (`HomeCard`, `AllClear`, `CardTabs`) | đầu trang và bố cục là hai *block* `PageHeader` và `ResourceListPage` của Kumo: Kumo phát block để repo chép về và giữ, không phát trong gói. `Tabs` của Kumo là một hàng cao 36 px (`h-9`), còn thẻ trang chủ hẹp cần lưới nút 44 px (§9.21.2) |
-| `choice-field.tsx` | một ô chọn một mục của danh mục có ô tìm: phòng ban, chức danh, pháp nhân, các lựa chọn của mẫu hồ sơ | `Combobox` của Kumo nhận hàm lọc nhưng không có sẵn hàm gấp dấu: gõ "phong" phải ra "Phòng" như ô tìm toàn cục (`fold` ở `lib/format.ts`), và mọi ô chọn danh mục phải lọc cùng một cách |
+| `choice-field.tsx` | một ô chọn một mục của danh mục có ô tìm: phòng ban, chức danh, pháp nhân, các lựa chọn của mẫu hồ sơ | `Combobox` của Kumo lọc theo nhãn của mục; một mục danh mục phải tìm được theo cả mã lẫn tên, gấp dấu bằng đúng `fold` của ô tìm toàn cục (`lib/format.ts`), và mọi ô chọn danh mục phải tìm cùng một cách |
 | `pill.tsx` | bốn tông trạng thái của §9.12 luật 2 ánh xạ lên `Badge` | tông là quy ước của repo, `Badge` có mười bảy màu |
 | `notify.ts` | một hook báo kết quả thao tác bằng toast | buộc mã lỗi API vào `lib/fault.ts` |
 | `month-picker.tsx` | chọn một tháng bằng một control | Kumo có chọn ngày và chọn khoảng, không có chọn tháng |
