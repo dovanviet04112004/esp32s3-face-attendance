@@ -358,9 +358,15 @@ def int8(configs) -> bool:
     return all(config.num_of_bits == 8 for config in configs)
 
 
-def fusable(prelu) -> bool:
-    """prelu, a PRelu, applied by esp-dl's S3 kernels where its 2-D Conv rounds: that Conv's lone
-    reader, an int8 slope a channel on a fractional grid, the Conv's output grid kept throughout.
+def prelu_grid(prelu) -> list:
+    """The configs a fused PRelu needs on one grid: its Conv's output, its own input and output."""
+    conv = prelu.inputs[0].source_op
+    return [conv.output_quant_config[0], prelu.input_quant_config[0], prelu.output_quant_config[0]]
+
+
+def joinable(prelu) -> bool:
+    """prelu, a PRelu, has all fusable asks but the one grid: a 2-D int8 Conv's lone reader with an
+    int8 slope a channel on a fractional grid.
     """
     from esp_ppq.IR.quantize import QuantableOperation
 
@@ -377,13 +383,37 @@ def fusable(prelu) -> bool:
         and slope.value.numel() == conv.inputs[1].value.shape[0]
     ):
         return False
-    grid = [conv.output_quant_config[0], *prelu.input_quant_config[:1], *prelu.output_quant_config]
     slope_config = prelu.input_quant_config[1]
     return (
-        int8([*conv.input_quant_config[:2], *grid, slope_config])
-        and one_grid(*grid)
+        int8([*conv.input_quant_config[:2], *prelu_grid(prelu), slope_config])
         and float(slope_config.scale) < 1
     )
+
+
+def fusable(prelu) -> bool:
+    """prelu, a PRelu, applied by esp-dl's S3 kernels where its 2-D Conv rounds: joinable, and the
+    Conv's output grid kept throughout.
+    """
+    return joinable(prelu) and one_grid(*prelu_grid(prelu))
+
+
+def share_prelu_grids(graph) -> int:
+    """Each joinable PRelu off its Conv's grid moved onto it, then every passive parameter derived
+    again as ESP-PPQ does when it quantises; returns how many moved.
+    """
+    from esp_ppq.quantization.optim import PassiveParameterQuantizePass
+
+    moved = 0
+    for op in graph.operations.values():
+        if op.type != "PRelu" or not joinable(op) or fusable(op):
+            continue
+        conv_out, _given, out = prelu_grid(op)
+        if out.is_revisable():
+            out.scale = conv_out.scale.clone()
+            moved += 1
+    if moved:
+        PassiveParameterQuantizePass().optimize(graph=graph)
+    return moved
 
 
 def chip_prelu(op, values: list, ctx=None, **kwargs):
@@ -474,9 +504,14 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "fused_prelu": fused_prelu,
     "padded_channels": padded_channels,
     "clip_as_relu": clip_as_relu,
+    "prelu_on_input_grid": contextlib.nullcontext,
 }
 # Patches that change an integer the chip computes: ladder variants only (KEHOACH 3.7).
-ROUNDING = frozenset({"fused_prelu", "clip_as_relu"})
+ROUNDING = frozenset({"fused_prelu", "clip_as_relu", "prelu_on_input_grid"})
+# Rounding patches that rewrite the quantised graph once, when their ladder row is built.
+REWRITES: dict[str, Callable] = {"prelu_on_input_grid": share_prelu_grids}
+# The rounding patch each of these has to stack on in rounding_patches.
+STACKS_ON = {"prelu_on_input_grid": "fused_prelu"}
 
 
 @contextlib.contextmanager

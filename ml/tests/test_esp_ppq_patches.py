@@ -380,6 +380,35 @@ def test_clip_as_relu_lifts_the_bound_and_exports_a_fused_relu(tmp_path: Path) -
     assert sorted(op for op, _, _ in fused[0].values()) == ["Conv", "Conv"]
 
 
+def test_a_prelu_moved_onto_its_conv_s_grid_fuses_and_its_reader_s_bias_follows(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("esp_ppq")
+    from esp_ppq.core import QuantizationStates
+
+    torch.manual_seed(7)
+    calib = [torch.rand(1, 16, 6, 6) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("antispoof")
+    graph = quantise_ladder_net(SlopedConvolutions().eval(), tmp_path, calib, rungs, ("out",))
+    joinable = [op for op in graph.operations.values() if esp_ppq_patches.joinable(op)]
+    apart = [op for op in joinable if not esp_ppq_patches.fusable(op)]
+    assert len(apart) == 1
+    gate = apart[0].outputs[0].dest_ops[0]
+    assert esp_ppq_patches.share_prelu_grids(graph) == 1
+    assert esp_ppq_patches.fusable(apart[0])
+    x, w, b = gate.input_quant_config
+    assert b.state == QuantizationStates.PASSIVE
+    assert torch.equal(b.scale, w.scale * x.scale)
+    assert esp_ppq_patches.share_prelu_grids(graph) == 0
+
+
+def test_a_patch_stacked_before_the_one_it_needs_is_refused(monkeypatch) -> None:
+    knobs = {"esp_ppq_patches": [], "rounding_patches": ["prelu_on_input_grid", "fused_prelu"]}
+    monkeypatch.setattr(ptq_espdl, "load_ladder", lambda: {"branches": {"recognition": knobs}})
+    with pytest.raises(ValueError, match="list fused_prelu before it"):
+        ptq_espdl.block("recognition")
+
+
 def test_ai_engine_registers_the_fused_module() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     assert espdl_shapes.FUSED_PRELU in espdl_op_check.own_modules(core)

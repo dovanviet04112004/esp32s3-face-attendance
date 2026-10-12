@@ -11,7 +11,7 @@ import torch
 import yaml
 
 from facepipe import tasks
-from facepipe.compress.quant import export_espdl, ladder, ptq_espdl
+from facepipe.compress.quant import esp_ppq_patches, export_espdl, ladder, ptq_espdl
 from facepipe.tasks.antispoof import quant as antispoof_quant
 from facepipe.tasks.detection import quant as detection_quant
 from facepipe.tasks.recognition import quant as recognition_quant
@@ -260,27 +260,37 @@ def test_variants_score_the_best_row_under_each_rounding_patch(tmp_path: Path, m
     assert ladder.is_variant(row) and not ladder.is_variant(ladder.read_ladder(tmp_path)["kl"])
 
 
-def test_timing_keeps_one_row_a_rounding_patch_beside_its_own(tmp_path: Path, monkeypatch) -> None:
+def test_timing_keeps_the_rows_its_rounding_patches_stack(tmp_path: Path, monkeypatch) -> None:
     knobs = {
         "esp_ppq_patches": ["cache_sized_convolutions"],
-        "rounding_patches": ["fused_prelu"],
+        "rounding_patches": ["fused_prelu", "prelu_on_input_grid"],
         "ladder": {"calib_samples": 4},
     }
-    kept = {}
+    kept, rewrites = {}, []
     monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
     monkeypatch.setattr(ptq_espdl, "block", lambda _branch: knobs)
     monkeypatch.setattr(ptq_espdl, "timing_rungs", lambda _branch: {"c": "minmax"})
     monkeypatch.setattr(ptq_espdl, "calibration", lambda _run, n: list(range(n)))
     monkeypatch.setattr(ladder, "quantised", lambda _run, _rungs, calib: f"graph of {len(calib)}")
+    monkeypatch.setattr(export_espdl, "load_native", lambda path: f"read {path.parent.name}")
     monkeypatch.setattr(
-        ladder, "keep_row", lambda _run, row, graph, p: kept.update({row: (graph, p)})
+        esp_ppq_patches, "REWRITES", {"prelu_on_input_grid": lambda graph: rewrites.append(graph)}
+    )
+    monkeypatch.setattr(
+        ladder, "keep_row", lambda _run, row, graph, p=None: kept.update({row: (graph, p)})
     )
     ladder.step_timing(tmp_path)
-    patches = ["cache_sized_convolutions", "fused_prelu"]
-    assert kept == {"timing": ("graph of 4", None), "timing+fused_prelu": ("graph of 4", patches)}
+    one = ["cache_sized_convolutions", "fused_prelu"]
+    two = [*one, "prelu_on_input_grid"]
+    assert kept == {
+        "timing": ("graph of 4", None),
+        "timing+fused_prelu": ("read timing", one),
+        "timing+fused_prelu+prelu_on_input_grid": ("read timing", two),
+    }
+    assert rewrites == ["read timing"]
     rows = ladder.read_ladder(tmp_path)
-    assert rows["timing+fused_prelu"]["patches"] == patches and "patches" not in rows["timing"]
-    assert ladder.row_patches(tmp_path, "timing+fused_prelu") == patches
+    assert "patches" not in rows["timing"]
+    assert ladder.row_patches(tmp_path, "timing+fused_prelu+prelu_on_input_grid") == two
 
 
 def test_recognition_embeds_a_benchmark_slice_by_slice_in_order(monkeypatch) -> None:

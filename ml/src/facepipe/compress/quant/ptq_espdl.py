@@ -55,6 +55,11 @@ def block(branch: str) -> dict:
         raise ValueError(
             f"{branch}: {sorted(everywhere)} change integers, list them as rounding_patches"
         )
+    stacked = found["rounding_patches"]
+    for name in stacked:
+        base = esp_ppq_patches.STACKS_ON.get(name)
+        if base is not None and base not in stacked[: stacked.index(name)]:
+            raise ValueError(f"{branch}: {name} stacks on {base}, list {base} before it")
     return found
 
 

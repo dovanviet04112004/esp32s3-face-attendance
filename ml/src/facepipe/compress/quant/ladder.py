@@ -311,18 +311,37 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
     print(f"qat over {base}: {entry['headline']}  gate {verdict(entry)}")
 
 
+def variant_rows(knobs: dict, base: str) -> list[tuple[str, list[str], list[str]]]:
+    """The rows the branch's rounding patches stack over base: name, patches, rounding patches."""
+    stacked = knobs["rounding_patches"]
+    found = []
+    for count in range(1, len(stacked) + 1):
+        names = stacked[:count]
+        found.append((f"{base}+{'+'.join(names)}", [*knobs["esp_ppq_patches"], *names], names))
+    return found
+
+
+def rewritten(run: Path, row: str, names: list[str]):
+    """row's graph, read again and rewritten by each of names that rewrites one, in order."""
+    graph = export_espdl.load_native(row_dir(run, row) / GRAPH_FILE)
+    for name in names:
+        rewrite = esp_ppq_patches.REWRITES.get(name)
+        if rewrite is not None:
+            rewrite(graph)
+    return graph
+
+
 def step_variants(run: Path) -> None:
-    """Each rounding patch of the branch over its best row: the row's integers, simulated and
-    exported as that patch has the chip compute them, then scored like any row (KEHOACH 3.7).
+    """The branch's rounding patches stacked over its best row: the row's integers, simulated and
+    exported as those patches have the chip compute them, then scored like any row (KEHOACH 3.7).
     """
     branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)
     ceiling = ceiling_of(run)
     base = best_row(run, {2, 3, 4})
     entry = read_ladder(run)[base]
-    graph = export_espdl.load_native(row_dir(run, base) / GRAPH_FILE)
-    for name in knobs["rounding_patches"]:
-        row, patches = f"{base}+{name}", [*knobs["esp_ppq_patches"], name]
+    for row, patches, names in variant_rows(knobs, base):
+        graph = rewritten(run, base, names)
         keep_row(run, row, graph, patches)
         result = scored(run, ptq_espdl.Simulator(graph, patches), ceiling)
         write_row(
@@ -340,20 +359,17 @@ def step_variants(run: Path) -> None:
 
 
 def step_timing(run: Path) -> None:
-    """The timing row, and beside it one row a rounding patch for the probe to check and time."""
+    """The timing row, and beside it the rows its rounding patches stack, for the probe to time."""
     branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)
     rungs = ptq_espdl.timing_rungs(branch)
     calib = ptq_espdl.calibration(run, knobs["ladder"]["calib_samples"])
-    graph = quantised(run, rungs, calib)
-    rows = {ptq_espdl.TIMING_ROW: None}
-    rows.update({f"{ptq_espdl.TIMING_ROW}+{name}": name for name in knobs["rounding_patches"]})
-    for row, name in rows.items():
-        patches = [*knobs["esp_ppq_patches"], name] if name else None
-        keep_row(run, row, graph, patches)
-        write_row(
-            run, row, {"rung": "timing", "rungs": rungs, **({"patches": patches} if name else {})}
-        )
+    keep_row(run, ptq_espdl.TIMING_ROW, quantised(run, rungs, calib))
+    write_row(run, ptq_espdl.TIMING_ROW, {"rung": "timing", "rungs": rungs})
+    print(f"{ptq_espdl.TIMING_ROW}: {row_dir(run, ptq_espdl.TIMING_ROW)}")
+    for row, patches, names in variant_rows(knobs, ptq_espdl.TIMING_ROW):
+        keep_row(run, row, rewritten(run, ptq_espdl.TIMING_ROW, names), patches)
+        write_row(run, row, {"rung": "timing", "rungs": rungs, "patches": patches})
         print(f"{row}: {row_dir(run, row)}")
 
 
