@@ -6,7 +6,7 @@ export const ROLES = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"]
 
 export type Role = (typeof ROLES)[number];
 
-export interface Claims {
+interface Claims {
   userId: string | null;
   role: Role | null;
   employeeId: number | null;

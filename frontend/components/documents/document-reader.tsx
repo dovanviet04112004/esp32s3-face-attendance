@@ -11,7 +11,7 @@ import { useNotify } from "@/components/ui/notify";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 
-export interface ToRead {
+interface ToRead {
   documentId: string;
   code: string;
   title: string;
@@ -25,7 +25,7 @@ export interface ToRead {
 
 export type ReadFilter = "unread" | "signed" | "";
 
-export const MY_DOCUMENTS_KEY = ["me", "documents"] as const;
+const MY_DOCUMENTS_KEY = ["me", "documents"] as const;
 
 /** What this person has to read; one cache entry feeds the reader and the page's counts. */
 export function useMyDocuments() {

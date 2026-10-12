@@ -12,7 +12,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
 import { CardList, CardListSkeleton } from "./card-list";
 
-export type Priority = 1 | 2 | 3;
+type Priority = 1 | 2 | 3;
 
 export interface Column<T> {
   id: string;
@@ -33,7 +33,7 @@ export interface Column<T> {
   sortKey?: string;
 }
 
-export interface Sort {
+interface Sort {
   key: string;
   dir: "asc" | "desc";
 }

@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { money } from "@/lib/format";
 
-export type RunState = "DRAFT" | "RUNNING" | "DONE" | "FAILED" | "DISCARDED";
+type RunState = "DRAFT" | "RUNNING" | "DONE" | "FAILED" | "DISCARDED";
 export type RunKind = "REGULAR" | "BONUS" | "FINAL_SETTLEMENT";
 
 export interface PayrollRun {

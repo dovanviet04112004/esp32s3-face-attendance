@@ -5,7 +5,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import { api } from "./api";
 import { useSession } from "./auth";
 
-export interface Filed {
+interface Filed {
   clientKey: string;
   path: string;
   body: Record<string, unknown>;
@@ -91,7 +91,7 @@ async function drop(clientKey: string): Promise<void> {
  * Try everything waiting, oldest first. A refusal the server actually made is
  * final, so it leaves the queue; only an unreachable server keeps a place.
  */
-export async function flush(): Promise<void> {
+async function flush(): Promise<void> {
   if (sending || typeof navigator === "undefined" || !navigator.onLine) {
     return;
   }

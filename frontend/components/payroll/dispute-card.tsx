@@ -23,7 +23,7 @@ export interface Dispute {
   employee?: { code: string; fullName: string };
 }
 
-export interface Verdict {
+interface Verdict {
   id: string;
   outcome: "UPHELD" | "REJECTED";
   answer: string;

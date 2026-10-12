@@ -7,9 +7,9 @@ import { Facts } from "@/components/ui/page";
 import { cn } from "@/lib/cn";
 import { days, hours, money } from "@/lib/format";
 
-export type LineKind = "EARNING" | "DEDUCTION" | "EMPLOYER_COST" | "INFO";
+type LineKind = "EARNING" | "DEDUCTION" | "EMPLOYER_COST" | "INFO";
 
-export interface PayslipLine {
+interface PayslipLine {
   id: string;
   ordinal: number;
   kind: LineKind;

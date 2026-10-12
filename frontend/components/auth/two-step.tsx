@@ -16,7 +16,7 @@ import { useFault } from "@/lib/fault";
 const kFewCodes = 3;
 const kFormId = "renew-backup-codes";
 
-export interface TwoStepStatus {
+interface TwoStepStatus {
   required: boolean;
   enabledAt: string | null;
   backupCodesLeft: number;

@@ -4,13 +4,13 @@ export type Theme = "system" | "light" | "dark";
 
 export const THEMES: Theme[] = ["system", "light", "dark"];
 
-export const kThemeCookie = "theme";
+const kThemeCookie = "theme";
 
 export const kSidebarCookie = "sidebar";
 
 export const kHomeCookie = "home";
 
-export const kLangCookie = "lang";
+const kLangCookie = "lang";
 
 export const kYearSeconds = 31_536_000;
 // A path inside the app: "//host" or a scheme would turn "/" into an open redirect.
@@ -28,7 +28,7 @@ function isDark(theme: Theme): boolean {
 }
 
 /** Kumo's canvas as hex, which is what Android paints the status and navigation bars with. */
-export const GROUND = { light: "#fbfbfb", dark: "#030303" } as const;
+const GROUND = { light: "#fbfbfb", dark: "#030303" } as const;
 
 const kChrome = "data-app-chrome";
 

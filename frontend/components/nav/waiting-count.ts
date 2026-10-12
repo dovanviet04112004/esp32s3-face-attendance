@@ -6,17 +6,17 @@ import { api } from "@/lib/api";
 import type { Role } from "@/lib/auth";
 
 export const REQUEST_DECIDERS: Role[] = ["MANAGER", "ADMIN", "HR", "PAYROLL"];
-export const ADVANCE_DECIDERS: Role[] = ["ADMIN", "HR"];
-export const ADVANCE_PAYERS: Role[] = ["ADMIN", "PAYROLL"];
-export const DEPENDENT_DECIDERS: Role[] = ["ADMIN", "PAYROLL"];
-export const DISPUTE_ANSWERERS: Role[] = ["ADMIN", "PAYROLL"];
-export const LETTER_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
-export const PROFILE_DESK: Role[] = ["ADMIN", "HR"];
-export const PUNCH_REVIEWERS: Role[] = ["ADMIN", "HR"];
+const ADVANCE_DECIDERS: Role[] = ["ADMIN", "HR"];
+const ADVANCE_PAYERS: Role[] = ["ADMIN", "PAYROLL"];
+const DEPENDENT_DECIDERS: Role[] = ["ADMIN", "PAYROLL"];
+const DISPUTE_ANSWERERS: Role[] = ["ADMIN", "PAYROLL"];
+const LETTER_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
+const PROFILE_DESK: Role[] = ["ADMIN", "HR"];
+const PUNCH_REVIEWERS: Role[] = ["ADMIN", "HR"];
 
 export const WAITING_POLL_MS = 60_000;
 
-export interface InboxCounts {
+interface InboxCounts {
   requests: number;
   disputes: number;
   certificates: number;

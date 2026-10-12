@@ -41,7 +41,7 @@ type NavKey = keyof (typeof viMessages)["nav"];
 
 type SectionKey = "mine" | "inbox" | "people" | "time" | "calendar" | "pay" | "catalogues" | "system";
 
-export interface NavItem {
+interface NavItem {
   href: string;
   key: NavKey;
   icon: IconType;
@@ -57,7 +57,7 @@ export interface NavItem {
   section?: SectionKey;
 }
 
-export interface NavGroup {
+interface NavGroup {
   key: NavKey;
   items: NavItem[];
 }
@@ -92,7 +92,7 @@ const DAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 const ALLOWANCE_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 
 /** Screens grouped by what somebody is doing, not by module (KEHOACH 9.15). */
-export const NAV: NavGroup[] = [
+const NAV: NavGroup[] = [
   {
     key: "groupToday",
     items: [{ href: "/overview", key: "overview", icon: SquaresFourIcon, roles: DAY_DESK }],
@@ -214,7 +214,7 @@ export const NAV: NavGroup[] = [
 /** An empty group is hidden, not greyed (KEHOACH 9.15). An account with no
  *  employee record has no self service to do, so that group goes too.
  */
-export function navFor(role: Role | null, hasRecord = true): NavGroup[] {
+function navFor(role: Role | null, hasRecord = true): NavGroup[] {
   return NAV.map((group) => ({
     ...group,
     items:
@@ -239,7 +239,7 @@ export interface NavEntry {
   members: NavItem[];
 }
 
-export interface EntryGroup {
+interface EntryGroup {
   key: NavKey;
   entries: NavEntry[];
 }
@@ -337,7 +337,7 @@ export function siblingsOf(role: Role | null, hasRecord: boolean, path: string):
   return members.length > 1 ? members : [];
 }
 
-export interface Crumb {
+interface Crumb {
   key: NavKey;
   href: string;
 }
@@ -377,7 +377,7 @@ function ranked(order: NavKey[], flat: NavEntry[]): NavEntry[] {
     .filter((entry): entry is NavEntry => entry !== undefined);
 }
 
-export interface TabLayout {
+interface TabLayout {
   items: NavEntry[];
   rest: EntryGroup[];
 }
@@ -410,11 +410,11 @@ export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
 }
 
 /** Slots the tab bar fills: its destinations, and the menu when a tail is left over. */
-export function slotsOf({ items, rest }: TabLayout): number {
+function slotsOf({ items, rest }: TabLayout): number {
   return items.length + (rest.length > 0 ? 1 : 0);
 }
 
-export interface Frame {
+interface Frame {
   tray: boolean;
   section: boolean;
   slots: number;

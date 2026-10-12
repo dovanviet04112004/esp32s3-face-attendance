@@ -49,14 +49,14 @@ export type NoticeKind =
   | "TIMESHEET_MONTH_CLOSED"
   | "PUNCH_RECORDED";
 
-export type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
+type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
 export const NOTICE_CATEGORIES: readonly NoticeCategory[] = ["REQUESTS", "PAY", "PEOPLE", "ATTENDANCE", "SYSTEM"];
 
-export type NoticeOutcome = "APPROVED" | "REJECTED" | "ISSUED" | "UPHELD" | "PAID" | "RENEWED" | "RESOLVED" | "COMPLETED" | "SIGNED";
+type NoticeOutcome = "APPROVED" | "REJECTED" | "ISSUED" | "UPHELD" | "PAID" | "RENEWED" | "RESOLVED" | "COMPLETED" | "SIGNED";
 
 /** The shared state of a row of work, the same for every holder (KEHOACH 9.21.4). */
-export interface NoticeItem {
+interface NoticeItem {
   key: string;
   level: "INFO" | "ACTION" | "WARNING" | "CRITICAL";
   state: "OPEN" | "DONE" | "WITHDRAWN" | "EXPIRED" | "CLEARED";
@@ -70,7 +70,7 @@ export interface NoticeItem {
 }
 
 /** Who and what a notice is about, built through the reader's scope when it is read; hidden names nothing. */
-export interface NoticeSubject {
+interface NoticeSubject {
   type: string;
   id?: string | null;
   hidden: boolean;
@@ -145,7 +145,7 @@ export type NoticeSentence =
   | "kindPUNCH_RECORDED";
 
 /** A sentence key and what fills it: a count, or a day or a month as the facts carry them (YYYY-MM-DD, YYYY-MM). */
-export interface Said {
+interface Said {
   key: NoticeSentence;
   count?: number;
   day?: string;
@@ -153,7 +153,7 @@ export interface Said {
 }
 
 /** Who reads the notice, for the links that open the reader's own home. */
-export interface Reader {
+interface Reader {
   home: string;
 }
 

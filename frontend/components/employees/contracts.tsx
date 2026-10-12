@@ -22,7 +22,7 @@ const TONE: Record<Contract["state"], Tone> = { DRAFT: "waiting", ACTIVE: "good"
 type Kind = (typeof KINDS)[number];
 type Ending = (typeof ENDINGS)[number];
 
-export interface Contract {
+interface Contract {
   id: string;
   kind: Kind;
   state: "DRAFT" | "ACTIVE" | "ENDED" | "TERMINATED";

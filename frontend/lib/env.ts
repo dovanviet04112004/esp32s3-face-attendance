@@ -29,7 +29,7 @@ const schema = z.object({
     ),
 });
 
-export type Env = z.infer<typeof schema>;
+type Env = z.infer<typeof schema>;
 
 export const isProduction = process.env.NODE_ENV === "production";
 
