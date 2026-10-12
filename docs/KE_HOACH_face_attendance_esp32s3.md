@@ -3256,37 +3256,45 @@ Resume phải nêu lại **đủ mọi tham số `model.params`**, không chỉ 
 
 Nằm ở `include/` chứ không phải `priv_include/`: IDF không xuất `priv_include` ra ngoài
 component, nên guard đặt ở đó thì đúng những component cần nó lại không thấy. Đây là ngoại
-lệ duy nhất với luật "header công khai chỉ POD + `extern "C"`" ở §4.5.3 — chúng là template
-C++ thuần header, chỉ component C++ include, và code C không bao giờ chạm tới.
+lệ duy nhất với luật "header công khai chỉ POD + `extern "C"`" ở §4.5.3 — chúng là C++ thuần
+header, chỉ component C++ include, và code C không bao giờ chạm tới.
 
 | Lớp | Bọc cái gì | Cứu được lỗi gì |
 |---|---|---|
-| `FrameGuard` | `camera_fb_t*` | **Quên `esp_camera_fb_return()`** — lỗi kinh điển làm cạn frame pool rồi treo máy sau vài phút |
-| `LockGuard` | `xSemaphoreTake/Give` | Return sớm giữa hàm mà quên nhả mutex → deadlock |
-| `Queue<T,N>` | `xQueueCreate` + gửi/nhận có kiểu | Gửi nhầm kiểu vào queue (C thuần không bắt được) |
+| `LockGuard` | `xSemaphoreTake/Give` có hạn chờ | Return sớm giữa hàm mà quên nhả mutex → deadlock |
 
-Ba lớp này bọc tài nguyên mà **nhiều component cùng chạm tới**, nên chúng ở `common`.
-Tài nguyên chỉ một component sở hữu thì guard nằm luôn trong component đó: `Arena` bọc
+Nó bọc tài nguyên mà **nhiều component cùng chạm tới**, nên nó ở `common`. Tài nguyên chỉ
+một component sở hữu thì guard nằm luôn trong component đó: `Arena` bọc
 `heap_caps_aligned_alloc(16,…)` và `MicroProfiler` bọc phép đo tick đều là của riêng
 `ai_engine` (§4.5.6), còn mmap partition là của riêng `sys_storage` (§4.1 của `CLAUDE.md`
 cấm component khác gọi `esp_partition_*`). Kéo chúng lên `common` chỉ tạo thêm một chỗ
 phải đồng bộ, không cứu được lỗi nào.
 
 ```cpp
-// common/include/frame_guard.hpp
-class FrameGuard {
-    camera_fb_t* fb_;
+// common/include/lock_guard.hpp
+class LockGuard {
 public:
-    explicit FrameGuard(camera_fb_t* fb) noexcept : fb_(fb) {}
-    ~FrameGuard()                     { if (fb_) esp_camera_fb_return(fb_); }
-    FrameGuard(const FrameGuard&)            = delete;   // cấm copy → không double-return
-    FrameGuard& operator=(const FrameGuard&) = delete;
-    FrameGuard(FrameGuard&& o) noexcept : fb_(o.fb_) { o.fb_ = nullptr; }
-    camera_fb_t* get() const noexcept { return fb_; }
+    LockGuard(SemaphoreHandle_t mutex, uint32_t timeout_ms) noexcept
+        : mutex_(mutex), held_(xSemaphoreTake(mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {}
+    ~LockGuard() { if (held_) xSemaphoreGive(mutex_); }
+    LockGuard(const LockGuard&)            = delete;   // cấm copy → không nhả hai lần
+    LockGuard& operator=(const LockGuard&) = delete;
+    bool held() const noexcept { return held_; }
+private:
+    SemaphoreHandle_t mutex_;
+    bool held_;
 };
 ```
 
-Đây là thứ C++ mang lại giá trị lớn nhất trong cả firmware này: đường xử lý ảnh có **5 nhánh thoát sớm** (§3 lớp 5 — không có người / không có mặt / mặt quá nhỏ / spoof fail / không khớp). Viết bằng C thuần thì mỗi nhánh `return` đều phải nhớ trả frame và nhả mutex; sót một chỗ là treo máy sau nửa tiếng chạy.
+**Khung camera và queue không có guard, vì không có phạm vi C++ nào để bám.** Khung đi giữa
+hai task C: `cam_task` lấy bằng `drv_camera_grab()` rồi gửi qua `q_frame_ai`, `ai_task` nhận và
+chạy `svc_vision_step()`. Quyền sở hữu chuyển tay qua queue: task nào đang cầm khung thì trả nó
+bằng `drv_camera_release()`, không khối lệnh nào ôm trọn đời một khung. Pipeline năm nhánh thoát sớm của
+§3 lớp 5 chỉ **đọc** khung nên không có gì để trả. Queue cũng thế: cả chín queue của §5 nối dây
+ở `main` bằng C, nên một lớp bọc gửi/nhận có kiểu chỉ có test của chính nó gọi tới.
+
+Chỗ RAII cứu thật là mutex: `FaceDb` giữ khoá bảng và khoá IO qua nhiều đường `return`, và mỗi
+đường đều nhả đúng khoá nó đã lấy.
 
 ##### c) `ai_engine` — kế thừa vì ba model khác nhau thật
 
@@ -3439,7 +3447,7 @@ Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_
 
 `match_min` gieo **450‰**, đo 24/09 bằng đúng file recog `.espdl` trên `models.lock.json` (mô phỏng ESP-PPQ) trên 18.998 cặp khác người có mặt thật của sáu benchmark độc lập (`docs/measurements/recognition` §8): người lạ dồn quanh 0,02 với độ lệch chuẩn 0,07–0,08, cặp khác người cao nhất là hai người thật trông giống nhau ở CALFW, **0,387**. 450‰ đứng trên cặp ấy 0,063, không cặp khác người nào lọt, và giữ 92–94% cặp cùng người ở hai tập chính diện. Ngưỡng nghiêng về phía loại oan vì hai kiểu sai không cùng giá: loại oan tốn thêm một nhịp (`kUnknownTries`), nhận nhầm mở cửa và ghi công cho người khác. Seed đi theo model recog: đổi model thì đo lại ngưỡng, vì 600‰ của `1750` loại oan một phần ba người thật trên LFW với model này. 0 trên 18.998 chỉ chặn tỉ lệ nhận nhầm mỗi phép so dưới ~1,6·10⁻⁴, và kiosk so 1:N; tỉ lệ nhận trên OV5640 là E8-T12 🔬.
 
-Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` giữ bằng `FrameGuard` suốt `step()` và trả sau đó; `svc_vision` không sở hữu khung và không chép khung.
+Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` (C) giữ suốt `step()` rồi trả bằng `drv_camera_release()`; `svc_vision` không sở hữu khung và không chép khung.
 
 ```
 components/svc_vision/
@@ -4336,7 +4344,7 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t* t) {
     /* cấp bộ đệm crop trong PSRAM một lần, configure(t) */
 }
 extern "C" esp_err_t svc_vision_step(const camera_fb_t* fb, svc_vision_result_t* out) {
-    /* fb do ai_task giữ bằng FrameGuard; ở đây chỉ đọc */
+    /* fb do ai_task giữ và trả sau step(); ở đây chỉ đọc */
     *out = s_pipeline.step(frame_of(fb));
     return ESP_OK;
 }
@@ -4348,7 +4356,7 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 
 | Component | Lớp chính | Kỹ thuật | Lý do chọn |
 |---|---|---|---|
-| `common` | `FrameGuard`, `LockGuard`, `Queue<T,N>` | RAII, template | Xoá cả một lớp lỗi rò tài nguyên |
+| `common` | `LockGuard` | RAII | Nhả mutex trên mọi đường `return` |
 | `ai_engine` | `ITfliteModel` → `TfliteModelBase` → 3 lớp con | Kế thừa + template method | Ba model khác nhau ở op resolver và hậu xử lý |
 | `svc_vision` | `VisionPipeline`, 4 interface + 4 adapter | Chuỗi thoát sớm; tiêm phụ thuộc qua tham chiếu interface | Kết quả nhanh nhất ba model cho phép; test toàn bộ logic với adapter giả, không cần model |
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
