@@ -2082,7 +2082,7 @@ chọn của dự án:
 | Weight | ✅ **Per-channel bắt buộc**, TFLite hỗ trợ sẵn — cả 3 model đầy depthwise conv, range giữa các kênh lệch rất lớn | **Per-tensor**, scale là **luỹ thừa 2** — kernel S3 của ESP-DL chỉ nhận một exponent mỗi tensor |
 | Activation | Per-tensor, **bất đối xứng** (có zero point) | Per-tensor, **đối xứng**, luỹ thừa 2, zero point 0 |
 | Bù cho per-tensor | — | **Layerwise equalization bắt buộc** (Kỹ thuật bổ trợ, dưới) |
-| INT16 activation × INT8 weight | ❌ Không dùng — kernel INT16 của ESP-NN hạn chế, mất phần lớn tăng tốc | Có kernel, chưa cần — 🔬 phương án cho 15 khối ECA nếu CFP-FP phải lên |
+| INT16 activation × INT8 weight | ❌ Không dùng — kernel INT16 của ESP-NN hạn chế, mất phần lớn tăng tốc | Bậc 3 của thang (§3.7): các lớp nhạy nhất lên 16 bit, cả trọng số lẫn activation, khi bậc 2 trượt cửa |
 
 Zero point bất đối xứng của TFLite là thứ ép esp-nn nhân ở 16 bit (`ee.vmulas.s16`); ESP-DL nhân
 thẳng 8 bit (`EE.VSMULAS.S8`). Đó là một phần lớn của mức nhanh 5,6× đo ở trial 23/09.
@@ -2110,7 +2110,7 @@ Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho c
 | **Quy tắc bộ nhớ** | Xem §3.8 — **Σ tail + max(head)** khi các interpreter dùng chung một `MicroAllocator` | Không có arena chung: mỗi model sở hữu bộ nhớ của mình, cộng dồn. Object nhỏ của model (module, tên tensor) dựng trong guard `heap_caps_malloc_extmem_enable(0)` để nằm ở PSRAM, trả RAM nội cho DMA và Wi-Fi (§6.4) |
 | **Trọng số** | Đọc thẳng từ flash mmap, **0 byte RAM**. Bản chép PSRAM cho TFLM là E9-T28, chưa có | Nhận con trỏ vào chính mmap ấy (`MODEL_LOCATION_IN_FLASH_RODATA`) rồi **chép sang PSRAM** lúc nạp (`param_copy`), từng nhánh bật/tắt bằng `AI_WEIGHTS_PSRAM_*`, mặc định bật: đo 23/09 chép nhanh hơn ở cả năm model thử, 3% ở detect tới 25% ở recog w64 |
 | **Chọn op** | **`MicroMutableOpResolver` riêng từng model** — chỉ đăng ký đúng op cần, giảm vài chục KB flash so với `AllOpsResolver` | Thư viện đăng ký sẵn mọi module, **858 KB flash** khi link; không có cách tỉa mà không sửa code Espressif (CLAUDE.md §6 cấm). Đó là lý do slot OTA lên 2,75 MB (§6.1) |
-| **Kiểm model trên chip** | Parity hậu xử lý qua `contracts/golden/` | Thêm `model->test()`: file `.espdl` mang một cặp vào/ra do ESP-PPQ mô phỏng, chip phải khớp **trong một bước int8** ở mọi phần tử — sai số `1 + 1e-5` mà `Model::test()` dùng cho tensor int8, không phải trùng từng bit. `test_apps/bench_ai` chạy nó cho mọi entry |
+| **Kiểm model trên chip** | Parity hậu xử lý qua `contracts/golden/` | Thêm bản dò (§3.7): `model->test()` trên đồ thị và các bản cắt, mẫu thử là một khung OV5640 thật, rồi đồ thị trên nhiều khung thật. Chip phải khớp mô phỏng **từng bit** ở tensor int8 — `Model::test()` so int8 với sai số 5e-5 — và lệch tối đa một bước ở tensor int16. `components/ai_engine/test_apps/probe` chạy nó; `test_apps/bench_ai` vẫn chạy `model->test()` cho mọi entry của ảnh sản phẩm |
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
 | Chạy tuần tự + early exit | Không dấu hiệu nào của người trong **một phút** → **model, camera và màn nghỉ cùng lúc**. Hai mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
@@ -2128,46 +2128,121 @@ Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho c
 | Accuracy trên thiết bị | Firmware chế độ `bench`: đọc ảnh từ LittleFS → chạy pipeline → trả kết quả qua UART/HTTP cho `ml/bench/device_client.py` so với ground truth |
 | Nhiệt độ + dòng | Đo dòng thật lúc Wi-Fi TX + AI + loa cùng lúc |
 
-### 3.7 Thang lượng tử hoá
+### 3.7 Thang lượng tử hoá và quy trình đưa model lên chip
 
-**Đúng hai mốc.** Không có mốc nào cần train lại.
+**TFLM dừng ở Q1, ESP-DL leo thang bốn bậc.** TFLM là runtime đối chứng nên chỉ có hai mốc: Q0
+FP32, trần để so; Q1 PTQ per-channel + fold BN + bias correction, CLE chỉ bật khi đo được là có lợi
+trên chính nhánh đó (Lớp 4). ESP-DL là runtime deploy: kernel S3 nhận **một số mũ luỹ thừa 2 cho cả
+tensor**, đối xứng, zero point 0, ở cả trọng số lẫn activation, nên một nhánh có dải kênh lệch nhau
+mất độ chính xác đúng ở luật ấy. Mỗi nhánh ESP-DL đi thang dưới đây và **dừng ở bậc đầu tiên đạt cửa**
+của nó.
 
-| ID | Cấu hình | Vai trò |
+| Bậc | Làm gì | Code | Khi nào |
+|---|---|---|---|
+| 1 | PTQ ESP-PPQ `esp32s3` w8a8, gập BN (cả `Linear` + `BatchNorm1d`), **layerwise equalization** (4 vòng, ngưỡng 0,4, `opt_level` 2), bias correction | `ptq_espdl.py` | luôn |
+| 2 | Bốn thuật toán hiệu chuẩn — min-max, percentile, MSE, KL — trên cùng tập hiệu chuẩn | `ptq_espdl.py` | luôn, bảng bốn cột |
+| 3 | int16 cho các lớp nhạy nhất, xếp theo SNR từng lớp của ESP-PPQ trên đồ thị của cách hiệu chuẩn thắng ở bậc 2; mỗi dòng `int16_top{k}` cho k lớp đứng đầu, cả trọng số lẫn activation của lớp ấy ở 16 bit | `mixed_espdl.py` | khi bậc 2 trượt cửa |
+| 4 | QAT: học tiếp tham số float của chính đồ thị int8 qua lượng tử giả của ESP-PPQ, gradient đi thẳng qua phép làm tròn, số mũ giữ như lúc hiệu chuẩn, nên đồ thị học xong là đồ thị xuất ra chip | `qat_espdl.py` | khi bậc 3 vẫn trượt, **chỉ khi chủ repo cho train** |
+
+**Cửa của từng nhánh**, chấm bằng mô phỏng ESP-PPQ của chính đồ thị sẽ xuất. Mô phỏng ấy được bản dò
+(dưới) giữ khớp chip từng bit, nên số của nó là số của chip.
+
+| Nhánh | Thước | Cửa |
 |---|---|---|
-| **Q0** | FP32 | Trần. Mọi con số dưới đây tính theo % so với Q0 |
-| **Q1** — TFLM | **PTQ**: per-channel weight + fold BN + **bias correction**; **CLE chỉ bật khi đo được là có lợi trên chính nhánh đó** | Mốc đem ship lên TFLM (đối chứng) |
-| **Q1** — ESP-DL | **PTQ ESP-PPQ** `target="esp32s3"`, w8a8, luật per-tensor luỹ thừa 2 của runtime; fold BN (cả `Linear` + `BatchNorm1d`); **layerwise equalization bật** (4 vòng, ngưỡng 0,4, `opt_level` 2); calib KL trên 300 mẫu cùng nguồn với Q1 TFLM (`compress/quant/ptq_espdl.py`) | Mốc đem ship lên ESP-DL |
+| detection | AP mặt ≥ 38 px trên WIDER val | sụt dưới 1% so với Q0 |
+| antispoof | 87 khung OV5640 của `test_device`, ngưỡng `live_min` 500‰ | chặn đủ mọi khung giả và giữ không ít mặt thật hơn Q0; APCER là điều kiện bắt buộc (§1.1) |
+| recognition | TAR@FAR 1e-3 trên CFP-FP, thước chọn checkpoint của nhánh; kèm LFW, AgeDB-30 | sụt dưới 1% so với Q0 |
 
-Hai dòng Q1 là **cùng một mốc trên hai runtime**, không phải hai mốc: cả hai đều là PTQ không
-train lại, không nhãn, chạy trong vài phút. Mỗi runtime chỉ nhận đúng một luật lượng tử hoá, nên
-file `.tflite` và file `.espdl` của cùng một run không thể giống nhau.
+Giờ trên chip **ghi cạnh mỗi dòng, không chặn thang**: một lượt ba model int8 đã 452 ms, trên ngân
+sách 360 ms (`latency.md` §13). Dòng int16 trả thêm giờ; ADR của nhánh cân độ chính xác lấy lại với
+giờ trả thêm, rồi chủ repo chọn. Arena không phải cửa của ESP-DL (§3.8).
 
-**Vì sao chỉ có Q1.** Cả bốn thành phần của nó **không cần train lại, không cần nhãn,
-chạy trong vài phút**, và đều nhắm đúng điểm yếu của depthwise conv — thứ chiếm phần lớn cả
-ba model. Những mốc đắt hơn (QAT, LSQ, mixed-precision theo layer, AdaRound, BRECQ) đều
-đòi train lại hoặc giữ layer float; layer float rơi vào kernel C tham chiếu của TFLM thì
-chậm gấp 10–40 lần, đánh mất đúng thứ mà lượng tử hoá mua được. Với ngân sách của đồ án
-này, đổi lấy chúng là không đáng.
+Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi file một bước:
 
-**Bốn thuật toán calibration** (min-max · percentile · MSE · entropy) là **sweep nội bộ khi
-dựng Q1**, không phải mốc riêng. Đổi thuật toán calib chỉ là chạy lại converter, tính bằng
-phút. Chọn cái thắng, ghi cả bốn số vào `docs/measurements/<nhánh>/calib_sweep.md`.
+1. `ptq_espdl.py` xuất ONNX qua `export/to_onnx.py` và giữ nó với torch bằng onnxruntime trên mẫu hiệu
+   chuẩn đầu: lệch quá `onnx_rtol` của `quant.yaml` là từ chối;
+2. `ptq_espdl.py`: ESP-PPQ lượng tử theo bậc 1–2, kèm lớp int16 khi bậc 3 khai. Mọi tensor ở cổng vào
+   ra phải mang số mũ luỹ thừa 2. `Simulator` chạy đồ thị int8 trên máy tính, đúng số chip tính;
+3. `mixed_espdl.py`, `qat_espdl.py`: bậc 3 và bậc 4. ESP-PPQ ghim lô 1 vào các `Reshape`, nên QAT học
+   trên đồ thị dựng với lô lớn rồi chép tham số và số mũ sang đồ thị lô 1; hai đồ thị phải ra cùng
+   đầu ra;
+4. `export_espdl.py`: ghi `.espdl` kèm mẫu thử cho `model->test()` lấy từ **một khung OV5640 thật** của
+   nhánh, không phải số ngẫu nhiên; ghi cả đồ thị native để bước sau đọc lại mà không lượng tử lại.
+   Phép thụ động của ESP-PPQ (`Transpose`, `Reshape`, `Flatten`, `MaxPool`…) phải ra cùng số mũ với đầu
+   vào, vì module esp-dl của chúng chỉ chép số nguyên; đồ thị trái điều này bị từ chối ngay lúc xuất.
+   `espdl_shapes.py` phát lại `get_output_shape` của từng module esp-dl trên `.info` vừa xuất: chiều
+   không dương, phép phát sóng ONNX từ chối hay `Reshape` lệch kích thước bị chặn trên máy tính, trước
+   khi ghi flash. `export/espdl_op_check.py` đối chiếu op với `dl_module_creator.hpp` như cũ.
 
-Mỗi dòng ghi đủ **5 cột** vào `docs/measurements/<nhánh>/quant_ladder.md`:
+`esp_ppq_patches.py` sửa lỗi của ESP-PPQ 1.3.11, chỉ cho nhánh khai nó trong `esp_ppq_patches` của
+`quant.yaml`, ở mọi chỗ nhánh ấy dùng ESP-PPQ: lượng tử, mô phỏng, xuất. Mỗi bản vá ghi triệu chứng
+trên board và có test ghim nó. Bản vá ở bước xuất chỉ bỏ việc thừa ESP-PPQ để lại cho chip, **không đổi
+một số nguyên nào** của đồ thị: test so số nguyên của bản xuất có và không có bản vá. Viết lại mạng
+trước khi lượng tử phải ra cùng số nguyên với bản chưa viết lại khi lượng tử bằng chính các bậc của
+thang (`same_integers`): bias correction của ESP-PPQ hiệu chỉnh theo khối op, nên thêm hay bớt op có
+thể đổi số nguyên dù phép tính không đổi. Viết lại nào không qua được phép so ấy thì làm ở bước xuất.
+Bản vá mô phỏng chép theo **mã máy** của nhân esp-dl (`xtensa-esp32s3-elf-objdump` trên ELF của bản
+dò), không theo mã C: esp-dl dựng với `-ffast-math -O3`, nên trình biên dịch đổi thứ tự phép float, gộp
+nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 
-| Q | Accuracy (chỉ số của nhánh) | Δ so với Q0 | Kích thước `.tflite` / `.espdl` | 🔬 head arena / bộ nhớ model | 🔬 latency trên board |
-|---|---|---|---|---|---|
+**Quy trình đưa một model lên chip**, nhánh nào cũng vậy. Mỗi bước là một lệnh make có điều kiện qua;
+chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurements/` (`latency.md` cho giờ,
+`<nhánh>/quant_ladder.md` cho chất lượng), mỗi bước một commit.
 
-Accuracy của Q1 ESP-DL chấm trên host bằng bộ mô phỏng của ESP-PPQ (`bench/host_bench.py
---runtime espdl`); mô phỏng ấy khớp chip trong một bước int8 ở mỗi phần tử đầu ra, vì
-`model->test()` trên board so đúng đầu ra của nó với sai số đó.
+1. **Đúng: chip tính như mô phỏng.** `make quant-timing BRANCH=<nhánh> RUN=<run>`, rồi
+   `make ai-unit BRANCH=<nhánh> RUN=<run> ROW=timing`. Qua khi model nạp được, `model->test()` khớp ở cả
+   đồ thị lẫn mọi bản cắt (`probe.cuts`), và đồ thị khớp mô phỏng **từng bit** trên mọi khung thật của
+   bản dò (`probe.frames`). `model->test()` của esp-dl so tensor int8 với sai số 5e-5, tức khớp tuyệt
+   đối; chỉ tensor int16 được lệch một bước. Lệch thì chia đôi bằng các bản cắt (`CUT_RANGE`) tới op
+   đầu tiên lệch: op esp-dl tính khác ESP-PPQ thì sửa mô phỏng trong `esp_ppq_patches.py`, op esp-dl
+   không có thì viết lại mạng mà không đổi phép tính float.
+2. **Nhanh: lặp `make speed BRANCH=<nhánh> RUN=<run>`.** Chuỗi ấy lượng tử hàng `timing`, chạy bản dò
+   trên board, in bảng xếp hạng và dừng ở bước đầu tiên không qua:
+   1. Hàng `timing` (min-max, không equalization, không bias correction) lượng tử nhanh; giờ trên chip
+      chỉ phụ thuộc cấu trúc đồ thị nên đo bằng nó là đủ. Bản dò in thời gian từng module bằng
+      `profile_module` của esp-dl. Hàng ấy hiệu chuẩn trên chính dữ liệu thật của thang: lưới hiệu
+      chuẩn bằng nhiễu có thể không chạm giá trị nào sát nửa bước, nên che mất lỗi mô phỏng.
+   2. `espdl_profile.py` (`make ai-profile`) đọc bảng ấy cùng `.espdl` đã chạy: thời gian theo loại op,
+      module chậm nhất, chu kỳ trên mỗi phép nhân-cộng của từng tích chập. Nó gắn nhãn các đường chậm
+      của esp-dl trên S3, mỗi nhãn kèm bản vá xử lý nó: số kênh không chia hết cho 16, trọng số tích
+      chập lớn hơn cache dữ liệu 64 KB, `Transpose` và `RequantizeLinear` do bước xuất chèn.
+   3. Bật bản vá của nhãn trong `esp_ppq_patches` của nhánh, chạy lại chuỗi. Giữ bản vá khi bản dò vẫn
+      khớp từng bit **và** giờ giảm.
+   4. Nhãn không có bản vá thì viết lại mạng; `make quant-same-int8 BRANCH=<nhánh> RUN=<run>
+      AGAINST=<commit>` phải báo 0 số lệch.
+   5. Dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
+3. **Chất lượng.** `make quant-ptq BRANCH=<nhánh> RUN=<run>` dựng bậc 1–2 và chấm cả bốn cách hiệu chuẩn
+   bằng thước của nhánh, cạnh Q0. Trượt cửa thì `make quant-int16`, rồi `make quant-qat` khi chủ repo cho
+   train.
+4. **Chốt.** Bản dò chạy trên hàng đã chọn (`ROW=<hàng>`, không phải `timing`): khớp từng bit, giờ và
+   PSRAM ghi vào `latency.md`. ADR của nhánh ghi bậc đã chọn kèm bảng đối chứng.
+   `make quant-deploy BRANCH=<nhánh> RUN=<run> ROW=<hàng>` chép `.espdl` vào `firmware/models/<nhánh>/` và
+   khoá lock qua `update_lock.py`; `make pack` đưa nó lên board.
 
-**Quy tắc chọn**: Q1 phải thoả cả ba ngưỡng — accuracy sụt < 1% so với Q0, arena vừa chỗ đã
-định ở §3.7, latency đạt ngân sách. Không thoả thì đường đi tiếp là **thu nhỏ hoặc đổi kiến
-trúc rồi train lại**, không phải leo thang lượng tử hoá.
+**Bản dò ghi đè board.** Nó nạp app dò vào `ota_0` và ảnh dò vào hai ngăn model, nên một phiên dò mở
+bằng `make board-save` và đóng bằng `make board-restore`: bootloader, bảng phân vùng, `otadata`, hai ngăn
+app và hai ngăn model về đúng byte cũ. NVS không bao giờ được lưu hay trả lại, vì một `boot_count` cũ
+làm `local_id` lặp (§6.2.5); `storage` chỉ trả lại khi phiên có nạp app parity (§4.2).
 
-**So bằng accuracy sau INT8 trên tập `test_device`**, không phải accuracy FP32 trên val.
-Cái chạy trên board mới là cái tính.
+Mỗi nhánh vào quy trình qua ba móc ở `tasks/<nhánh>/quant.py`: `calibration_batches` (dữ liệu hiệu
+chuẩn), `probe_inputs` (khung OV5640 thật của `test_device`, cắt và chuẩn hoá đúng như firmware: letterbox
+cho detection, crop 2,7× cho antispoof, căn 5 điểm cho recognition) và `score` (thước của nhánh trên một
+`Simulator`). Phần chung — các bậc, `<run>/int8/ladder.yaml`, đồ thị từng hàng ở `<run>/int8/<hàng>/` —
+nằm ở `compress/quant/ladder.py`; bản dò ở `compress/quant/probe.py`.
+
+Cấu hình thang ở `configs/common/quant.yaml`: khối mặc định, hàng `timing`, và một khối mỗi nhánh (ghi
+đè bậc, những gì thang đem ra thử, `esp_ppq_patches`, `probe`, hàng đã chọn). Run là bất biến (§4.4),
+nên thang không đọc mục `quant` của run.
+
+Mỗi hàng ghi một dòng vào `docs/measurements/<nhánh>/quant_ladder.md`:
+
+| Hàng | Thước của nhánh | Δ so với Q0 | Kích thước `.espdl` | PSRAM của model | Giờ trên chip | Bản dò |
+|---|---|---|---|---|---|---|
+
+Dòng TFLM giữ khuôn cũ của bảng ấy (accuracy, Δ, `.tflite`, head arena, giờ trên chip).
+
+**So bằng accuracy sau INT8 trên tập `test_device`** khi nhánh có thước trên đó, không phải accuracy
+FP32 trên val. Cái chạy trên board mới là cái tính.
 
 ---
 
@@ -2281,11 +2356,12 @@ biết bộ cấp phát của mình cần đệm.
 [4] Fold Conv+BN → Bias correction   (CLE chỉ khi nhánh đo được là có lợi, §3.7)
          │
          ▼
-[5] Q1 — PTQ theo luật của runtime (calib 300 ảnh; §3.7)
+[5] TFLM: Q1 PTQ (calib 300 ảnh) · ESP-DL: thang bốn bậc (§3.7)
          │
-    🔬 sụt accuracy < 1% so với Q0?
+    🔬 đạt cửa của nhánh (§3.7)?
          │
-         ├──Không──→ thu nhỏ hoặc đổi kiến trúc, quay về [1]
+         ├──Không──→ ESP-DL: bậc kế của thang; hết thang thì thu nhỏ
+         │           hoặc đổi kiến trúc, quay về [1]
          ▼ Có
 [6] TFLM:   ONNX → onnx2tf → .tflite              ESP-DL: ONNX → ESP-PPQ → .espdl
                      ▼                                          ▼
@@ -2295,7 +2371,7 @@ biết bộ cấp phát của mình cần đệm.
 [8] Gộp 3 file của MỘT runtime thành 1 image cho partition `models_0` → flash
                      ▼
 [9] 🔬 Trên board: arena_used_bytes, latency/op, RAM đỉnh, accuracy ảnh thật;
-    ESP-DL thêm model->test(): khớp mô phỏng trong một bước int8
+    ESP-DL thêm bản dò: model->test() và khung thật khớp mô phỏng từng bit
                      ▼
               Đạt? ──Không──► quay lại bước tương ứng (5 / 7 / 1)
                      ▼ Có
@@ -2674,8 +2750,9 @@ ml/
 ├── .env                                   # ❌ gitignore — giá trị thật (§4.9)
 │
 ├── configs/
-│   ├── common/{paths.yaml, hardware.yaml}
-│   ├── detection/{yunet.yaml, quant.yaml}
+│   ├── common/{paths.yaml, hardware.yaml,
+│   │           quant.yaml}                # thang ESP-DL: mặc định, hàng timing, khối mỗi nhánh (§3.7)
+│   ├── detection/yunet.yaml
 │   ├── antispoof/{minifasnet.yaml, minifasnet_v2.yaml, minifasnet_distill.yaml}  # v2: trọng số nhập; distill: student w32 (ADR-0003)
 │   └── recognition/{mobilefacenet.yaml, mobilefacenet_eca.yaml}  # eca: trọng số nhập FRBench, chạy ESP-DL
 │
@@ -2727,7 +2804,7 @@ ml/
 │   │   │   │   ├── nms.py                 # ★ ai_engine/src/detection/nms.cpp
 │   │   │   │   └── emit_golden.py         # → contracts/golden/detection/{decode,nms}/
 │   │   │   ├── data.py                    # dataloader + augment riêng nhánh
-│   │   │   ├── quant.py                   # tập calib riêng nhánh
+│   │   │   ├── quant.py                   # móc của thang ESP-DL: calib, khung dò, thước (§3.7)
 │   │   │   ├── train.py                   # điểm vào duy nhất để train nhánh này
 │   │   │   └── eval.py                    # WIDER AP + NMSE landmark trên ảnh OV5640
 │   │   │
@@ -2772,8 +2849,17 @@ ml/
 │   │       └── eval.py                    # LFW/CFP-FP/AgeDB + TAR@FAR tập nhân viên
 │   │
 │   ├── compress/
-│   │   └── quant/{fold_bn.py, cle.py, bias_correction.py, ptq_tflite.py,
-│   │              ptq_espdl.py}           # ESP-PPQ → .espdl + bộ mô phỏng INT8 trên host (§3.7)
+│   │   └── quant/
+│   │       ├── {fold_bn.py, cle.py, bias_correction.py, ptq_tflite.py}   # Q1 của TFLM
+│   │       ├── ptq_espdl.py                # bậc 1–2: ESP-PPQ, kiểm ONNX, Simulator, same_integers (§3.7)
+│   │       ├── mixed_espdl.py              # bậc 3: lớp nhạy nhất lên int16 theo SNR từng lớp
+│   │       ├── qat_espdl.py                # bậc 4: QAT trên đồ thị int8, số mũ giữ nguyên
+│   │       ├── export_espdl.py             # .espdl + mẫu thử khung thật, chặn phép thụ động đổi số mũ
+│   │       ├── espdl_shapes.py             # phát lại get_output_shape của esp-dl trên .info
+│   │       ├── esp_ppq_patches.py          # bản vá ESP-PPQ theo nhánh, mỗi bản một test ghim
+│   │       ├── espdl_profile.py            # bảng profile_module → giờ theo op, nhãn đường chậm
+│   │       ├── ladder.py                   # các bậc, <run>/int8/ladder.yaml, đồ thị từng hàng
+│   │       └── probe.py                    # bản dò: đồ thị + bản cắt + khung thật cho test_apps/probe
 │   │
 │   └── export/
 │       ├── to_onnx.py  ├── onnx_to_tf.py  ├── tf_to_tflite_int8.py
@@ -2816,6 +2902,9 @@ ml/
 │   │   │   ├── env.txt                    # uv pip freeze + CUDA + GPU + commit
 │   │   │   ├── ckpt/{best.pth, last.pth}
 │   │   │   ├── metrics.json
+│   │   │   ├── int8/                      # thang ESP-DL của run (§3.7), sinh lại được
+│   │   │   │   ├── ladder.yaml            # mỗi hàng: bậc, thước của nhánh, Δ so với Q0
+│   │   │   │   └── <hàng>/{graph.native, <nhánh>.espdl, .info, .json, probe/}
 │   │   │   └── tb/
 │   │   ├── onnx/{model_fp32.onnx, model_qdq.onnx}
 │   │   ├── tf/<tên>/                      # SavedModel, chặng giữa onnx2tf → TFLiteConverter
@@ -2843,6 +2932,8 @@ ml/
     ├── test_core_{config,registry,run_dir,trainer,isolation}.py
     ├── test_prepare.py                      # bộ chuyển raw → interim
     ├── test_export_espdl.py                 # pack/lock EDL2, gập Linear+BN1d, op check ESP-DL
+    ├── test_{ptq_espdl,mixed_espdl,qat_espdl,espdl_shapes,espdl_profile}.py   # thang §3.7
+    ├── test_{esp_ppq_patches,quant_ladder,quant_probe}.py
     └── {test_splits.py, test_transforms.py, test_postproc_parity.py}
 ```
 
@@ -2863,7 +2954,7 @@ ml/
 
 Cần thứ `core/` chưa có: chỉ 1 nhánh cần → để trong `tasks/<nhánh>/`. Từ 2 nhánh trở lên cần và không dính đặc thù nhánh nào → nâng lên `core/`, giữ nguyên giao diện, **không** thêm nhánh `if`.
 
-`compress/` và `export/` cũng là hạ tầng: chúng giữ **thuật toán** (fold BN, CLE, bias correction, convert). Mỗi nhánh chỉ cấp tham số riêng qua `tasks/<nhánh>/quant.py` — tập calib và danh sách op cần kiểm.
+`compress/` và `export/` cũng là hạ tầng: chúng giữ **thuật toán** (fold BN, CLE, bias correction, convert). Mỗi nhánh chỉ cấp tham số riêng qua `tasks/<nhánh>/quant.py` — tập calib, khung dò và thước của nhánh (§3.7).
 
 ##### Ba lệnh chạy song song, không thay thế nhau
 
@@ -4318,7 +4409,10 @@ components/ai_engine/
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
     ├── antispoof/{main/{test_spoof.c, test_preproc.c}, CMakeLists.txt, pytest_preproc.py}
-    └── recognition/{main/test_align.c, CMakeLists.txt, pytest_align.py}
+    ├── recognition/{main/test_align.c, CMakeLists.txt, pytest_align.py}
+    └── probe/{main/{test_probe.cpp, CMakeLists.txt}, CMakeLists.txt, sdkconfig.defaults}
+                                           # bản dò ESP-DL (§3.7): ảnh dò ở hai ngăn model, khung thật
+                                           #   nhúng vào app từ main/probe/ (❌ gitignore, ml/ sinh)
 ```
 
 **Quy tắc**: `src/core/` không được biết tên bất kỳ model nào. Thứ gì chỉ đúng cho một nhánh thì nằm trong thư mục nhánh đó. Thêm model thứ tư sau này = thêm một thư mục, không sửa `core/`.
@@ -4365,6 +4459,7 @@ Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một 
 | Parity C ↔ Python | `test_apps/parity/` | đọc `contracts/golden/`, so sánh sai số |
 | Đo hiệu năng | `test_apps/bench_ai/`, `bench_mem/` | in ra CSV cho `ml/bench/device_client.py` |
 | Soak | `test_apps/soak/` | chạy 24h, theo dõi rò heap |
+| Bản dò ESP-DL | `components/ai_engine/test_apps/probe/` | `make ai-unit`: đồ thị và bản cắt qua `model->test()`, khung thật so từng bit với mô phỏng, giờ từng module qua `profile_module` (§3.7) |
 
 **Không hàm nghiệm thu nào nằm trong `src/` hay header công khai của component.** Quét bus, dò trở kéo, đi bốn màu, rình ngón tay, đo fps, đẩy khung về máy — tất cả ở `test_apps/` của chính component đó. Để trong driver thì nó thành API công khai vĩnh viễn (`ui_kiosk` gọi được `drv_lcd_selftest()`), và mỗi lần boot phải trả giá cho thứ chỉ dùng lúc cắm dây. `Kconfig` của component vì thế không có cờ bật/tắt nghiệm thu: cái gì chỉ chạy lúc bring-up thì không có mặt trong ảnh sản phẩm, không phải bị tắt đi.
 
