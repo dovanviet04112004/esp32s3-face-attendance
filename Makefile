@@ -4,11 +4,11 @@ SHELL := /bin/bash
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
-        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
+        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
         quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
-        be-dev be-build be-prisma be-migrate be-seed be-demo fe-dev fe-build fe-remove \
+        be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
 # uv lives in ~/.local/bin, which the login shell here leaves off PATH.
@@ -285,6 +285,19 @@ fw-app-flash: idf ## Flash a built test app, then the monitor (APP= as for fw-ap
 	$(call need,APP,the folder of an IDF test app)
 	cd $(APP) && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash $(MONITOR)
 
+# The options IDF's own pytest.ini adds; a test app outside the IDF tree never reads that file.
+fw-app-test: idf ## Flash a built test app and run its pytest_*.py on the board (APP=, PORT=, KEHOACH 4.5.8)
+	$(call need,APP,the folder of an IDF test app)
+	$(call need,PORT,the board's serial port)
+	cd $(APP) && python -m pytest -o python_files='pytest_*.py' --embedded-services esp,idf \
+	  --target esp32s3 --port $(PORT) $(ARGS)
+
+fw-assets: idf ## Build the assets partition image into firmware/build/assets.bin (KEHOACH 6.2.8)
+	python firmware/assets/build_assets.py $(ARGS)
+
+fw-fonts: ## Rasterise the kiosk UI fonts from MiSans into firmware/assets/fonts
+	$(ML_PY) firmware/assets/fonts/gen_font.py $(ARGS)
+
 ##@ ESP-DL ladder and board probe (KEHOACH 3.7; RUN=<run under ml/>, or BRANCH= for the run the lock deploys)
 
 PROBE_APP := firmware/components/ai_engine/test_apps/probe
@@ -412,6 +425,12 @@ be-seed: ## Seed the database backend/.env names
 
 be-demo: ## WIPE the database backend/.env names, then load a 5,000-person demo company
 	cd backend && npm run prisma:demo
+
+be-plans: ## EXPLAIN the reads that touch a big table; fail on an unexcused scan (KEHOACH 9.22.5)
+	python3 tools/check_plans.py $(ARGS)
+
+be-backfill: ## Move rows in batches, one transaction each; dry unless ARGS has --apply (KEHOACH 9.22.3)
+	python3 tools/backfill.py $(ARGS)
 
 fe-dev: ## Next.js dev server
 	cd frontend && npm run dev
