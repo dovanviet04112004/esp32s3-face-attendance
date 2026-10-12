@@ -31,7 +31,7 @@ export const PUBLISHED_TARGETS = ["FIRMWARE", "MODELS"] as const;
 export type PublishedTarget = (typeof PUBLISHED_TARGETS)[number];
 
 /** A release as the dashboard sees it: no file path, and whether it can still be offered. */
-export type ReleaseView = Omit<Release, "path" | "url"> & { available: boolean };
+export type ReleaseView = Omit<Release, "path"> & { available: boolean };
 
 export type OfferState = "WAITING" | "INSTALLED" | "TRIAL" | "ROLLED_BACK" | "FAILED" | "INTERRUPTED" | "EXPIRED";
 
@@ -164,7 +164,7 @@ function embeddingOf(head: Buffer): string | null {
 }
 
 function view(release: Release): ReleaseView {
-  const { path, url: _url, ...rest } = release;
+  const { path, ...rest } = release;
   return { ...rest, available: path !== null };
 }
 
