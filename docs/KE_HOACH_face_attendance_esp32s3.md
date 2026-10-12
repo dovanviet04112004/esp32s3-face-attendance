@@ -4760,7 +4760,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. Cột `url` rời lược đồ Prisma trước, nên bản mới thôi đọc nó; migration bỏ cột đi ở lần phát hành kế tiếp, để image trước đó vẫn quay lui được (§9.22.3) |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười ba bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
