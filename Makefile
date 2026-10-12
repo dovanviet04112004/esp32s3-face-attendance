@@ -315,7 +315,10 @@ quant_run = $(or $(RUN),$(if $(BRANCH),artifacts/$(BRANCH)/runs/$(shell python3 
   'import json,sys; print(json.load(open("contracts/models.lock.json"))[sys.argv[1]]["run_id"].split("/", 1)[1])' \
   $(BRANCH))))
 need_run = $(if $(quant_run),,$(error RUN or BRANCH is missing: RUN=artifacts/<branch>/runs/<run>, or BRANCH=recognition))
-ladder_step = $(need_run)cd ml && $(ML_PY) -m facepipe.compress.quant.ladder $(1) --run $(quant_run)
+# A ladder step past this dies alone; one without a cap takes the 10 GB WSL VM down with it.
+ML_MEM_MAX ?= 7G
+ml_capped = systemd-run --user --scope -q -p MemoryMax=$(ML_MEM_MAX) -p MemorySwapMax=0
+ladder_step = $(need_run)cd ml && $(ml_capped) $(ML_PY) -m facepipe.compress.quant.ladder $(1) --run $(quant_run)
 run_vars = $(if $(RUN),RUN=$(RUN)) $(if $(BRANCH),BRANCH=$(BRANCH))
 manifest_field = python3 -c 'import json,sys; v = json.load(open(sys.argv[1]))[sys.argv[2]]; \
   print(" ".join(v) if isinstance(v, list) else v)' $(PROBE_MANIFEST) $(1)
@@ -350,7 +353,7 @@ quant-table: ## The run's ladder, one row a line
 
 ai-probe: ## The probe of the run's row ROW: its graph, cuts (CUT_RANGE="first last") and real frames
 	$(call need,ROW,a ladder row such as timing or kl)
-	$(need_run)cd ml && $(ML_PY) -m facepipe.compress.quant.probe --run $(quant_run) --row $(ROW) \
+	$(need_run)cd ml && $(ml_capped) $(ML_PY) -m facepipe.compress.quant.probe --run $(quant_run) --row $(ROW) \
 	  $(if $(CUT_RANGE),--cut-range $(CUT_RANGE))
 
 # Each image boots the probe app once in front of the monitor, which resets the board as it opens.
