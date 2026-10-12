@@ -38,8 +38,8 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
  */
 bool drv_touch_wait(uint32_t timeout_ms);
 
-/** Controller handle for the LVGL port to poll.
- *  @ctx any | non-blocking
+/** The esp_lcd_touch handle of the controller.
+ *  @ctx any | non-blocking | NULL until drv_touch_init creates it
  */
 esp_lcd_touch_handle_t drv_touch_handle(void);
 

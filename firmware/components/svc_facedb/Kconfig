@@ -5,8 +5,8 @@ menu "Face database"
         default 1000
         range 2 4000
         help
-            One record is 552 bytes (KEHOACH 6.2.4), so the default of 500
-            people with two templates each reserves 552 KB of PSRAM once at
+            One record is 576 bytes (KEHOACH 6.2.4), so the default of 500
+            people with two templates each reserves 576 KB of PSRAM once at
             init. A table that fills up compacts its soft-deleted records
             first and refuses the enrol only when that frees nothing.
 

@@ -1,6 +1,6 @@
 # `drv_ioexp` — L2
 
-PCF8574 ở `0x20`, tám đường điều khiển chậm cho bốn thiết bị khác nhau.
+PCF8574 ở `0x20`, tám đường điều khiển chậm cho ba thiết bị khác nhau.
 
 ## Làm gì
 
@@ -11,7 +11,7 @@ byte và không đọc-sửa-ghi được, nên đổi P0 vẫn phải ghi kèm 
 |---|---|
 | P0 | GT911 RST |
 | P1 | VL53L1X XSHUT |
-| P2 | Relay IN1 |
+| P2 | dự phòng |
 | P3 | MAX98357A SD |
 
 ## Phụ thuộc

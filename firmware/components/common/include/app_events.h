@@ -15,7 +15,7 @@ typedef enum {
     APP_PRESENCE_ON = 1,
 } app_presence_t;
 
-/** One per sound file in the assets partition (KEHOACH 6.2.8). */
+/** What q_audio carries; only APP_SOUND_OK has a clip in the assets partition (KEHOACH 6.2.8). */
 typedef enum {
     APP_SOUND_OK = 0,
     APP_SOUND_DENIED,

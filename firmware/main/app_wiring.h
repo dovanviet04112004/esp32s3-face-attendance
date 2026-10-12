@@ -14,8 +14,6 @@
 extern "C" {
 #endif
 
-/** Every handle a task needs, filled once and never replaced.
- */
 /** Who put a roster op on the queue, which decides what applying it means (KEHOACH 7.5). */
 typedef enum {
     APP_ROSTER_SERVER = 0,                // a down/enroll push, applied as it says
@@ -47,6 +45,7 @@ typedef struct {
     int8_t embedding[STORAGE_EMBED_DIM];
 } app_roster_t;
 
+/** Every handle a task needs, filled once and never replaced. */
 typedef struct {
     QueueHandle_t frames;                 // q_frame_ai, depth 1, newest wins
     QueueHandle_t results;                // q_result

@@ -32,13 +32,12 @@ Preview camera đầy màn: **14,186 fps**, bằng đúng tốc độ sensor t�
 
 ## Giới hạn
 
-- SPI DMA **không với tới PSRAM**: mọi pixel đi qua hai bounce buffer 30.720 B ở
+- SPI DMA **không với tới PSRAM**: mọi pixel đi qua hai bounce buffer 12.800 B ở
   RAM nội, cấp một lần lúc boot. Khung camera nằm ở PSRAM nên luôn phải qua đó.
 - `esp_lcd_panel_io_tx_color` xếp hàng chứ chưa gửi xong khi trả về, nên buffer
   chỉ được ghi lại sau `on_color_trans_done` — ghi sớm là ra vạch kẻ trên màn.
 - Màu do host dựng phải đảo byte; khung camera thì không, vì DVP đã ghi đúng thứ
   tự dây. Hai nguồn khác nhau, không dùng chung một nhánh.
 - Đèn nền dùng LEDC timer 0 / channel 0. Camera phải lấy cặp khác.
-- Chưa nối LVGL (E7-T5 còn nợ).
 - Bài đi bốn màu cần mắt người nên mang tag `[manual]` ở `test_apps/panel/`, vòng
   tự động bỏ qua (KẾ HOẠCH §4.5.8).

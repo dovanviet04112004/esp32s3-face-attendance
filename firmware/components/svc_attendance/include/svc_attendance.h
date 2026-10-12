@@ -45,7 +45,7 @@ typedef enum {
  */
 esp_err_t svc_attendance_init(svc_door_t door, const svc_attendance_policy_t *policy);
 
-/** Replace the policy while running, as SET_CONFIG of KEHOACH 6.2.1 does.
+/** Replace the policy while running, without a second init.
  *  @ctx task | non-blocking
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_STATE without init
  */

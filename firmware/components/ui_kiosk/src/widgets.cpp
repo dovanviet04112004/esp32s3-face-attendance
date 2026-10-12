@@ -28,8 +28,7 @@ int clampi(int v, int low, int high)
     return v < low ? low : (v > high ? high : v);
 }
 
-// One band of a fan opening upwards, anti-aliased across its thickness. The
-// hard ring test this replaces turned to mush anywhere under about 40 px.
+// Anti-aliased across its thickness: a hard-edged ring turns to mush under about 40 px.
 void arc_band(Canvas &to, int cx, int cy, float radius, float thick, uint8_t colour)
 {
     const int reach = (int)(radius + thick) + 1;

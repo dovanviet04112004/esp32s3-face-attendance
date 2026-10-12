@@ -16,7 +16,7 @@ trong cùng một commit.
 | `frame_size` | `FRAMESIZE_HVGA` 480×320 | mặt 122 px ở cự ly kiosk |
 | `pixel_format` | `PIXFORMAT_RGB565` | ảnh chỉ nén một lần, ở khâu crop |
 | `xclk_freq_hz` | 27 MHz | 14,19 fps |
-| `fb_count` / `fb_location` | 3 / PSRAM | preview giữ một khung gần trọn chu kỳ |
+| `fb_count` / `fb_location` | 4 / PSRAM | preview giữ một khung lúc vẽ, `ai_task` giữ một khung tới 2 s (KẾ HOẠCH §6.3) |
 | `grab_mode` | `CAMERA_GRAB_LATEST` | ưu tiên khung mới, chấp nhận rơi khung |
 | `ledc_timer` / `ledc_channel` | 1 / 1 | timer 0 và channel 0 thuộc đèn nền LCD |
 | `set_vflip` / `set_hmirror` | 1 / 1 | module gắn lens trên đầu nối; gương cho kiosk |
