@@ -5,6 +5,8 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash \
+        quant-ptq quant-int16 quant-qat quant-timing quant-same-int8 quant-deploy quant-table \
+        ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
         be-dev be-build be-prisma be-migrate be-seed be-demo fe-dev fe-build \
         up down ml-docker ml-clean
@@ -279,6 +281,102 @@ fw-app: idf ## Build a test app (APP=firmware/test_apps/soak or a components/*/t
 fw-app-flash: idf ## Flash a built test app, then the monitor (APP= as for fw-app, MONITOR= skips it)
 	$(call need,APP,the folder of an IDF test app)
 	cd $(APP) && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash $(MONITOR)
+
+##@ ESP-DL ladder and board probe (KEHOACH 3.7; RUN=<run under ml/>, or BRANCH= for the run the lock deploys)
+
+PROBE_APP := firmware/components/ai_engine/test_apps/probe
+PROBE_MANIFEST := $(PROBE_APP)/main/probe/manifest.json
+PROBE_LOG_S ?= 45
+BOARD_PARTS := otadata ota_0 ota_1 models_0 models_1
+BOARD_DIR = $(patsubst ~/%,$(HOME)/%,$(DIR))
+esptool_board = esptool $(if $(PORT),--port $(PORT)) --chip esp32s3
+part_info = $$(python $(IDF_PATH)/components/partition_table/parttool.py -q --partition-table-file $(1) \
+  get_partition_info --partition-name $(2) --info $(3))
+quant_run = $(or $(RUN),$(if $(BRANCH),artifacts/$(BRANCH)/runs/$(shell python3 -c \
+  'import json,sys; print(json.load(open("contracts/models.lock.json"))[sys.argv[1]]["run_id"].split("/", 1)[1])' \
+  $(BRANCH))))
+need_run = $(if $(quant_run),,$(error RUN or BRANCH is missing: RUN=artifacts/<branch>/runs/<run>, or BRANCH=recognition))
+ladder_step = $(need_run)cd ml && $(ML_PY) -m facepipe.compress.quant.ladder $(1) --run $(quant_run)
+run_vars = $(if $(RUN),RUN=$(RUN)) $(if $(BRANCH),BRANCH=$(BRANCH))
+manifest_field = python3 -c 'import json,sys; v = json.load(open(sys.argv[1]))[sys.argv[2]]; \
+  print(" ".join(v) if isinstance(v, list) else v)' $(PROBE_MANIFEST) $(1)
+
+quant-ptq: ## Rungs 1-2: the run's four calibrations, each scored with its branch's ruler beside Q0
+	$(call ladder_step,ptq)
+
+quant-int16: ## Rung 3: the most sensitive layers of the best calibration at 16 bits
+	$(call ladder_step,int16)
+
+quant-qat: ## Rung 4, which trains: only with ALLOW_TRAIN=1 once the owner says so (STEPS= overrides the config)
+	$(call ladder_step,qat) $(if $(ALLOW_TRAIN),--allow-train) $(if $(STEPS),--steps $(STEPS))
+
+quant-timing: ## The row make speed times: minmax, no equalization, no bias correction
+	$(call ladder_step,timing)
+
+quant-same-int8: ## The run's network code against commit AGAINST (HEAD), integer for integer
+	$(call ladder_step,same-int8) --against $(or $(AGAINST),HEAD)
+
+quant-deploy: ## Lock ladder row ROW of the run into firmware/models/ and contracts/models.lock.json
+	$(call need,ROW,a ladder row such as kl or int16_top4)
+	$(call ladder_step,deploy) --row $(ROW)
+
+quant-table: ## The run's ladder, one row a line
+	$(call ladder_step,table)
+
+ai-probe: ## The probe of the run's row ROW: its graph, cuts (CUT_RANGE="first last") and real frames
+	$(call need,ROW,a ladder row such as timing or kl)
+	$(need_run)cd ml && $(ML_PY) -m facepipe.compress.quant.probe --run $(quant_run) --row $(ROW) \
+	  $(if $(CUT_RANGE),--cut-range $(CUT_RANGE))
+
+# Each image boots the probe app once in front of the monitor, which resets the board as it opens.
+ai-unit: idf ai-probe ## Run the probe of ROW on the board: test_apps/probe, then each models image in both slots (PORT=)
+	cd $(PROBE_APP) && idf.py reconfigure && ninja -C build -j$(JOBS) && idf.py $(PORT_FLAG) flash
+	set -e; logs=($$($(call manifest_field,logs))); i=0; \
+	for image in $$($(call manifest_field,images)); do \
+	  $(esptool_board) write-flash \
+	    $(call part_info,$(PROBE_APP)/partitions.dev.csv,models_0,offset) $$image \
+	    $(call part_info,$(PROBE_APP)/partitions.dev.csv,models_1,offset) $$image < /dev/null; \
+	  timeout $(PROBE_LOG_S) script -qfec "cd $(PROBE_APP) && idf.py $(PORT_FLAG) monitor" /dev/null \
+	    > $${logs[$$i]} || true; \
+	  i=$$((i + 1)); \
+	done
+	grep -ah "^probe \|^[0-9]* Tests [0-9]* Failures" $$($(call manifest_field,logs))
+	for log in $$($(call manifest_field,logs)); do \
+	  grep -aq "^[0-9]* Tests 0 Failures" $$log || { echo "$$log: the probe failed or never finished"; exit 1; }; \
+	done
+
+ai-profile: ## Rank esp-dl's per-module profile in LOG against the .espdl ESPDL that ran, slow paths tagged (TOP=)
+	$(call need,LOG,a board log of make ai-unit)
+	$(call need,ESPDL,the .espdl that log ran)
+	cd ml && $(ML_PY) -m facepipe.compress.quant.espdl_profile --log $(abspath $(LOG)) \
+	  --espdl $(abspath $(ESPDL)) $(if $(TOP),--top $(TOP))
+
+speed: idf ## KEHOACH 3.7 step 2 for the run: timing row, its probe on the board, the profile ranked
+	$(MAKE) --no-print-directory quant-timing $(run_vars)
+	$(MAKE) --no-print-directory ai-unit ROW=timing $(run_vars)
+	$(MAKE) --no-print-directory ai-profile LOG="$$($(call manifest_field,whole_log))" \
+	  ESPDL="$$($(call manifest_field,whole_espdl))"
+
+board-save: idf ## Save bootloader, table, otadata, both app and model slots into DIR; STORAGE=1 adds storage
+	$(call need,DIR,a folder outside git, such as ~/esp/backup_boards/<stamp>)
+	mkdir -p $(BOARD_DIR)
+	$(esptool_board) read-flash 0x8000 0x1000 $(BOARD_DIR)/partition-table.bin
+	{ echo "0x0 0x8000 bootloader"; echo "0x8000 0x1000 partition-table"; \
+	  for part in $(BOARD_PARTS) $(if $(STORAGE),storage); do \
+	    region="$(call part_info,$(BOARD_DIR)/partition-table.bin,$$part,offset size)"; \
+	    [ -n "$$region" ] || { echo "the board's table has no $$part" >&2; exit 1; }; \
+	    echo "$$region $$part"; \
+	  done; } > $(BOARD_DIR)/regions
+	while read -r offset size name; do \
+	  $(esptool_board) read-flash $$offset $$size $(BOARD_DIR)/$$name.bin < /dev/null; \
+	done < $(BOARD_DIR)/regions
+	cd $(BOARD_DIR) && sha256sum *.bin > SHA256SUMS && cat regions SHA256SUMS
+
+board-restore: idf ## Write back and verify what board-save kept in DIR; NVS never
+	$(call need,DIR,the folder board-save wrote)
+	cd $(BOARD_DIR) && sha256sum -c SHA256SUMS
+	$(esptool_board) write-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
+	$(esptool_board) verify-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
