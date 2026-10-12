@@ -2,27 +2,33 @@
 
 Boxes are picked for the branches that decide the square: one that fits, one
 wider than the frame so the cap bites, and two pressed against a corner so the
-slide clamps. Frames are RGB565 because that is what drv_camera hands out.
+slide clamps. Frames are RGB565 because that is what drv_camera hands out. Each
+box is cut for the TFLM input and for the ESP-DL input the lock deploys.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
 
+from facepipe import REPO_ROOT
 from facepipe.compress.quant.ladder import firmware_constant
+from facepipe.export import espdl_op_check
 from facepipe.export.emit_golden import write_case
 
 from ..quant import FACE_SCALE, PREPROC_CPP
 from .preproc import crop_face, fitted_square
 
+LOCK = REPO_ROOT / "contracts" / "models.lock.json"
+MODELS = REPO_ROOT / "firmware" / "models" / "antispoof"
 # Detector-sized rather than HVGA: the square maths does not care, and a full
 # frame would put 307 KB in every case file.
 FRAME_HW = (120, 160)
 CROP_SIZE = 81
-# The deployed minifasnet_int8 input, and the mean and span preproc.cpp uses.
+# The TFLM minifasnet_int8 input, and the mean and span preproc.cpp uses.
 INPUT_SCALE = 0.003921569
 INPUT_ZERO = -128
 PIXEL_MEAN = 0.0
@@ -39,6 +45,13 @@ def boxes() -> list[np.ndarray]:
     ]
 
 
+def deployed_input() -> tuple[int, float, int]:
+    """Side, scale and zero point of the anti-spoof .espdl input the lock deploys."""
+    path = MODELS / json.loads(LOCK.read_text(encoding="utf-8"))["antispoof"]["file"]
+    _batch, height, _width, _planes = espdl_op_check.input_shape(path)
+    return height, 2.0 ** espdl_op_check.input_exponent(path), 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("contracts/golden/antispoof"))
@@ -48,7 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     rng = np.random.default_rng(args.seed)
     words = rng.integers(0, 1 << 16, FRAME_HW, dtype=np.uint16)
     face_scale = firmware_constant(PREPROC_CPP, FACE_SCALE)
-    for index, box in enumerate(boxes()):
+    inputs = [(CROP_SIZE, INPUT_SCALE, INPUT_ZERO), deployed_input()]
+    cases = [(box, *given) for given in inputs for box in boxes()]
+    for index, (box, crop_size, scale, zero) in enumerate(cases):
         left, top, side = fitted_square(box, face_scale, FRAME_HW[1], FRAME_HW[0])
         write_case(
             args.out / "preproc" / f"case_{index:03d}.gold",
@@ -56,21 +71,14 @@ def main(argv: list[str] | None = None) -> int:
                 "frame": words,
                 "frame_hw": np.array(FRAME_HW, dtype=np.int32),
                 "box": box,
-                "quant": np.array([INPUT_SCALE, float(INPUT_ZERO)], dtype=np.float32),
+                "quant": np.array([scale, float(zero)], dtype=np.float32),
                 "square": np.array([left, top, side], dtype=np.float32),
                 "cropped": crop_face(
-                    words,
-                    box,
-                    face_scale,
-                    CROP_SIZE,
-                    INPUT_SCALE,
-                    INPUT_ZERO,
-                    PIXEL_MEAN,
-                    PIXEL_SPAN,
+                    words, box, face_scale, crop_size, scale, zero, PIXEL_MEAN, PIXEL_SPAN
                 ),
             },
         )
-    print(f"{args.out / 'preproc'}: {len(boxes())} case(s)")
+    print(f"{args.out / 'preproc'}: {len(cases)} case(s)")
     return 0
 
 

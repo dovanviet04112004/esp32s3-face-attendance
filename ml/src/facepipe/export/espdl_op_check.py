@@ -54,6 +54,14 @@ def input_shape(path: Path) -> list[int]:
     return [int(shape.Dim(i).Value().DimValue()) for i in range(shape.DimLength())]
 
 
+def input_exponent(path: Path) -> int:
+    """The first input's exponent, from the model->test() pair the file carries."""
+    g = graph(path)
+    if g.TestInputsValueLength() == 0:
+        raise ValueError(f"{path.name}: no test input to read the exponent from")
+    return int(g.TestInputsValue(0).Exponents(0))
+
+
 def content_digest(path: Path) -> str:
     """A hash of what the file computes: operators and every initializer's bytes and exponents.
 

@@ -21,7 +21,7 @@
 #define NAME_BYTES 32
 #define MAX_DIMS 4
 #define MAX_TENSORS 16
-#define MAX_CASES 8
+#define MAX_CASES 16
 #define PATH_MAX_LEN 96
 #define DTYPE_F32 0
 #define DTYPE_I8 1
@@ -313,11 +313,14 @@ TEST_CASE("the anti-spoof crop matches the golden block", "[parity]")
                                     static_cast<int>(words->dims[1]), static_cast<int>(words->dims[0]),
                                     false };
         const float *quant = floats(gold, "quant");
-        const ai::TensorView input = quantized(SPOOF_SIDE, SPOOF_SIDE, 3, block, SPOOF_SIDE * SPOOF_SIDE * 3,
-                                               quant[0], static_cast<int>(quant[1]));
-        TEST_ASSERT_EQUAL(ESP_OK, ai::crop_face(frame, floats(gold, "box"), input, block, input.bytes));
         const GoldTensor *want = find(gold, "cropped");
         TEST_ASSERT_NOT_NULL(want);
+        // TFLM's spoof reads 81 and ESP-DL's 80; each case carries the side it is cut for.
+        const int side = static_cast<int>(want->dims[0]);
+        TEST_ASSERT_LESS_OR_EQUAL_INT(SPOOF_SIDE, side);
+        const ai::TensorView input = quantized(side, side, 3, block, static_cast<size_t>(side) * side * 3,
+                                               quant[0], static_cast<int>(quant[1]));
+        TEST_ASSERT_EQUAL(ESP_OK, ai::crop_face(frame, floats(gold, "box"), input, block, input.bytes));
         const int delta = compare_int8(block, reinterpret_cast<const int8_t *>(want->data), want->nbytes, "cropped");
         worst = delta > worst ? delta : worst;
         free_case(gold);
