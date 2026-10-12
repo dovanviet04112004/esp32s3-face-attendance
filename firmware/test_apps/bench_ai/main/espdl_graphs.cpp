@@ -15,8 +15,8 @@ const char *const kBranches[] = {"detect", "spoof", "recog"};
 
 }  // namespace
 
-// model->test() compares the chip's outputs against the ESP-PPQ simulation the
-// file carries, within one int8 step (KEHOACH 3 layer 5); ai_engine has no such call.
+// model->test() holds the chip's int8 outputs to the ESP-PPQ simulation the file
+// carries bit for bit (KEHOACH 3 layer 5); ai_engine has no such call.
 TEST_CASE("every espdl graph reproduces the test vector it was exported with", "[bench_ai]")
 {
     const esp_err_t up = sys_storage_init();
