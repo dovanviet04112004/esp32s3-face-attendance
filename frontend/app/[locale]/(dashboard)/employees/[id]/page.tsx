@@ -36,6 +36,7 @@ import {
 import { Pay } from "@/components/employees/pay";
 import { ShiftCard } from "@/components/employees/shifts";
 import { EMPTY_DRAFT, EmployeeForm, type DepartmentChoice, type EmployeeDraft } from "@/components/forms/employee-form";
+import { useLeaveBalances, type LeaveBalance } from "@/components/requests/request-card";
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -46,7 +47,7 @@ import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
-import { dayOnly, days } from "@/lib/format";
+import { dayOnly, days, todayIso } from "@/lib/format";
 
 const TABS = ["info", "contracts", "attendance", "leave", "pay", "assets", "checklist", "files"] as const;
 
@@ -117,16 +118,6 @@ interface Punch {
   capturedOffline: boolean;
   clockUnsynced: boolean;
   questionableTime?: boolean;
-}
-
-interface Balance {
-  leaveTypeId: string;
-  name: string;
-  entitled: number;
-  carriedOver: number;
-  taken: number;
-  pending: number;
-  remaining: number;
 }
 
 interface LoginState {
@@ -301,11 +292,7 @@ export default function EmployeePage() {
     onError: notify.failed,
   });
 
-  const balances = useQuery({
-    queryKey: ["leave-balances", id],
-    enabled: tab === "leave",
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?employeeId=${id}`)).data,
-  });
+  const balances = useLeaveBalances(id, todayIso(), tab === "leave");
 
   const save = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
@@ -441,7 +428,7 @@ export default function EmployeePage() {
     },
   ];
 
-  const balanceColumns: Column<Balance>[] = [
+  const balanceColumns: Column<LeaveBalance>[] = [
     { id: "type", header: t("leaveType"), sortBy: (row) => row.name, cell: (row) => row.name },
     {
       id: "remaining",

@@ -15,7 +15,7 @@ import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { addDays, atClock, dayOnly, dayWindow, days, minutes as minutesOf, todayIso } from "@/lib/format";
 import { keep } from "@/lib/outbox";
-import type { DayPart, RequestKind } from "./request-card";
+import { useLeaveBalances, type DayPart, type RequestKind } from "./request-card";
 
 export const REQUEST_KINDS: RequestKind[] = ["LEAVE", "OVERTIME", "ATTENDANCE_FIX", "BUSINESS_TRIP", "REMOTE_WORK"];
 
@@ -30,11 +30,6 @@ interface LeaveType {
   id: string;
   code: string;
   name: string;
-}
-
-interface Balance {
-  leaveTypeId: string;
-  remaining: number;
 }
 
 /** What the server would charge for the range, per calendar year (KEHOACH 9.5). */
@@ -108,11 +103,7 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
     queryFn: async () => (await api.get<LeaveType[]>("/leave-types")).data,
   });
 
-  const balances = useQuery({
-    queryKey: ["leave-balances", "mine", fromDate.slice(0, 4), fromDate],
-    enabled: open && kind === "LEAVE" && fromDate !== "",
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${fromDate}`)).data,
-  });
+  const balances = useLeaveBalances(employeeId, fromDate, open && kind === "LEAVE");
 
   // Under the balances key, so a filing or a new year refreshes it with them.
   const charge = useQuery({

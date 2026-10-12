@@ -19,7 +19,7 @@ export type RequestKind =
   | "BUSINESS_TRIP"
   | "REMOTE_WORK";
 
-export type RequestState = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+type RequestState = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
 export type DayPart = "MORNING" | "AFTERNOON";
 
@@ -71,9 +71,10 @@ export interface LeaveBalance {
   pending: number;
   carriedOut: number;
   remaining: number;
+  bookedAfter: number;
 }
 
-export interface Overlap {
+interface Overlap {
   id: string;
   fromDate: string;
   toDate: string;
@@ -103,15 +104,14 @@ export function StatePill({ state }: { state: RequestState }) {
   return <Pill tone={TONE[state]}>{t(`state${state}`)}</Pill>;
 }
 
-/** Somebody's leave balances in the year a day falls in, as the api computes them.
- *  @param asOf YYYY-MM-DD; the balance year is read from it.
+/** Somebody's leave balances as the api computes them on a day.
+ *  @param asOf YYYY-MM-DD; the balance year, and what is booked after the day, are read from it.
  */
-export function useLeaveBalances(employeeId: number | undefined, asOf: string, enabled = true) {
+export function useLeaveBalances(employeeId: number | null, asOf: string, enabled = true) {
   return useQuery({
-    queryKey: ["leave-balances", employeeId, asOf.slice(0, 4)],
-    enabled: enabled && employeeId !== undefined,
-    queryFn: async () =>
-      (await api.get<LeaveBalance[]>(`/leave-balances?employeeId=${employeeId}&asOf=${asOf.slice(0, 10)}`)).data,
+    queryKey: ["leave-balances", employeeId, asOf],
+    enabled: enabled && employeeId !== null && asOf !== "",
+    queryFn: async () => (await api.get<LeaveBalance[]>(`/leave-balances?employeeId=${employeeId}&asOf=${asOf}`)).data,
   });
 }
 
@@ -184,7 +184,7 @@ function Fact({ label, wide, children }: { label: string; wide?: boolean; childr
   );
 }
 
-export interface Decision {
+interface Decision {
   rejecting: boolean;
   note: string;
   missing: boolean;

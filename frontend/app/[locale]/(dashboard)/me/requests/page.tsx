@@ -10,6 +10,7 @@ import { useReadSubject } from "@/components/notifications/notice-row";
 import {
   RequestCard,
   StatePill as RequestPill,
+  useLeaveBalances,
   useRequestWords,
   type RequestKind,
   type RequestRow,
@@ -38,13 +39,6 @@ interface Advance {
   requestedAt: string;
   decisionNote: string | null;
   employee?: { id: number };
-}
-
-interface Balance {
-  leaveTypeId: string;
-  name: string;
-  remaining: number;
-  bookedAfter: number;
 }
 
 const kAdvanceForm = "advance-form";
@@ -122,11 +116,7 @@ function MyRequests() {
     queryFn: async () => (await api.get<{ rows: Advance[] }>(`/advances?employeeId=${employeeId}`)).data.rows,
   });
 
-  const balances = useQuery({
-    queryKey: ["leave-balances", todayIso()],
-    enabled: employeeId !== null,
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${todayIso()}`)).data,
-  });
+  const balances = useLeaveBalances(employeeId, todayIso());
 
   const cancel = useMutation({
     mutationFn: (id: string) => api.post(`/requests/${id}/cancel`, {}),
