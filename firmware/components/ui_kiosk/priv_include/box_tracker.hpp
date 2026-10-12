@@ -36,22 +36,8 @@ public:
      */
     bool update(const uint16_t *frame, int width, int height) noexcept;
 
-    /** Take a new patch under the box where it stands, leaving it there. */
-    void refresh(const uint16_t *frame, int width, int height) noexcept;
-
-    /** Give the box the side lengths of a newer one, around the centre it holds. */
-    void reshape(float width, float height) noexcept;
-
-    /** Put the box here and take a patch under it, keeping the motion learned. */
-    void anchor(const Box &box, const uint16_t *frame, int width, int height) noexcept;
-
-    /** What the last update measured the face moving, in frame pixels. */
-    int drift_x() const noexcept { return drift_x_; }
-    int drift_y() const noexcept { return drift_y_; }
-
     bool active() const noexcept { return active_; }
     const Box &box() const noexcept { return box_; }
-    void clear() noexcept { active_ = false; }
 
 private:
     void capture(const uint16_t *frame, int width) noexcept;
@@ -63,8 +49,6 @@ private:
     uint8_t window_[kWindow * kWindow] = {};
     Box box_ = {};
     int lost_ = 0;
-    int drift_x_ = 0;                                      // this frame only
-    int drift_y_ = 0;
     int lead_x_ = 0;                                       // last motion that worked
     int lead_y_ = 0;
     int patch_left_ = 0;                                   // frame pixels

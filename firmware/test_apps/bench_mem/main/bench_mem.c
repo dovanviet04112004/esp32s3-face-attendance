@@ -15,8 +15,6 @@
 #define SETTLE_MS 60000
 #define SAMPLE_MS 10000
 #define KB 1024u
-// KEHOACH 6.4 budgets this much internal SRAM to parts that are not up yet.
-#define PENDING_KB 267u
 
 static TaskStatus_t s_tasks[TASK_SLOTS];
 
@@ -73,7 +71,6 @@ TEST_CASE("the heap floor under the running kiosk", "[bench_mem]")
     printf("  internal floor %" PRIu32 " KB, largest block now %" PRIu32 " KB\n", internal / KB,
            largest / KB);
     printf("  psram floor %" PRIu32 " KB\n", psram / KB);
-    printf("  KEHOACH 6.4 still owes %u KB to wifi, lvgl and the crop buffers\n", PENDING_KB);
     // A region that serves 32-bit access only still counts as internal, so the
     // byte-addressable total is the one a buffer can actually be cut from.
     printf("  8-bit internal: free %u B, largest %u B\n",

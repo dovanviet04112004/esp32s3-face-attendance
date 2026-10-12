@@ -1,12 +1,5 @@
 menu "Kiosk screen"
 
-    config UI_ENROL_NAME
-        string "Name the board button enrols under"
-        default "Nhân viên 1"
-        help
-            The board button is the fallback path for adding a face, and NVS key
-            device/enrol_name overrides this at run time.
-
     config UI_MIN_BRIGHTNESS
         int "Lowest backlight percent the slider or a stored value can set"
         range 1 50

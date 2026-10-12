@@ -96,42 +96,8 @@ void BoxTracker::capture(const uint16_t *frame, int width) noexcept
     active_ = high - low >= kMinContrast;
 }
 
-void BoxTracker::anchor(const Box &box, const uint16_t *frame, int width, int height) noexcept
-{
-    if (frame == nullptr || width < kWindowPx || height < kWindowPx || box.x2 <= box.x1 ||
-        box.y2 <= box.y1) {
-        return;
-    }
-    box_ = box;
-    patch_left_ = centred((box.x1 + box.x2) / 2.0f, kPatchPx, width);
-    patch_top_ = centred((box.y1 + box.y2) / 2.0f, kPatchPx, height);
-    capture(frame, width);
-}
-
-void BoxTracker::refresh(const uint16_t *frame, int width, int height) noexcept
-{
-    if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {
-        return;
-    }
-    capture(frame, width);
-}
-
-void BoxTracker::reshape(float width, float height) noexcept
-{
-    const float cx = (box_.x1 + box_.x2) / 2.0f;
-    const float cy = (box_.y1 + box_.y2) / 2.0f;
-    box_.x1 = cx - width / 2.0f;
-    box_.x2 = cx + width / 2.0f;
-    box_.y1 = cy - height / 2.0f;
-    box_.y2 = cy + height / 2.0f;
-}
-
 bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
 {
-    // A frame this failed on moved the box nowhere, and a caller adding up
-    // drift would otherwise keep adding the last frame that worked.
-    drift_x_ = 0;
-    drift_y_ = 0;
     if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {
         return false;
     }
@@ -182,8 +148,6 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     lost_ = 0;
     const int dx = window_left + best_col * kStep - patch_left_;
     const int dy = window_top + best_row * kStep - patch_top_;
-    drift_x_ = dx;
-    drift_y_ = dy;
     lead_x_ = dx;
     lead_y_ = dy;
     patch_left_ += dx;

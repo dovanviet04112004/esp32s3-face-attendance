@@ -34,11 +34,6 @@ esp_err_t svc_sync_init(void);
  */
 esp_err_t svc_sync_drain(bool wait_for_clock);
 
-/** Whether the log still holds a record the broker has not taken.
- *  @ctx any | non-blocking | the answer is from the last drain
- */
-bool svc_sync_pending(void);
-
 /** Counters since init, for the settings screen and the soak test.
  *  @ctx any | non-blocking
  */

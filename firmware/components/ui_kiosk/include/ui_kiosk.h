@@ -421,15 +421,9 @@ uint16_t ui_kiosk_ground_rgb565(void);
  */
 void ui_kiosk_shown(uint32_t serial);
 
-/** The cover map to paint over this frame.
- *  @ctx cam_task | non-blocking | read once per frame
- *  @ret NULL until the first screen has been painted
- */
-const drv_lcd_overlay_t *ui_kiosk_overlay(void);
-
 /** Take the overlay on the glass and claim its slot against repainting.
  *  @ctx task | non-blocking | one caller only, and each hold needs its release
- *  @ret the same pointer ui_kiosk_overlay gives, NULL until the first publish
+ *  @ret the overlay on the glass, NULL until the first publish
  */
 const drv_lcd_overlay_t *ui_kiosk_hold(void);
 

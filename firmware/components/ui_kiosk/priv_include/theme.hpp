@@ -31,7 +31,6 @@ constexpr int kBarH = 40;                 // status strip across the top
 constexpr int kRowH = 58;                 // one settings or list row
 constexpr int kKeyRadius = 8;
 constexpr int kButtonH = 56;
-constexpr int kTouchMin = 44;             // no target smaller than a fingertip
 
 constexpr int kContentW = APP_LCD_H_RES - 2 * kGutter;
 

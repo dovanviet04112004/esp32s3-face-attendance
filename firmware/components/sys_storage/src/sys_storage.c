@@ -29,7 +29,6 @@ static const char *TAG = "sys_storage";
 #define PARTITION_STORAGE "storage"
 #define PARTITION_MODELS_A "models_0"
 #define PARTITION_MODELS_B "models_1"
-#define STAGE_CHUNK_BYTES 4096
 #define MODELS_ERASE_STEP_BYTES 65536
 #define PARTITION_ASSETS "assets"
 #define ASSETS_POINT "/assets"

@@ -41,11 +41,6 @@ esp_err_t svc_sync_drain(bool wait_for_clock)
     return s_queue.drain(CONFIG_SYNC_BATCH_RECORDS, CONFIG_SYNC_ACK_TIMEOUT_MS);
 }
 
-bool svc_sync_pending(void)
-{
-    return s_ready && s_queue.pending();
-}
-
 svc_sync_stats_t svc_sync_stats(void)
 {
     return s_ready ? s_queue.stats() : (svc_sync_stats_t){};

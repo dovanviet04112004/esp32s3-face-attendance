@@ -905,11 +905,6 @@ uint16_t ui_kiosk_ground_rgb565(void)
     return ui::theme::palette()[DRV_LCD_GROUND];
 }
 
-const drv_lcd_overlay_t *ui_kiosk_overlay(void)
-{
-    return s_shown.load(std::memory_order_acquire);
-}
-
 bool ui_kiosk_screen_covers(void)
 {
     return s_covers.load(std::memory_order_acquire);
