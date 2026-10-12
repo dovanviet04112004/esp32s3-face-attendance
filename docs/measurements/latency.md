@@ -625,7 +625,7 @@ trả `ESP_ERR_NOT_SUPPORTED`. `34fe323` ghim `==1.3.2` ở mọi test app; số
 
 Cả sáu graph `.espdl` của hai bộ ESP-DL qua `test()`: detect 223 KB, spoof tách 531 KB, spoof
 PReLU 550 KB, recog w32 651 KB, **recog FRBench 1.385 KB**. `test()` so mọi phần tử int8 với mô
-phỏng ESP-PPQ trong một bước lượng tử (sai số `1 + 1e-5`), không phải từng bit. Recog FRBench
+phỏng ESP-PPQ với sai số 5e-5, tức từng bit; sai số `1 + 1e-5` chỉ áp cho tensor int16. Recog FRBench
 qua được là vì port nhân broadcast thay cho `expand_as` (KẾ HOẠCH §3 lớp 2); bản trial còn
 `Expand` thì lúc 19:58 cùng ngày đã FAIL và crash lặp.
 

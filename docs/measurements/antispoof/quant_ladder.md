@@ -229,7 +229,7 @@ nguồn Q1 TFLite (`compress/quant/ptq_espdl.py`, chặng `ESPDL=1` của `30_qu
 `bench/host_bench.py` trên **87 khung OV5640 có nhãn** (`data/splits/device/v1/test_device.txt`,
 62 thật · 25 giả), cắt đúng `fitted()` 2,7× và lấy mẫu vùng như firmware; ngưỡng là `live_min`
 500‰ đọc từ Kconfig của `svc_vision`. Hàng ESP-DL là mô phỏng ESP-PPQ, mà `model->test()` trên chip
-giữ trong một bước int8 (latency.md §13.3).
+giữ khớp từng bit ở int8 (latency.md §13.3).
 
 | Run | Q | AUC | thật giữ · giả chặn ở 500‰ | thật thấp nhất | giả cao nhất | Kích thước | Bộ nhớ trên board | Latency board |
 |---|---|---|---|---|---|---|---|---|

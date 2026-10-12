@@ -30,8 +30,8 @@ cùng partition, cùng `-O2`, cùng tải preview giả lập, 50 lượt sau 3 
 | **Một lượt ba nhánh** (cùng model) | **1.270,9** | **227,7** | |
 | Một lượt, có tải | 1.481,8 | 257,8 | |
 
-Cả mười lần `model->test()` — đầu ra chip so với mô phỏng ESP-PPQ — đều PASS, tức khớp trong một
-bước int8 ở mọi phần tử (sai số `1 + 1e-5` của `Model::test()`, không phải trùng từng bit). Độ chính xác
+Cả mười lần `model->test()` — đầu ra chip so với mô phỏng ESP-PPQ — đều PASS, tức khớp từng bit ở
+mọi phần tử int8: `Model::test()` so tensor int8 với sai số 5e-5, chỉ tensor int16 được lệch một bước. Độ chính xác
 chấm trên host bằng đúng file chip chạy: detect ngang TFLite (AP ≥ 38 px 0,9497 so với 0,9387),
 anti-spoof ngang trên miền thiết bị, recog **tốt hơn hẳn** file TFLite đang nạp (cùng model w32,
 CFP-FP TAR@1e-3 0,566 so với 0,361).
@@ -89,6 +89,6 @@ lệch 0,0 trên host — và `espdl_op_check.py` chặn loại lỗi này từ 
 - Trọng số ở PSRAM thì một phép ghi lố heap **âm thầm sửa model** thay vì crash tại chỗ như ở flash.
 - Recog mới đổi không gian embedding: **mọi khuôn mặt phải đăng ký lại**.
 - `esp-ppq` 1.3.11 khai `onnx<1.18`, venv dùng 1.22 qua `override-dependencies`; bằng chứng
-  duy nhất rằng tổ hợp này đúng là `test()` PASS trên board, trong một bước int8.
+  duy nhất rằng tổ hợp này đúng là `test()` PASS trên board, khớp từng bit ở int8.
 - Một lượt ba nhánh của bộ deploy đo được 452 ms rảnh, 523 ms có tải (`latency.md` §13.1): vẫn
   vượt ngân sách 360 ms, nhưng nhanh 2,8× so với 1.271 ms của TFLM.
