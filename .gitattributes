@@ -15,7 +15,7 @@
 *.ico       binary
 *.pdf       binary
 
-*/generated/*   linguist-generated
+**/generated/** linguist-generated
 uv.lock         linguist-generated
 dependencies.lock   linguist-generated
 

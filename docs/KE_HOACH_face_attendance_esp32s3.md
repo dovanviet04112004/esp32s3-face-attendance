@@ -2432,7 +2432,7 @@ esp32s3-face-attendance/
 | File gốc | Vai trò |
 |---|---|
 | `.editorconfig` | Thống nhất indent/EOL cho 4 ngôn ngữ. Không có thì diff đầy nhiễu whitespace |
-| `.gitattributes` | `* text=auto eol=lf`, `*.tflite binary`, `*.espdl binary`, `*/generated/* linguist-generated` |
+| `.gitattributes` | `* text=auto eol=lf`, `*.tflite binary`, `*.espdl binary`, `**/generated/** linguist-generated` |
 | `.pre-commit-config.yaml` | Chạy `check_comments` · `ruff` · `clang-format` · `prettier` trước khi commit |
 | `Makefile` | Điểm vào duy nhất, và là Makefile duy nhất của repo: mọi lệnh của sáu khối — cài môi trường, sinh code, kiểm tra, dữ liệu, train, lượng tử, xuất model, firmware, gắn board vào WSL qua usbipd, backend, frontend, deploy. `make help` liệt kê; lệnh chưa có target thì thêm target rồi mới chạy |
 
