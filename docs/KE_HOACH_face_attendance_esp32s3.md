@@ -2174,7 +2174,8 @@ Một mạng đi từ torch tới chip qua `facepipe/compress/quant/`, mỗi fil
    vào, vì module esp-dl của chúng chỉ chép số nguyên; đồ thị trái điều này bị từ chối ngay lúc xuất.
    `espdl_shapes.py` phát lại `get_output_shape` của từng module esp-dl trên `.info` vừa xuất: chiều
    không dương, phép phát sóng ONNX từ chối hay `Reshape` lệch kích thước bị chặn trên máy tính, trước
-   khi ghi flash. `export/espdl_op_check.py` đối chiếu op với `dl_module_creator.hpp` như cũ.
+   khi ghi flash. `export/espdl_op_check.py` đối chiếu op với `dl_module_creator.hpp` và các op
+   `ai_engine` tự đăng ký.
 
 `esp_ppq_patches.py` sửa lỗi của ESP-PPQ 1.3.11, chỉ cho nhánh khai nó trong `esp_ppq_patches` của
 `quant.yaml`, ở mọi chỗ nhánh ấy dùng ESP-PPQ: lượng tử, mô phỏng, xuất. Mỗi bản vá ghi triệu chứng
@@ -2186,6 +2187,16 @@ thể đổi số nguyên dù phép tính không đổi. Viết lại nào khôn
 Bản vá mô phỏng chép theo **mã máy** của nhân esp-dl (`xtensa-esp32s3-elf-objdump` trên ELF của bản
 dò), không theo mã C: esp-dl dựng với `-ffast-math -O3`, nên trình biên dịch đổi thứ tự phép float, gộp
 nhân-cộng và đổi phép chia thành nhân nghịch đảo.
+
+| Bản vá xuất | Nhận đồ thị chỗ nào | Vì sao số nguyên không đổi |
+|---|---|---|
+| `cache_sized_convolutions` | tích chập 1×1 mà trọng số lấp đầy cache dữ liệu 64 KB | cắt theo kênh ra thành từng lát nửa cache rồi `Concat`; mỗi kênh ra vẫn là đúng phép tính ấy |
+| `fused_prelu` | `Conv` mà đầu ra chỉ đi vào một `PRelu` mang **cùng số mũ** ở đầu vào và đầu ra, alpha theo từng kênh | thành một op `ConvPRelu`. Nhân int8 của esp-dl trên S3 làm tròn tích chập ra int8 theo số mũ đầu ra rồi áp `EE.VPRELU.S8` lên đó, đúng lệnh op `PRelu` đứng riêng dùng; cùng số mũ thì hai cách ra cùng từng số. `PRelu` khác số mũ ở hai đầu giữ nguyên chỗ cũ |
+
+Module `Conv` của esp-dl 3.3.11 dựng tham số nhân với con trỏ alpha để trống ("Do not support PReLU"),
+dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.5.6): nó dựng tham số qua
+`ConvOpArgs` công khai rồi điền con trỏ alpha và số mũ của nó, chạy cả tích chập thường lẫn depthwise.
+`espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh các op của `dl_module_creator.hpp`.
 
 **Quy trình đưa một model lên chip**, nhánh nào cũng vậy. Mỗi bước là một lệnh make có điều kiện qua;
 chưa qua thì không sang bước sau. Số đo ghi ngay vào `docs/measurements/` (`latency.md` cho giờ,
@@ -4379,7 +4390,7 @@ components/ai_engine/
 ├── idf_component.yml                      # espressif/esp-dl ==3.3.11 (§4.5.1)
 ├── priv_include/{tensor_view.hpp,         # ★ view int8 NHWC + scale + zero point, runtime nào cũng dựng được
 │                 tflite_model.hpp, arena.hpp, model_store.hpp,   # TFLM
-│                 espdl_model.hpp,         # ESP-DL
+│                 espdl_model.hpp, espdl_conv_prelu.hpp,   # ESP-DL
 │                 pixels.hpp}
 ├── src/
 │   ├── ai_engine.cpp                      # mặt tiền TFLM: dựng 2 arena, mở model store, nối 3 model
@@ -4389,7 +4400,9 @@ components/ai_engine/
 │   │   ├── arena.cpp                      # TFLM — cấp phát 16-byte aligned, internal → PSRAM fallback
 │   │   ├── model_store.cpp                # TFLM — đọc header partition, trả con trỏ mmap từng entry
 │   │   ├── profiler.cpp                   # TFLM — MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
-│   │   ├── espdl_model.cpp                # ESP-DL — dl::Model trên con trỏ mmap, param_copy, TensorView
+│   │   ├── espdl_model.cpp                # ESP-DL — dl::Model trên con trỏ mmap, param_copy, TensorView;
+│   │   │                                  #   đăng ký op riêng của ai_engine trước model đầu tiên
+│   │   ├── espdl_conv_prelu.cpp           # ESP-DL — module ConvPRelu: Conv + PReLU trong một nhân (§3.7)
 │   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
