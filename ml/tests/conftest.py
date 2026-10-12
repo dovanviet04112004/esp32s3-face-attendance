@@ -96,8 +96,13 @@ def ladder_calibration(batch: int = 1, count: int = 8, seed: int = 1) -> list[to
     return [torch.rand(batch, 3, 16, 16, generator=generator) for _ in range(count)]
 
 
-def ladder_onnx(model: nn.Module, out: Path, feed: torch.Tensor) -> Path:
-    """A LadderNet as the ONNX the ladder quantises, traced at feed's batch."""
+LADDER_OUTPUTS = ("vector", "map")
+
+
+def ladder_onnx(
+    model: nn.Module, out: Path, feed: torch.Tensor, outputs: tuple[str, ...] = LADDER_OUTPUTS
+) -> Path:
+    """model as the ONNX the ladder quantises, traced at feed's batch."""
     from facepipe.export import to_onnx
 
     torch.onnx.export(
@@ -106,18 +111,24 @@ def ladder_onnx(model: nn.Module, out: Path, feed: torch.Tensor) -> Path:
         str(out),
         opset_version=to_onnx.OPSET,
         input_names=["image"],
-        output_names=["vector", "map"],
+        output_names=list(outputs),
         dynamo=False,
     )
     return out
 
 
-def quantise_ladder_net(model: nn.Module, work: Path, calib: list[torch.Tensor], rungs: dict):
+def quantise_ladder_net(
+    model: nn.Module,
+    work: Path,
+    calib: list[torch.Tensor],
+    rungs: dict,
+    outputs: tuple[str, ...] = LADDER_OUTPUTS,
+):
     """model through ONNX, traced at calib's batch, into the graph ESP-PPQ gives for the S3."""
     from facepipe.compress.quant import ptq_espdl
 
     work.mkdir(parents=True, exist_ok=True)
-    onnx_path = ladder_onnx(model, work / "net.onnx", calib[0])
+    onnx_path = ladder_onnx(model, work / "net.onnx", calib[0], outputs)
     return ptq_espdl.quantize_onnx(onnx_path, calib, work, rungs)
 
 

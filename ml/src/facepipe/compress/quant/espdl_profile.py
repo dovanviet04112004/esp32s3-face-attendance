@@ -142,9 +142,9 @@ def conv_tags(module: Module, laid: dict[str, list[int]], cpu_mhz: int, cache_by
         tags.append(f"unaligned {c_in} -> {c_out} channels ({fix})")
     weight_bytes = math.prod(w)
     pointwise_rows = group == 1 and taps == 1 and math.prod(y[:-1]) > 1
-    if pointwise_rows and weight_bytes > cache_bytes and not c_out % CHANNEL_STEP:
+    if pointwise_rows and weight_bytes >= cache_bytes and not c_out % CHANNEL_STEP:
         tags.append(
-            f"{weight_bytes // 1024} KB of weights outgrow the cache (cache_sized_convolutions)"
+            f"{weight_bytes // 1024} KB of weights fill the cache (cache_sized_convolutions)"
         )
     return tags, module.us * cpu_mhz / max(macs, 1)
 

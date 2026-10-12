@@ -67,9 +67,11 @@ def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
     assert tags == ["unaligned 32 -> 103 channels (no export patch)"]
 
-    laid = {"x": [1, 7, 7, 512], "w": [1, 1, 512, 512], "y": [1, 7, 7, 512]}
+    laid = {"x": [1, 14, 14, 128], "w": [1, 1, 128, 512], "y": [1, 14, 14, 512]}
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
-    assert tags == ["256 KB of weights outgrow the cache (cache_sized_convolutions)"]
+    assert tags == ["64 KB of weights fill the cache (cache_sized_convolutions)"]
+    laid = {"x": [1, 14, 14, 128], "w": [1, 1, 128, 256], "y": [1, 14, 14, 256]}
+    assert espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)[0] == []
 
     tags, rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), {}, 240, 65536)
     assert (tags, rate) == ([], None)
