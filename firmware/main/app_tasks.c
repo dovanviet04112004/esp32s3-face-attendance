@@ -78,9 +78,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define REST_ALL_MS 60000
 #define REST_POLL_MS 40
 #define SCREEN_DIM_PERCENT 0
-#define UI_NVS_BRIGHTNESS "brightness"
-#define UI_NVS_VOLUME "volume"
-#define UI_NVS_LANGUAGE "lang"
 #define TOF_SETTLE_POLLS 5
 #define PRESENCE_HYSTERESIS_MM 60
 #define PRESENCE_AWAY_SAMPLES 5
@@ -104,7 +101,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define HEARTBEAT_PAYLOAD_CAP 384
 #define MODEL_VERSION_CAP 33
 #define NVS_MODEL_VERSION "version"
-#define NVS_ACTIVE_SLOT "active_slot"
 #define EMBEDDING_VERSION_CAP 33
 #define EVENT_PAYLOAD_CAP 384
 #define CMD_SEEN_RING 8
@@ -127,9 +123,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define OTA_TASK_STACK_BYTES 8192
 #define OTA_SETTLE_MS 30000
 #define OTA_REBOOT_WAIT_MS 1500
-#define NVS_LAST_OTA "last_ota_result"
-#define OTA_MODELS_ON_TRIAL 1u
-#define OTA_MODELS_UNDONE 3u
 #define TICKET_POLL_MS 1000
 #define TICKET_RECHECK_MS 60000
 #define RENEW_LOOK_MS 60000
@@ -140,7 +133,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define JOIN_WAIT_MS 30000
 #define SNTP_HOST_CAP 64
 #define NVS_SNTP_HOST "sntp_host"
-#define NVS_PRESENT_MM "present_mm"
 #define TOUCH_TASK_CORE 0
 #define TOUCH_TASK_PRIORITY 5
 #define TOUCH_TASK_STACK_BYTES 3072
@@ -522,7 +514,7 @@ static void publish_heartbeat(void)
     beat.has_pending_uplink_count = sys_storage_attend_pending(&pending) == ESP_OK;
     beat.pending_uplink_count = pending;
     uint32_t slot = 0;
-    beat.has_active_slot = sys_storage_get_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, &slot) == ESP_OK;
+    beat.has_active_slot = sys_storage_get_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, &slot) == ESP_OK;
     beat.active_slot = (uint8_t)slot;
     beat.boot_count = sys_storage_boot_count();
     beat.has_boot_count = true;
@@ -1297,8 +1289,9 @@ static void report_update_outcome(void)
         }
     }
     uint32_t models = 0;
-    if (sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &models) == ESP_OK && models == OTA_MODELS_UNDONE) {
-        sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, 0);
+    if (sys_storage_get_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, &models) == ESP_OK &&
+        models == STORAGE_OTA_MODELS_UNDONE) {
+        sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, 0);
         app_event_t back = { 0 };
         back.type = DEVICE_EVENT_TYPE_OTA_ROLLED_BACK;
         back.severity = DEVICE_EVENT_SEVERITY_ERROR;
@@ -1784,7 +1777,7 @@ static void take_levels(void)
             drv_audio_set_volume(percent);
         }
         if (settled) {
-            sys_storage_set_u32(STORAGE_NS_UI, lamp ? UI_NVS_BRIGHTNESS : UI_NVS_VOLUME, percent);
+            sys_storage_set_u32(STORAGE_NS_UI, lamp ? STORAGE_KEY_BRIGHTNESS : STORAGE_KEY_VOLUME, percent);
         }
     }
 }
@@ -1794,7 +1787,7 @@ static void take_language(void)
 {
     const char *picked = NULL;
     if (ui_kiosk_take_language(&picked)) {
-        sys_storage_set_str(STORAGE_NS_UI, UI_NVS_LANGUAGE, picked);
+        sys_storage_set_str(STORAGE_NS_UI, STORAGE_KEY_LANG, picked);
     }
 }
 
@@ -2104,7 +2097,7 @@ static void ota_task(void *arg)
                                       : net_ota_firmware(&image, why, sizeof(why));
         if (took == ESP_OK && models) {
             // The slot only counts once a boot has read it (KEHOACH 6.2.1).
-            sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_ON_TRIAL);
+            sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_ON_TRIAL);
         }
         xEventGroupClearBits(wiring->flags, APP_EG_OTA_RUNNING);
         if (took != ESP_OK) {
@@ -2318,7 +2311,7 @@ static void audio_task(void *arg)
 static uint32_t presence_gate_mm(void)
 {
     uint32_t gate_mm = 0;
-    const esp_err_t stored = sys_storage_get_u32(STORAGE_NS_VISION, NVS_PRESENT_MM, &gate_mm);
+    const esp_err_t stored = sys_storage_get_u32(STORAGE_NS_VISION, STORAGE_KEY_PRESENT_MM, &gate_mm);
     if (stored != ESP_OK || gate_mm == 0) {
         gate_mm = CONFIG_VISION_SEED_PRESENT_MM;
         ESP_LOGW(TAG, "no presence gate in nvs, seeding %" PRIu32 " mm", gate_mm);

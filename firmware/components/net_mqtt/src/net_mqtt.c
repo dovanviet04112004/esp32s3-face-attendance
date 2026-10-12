@@ -14,7 +14,6 @@ static const char *TAG = "net_mqtt";
 
 #define NVS_URI "mqtt_uri"
 #define NVS_USER "mqtt_user"
-#define NVS_PASS "mqtt_pass"
 #define URI_CAP 128
 #define TOKEN_CAP 1024
 #define TLS_SCHEME "mqtts://"
@@ -80,7 +79,7 @@ static esp_err_t setting(const char *key, char *out, size_t cap, const char *fal
 // mqtt_pass overrides on a bench broker; a shipped kiosk has only its ticket (KEHOACH 6.2.1).
 static net_mqtt_login_t password(char *out, size_t cap)
 {
-    if (setting(NVS_PASS, out, cap, NULL) == ESP_OK) {
+    if (setting(STORAGE_KEY_MQTT_PASS, out, cap, NULL) == ESP_OK) {
         return NET_MQTT_LOGIN_OVERRIDE;
     }
     if (setting(STORAGE_KEY_TICKET, out, cap, NULL) == ESP_OK) {

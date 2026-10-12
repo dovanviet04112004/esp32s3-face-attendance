@@ -58,7 +58,7 @@ static int set_cmd(int argc, char **argv)
 }
 
 // The secrets of KEHOACH 6.2.1, which read back as a length and never as a value.
-static const char *const kSecretKeys[] = { "pass", "jwt", "mqtt_pass" };
+static const char *const kSecretKeys[] = { STORAGE_KEY_WIFI_PASS, STORAGE_KEY_TICKET, STORAGE_KEY_MQTT_PASS };
 
 static bool is_secret(const char *key)
 {

@@ -30,12 +30,26 @@ esp_err_t sys_storage_init(void);
 #define STORAGE_NS_VISION "vision"
 #define STORAGE_NS_ATTEND "attend"
 
+#define STORAGE_KEY_WIFI_PASS "pass"       // in STORAGE_NS_WIFI
+#define STORAGE_KEY_MQTT_PASS "mqtt_pass"  // in STORAGE_NS_DEVICE, a bench password
+
 // The ticket keys of KEHOACH 7.3: net_provision writes them, net_mqtt reads.
 #define STORAGE_KEY_TICKET "jwt"
 #define STORAGE_KEY_TICKET_EXP "jwt_exp"  // u32, the ticket's own exp claim
 #define STORAGE_KEY_ROSTER_VER "roster_ver"  // u32, the roster cursor of KEHOACH 7.5
 #define STORAGE_KEY_PENDING "pending"     // blob storage_pending_t
 #define STORAGE_KEY_ENROLL_OUT "enroll_out"  // left by kiosk-side removal, erased at boot
+#define STORAGE_KEY_ACTIVE_SLOT "active_slot"  // in STORAGE_NS_MODEL
+#define STORAGE_KEY_PRESENT_MM "present_mm"    // in STORAGE_NS_VISION
+#define STORAGE_KEY_BRIGHTNESS "brightness"    // in STORAGE_NS_UI, percent
+#define STORAGE_KEY_VOLUME "volume"            // in STORAGE_NS_UI, percent
+#define STORAGE_KEY_LANG "lang"                // in STORAGE_NS_UI, "vi" or "en"
+
+// The A/B model latch and the values it takes (KEHOACH 6.2.1).
+#define STORAGE_KEY_LAST_OTA "last_ota_result"  // in STORAGE_NS_SYS
+#define STORAGE_OTA_MODELS_ON_TRIAL 1u
+#define STORAGE_OTA_MODELS_KEPT 2u
+#define STORAGE_OTA_MODELS_UNDONE 3u
 
 /** Read one unsigned setting from a namespace of KEHOACH 6.2.1.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 5.3)

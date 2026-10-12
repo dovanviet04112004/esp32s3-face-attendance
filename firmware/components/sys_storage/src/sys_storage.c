@@ -29,7 +29,6 @@ static const char *TAG = "sys_storage";
 #define PARTITION_STORAGE "storage"
 #define PARTITION_MODELS_A "models_0"
 #define PARTITION_MODELS_B "models_1"
-#define NVS_ACTIVE_SLOT "active_slot"
 #define STAGE_CHUNK_BYTES 4096
 #define MODELS_ERASE_STEP_BYTES 65536
 #define PARTITION_ASSETS "assets"
@@ -73,7 +72,7 @@ static esp_partition_mmap_handle_t s_models_map;
 static uint8_t active_slot(void)
 {
     uint32_t slot = 0;
-    if (sys_storage_get_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, &slot) != ESP_OK) {
+    if (sys_storage_get_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, &slot) != ESP_OK) {
         return 0;
     }
     return slot == 1 ? 1 : 0;
@@ -1040,7 +1039,7 @@ esp_err_t sys_storage_models_stage_abort(void)
 esp_err_t sys_storage_models_activate(void)
 {
     const uint8_t next = active_slot() == 0 ? 1 : 0;
-    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, next), TAG, "slot");
+    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, next), TAG, "slot");
     ESP_LOGW(TAG, "models slot %u takes over at the next boot", (unsigned)next);
     return ESP_OK;
 }
@@ -1049,7 +1048,7 @@ esp_err_t sys_storage_models_revert(void)
 {
     const uint8_t bad = active_slot();
     const uint8_t back = bad == 0 ? 1 : 0;
-    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, NVS_ACTIVE_SLOT, back), TAG, "slot");
+    APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, back), TAG, "slot");
     ESP_LOGE(TAG, "models slot %u would not load, falling back to %u", (unsigned)bad,
              (unsigned)back);
     return ESP_OK;

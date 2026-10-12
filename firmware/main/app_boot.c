@@ -35,10 +35,6 @@ static esp_err_t models_error = ESP_OK;
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_SEED_VER "seed_ver"
-#define NVS_LAST_OTA "last_ota_result"
-#define OTA_MODELS_ON_TRIAL 1u
-#define OTA_MODELS_KEPT 2u
-#define OTA_MODELS_UNDONE 3u
 #define NVS_TZ "tz"
 #define TZ_CAP 40
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
@@ -49,12 +45,8 @@ static esp_err_t models_error = ESP_OK;
 #define NVS_MATCH_MIN "match_min"
 #define NVS_FACE_MIN_PX "face_min_px"
 #define NVS_GUIDE_MIN "guide_min"
-#define NVS_PRESENT_MM "present_mm"
 #define NVS_DEDUP_MIN "dedup_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
-#define NVS_BRIGHTNESS "brightness"
-#define NVS_VOLUME "volume"
-#define NVS_LANGUAGE "lang"
 #define PERMILLE 1000.0f
 #define PERCENT 100.0f
 #define MODEL_ENTRY_RECOG "recog"
@@ -77,11 +69,11 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
     { STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT },
-    { STORAGE_NS_VISION, NVS_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
+    { STORAGE_NS_VISION, STORAGE_KEY_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
     { STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
     { STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF },
-    { STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS },
-    { STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME },
+    { STORAGE_NS_UI, STORAGE_KEY_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS },
+    { STORAGE_NS_UI, STORAGE_KEY_VOLUME, CONFIG_UI_SEED_VOLUME },
 };
 
 // The one failure a kiosk can undo alone, and last_ota_result is what stops it
@@ -90,19 +82,19 @@ static void load_models(void)
 {
     const esp_err_t loaded = ai_engine_init();
     uint32_t trial = 0;
-    sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &trial);
+    sys_storage_get_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, &trial);
     // A slot on trial that loads is judged once vision is up (settle_models).
     if (loaded == ESP_OK) {
         return;
     }
     ESP_LOGE(TAG, "models would not load: %s", esp_err_to_name(loaded));
-    if (trial != OTA_MODELS_ON_TRIAL) {
+    if (trial != STORAGE_OTA_MODELS_ON_TRIAL) {
         // Nothing to go back to, so the kiosk says so and carries on blind
         // rather than rebooting into the same wall.
         models_error = loaded;
         return;
     }
-    sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
+    sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_UNDONE);
     sys_storage_models_revert();
     esp_restart();
 }
@@ -135,18 +127,19 @@ static bool models_answer(void)
 static void settle_models(EventGroupHandle_t flags)
 {
     uint32_t trial = 0;
-    if (sys_storage_get_u32(STORAGE_NS_SYS, NVS_LAST_OTA, &trial) != ESP_OK || trial != OTA_MODELS_ON_TRIAL) {
+    if (sys_storage_get_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, &trial) != ESP_OK ||
+        trial != STORAGE_OTA_MODELS_ON_TRIAL) {
         return;
     }
     const bool up = (xEventGroupGetBits(flags) & APP_EG_AI_READY) != 0;
     if (up && models_answer()) {
-        sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_KEPT);
+        sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_KEPT);
         ESP_LOGW(TAG, "models slot %u keeps the seat", (unsigned)sys_storage_models_slot());
         return;
     }
     ESP_LOGE(TAG, "models slot %u %s, going back", (unsigned)sys_storage_models_slot(),
              up ? "gave a wrong answer" : "brought no vision up");
-    sys_storage_set_u32(STORAGE_NS_SYS, NVS_LAST_OTA, OTA_MODELS_UNDONE);
+    sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_UNDONE);
     sys_storage_models_revert();
     esp_restart();
 }
@@ -203,7 +196,7 @@ static uint32_t setting(const char *ns, const char *key, uint32_t fallback)
 
 uint8_t app_boot_brightness(void)
 {
-    const uint32_t stored = setting(STORAGE_NS_UI, NVS_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
+    const uint32_t stored = setting(STORAGE_NS_UI, STORAGE_KEY_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
     if (stored < CONFIG_UI_MIN_BRIGHTNESS) {
         return CONFIG_UI_MIN_BRIGHTNESS;
     }
@@ -331,13 +324,13 @@ esp_err_t app_boot(void)
     ESP_ERROR_CHECK(bsp_board_init());
     ESP_ERROR_CHECK(drv_lcd_init());
     const uint8_t lamp = app_boot_brightness();
-    const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, NVS_VOLUME, CONFIG_UI_SEED_VOLUME);
+    const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, STORAGE_KEY_VOLUME, CONFIG_UI_SEED_VOLUME);
     ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
     ESP_ERROR_CHECK(ui_kiosk_init());
     ui_kiosk_set_levels(lamp, loud);
     // An absent key reads as an empty string, which the kiosk takes as Vietnamese.
     char lang[8] = { 0 };
-    sys_storage_get_str(STORAGE_NS_UI, NVS_LANGUAGE, lang, sizeof(lang));
+    sys_storage_get_str(STORAGE_NS_UI, STORAGE_KEY_LANG, lang, sizeof(lang));
     ui_kiosk_set_language(lang);
     ESP_ERROR_CHECK(drv_ioexp_init());
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).

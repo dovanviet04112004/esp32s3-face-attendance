@@ -22,7 +22,6 @@ static const char *TAG = "net_wifi";
 #define SCAN_DWELL_MAX_MS 80
 
 #define NVS_SSID "ssid"
-#define NVS_PASS "pass"
 #define NVS_SAVED "saved"
 #define CONNECTED_BIT BIT0
 #define FAILED_BIT BIT1
@@ -111,13 +110,13 @@ static void load_saved(void)
         return;
     }
     // An ssid with no password is an open network (KEHOACH 6.2.1).
-    if (sys_storage_get_str(STORAGE_NS_WIFI, NVS_PASS, pass, sizeof(pass)) != ESP_OK) {
+    if (sys_storage_get_str(STORAGE_NS_WIFI, STORAGE_KEY_WIFI_PASS, pass, sizeof(pass)) != ESP_OK) {
         pass[0] = '\0';
     }
     promote(s_saved, ssid, pass);
     if (write_saved() == ESP_OK) {
         sys_storage_erase_key(STORAGE_NS_WIFI, NVS_SSID);
-        sys_storage_erase_key(STORAGE_NS_WIFI, NVS_PASS);
+        sys_storage_erase_key(STORAGE_NS_WIFI, STORAGE_KEY_WIFI_PASS);
     }
 }
 
