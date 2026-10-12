@@ -266,6 +266,86 @@ def padded_channels() -> Iterator[None]:
         espdl_exporter.EspdlExporter.prepare_graph = prepare
 
 
+def relu_ready(clip) -> bool:
+    """clip, a Clip from 0 that a Relu fused into its Conv can stand for: an int8 Conv's lone
+    reader, the Conv's output grid kept through it.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    if clip.type != "Clip" or not isinstance(clip, QuantableOperation):
+        return False
+    conv = clip.inputs[0].source_op
+    if not isinstance(conv, QuantableOperation) or conv.type != "Conv":
+        return False
+    grid = [conv.output_quant_config[0], clip.input_quant_config[0], clip.output_quant_config[0]]
+    return (
+        clip_bounds(clip)[0] == 0
+        and len(clip.inputs[0].dest_ops) == 1
+        and int8([*conv.input_quant_config[:2], *grid])
+        and one_grid(*grid)
+    )
+
+
+def chip_clip(op, values: list, ctx=None, **kwargs):
+    """ESP-PPQ's Clip; a relu_ready one is left to its grid's int8 top, as the fused Relu is."""
+    from esp_ppq.core import QuantizationStates
+    from esp_ppq.executor.op.torch.default import Clip_forward
+
+    if QuantizationStates.is_activated(op.output_quant_config[0].state) and relu_ready(op):
+        return torch.relu(values[0])
+    return Clip_forward(op, values, ctx, **kwargs)
+
+
+def relu_from_clip(graph, conv) -> bool:
+    """conv's lone reader, a relu_ready Clip, turned into the Relu ESP-PPQ fuses into conv."""
+    from esp_ppq.core import OperationQuantizationConfig
+
+    readers = graph.get_downstream_operations(conv) if conv.name in graph.operations else []
+    if conv.type != "Conv" or len(readers) != 1 or not relu_ready(readers[0]):
+        return False
+    if conv.outputs[0].name in graph.outputs:
+        raise ValueError(
+            f"{conv.name} writes a graph output, so the Clip simulated on it stays apart"
+        )
+    clip = readers[0]
+    for bound in clip.inputs[1:]:
+        bound.dest_ops.remove(clip)
+        if not bound.dest_ops:
+            graph.remove_variable(bound)
+    del clip.inputs[1:]
+    clip.config = OperationQuantizationConfig(clip.input_quant_config[:1], clip.output_quant_config)
+    clip.type = "Relu"
+    return True
+
+
+@contextlib.contextmanager
+def clip_as_relu() -> Iterator[None]:
+    """Each relu_ready Clip simulated with no upper bound and exported as a Relu inside its Conv.
+
+    esp-dl fuses no bounded activation into a convolution, so a ReLU6 runs alone as a table lookup
+    that reads and writes its tensor again (KEHOACH 3.7).
+    """
+    from esp_ppq.core import TargetPlatform
+    from esp_ppq.executor.base import OPERATION_FORWARD_TABLE
+    from esp_ppq.parser.espdl import export_patterns
+
+    table = OPERATION_FORWARD_TABLE[TargetPlatform.ESPDL_S3_INT8]
+    simulated = table["Clip"]
+    joined = export_patterns.FuseReluLikePattern.export
+
+    def joining(self, op, graph, **kwargs):
+        relu_from_clip(graph, op)
+        return joined(self, op, graph, **kwargs)
+
+    table["Clip"] = chip_clip
+    export_patterns.FuseReluLikePattern.export = joining
+    try:
+        yield
+    finally:
+        table["Clip"] = simulated
+        export_patterns.FuseReluLikePattern.export = joined
+
+
 PRELU_MARK = "PRelu"
 
 
@@ -393,9 +473,10 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "cache_sized_convolutions": cache_sized_convolutions,
     "fused_prelu": fused_prelu,
     "padded_channels": padded_channels,
+    "clip_as_relu": clip_as_relu,
 }
 # Patches that change an integer the chip computes: ladder variants only (KEHOACH 3.7).
-ROUNDING = frozenset({"fused_prelu"})
+ROUNDING = frozenset({"fused_prelu", "clip_as_relu"})
 
 
 @contextlib.contextmanager

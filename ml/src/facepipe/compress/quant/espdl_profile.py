@@ -177,7 +177,11 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
         tags.append("runs in float")
     if module.op in FLOAT_KERNEL_OPS:
         tags.append("esp-dl's int8 kernel works in float32 per value (no export patch)")
-    if LUT_MARK in module.attrs:
+    if LUT_MARK in module.attrs and module.op == "Clip":
+        tags.append(
+            "activation alone, one table lookup a value (clip_as_relu, from 0 after a Conv)"
+        )
+    elif LUT_MARK in module.attrs:
         tags.append("activation alone, one table lookup a value (no export patch)")
     if module.op == "PRelu":
         tags.append("activation alone (fused_prelu, when its Conv alone feeds it on one grid)")

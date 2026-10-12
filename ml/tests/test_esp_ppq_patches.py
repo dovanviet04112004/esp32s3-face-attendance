@@ -334,6 +334,52 @@ def test_a_clip_keeps_zero_only_when_zero_lies_inside_its_bounds() -> None:
     assert not esp_ppq_patches.keeps_zero(SimpleNamespace(type="Sigmoid", inputs=[]))
 
 
+class BoundedConvolutions(nn.Module):
+    """Two convolutions each read by a ReLU6, biased so a share of the first one's values pass 6."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.first = nn.Conv2d(16, 16, 1)
+        self.second = nn.Conv2d(16, 16, 3, padding=1, groups=16)
+        with torch.no_grad():
+            self.first.weight.uniform_(0.0, 0.8)
+            self.first.bias.fill_(2.0)
+            self.second.weight.uniform_(-0.1, 0.1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return nn.functional.relu6(self.second(nn.functional.relu6(self.first(x))))
+
+
+def test_clip_as_relu_lifts_the_bound_and_exports_a_fused_relu(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    from esp_ppq.executor import TorchExecutor
+
+    torch.manual_seed(13)
+    calib = [torch.rand(1, 16, 6, 6) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("detection")
+    graph = quantise_ladder_net(BoundedConvolutions().eval(), tmp_path, calib, rungs, ("out",))
+    ready = [op for op in graph.operations.values() if esp_ppq_patches.relu_ready(op)]
+    assert len(ready) == 2
+    names = [op.outputs[0].name for op in ready]
+    executor = TorchExecutor(graph, device="cpu")
+    bounded = executor.forward(calib[0], output_names=names)
+    with esp_ppq_patches.applied(["clip_as_relu"]):
+        lifted = executor.forward(calib[0], output_names=names)
+    first, step = ready[0], float(ready[0].output_quant_config[0].scale)
+    low, high = esp_ppq_patches.clip_bounds(first)
+    top = torch.round(lifted[0] / step)
+    assert (low, high) == (0.0, 6.0) and 127 * step > high
+    assert torch.equal(torch.round(bounded[0] / step), top.clamp(max=round(high / step)))
+    assert top.max() > round(high / step)
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
+    with esp_ppq_patches.applied(["clip_as_relu"]):
+        fused = espdl_graph(export_espdl.export(graph, tmp_path / "fused.espdl", test_input))
+    assert [op for op, _, _ in plain[0].values()].count("Clip") == 2
+    assert sorted(op for op, _, _ in fused[0].values()) == ["Conv", "Conv"]
+
+
 def test_ai_engine_registers_the_fused_module() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     assert espdl_shapes.FUSED_PRELU in espdl_op_check.own_modules(core)

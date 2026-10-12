@@ -140,6 +140,9 @@ def test_the_other_slow_paths_name_their_patch() -> None:
     ]
     assert tags("Add", attrs="quant_type = 'F32'") == ["runs in float"]
     assert tags("Clip", attrs="lut = 'Clip_lut_0', quant_type = 'S8'") == [
+        "activation alone, one table lookup a value (clip_as_relu, from 0 after a Conv)"
+    ]
+    assert tags("Sigmoid", attrs="lut = 'Sigmoid_lut_0', quant_type = 'S8'") == [
         "activation alone, one table lookup a value (no export patch)"
     ]
     assert tags("PRelu", attrs="quant_type = 'S8'") == [
