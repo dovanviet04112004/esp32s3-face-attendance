@@ -1,7 +1,11 @@
-"""Shared fixtures: a tiny config and a tiny model, so core can be tested alone."""
+"""Shared fixtures: a tiny config and a tiny model, so core can be tested alone.
+
+The ESP-DL ladder's tests share LadderNet, quantised by ESP-PPQ as the ladder quantises a run.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -60,3 +64,65 @@ def tiny_loader() -> DataLoader:
     images = torch.randn(16, 1, 8, 8, generator=generator)
     labels = torch.randint(0, 2, (16,), generator=generator)
     return DataLoader(TensorDataset(images, labels), batch_size=4, shuffle=False)
+
+
+class LadderNet(nn.Module):
+    """Two outputs over the ops the ESP-DL ladder meets most: convolutions, a residual, a head."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stem = nn.Conv2d(3, 16, 3, stride=2, padding=1)
+        self.body = nn.Conv2d(16, 16, 3, padding=1)
+        self.head = nn.Linear(16, 8)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        y = torch.relu(self.stem(x))
+        y = torch.relu(y + self.body(y))
+        return self.head(torch.flatten(nn.functional.adaptive_avg_pool2d(y, 1), 1)), y
+
+
+@dataclass
+class Quantised:
+    """A LadderNet as ESP-PPQ quantised it, with the calibration and rungs it took."""
+
+    model: LadderNet
+    graph: object
+    calib: list[torch.Tensor]
+    rungs: dict
+
+
+def ladder_calibration(batch: int = 1, count: int = 8, seed: int = 1) -> list[torch.Tensor]:
+    generator = torch.Generator().manual_seed(seed)
+    return [torch.rand(batch, 3, 16, 16, generator=generator) for _ in range(count)]
+
+
+def quantise_ladder_net(model: nn.Module, work: Path, calib: list[torch.Tensor], rungs: dict):
+    """model through ONNX, traced at calib's batch, into the graph ESP-PPQ gives for the S3."""
+    from facepipe.compress.quant import ptq_espdl
+
+    work.mkdir(parents=True, exist_ok=True)
+    onnx_path = work / "net.onnx"
+    torch.onnx.export(
+        model.eval(),
+        (calib[0],),
+        str(onnx_path),
+        opset_version=13,
+        input_names=["image"],
+        output_names=["vector", "map"],
+        dynamo=False,
+    )
+    return ptq_espdl.quantize_onnx(onnx_path, calib, work, rungs)
+
+
+@pytest.fixture(scope="session")
+def ladder_graph(tmp_path_factory: pytest.TempPathFactory) -> Quantised:
+    """One LadderNet under the default rungs, shared: tests read it and never change it."""
+    pytest.importorskip("esp_ppq")
+    from facepipe.compress.quant import ptq_espdl
+
+    torch.manual_seed(0)
+    model = LadderNet().eval()
+    calib = ladder_calibration()
+    rungs = ptq_espdl.ladder("recognition")
+    graph = quantise_ladder_net(model, tmp_path_factory.mktemp("ladder"), calib, rungs)
+    return Quantised(model, graph, calib, rungs)

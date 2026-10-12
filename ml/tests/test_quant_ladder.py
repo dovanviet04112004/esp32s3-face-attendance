@@ -1,0 +1,139 @@
+"""KEHOACH 3.7: the ladder's rows, its row choice and each branch's gate, without a run."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+import torch
+
+from facepipe.compress.quant import export_espdl, ladder, ptq_espdl
+from facepipe.tasks.antispoof import quant as antispoof_quant
+from facepipe.tasks.detection import quant as detection_quant
+from facepipe.tasks.recognition import quant as recognition_quant
+from tests.conftest import quantise_ladder_net
+
+
+def test_rows_are_written_kept_and_tabled(tmp_path: Path) -> None:
+    ladder.write_row(tmp_path, "float", {"rung": 0, "metrics": {"m": 1.0}, "headline": "q0"})
+    ladder.write_row(
+        tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.9}, "headline": "x", "passes": False}
+    )
+    ladder.write_row(
+        tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.95}, "headline": "y", "passes": True}
+    )
+    rows = ladder.read_ladder(tmp_path)
+    assert list(rows) == ["float", "kl"]
+    assert rows["kl"]["metrics"] == {"m": 0.95}
+    assert ladder.table(tmp_path).splitlines()[1].split() == ["2", "kl", "y", "pass"]
+    assert ladder.row_dir(tmp_path, "kl") == tmp_path / "int8" / "kl"
+
+
+def test_the_best_row_is_first_by_the_branch_ruler(tmp_path: Path, monkeypatch) -> None:
+    hooks = SimpleNamespace(rank=lambda metrics: (metrics["m"],))
+    monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
+    for name, rung, m in (("minmax", 2, 0.8), ("kl", 2, 0.9), ("int16_top1", 3, 0.95)):
+        ladder.write_row(tmp_path, name, {"rung": rung, "metrics": {"m": m}})
+    ladder.write_row(tmp_path, "timing", {"rung": "timing"})
+    assert ladder.best_row(tmp_path, {2}) == "kl"
+    assert ladder.best_row(tmp_path, {2, 3}) == "int16_top1"
+    with pytest.raises(ValueError, match="no row of rung"):
+        ladder.best_row(tmp_path, {4})
+
+
+def test_inputs_are_moved_onto_the_grid_the_chip_receives() -> None:
+    x = np.array([0.1, 0.26, -5.0, 1.0, 100.0], dtype=np.float32)
+    assert ladder.on_grid(x, -2).tolist() == [0.0, 0.25, -5.0, 1.0, 127 * 0.25]
+
+
+def test_a_runner_without_a_batch_path_goes_one_by_one() -> None:
+    calls: list[int] = []
+
+    class OneByOne:
+        batched = False
+
+        def __call__(self, x: np.ndarray) -> list[np.ndarray]:
+            calls.append(len(x))
+            return [x * 2, x[:, :1]]
+
+    x = np.arange(12, dtype=np.float32).reshape(3, 4)
+    doubled, first = ladder.run_batch(OneByOne(), x)
+    assert calls == [1, 1, 1]
+    assert np.array_equal(doubled, x * 2)
+    assert first.shape == (3, 1)
+
+
+def test_training_batches_are_whole() -> None:
+    calib = [torch.full((1, 2), float(i)) for i in range(5)]
+    got = ladder.batched(calib, 2)
+    assert [tuple(t.shape) for t in got] == [(2, 2), (2, 2)]
+    assert got[1][:, 0].tolist() == [2.0, 3.0]
+
+
+def test_the_ends_of_the_graph_are_found(ladder_graph) -> None:
+    graph = ladder_graph.graph
+    stem = graph.variables["image"].dest_ops[0].name
+    head = graph.variables["vector"].source_op.name
+    convs = [op.name for op in graph.operations.values() if op.type == "Conv"]
+    body = next(name for name in convs if name != stem)
+    assert ladder.touches_ends(graph, stem)
+    assert ladder.touches_ends(graph, head)
+    assert not ladder.touches_ends(graph, body)
+
+
+def test_rung_four_waits_for_the_owner(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="ALLOW_TRAIN=1"):
+        ladder.step_qat(tmp_path, allow_train=False, steps=None)
+
+
+def test_a_row_whose_ports_are_not_int8_never_reaches_the_lock(
+    ladder_graph, tmp_path: Path, monkeypatch
+) -> None:
+    head = ladder_graph.graph.variables["vector"].source_op.name
+    rungs = {**ptq_espdl.timing_rungs("recognition"), "int16_ops": [head]}
+    wide = quantise_ladder_net(ladder_graph.model, tmp_path / "work", ladder_graph.calib, rungs)
+    export_espdl.save_native(wide, ladder.row_dir(tmp_path, "int16_top1") / ladder.GRAPH_FILE)
+    monkeypatch.setattr(ptq_espdl, "branch_of", lambda _run: "recognition")
+    with pytest.raises(SystemExit, match="int8"):
+        ladder.step_deploy(tmp_path, "int16_top1")
+
+
+def test_detection_holds_the_served_size_within_one_percent_of_q0() -> None:
+    key = detection_quant.served_key()
+    ceiling = {key: 0.95}
+    assert detection_quant.gate({key: 0.9406}, ceiling)
+    assert not detection_quant.gate({key: 0.9404}, ceiling)
+    assert detection_quant.rank({key: 0.9}) == (0.9,)
+
+
+def test_antispoof_blocks_every_attack_and_keeps_q0_s_real_faces() -> None:
+    ceiling = {"real_kept": 61}
+    good = {"attacks_blocked": 25, "attacks": 25, "real_kept": 61, "auc": 0.99}
+    assert antispoof_quant.gate(good, ceiling)
+    assert not antispoof_quant.gate({**good, "attacks_blocked": 24}, ceiling)
+    assert not antispoof_quant.gate({**good, "real_kept": 60}, ceiling)
+    fewer_attacks = {**good, "attacks_blocked": 24, "real_kept": 62}
+    assert antispoof_quant.rank(good) > antispoof_quant.rank(fewer_attacks)
+
+
+def test_antispoof_reads_live_from_the_softmax() -> None:
+    live = antispoof_quant.live_scores(np.array([[0.0, 0.0], [10.0, -10.0]]), 0)
+    assert live[0] == pytest.approx(0.5)
+    assert live[1] == pytest.approx(1.0)
+
+
+def test_recognition_holds_cfp_fp_within_one_percent_of_q0() -> None:
+    ceiling = {"cfp_fp_tar3": 0.830}
+    assert recognition_quant.gate({"cfp_fp_tar3": 0.822}, ceiling)
+    assert not recognition_quant.gate({"cfp_fp_tar3": 0.756}, ceiling)
+    metrics = {"lfw_acc": 0.9958, "lfw_tar3": 0.994, "lfw_tar4": 0.985}
+    assert recognition_quant.headline(metrics) == "lfw 0.9958 / 0.994 / 0.985"
+
+
+def test_the_firmware_constants_the_hooks_read_are_still_there() -> None:
+    face_scale = ladder.firmware_constant(antispoof_quant.PREPROC_CPP, antispoof_quant.FACE_SCALE)
+    live_min = ladder.firmware_constant(antispoof_quant.VISION_KCONFIG, antispoof_quant.LIVE_MIN)
+    assert face_scale > 1.0
+    assert 0 < live_min < 1000
