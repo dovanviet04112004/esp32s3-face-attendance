@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import importlib
 import math
 import tempfile
 from collections.abc import Iterator, Sequence
@@ -20,23 +19,25 @@ import numpy as np
 import torch
 import yaml
 
-from ...export import tf_to_tflite_int8, to_onnx
+from ... import ML_ROOT, REPO_ROOT, tasks
+from ...export import to_onnx
 from . import esp_ppq_patches, fold_bn
 
 TARGET = "esp32s3"
 BITS = 8
 WIDE_BITS = 16
 INT8_MIN, INT8_MAX = -128, 127
-LADDER = Path(__file__).resolve().parents[4] / "configs" / "common" / "quant.yaml"
+LADDER = ML_ROOT / "configs" / "common" / "quant.yaml"
 TIMING_ROW = "timing"
 
 
 @dataclass(frozen=True)
 class Port:
-    """One graph input or output and the exponent its int8 carry: value = int8 * 2^exponent."""
+    """One graph input or output: its width, and its exponent, value = integer * 2^exponent."""
 
     name: str
     exponent: int
+    bits: int
 
 
 def load_ladder() -> dict:
@@ -57,19 +58,6 @@ def ladder(branch: str) -> dict:
 def timing_rungs(branch: str) -> dict:
     """The branch's rungs under the timing row, quick to quantise (KEHOACH 3.7 step 2.1)."""
     return {**ladder(branch), **load_ladder()["timing"]}
-
-
-def branch_of(run: Path) -> str:
-    from facepipe.core.config import load_run_config
-
-    return tf_to_tflite_int8.BRANCH_PACKAGE[load_run_config(run).model.name].rsplit(".", 1)[-1]
-
-
-def evaluator_of(run: Path):
-    from facepipe.core.config import load_run_config
-
-    package = tf_to_tflite_int8.BRANCH_PACKAGE[load_run_config(run).model.name]
-    return importlib.import_module(f"{package}.eval")
 
 
 def setting_of(rungs: dict):
@@ -93,7 +81,7 @@ def setting_of(rungs: dict):
 
 def calibration(run: Path, samples: int) -> list[torch.Tensor]:
     """The branch's calibration set as NCHW batches of one, the layout ESP-PPQ reads."""
-    feeds = tf_to_tflite_int8.calibration_samples(run, None, samples)
+    feeds = tasks.calibration_samples(run, None, samples)
     return [
         torch.from_numpy(np.ascontiguousarray(next(iter(f.values())).transpose(0, 3, 1, 2)))
         for f in feeds
@@ -105,9 +93,9 @@ def export_onnx(run: Path, out: Path, feed: torch.Tensor, rtol: float, model=Non
 
     ESP-PPQ cannot parse that pair. Refused when onnxruntime and torch differ on feed beyond rtol.
     """
-    evaluator = evaluator_of(run)
-    chosen = copy.deepcopy(model if model is not None else evaluator.load_run(run)[1]).eval()
+    chosen = copy.deepcopy(model if model is not None else tasks.load_run(run)[1]).eval()
     fold_bn.fold_linear(chosen)
+    evaluator = tasks.module_of(run, "eval")
     _, traced, _example, input_names, output_names = evaluator.export_spec(run, chosen)
     if len(input_names) != 1:
         raise ValueError(
@@ -169,31 +157,27 @@ def exponent_of(config) -> int:
 
 
 def ports_of(graph) -> tuple[list[Port], list[Port]]:
-    """Every input at the exponent its first reader takes and every output at its producer's, in the
-    graph's order."""
+    """Each input as its first reader quantises it, each output as its producer does, in order."""
 
-    def read(var) -> int:
+    def port(name: str, config) -> Port:
+        return Port(name, exponent_of(config), config.num_of_bits)
+
+    def read(name: str, var) -> Port:
         reader = var.dest_ops[0]
-        return exponent_of(reader.input_quant_config[reader.inputs.index(var)])
+        return port(name, reader.input_quant_config[reader.inputs.index(var)])
 
-    def written(var) -> int:
+    def written(name: str, var) -> Port:
         producer = var.source_op
-        return exponent_of(producer.output_quant_config[producer.outputs.index(var)])
+        return port(name, producer.output_quant_config[producer.outputs.index(var)])
 
-    inputs = [Port(name, read(var)) for name, var in graph.inputs.items()]
-    return inputs, [Port(name, written(var)) for name, var in graph.outputs.items()]
+    inputs = [read(name, var) for name, var in graph.inputs.items()]
+    return inputs, [written(name, var) for name, var in graph.outputs.items()]
 
 
 def port_bits(graph) -> set[int]:
-    """The widths every input and output of graph carries: 16 where a layer at an end went int16."""
-    found = set()
-    for var in graph.inputs.values():
-        reader = var.dest_ops[0]
-        found.add(reader.input_quant_config[reader.inputs.index(var)].num_of_bits)
-    for var in graph.outputs.values():
-        producer = var.source_op
-        found.add(producer.output_quant_config[producer.outputs.index(var)].num_of_bits)
-    return found
+    """The widths the graph's inputs and outputs carry: 16 where a layer at an end went int16."""
+    inputs, outputs = ports_of(graph)
+    return {port.bits for port in (*inputs, *outputs)}
 
 
 def to_int8(x: np.ndarray, exponent: int) -> np.ndarray:
@@ -243,13 +227,9 @@ def at_commit(module_name: str, against: str):
     import sys
 
     here = Path(importlib.util.find_spec(module_name).origin).resolve()
-    top = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], cwd=here.parent, capture_output=True, text=True
-    )
-    repo = Path(top.stdout.strip()).resolve()
     shown = subprocess.run(
-        ["git", "show", f"{against}:{here.relative_to(repo).as_posix()}"],
-        cwd=repo,
+        ["git", "show", f"{against}:{here.relative_to(REPO_ROOT).as_posix()}"],
+        cwd=REPO_ROOT,
         capture_output=True,
     )
     if shown.returncode != 0:

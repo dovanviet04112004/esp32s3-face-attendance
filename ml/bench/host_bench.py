@@ -49,6 +49,8 @@ def scores(model_path: Path, loader, live_index: int, limit: int = 0):
     A limit strides across the split rather than cutting its head off: the
     shards are not shuffled, so the first batches are one class.
     """
+    from facepipe.tasks.antispoof.quant import live_scores
+
     interpreter = reference_interpreter(model_path)
     interpreter.allocate_tensors()
     inputs = {}
@@ -79,9 +81,8 @@ def scores(model_path: Path, loader, live_index: int, limit: int = 0):
                 frame = batch[i : i + 1].numpy().transpose(0, 2, 3, 1)
                 interpreter.set_tensor(detail["index"], quantized(frame, detail))
             interpreter.invoke()
-            logits = dequantized(interpreter.get_tensor(output["index"])[0], output)
-            exp = np.exp(logits - logits.max())
-            got.append(float((exp / exp.sum())[live_index]))
+            logits = dequantized(interpreter.get_tensor(output["index"]), output)
+            got.append(float(live_scores(logits, live_index)[0]))
         truth.extend(int(v) for v in labels.numpy())
     return np.array(got), np.array(truth)
 
@@ -133,6 +134,7 @@ class TfliteRunner:
 
 def espdl_runner(model: Path, run: Path):
     """The ladder row that wrote model, simulated; refused unless it holds model's weights."""
+    from facepipe import tasks
     from facepipe.compress.quant import export_espdl, ladder, ptq_espdl
     from facepipe.export.espdl_op_check import content_digest
 
@@ -140,10 +142,8 @@ def espdl_runner(model: Path, run: Path):
     if not native.is_file():
         raise SystemExit(f"{model}: no {native.name} beside it, so it is no ladder row's .espdl")
     graph = export_espdl.load_native(native)
-    patches = ptq_espdl.block(ptq_espdl.branch_of(run))["esp_ppq_patches"]
-    (port, *_), _outputs = ptq_espdl.ports_of(graph)
-    frame = ladder.hooks_of(run).probe_inputs(ladder.load_cfg(run), ladder.device_frames(), 1)
-    test_input = ladder.on_grid(frame, port.exponent)
+    patches = ptq_espdl.block(tasks.branch_of(run))["esp_ppq_patches"]
+    test_input = ladder.real_inputs(run, graph, 1)
     with tempfile.TemporaryDirectory() as work:
         check = export_espdl.export(graph, Path(work) / model.name, test_input)
         if content_digest(check) != content_digest(model):
@@ -155,9 +155,9 @@ def output_shapes(run: Path) -> list[tuple[int, ...]]:
     """The ONNX graph's output shapes, from the module export_spec traces."""
     import torch
 
-    from facepipe.compress.quant import ptq_espdl
+    from facepipe import tasks
 
-    _cfg, traced, example, _ins, _outs = ptq_espdl.evaluator_of(run).export_spec(run)
+    _cfg, traced, example, _ins, _outs = tasks.module_of(run, "eval").export_spec(run)
     with torch.no_grad():
         out = traced(*example)
     return [tuple(t.shape) for t in (out if isinstance(out, tuple | list) else (out,))]
@@ -172,28 +172,21 @@ def build_runner(runtime: str, model: Path, run: Path):
 
 
 def score_split(runner, run: Path, cfg, split: str) -> str:
-    """Liveness on one anti-spoof split at the kiosk's live_min, through the graph's own input."""
-    from facepipe.compress.quant import ptq_espdl
-    from facepipe.compress.quant.ladder import firmware_constant, run_batch
-    from facepipe.tasks.antispoof.eval import auc, build_loader, equal_error_rate
+    """Liveness on one anti-spoof split through the graph's own input, by the branch's ruler."""
+    from facepipe import tasks
+    from facepipe.compress.quant.ladder import run_batch
+    from facepipe.tasks.antispoof import quant
+    from facepipe.tasks.antispoof.eval import build_loader
     from facepipe.tasks.antispoof.losses.task_loss import LIVE
-    from facepipe.tasks.antispoof.quant import LIVE_MIN, VISION_KCONFIG, live_scores
 
-    input_name = ptq_espdl.evaluator_of(run).export_spec(run)[3][0]
+    input_name = tasks.module_of(run, "eval").export_spec(run)[3][0]
     got, truth = [], []
     for tight, wide, labels, *_rest in build_loader(cfg, split):
         view = wide if input_name == "wide" else tight
-        got.extend(live_scores(run_batch(runner, view.numpy().astype(np.float32))[0], LIVE))
+        got.extend(quant.live_scores(run_batch(runner, view.numpy().astype(np.float32))[0], LIVE))
         truth.extend(int(v) for v in labels.numpy())
-    live, truth = np.array(got), np.array(truth)
-    floor = firmware_constant(VISION_KCONFIG, LIVE_MIN) / 1000.0
-    real, fake = live[truth == LIVE], live[truth != LIVE]
-    eer = equal_error_rate(live, truth).acer
-    return (
-        f"n={live.size}  auc {auc(live, truth):.4f}  eer {eer:.4f}  at live_min {floor:.3f}:"
-        f" real kept {int((real >= floor).sum())}/{real.size}"
-        f"  attacks blocked {int((fake < floor).sum())}/{fake.size}"
-    )
+    live = np.array(got)
+    return f"n={live.size}  " + quant.headline(quant.metrics_of(live, np.array(truth)))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -215,11 +208,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    from facepipe.compress.quant import ladder, ptq_espdl
+    from facepipe import tasks
+    from facepipe.compress.quant import ladder
 
     run = args.run.resolve()
-    cfg = ladder.load_cfg(run)
-    branch = ptq_espdl.branch_of(run)
+    cfg = ladder.config_of(run)
+    branch = tasks.branch_of(run)
     on_split = branch == "antispoof" and not args.device_frames
     split = args.split or (cfg.data.params["test_split"] if on_split else None)
     if on_split and args.runtime == "tflite":

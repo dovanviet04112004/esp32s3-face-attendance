@@ -14,10 +14,11 @@ from pathlib import Path
 
 import numpy as np
 
+from ... import REPO_ROOT, tasks
 from ...export import emit_golden, pack_models_partition
 from . import esp_ppq_patches, export_espdl, ladder, ptq_espdl
 
-PROBE_APP = ladder.REPO_ROOT / "firmware" / "components" / "ai_engine" / "test_apps" / "probe"
+PROBE_APP = REPO_ROOT / "firmware" / "components" / "ai_engine" / "test_apps" / "probe"
 RECORD = PROBE_APP / "main" / "probe" / "frames.gold"
 MANIFEST = RECORD.with_name("manifest.json")
 PARTITIONS = PROBE_APP / "partitions.dev.csv"
@@ -151,7 +152,7 @@ def packed(
 
 def probe(run: Path, row: str, span: tuple[int, int] | None = None) -> Path:
     """Write the probe of the run's row and return the manifest make ai-unit reads."""
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)
     patches = knobs["esp_ppq_patches"]
     entry = pack_models_partition.BRANCH_ENTRY[branch]
@@ -159,10 +160,7 @@ def probe(run: Path, row: str, span: tuple[int, int] | None = None) -> Path:
     out = folder / "probe"
     out.mkdir(parents=True, exist_ok=True)
     graph = export_espdl.load_native(folder / ladder.GRAPH_FILE)
-    (port, *_), _outputs = ptq_espdl.ports_of(graph)
-    cfg = ladder.load_cfg(run)
-    faces = ladder.hooks_of(run).probe_inputs(cfg, ladder.device_frames(), knobs["probe"]["frames"])
-    xs = ladder.on_grid(faces, port.exponent)
+    xs = ladder.real_inputs(run, graph, knobs["probe"]["frames"])
     emit_golden.write_case(RECORD, frames_record(graph, xs, patches))
     with esp_ppq_patches.applied(patches):
         entries = [(entry, export_espdl.export(graph, out / f"{entry}.espdl", xs[:1]))]
@@ -170,9 +168,9 @@ def probe(run: Path, row: str, span: tuple[int, int] | None = None) -> Path:
             part = export_espdl.export(truncated(graph, name), out / f"{entry}_c{k}.espdl", xs[:1])
             entries.append((f"{entry}_c{k}", part))
             print(f"{entry}_c{k}: op {index}, {name}, {part.stat().st_size} bytes of .espdl")
-    hw = (int(cfg.model.input_hw[0]), int(cfg.model.input_hw[1]))
+    height, width = (int(v) for v in ladder.config_of(run).model.input_hw)
     capacity = pack_models_partition.partition_size(PARTITIONS, "models_0")
-    images = packed(entries, hw, capacity, out)
+    images = packed(entries, (height, width), capacity, out)
     logs = [image.with_suffix(".log") for image in images]
     manifest = {
         "branch": branch,

@@ -94,14 +94,22 @@ def live_scores(logits: np.ndarray, live_index: int) -> np.ndarray:
 
 
 def score(runner, cfg: object) -> dict[str, float]:
-    """Liveness on the board's frames at the kiosk's live_min: real kept, attacks blocked, AUC."""
-    from facepipe.compress.quant.ladder import device_frames, firmware_constant, run_batch
+    """Liveness on the board's own frames, cut the way preproc.cpp cuts them."""
+    from facepipe.compress.quant.ladder import device_frames, run_batch
+
+    from .losses.task_loss import LIVE
+
+    x, truth = face_crops(cfg, device_frames())
+    return metrics_of(live_scores(run_batch(runner, x)[0], LIVE), truth)
+
+
+def metrics_of(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
+    """Real faces kept and attacks blocked at the kiosk's live_min, with AUC and EER."""
+    from facepipe.compress.quant.ladder import firmware_constant
 
     from .eval import auc, equal_error_rate
     from .losses.task_loss import LIVE
 
-    x, truth = face_crops(cfg, device_frames())
-    live = live_scores(run_batch(runner, x)[0], LIVE)
     floor = firmware_constant(VISION_KCONFIG, LIVE_MIN) / 1000.0
     real, fake = live[truth == LIVE], live[truth != LIVE]
     return {

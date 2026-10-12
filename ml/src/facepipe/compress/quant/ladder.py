@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import functools
-import importlib
 import re
 import tempfile
 from pathlib import Path
@@ -17,11 +16,10 @@ import numpy as np
 import torch
 import yaml
 
+from ... import ML_ROOT, REPO_ROOT, tasks
 from ...export import espdl_op_check, update_lock
 from . import esp_ppq_patches, export_espdl, mixed_espdl, ptq_espdl, qat_espdl
 
-ML_ROOT = Path(__file__).resolve().parents[4]
-REPO_ROOT = ML_ROOT.parent
 PATHS = ML_ROOT / "configs" / "common" / "paths.yaml"
 DEVICE_SPLIT = ML_ROOT / "data" / "splits" / "device" / "v1" / "test_device.txt"
 INT8_DIR, LADDER_FILE, GRAPH_FILE = "int8", "ladder.yaml", "graph.native"
@@ -86,10 +84,13 @@ def run_batch(runner, x: np.ndarray, chunk: int = 64) -> list[np.ndarray]:
 
 def hooks_of(run: Path):
     """The branch's quant module: calibration_batches, probe_inputs, score, rank, gate, headline."""
-    from facepipe.core.config import load_run_config
-    from facepipe.export.tf_to_tflite_int8 import BRANCH_PACKAGE
+    return tasks.module_of(run, "quant")
 
-    return importlib.import_module(f"{BRANCH_PACKAGE[load_run_config(run).model.name]}.quant")
+
+@functools.cache
+def config_of(run: Path):
+    """The run's config as its branch loads it, the one calibration reads too."""
+    return tasks.load_run(run)[0]
 
 
 def row_dir(run: Path, row: str) -> Path:
@@ -114,9 +115,16 @@ def on_grid(x: np.ndarray, exponent: int) -> np.ndarray:
     return ptq_espdl.to_int8(x, exponent).astype(np.float32) * np.float32(2.0**exponent)
 
 
+def real_inputs(run: Path, graph, count: int) -> np.ndarray:
+    """The first count frames of test_device as the branch cuts them, on graph's input grid."""
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    frames = hooks_of(run).probe_inputs(config_of(run), device_frames(), count)
+    return on_grid(frames, port.exponent)
+
+
 def quantised(run: Path, rungs: dict, calib: list[torch.Tensor], model=None):
     """The run quantised under rungs and its branch's patches."""
-    patches = ptq_espdl.block(ptq_espdl.branch_of(run))["esp_ppq_patches"]
+    patches = ptq_espdl.block(tasks.branch_of(run))["esp_ppq_patches"]
     with esp_ppq_patches.applied(patches), tempfile.TemporaryDirectory() as work:
         return ptq_espdl.quantize(run, calib, Path(work), rungs, model)
 
@@ -124,20 +132,15 @@ def quantised(run: Path, rungs: dict, calib: list[torch.Tensor], model=None):
 def keep_row(run: Path, row: str, graph) -> Path:
     """Keep graph as the row: its native file, and the .espdl with a real frame as its test input.
 
-    Refused when esp-dl registers no module for one of its ops.
+    Refused by the same op check update_lock runs before a deploy.
     """
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     folder = row_dir(run, row)
     export_espdl.save_native(graph, folder / GRAPH_FILE)
-    (port, *_), _outputs = ptq_espdl.ports_of(graph)
-    frame = hooks_of(run).probe_inputs(load_cfg(run), device_frames(), 1)
-    test_input = on_grid(frame, port.exponent)
     with esp_ppq_patches.applied(ptq_espdl.block(branch)["esp_ppq_patches"]):
-        espdl = export_espdl.export(graph, folder / f"{branch}.espdl", test_input)
-    creator = REPO_ROOT / espdl_op_check.CREATOR_HPP
-    missing = sorted(set(espdl_op_check.operators(espdl)) - espdl_op_check.registered(creator))
-    if missing:
-        raise ValueError(f"{espdl}: esp-dl registers no module for {missing}")
+        espdl = export_espdl.export(graph, folder / f"{branch}.espdl", real_inputs(run, graph, 1))
+    if espdl_op_check.main(["--model", str(espdl)]) != 0:
+        raise ValueError(f"{espdl}: esp-dl registers no module for one of its operators")
     return espdl
 
 
@@ -148,16 +151,10 @@ def build_row(run: Path, row: str, rungs: dict, calib: list[torch.Tensor], model
     return graph
 
 
-def load_cfg(run: Path):
-    from facepipe.core.config import load_run_config
-
-    return load_run_config(run)
-
-
 def scored(run: Path, runner, ceiling: dict | None) -> dict:
     """The branch's ruler over runner, with the gate against ceiling when there is one."""
     hooks = hooks_of(run)
-    metrics = hooks.score(runner, load_cfg(run))
+    metrics = hooks.score(runner, config_of(run))
     entry = {"metrics": metrics, "headline": hooks.headline(metrics)}
     if ceiling is not None:
         entry["passes"] = bool(hooks.gate(metrics, ceiling))
@@ -168,7 +165,7 @@ def ceiling_of(run: Path) -> dict:
     """Q0, the float model's metrics, scored once and kept as the ladder's first row."""
     rows = read_ladder(run)
     if CEILING_ROW not in rows:
-        traced = ptq_espdl.evaluator_of(run).export_spec(run)[1]
+        traced = tasks.module_of(run, "eval").export_spec(run)[1]
         write_row(run, CEILING_ROW, {"rung": 0, **scored(run, TorchRunner(traced), None)})
         rows = read_ladder(run)
     return rows[CEILING_ROW]["metrics"]
@@ -188,7 +185,7 @@ def best_row(run: Path, rungs_wanted: set[int]) -> str:
 
 
 def step_ptq(run: Path) -> None:
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)["ladder"]
     patches = ptq_espdl.block(branch)["esp_ppq_patches"]
     ceiling = ceiling_of(run)
@@ -209,7 +206,7 @@ def touches_ends(graph, op_name: str) -> bool:
 
 
 def step_int16(run: Path) -> None:
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)["ladder"]
     patches = ptq_espdl.block(branch)["esp_ppq_patches"]
     ceiling = ceiling_of(run)
@@ -242,7 +239,7 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
     """
     if not allow_train:
         raise SystemExit("rung 4 trains the model: ALLOW_TRAIN=1 once the owner says so")
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)["ladder"]
     patches = ptq_espdl.block(branch)["esp_ppq_patches"]
     qat = knobs["qat"]
@@ -253,7 +250,7 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
     taken = knobs["calib_samples"]
     feed = ptq_espdl.calibration(run, taken + qat["batch"] * 64)[taken:]
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    teacher = TorchRunner(ptq_espdl.evaluator_of(run).export_spec(run)[1]).model
+    teacher = tasks.module_of(run, "eval").export_spec(run)[1].to(device)
     wide = quantised(run, rungs, batched(calib, qat["batch"]))
     student = qat_espdl.Trainable(wide, device)
     optimiser = torch.optim.Adam(student.parameters, lr=qat["learning_rate"])
@@ -262,7 +259,7 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
         x = rounds[step % len(rounds)].to(device)
         with torch.no_grad():
             want = teacher(x)
-        want = want if isinstance(want, (tuple, list)) else (want,)
+        want = want if isinstance(want, tuple | list) else (want,)
         with esp_ppq_patches.applied(patches):
             got = student(x)
         loss = sum(torch.nn.functional.mse_loss(g, w) for g, w in zip(got, want, strict=True))
@@ -281,7 +278,7 @@ def step_qat(run: Path, allow_train: bool, steps: int | None) -> None:
 
 
 def step_timing(run: Path) -> None:
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     rungs = ptq_espdl.timing_rungs(branch)
     calib = ptq_espdl.calibration(run, ptq_espdl.block(branch)["ladder"]["calib_samples"])
     build_row(run, ptq_espdl.TIMING_ROW, rungs, calib)
@@ -294,10 +291,9 @@ def step_same_int8(run: Path, against: str) -> int:
 
     Both are quantised alike; the exit status is 1 when one integer differs.
     """
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     knobs = ptq_espdl.block(branch)["ladder"]
-    cfg = load_cfg(run)
-    current = ptq_espdl.evaluator_of(run).load_run(run)[1]
+    cfg, current = tasks.load_run(run)
     old_module = ptq_espdl.at_commit(type(current).__module__, against)
     if old_module is None:
         print(f"the network code is {against}'s: nothing to check")
@@ -321,7 +317,7 @@ def step_same_int8(run: Path, against: str) -> int:
 
 def step_deploy(run: Path, row: str) -> None:
     """The row's .espdl into firmware/models/ and the lock, refused unless every port is int8."""
-    branch = ptq_espdl.branch_of(run)
+    branch = tasks.branch_of(run)
     folder = row_dir(run, row)
     bits = ptq_espdl.port_bits(export_espdl.load_native(folder / GRAPH_FILE))
     if bits != {ptq_espdl.BITS}:

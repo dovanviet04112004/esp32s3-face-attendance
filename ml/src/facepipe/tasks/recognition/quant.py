@@ -78,7 +78,8 @@ def probe_inputs(cfg: object, frames, count: int) -> np.ndarray:
 
 def score(runner, cfg: object) -> dict[str, float]:
     """Accuracy and TAR at FAR 1e-3 and 1e-4 on each verification benchmark, from the runner."""
-    from facepipe.compress.quant.ladder import ML_ROOT, run_batch
+    from facepipe import ML_ROOT
+    from facepipe.compress.quant.ladder import run_batch
 
     from .eval import BENCHMARKS, decode_images, evaluate_pairs, pair_scores, read_bin
 

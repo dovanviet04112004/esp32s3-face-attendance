@@ -14,9 +14,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from ... import REPO_ROOT
 from . import espdl_shapes
 
-SDKCONFIG = Path(__file__).resolve().parents[5] / "firmware" / "sdkconfig.defaults.esp32s3"
+SDKCONFIG = REPO_ROOT / "firmware" / "sdkconfig.defaults.esp32s3"
 CHANNEL_STEP = 16  # esp-dl's S3 vector kernels take channels sixteen at a time
 MATMUL_STEP = 16  # dl_base_matmul.cpp: vector path, 16 output columns
 LAYOUT_OPS = frozenset({"Transpose"})

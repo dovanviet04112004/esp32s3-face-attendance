@@ -6,30 +6,9 @@ loses far more than quantisation itself costs.
 """
 
 import argparse
-import importlib
 from pathlib import Path
 
-# A model name maps to the package owning its graph shape and calibration set.
-BRANCH_PACKAGE = {
-    "minifasnet_v2_se": "facepipe.tasks.antispoof",
-    "minifasnet_v2": "facepipe.tasks.antispoof",
-    "yunet": "facepipe.tasks.detection",
-    "mobilefacenet": "facepipe.tasks.recognition",
-    "mobilefacenet_eca": "facepipe.tasks.recognition",
-}
-
-
-def calibration_samples(run: Path, split: str | None, limit: int):
-    """Yield what the branch calls a representative sample, for the converter."""
-    from facepipe.core.config import load_run_config
-
-    cfg = load_run_config(run)
-    package = BRANCH_PACKAGE[cfg.model.name]
-    # The branch loader fills in what an older config omits, reading the weights.
-    evaluator = importlib.import_module(f"{package}.eval")
-    cfg = evaluator.load_run(run)[0] if hasattr(evaluator, "load_run") else cfg
-    module = importlib.import_module(f"{package}.quant")
-    yield from module.calibration_batches(cfg, split, limit)
+from facepipe.tasks import calibration_samples
 
 
 def convert(saved_dir: Path, out: Path, representative=None) -> int:

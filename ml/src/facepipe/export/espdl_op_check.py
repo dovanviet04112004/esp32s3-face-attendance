@@ -14,7 +14,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from facepipe.export.tflite_op_check import repo_root
+from facepipe import REPO_ROOT
 
 MAGIC = b"EDL2"
 HEADER_BYTES = 16
@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="where to write the report")
     args = parser.parse_args(argv)
 
-    creator = args.creator or repo_root(Path(__file__).resolve()) / CREATOR_HPP
+    creator = args.creator or REPO_ROOT / CREATOR_HPP
     if not creator.is_file():
         raise SystemExit(
             f"{creator} is missing; build the firmware once so the component manager fetches esp-dl"

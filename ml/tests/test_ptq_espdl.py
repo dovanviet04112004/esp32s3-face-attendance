@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from facepipe.compress.quant import esp_ppq_patches, ptq_espdl
-from tests.conftest import LadderNet, ladder_calibration, quantise_ladder_net
+from tests.conftest import LadderNet, ladder_calibration, ladder_onnx, quantise_ladder_net
 
 BRANCHES = ("detection", "antispoof", "recognition")
 
@@ -98,16 +98,7 @@ def test_a_wide_layer_at_an_end_shows_in_the_port_bits(ladder_graph, tmp_path: P
 
 
 def exported_as_given(run, out: Path, feed: torch.Tensor, rtol: float, model=None) -> Path:
-    torch.onnx.export(
-        model.eval(),
-        (feed,),
-        str(out),
-        opset_version=13,
-        input_names=["image"],
-        output_names=["vector", "map"],
-        dynamo=False,
-    )
-    return out
+    return ladder_onnx(model, out, feed)
 
 
 def test_a_rewrite_that_keeps_the_arithmetic_keeps_every_integer(

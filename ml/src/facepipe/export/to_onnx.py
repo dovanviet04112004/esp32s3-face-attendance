@@ -6,13 +6,12 @@ graph has belongs to the branch, so the branch hands it over in export_spec.
 """
 
 import argparse
-import importlib
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from facepipe.export.tf_to_tflite_int8 import BRANCH_PACKAGE
+from facepipe.tasks import module_of
 
 OPSET = 13
 
@@ -55,14 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True, help="where the .onnx file goes")
     args = parser.parse_args(argv)
 
-    from facepipe.core.config import load_run_config
-
-    cfg = load_run_config(args.run)
-    package = BRANCH_PACKAGE.get(cfg.model.name)
-    if package is None:
-        raise SystemExit(f"no branch known for model {cfg.model.name}")
-    module = importlib.import_module(f"{package}.eval")
-    _cfg, model, example, input_names, output_names = module.export_spec(args.run)
+    _cfg, model, example, input_names, output_names = module_of(args.run, "eval").export_spec(
+        args.run
+    )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(

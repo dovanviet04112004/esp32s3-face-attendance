@@ -9,6 +9,8 @@ import argparse
 import re
 from pathlib import Path
 
+from facepipe import REPO_ROOT
+
 # esp-nn carries optimised int8 kernels for these, and only these, on the
 # xtensa target; the list tracks esp-nn/src and TFLM's esp_nn integration.
 ESP_NN_ACCELERATED = {
@@ -75,8 +77,7 @@ _TOKEN = re.compile(r"[A-Z][a-z]*|\d+[A-Z]*")
 def builtin_name(add_method: str) -> str:
     """The BuiltinOperator a MicroMutableOpResolver::AddXxx() registers.
 
-    TFLM names the two consistently, so the mapping is derived rather than
-    tabulated; tests/test_export_op_check.py holds it against TFLM's own header.
+    TFLM names the two consistently, so the mapping is derived rather than tabulated.
     """
     return "_".join(_TOKEN.findall(add_method)).upper()
 
@@ -85,13 +86,6 @@ def resolver_ops(ops_cpp: Path) -> set[str]:
     """Every builtin the branch resolver registers, read from its own source."""
     text = ops_cpp.read_text(encoding="utf-8")
     return {builtin_name(name) for name in _ADD_CALL.findall(text)}
-
-
-def repo_root(start: Path) -> Path:
-    for candidate in [start, *start.parents]:
-        if (candidate / ".git").exists():
-            return candidate
-    raise FileNotFoundError(f"no repository root above {start}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
 
     missing: set[str] = set()
     if args.branch is not None:
-        ops_cpp = repo_root(Path(__file__).resolve()) / OPS_CPP.format(branch=args.branch)
+        ops_cpp = REPO_ROOT / OPS_CPP.format(branch=args.branch)
         registered = resolver_ops(ops_cpp)
         missing = set(counts) - registered
         spare = registered - set(counts)

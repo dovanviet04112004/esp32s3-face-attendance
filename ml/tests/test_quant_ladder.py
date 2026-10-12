@@ -8,12 +8,24 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+import yaml
 
+from facepipe import tasks
 from facepipe.compress.quant import export_espdl, ladder, ptq_espdl
 from facepipe.tasks.antispoof import quant as antispoof_quant
 from facepipe.tasks.detection import quant as detection_quant
 from facepipe.tasks.recognition import quant as recognition_quant
 from tests.conftest import quantise_ladder_net
+
+
+def test_a_run_reaches_its_branch_through_run_task(tmp_path: Path, config_tree: dict) -> None:
+    from facepipe.core.config import CONFIG_NAME
+
+    config_tree["run"]["task"] = "recognition"
+    (tmp_path / CONFIG_NAME).write_text(yaml.safe_dump(config_tree), encoding="utf-8")
+    assert tasks.branch_of(tmp_path) == "recognition"
+    assert tasks.module_of(tmp_path, "quant") is recognition_quant
+    assert ladder.hooks_of(tmp_path) is recognition_quant
 
 
 def test_rows_are_written_kept_and_tabled(tmp_path: Path) -> None:
@@ -95,7 +107,7 @@ def test_a_row_whose_ports_are_not_int8_never_reaches_the_lock(
     rungs = {**ptq_espdl.timing_rungs("recognition"), "int16_ops": [head]}
     wide = quantise_ladder_net(ladder_graph.model, tmp_path / "work", ladder_graph.calib, rungs)
     export_espdl.save_native(wide, ladder.row_dir(tmp_path, "int16_top1") / ladder.GRAPH_FILE)
-    monkeypatch.setattr(ptq_espdl, "branch_of", lambda _run: "recognition")
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
     with pytest.raises(SystemExit, match="int8"):
         ladder.step_deploy(tmp_path, "int16_top1")
 

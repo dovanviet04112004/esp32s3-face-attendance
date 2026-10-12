@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from facepipe import tasks
 from facepipe.compress.quant import export_espdl, ladder, probe, ptq_espdl
 from facepipe.export import emit_golden, pack_models_partition
 
@@ -112,11 +113,10 @@ def test_a_probe_writes_its_graphs_record_and_manifest(
     export_espdl.save_native(ladder_graph.graph, ladder.row_dir(run, "kl") / ladder.GRAPH_FILE)
     frames = np.concatenate([c.numpy() for c in ladder_graph.calib])
     hooks = SimpleNamespace(probe_inputs=lambda _cfg, _frames, count: frames[:count])
-    monkeypatch.setattr(ptq_espdl, "branch_of", lambda _run: "recognition")
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
     monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
-    monkeypatch.setattr(
-        ladder, "load_cfg", lambda _run: SimpleNamespace(model=SimpleNamespace(input_hw=[16, 16]))
-    )
+    cfg = SimpleNamespace(model=SimpleNamespace(input_hw=[16, 16]))
+    monkeypatch.setattr(ladder, "config_of", lambda _run: cfg)
     monkeypatch.setattr(ladder, "device_frames", lambda: ())
     monkeypatch.setattr(probe, "RECORD", tmp_path / "app" / "frames.gold")
     monkeypatch.setattr(probe, "MANIFEST", tmp_path / "app" / "manifest.json")
