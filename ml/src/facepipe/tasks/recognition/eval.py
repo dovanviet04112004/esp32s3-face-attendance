@@ -81,11 +81,6 @@ def pair_scores(embeddings: np.ndarray) -> np.ndarray:
     return (left * right).sum(axis=1)
 
 
-def accuracy_at(scores: np.ndarray, issame: np.ndarray, threshold: float) -> float:
-    predicted = scores >= threshold
-    return float((predicted == issame).mean())
-
-
 def kfold_accuracy(
     scores: np.ndarray, issame: np.ndarray, folds: int = FOLDS, steps: int = THRESHOLD_STEPS
 ) -> dict[str, float]:

@@ -335,11 +335,6 @@ def best_faces(model, priors, prepared, device: str):
     return boxes
 
 
-def best_face(model, priors, payload: bytes, device: str) -> np.ndarray | None:
-    """The highest scoring face in one image, in that image's own pixels."""
-    return best_faces(model, priors, [detector_input(payload)], device)[0]
-
-
 def crops_of(
     payload: bytes, box: np.ndarray, size: int = CROP_SIZE, wide_size: int = WIDE_SIZE
 ) -> tuple[dict[str, bytes], float, list[float]]:

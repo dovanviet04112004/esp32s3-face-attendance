@@ -82,11 +82,6 @@ def identities_from_listing(path: Path) -> list[str]:
     return sorted({line.split("/", 1)[0] for line in read_lines(path)})
 
 
-def images_from_coco(path: Path) -> list[str]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return [image["file_name"] for image in payload["images"]]
-
-
 def read_device_manifest(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))

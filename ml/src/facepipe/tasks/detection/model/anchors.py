@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import torch
 
-PRIOR_COLUMNS = 4
-
 
 def level_priors(
     feat_h: int, feat_w: int, stride: int, dtype: torch.dtype = torch.float32

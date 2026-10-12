@@ -24,7 +24,6 @@ from .losses.task_loss import DetectionTargets
 from .model.anchors import feature_sizes, pyramid_priors
 from .model.head import LANDMARK_COUNT
 from .model.yunet import STRIDES
-from .postproc.decode import bbox_encode
 
 # Mirroring swaps the two eyes and the two mouth corners; the nose stays put.
 FLIP_INDEX = (1, 0, 2, 4, 3)
@@ -339,8 +338,3 @@ def collate(batch: list[tuple[torch.Tensor, DetectionTargets]]) -> tuple[torch.T
         gt_boxes=[t.gt_boxes[0] for t in targets],
     )
     return images, merged
-
-
-def encoded_boxes(targets: DetectionTargets) -> torch.Tensor:
-    """Regression targets in the head's own space, for tests and diagnostics."""
-    return bbox_encode(targets.priors, targets.boxes)

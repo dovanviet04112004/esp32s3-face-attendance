@@ -8,20 +8,10 @@ from __future__ import annotations
 
 import os
 import random
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import torch
-
-
-@dataclass(frozen=True)
-class SeedConfig:
-    """Seeding policy for one run."""
-
-    seed: int = 42
-    deterministic: bool = True
-    cudnn_benchmark: bool = False
 
 
 def seed_everything(seed: int, deterministic: bool = True, cudnn_benchmark: bool = False) -> None:
@@ -41,11 +31,6 @@ def seed_everything(seed: int, deterministic: bool = True, cudnn_benchmark: bool
         torch.use_deterministic_algorithms(True, warn_only=True)
         # cuBLAS reductions are nondeterministic without this workspace setting.
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-
-
-def apply_seed_config(cfg: SeedConfig) -> None:
-    """Apply a SeedConfig."""
-    seed_everything(cfg.seed, cfg.deterministic, cfg.cudnn_benchmark)
 
 
 def worker_init_fn(worker_id: int) -> None:

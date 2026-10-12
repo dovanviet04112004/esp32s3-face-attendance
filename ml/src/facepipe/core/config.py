@@ -103,20 +103,6 @@ class TrainSection(Section):
         return value
 
 
-class LossSpec(Section):
-    name: str
-    weight: float = 1.0
-    params: dict[str, Any] = Field(default_factory=dict)
-
-
-class StageSpec(Section):
-    """One phase of a progressive schedule: which terms are on, and how strongly."""
-
-    epochs: int = Field(gt=0)
-    losses: list[str] = Field(default_factory=list)
-    task_loss_weight: float = 1.0
-
-
 class LogSection(Section):
     tensorboard: bool = True
     wandb: bool = False
