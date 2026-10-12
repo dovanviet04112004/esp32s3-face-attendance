@@ -111,8 +111,8 @@ fe-typecheck: ## Route types, then tsc over frontend/
 
 test: ml-test be-test ## Host-side tests of ml/ and backend/
 
-ml-test: ## pytest over ml/
-	cd ml && $(ML_PY) -m pytest
+ml-test: ## pytest over ml/ (ARGS= picks tests, such as tests/test_espdl_shapes.py)
+	cd ml && $(ML_PY) -m pytest $(ARGS)
 
 ml-cov: ## pytest with a coverage report of facepipe.core
 	cd ml && $(ML_PY) -m pytest --cov=facepipe.core --cov-report=term-missing
