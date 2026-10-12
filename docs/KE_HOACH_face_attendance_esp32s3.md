@@ -2411,7 +2411,7 @@ esp32s3-face-attendance/
 │   └── build.sh                     # dựng lại project Gradle bằng Bubblewrap rồi ký APK; project,
 │                                    #   APK, keystore và mật khẩu ký đều gitignore
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
-├── tools/         Script ngang khối: gen_contracts · check_comments · check_layers
+├── tools/         Script ngang khối: gen_contracts · check_comments · hook_check_comments · check_layers
 │                   · check_migrations · check_error_codes · check_plans
 │                   · check_routes · backfill · check_schematic · check_pcb
 │                   · check_notice_kinds · gen_sw_words          ★ §9.21.4
@@ -2489,7 +2489,7 @@ contracts/
 **Một điểm vào duy nhất, không phải hai script.** Hai nguồn trong `contracts/` nuôi năm đích,
 nhưng CI chỉ gọi **một** lệnh rồi `git diff --exit-code`. Tách thành hai script là đẻ ra chỗ
 thứ hai có thể quên, mà triệu chứng của việc quên là code sinh ra lệch âm thầm — đúng thứ
-`ci/contracts.yml` sinh ra để chặn. Generator chia module bên trong theo nguồn, không chia theo
+`.github/workflows/contracts.yml` sinh ra để chặn. Generator chia module bên trong theo nguồn, không chia theo
 file thực thi.
 
 **Frontend không nhận bảng topic.** Nó lấy dữ liệu qua REST và WebSocket của `api` chứ không nối
@@ -2509,12 +2509,12 @@ lúc chạy; hàm với macro độ dài biến nó thành lỗi lúc biên dị
 
 `test_apps/parity` nướng cả cây `contracts/golden/` vào partition `storage` bằng `littlefs_create_partition_image(... FLASH_IN_PROJECT)`, nên board mở chúng qua `/lfs` như file thường và không cần đường truyền riêng nào.
 
-`models.lock.json`:
+`models.lock.json` (bộ ESP-DL đang deploy; `arena_bytes` chỉ khác 0 với một `.tflite` của TFLM, §3.8):
 ```json
 {
-  "detection":   { "file": "yunet_int8.tflite",       "sha256": "a3f9...", "run_id": "detection/20260915-1420_7c3ab91_e04f12", "arena_bytes": 121344 },
-  "antispoof":   { "file": "minifasnet_int8.tflite",  "sha256": "77c1...", "run_id": "antispoof/20260921-0905_1de44f0_9ab301", "arena_bytes": 58880 },
-  "recognition": { "file": "mobilefacenet_int8.tflite","sha256": "0b52...", "run_id": "recognition/20260908-2210_3f8c012_44ee9a", "arena_bytes": 297984 }
+  "detection":   { "file": "yunet_s8.espdl",         "sha256": "631b...", "run_id": "detection/20260831-1616_cc931df_36fbea",   "arena_bytes": 0 },
+  "antispoof":   { "file": "minifasnet_s8.espdl",    "sha256": "7968...", "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35",   "arena_bytes": 0 },
+  "recognition": { "file": "mobilefacenet_s8.espdl", "sha256": "0191...", "run_id": "recognition/20260923-2106_59828c4_9a6954", "arena_bytes": 0 }
 }
 ```
 
@@ -4564,9 +4564,9 @@ backend/
 ├── test/*.e2e-spec.ts                # e2e, chạy bằng runner sẵn có của Node, song song
 ├── test/*.e2e-alone-spec.ts          # ★ e2e ghi lên cả bảng, chạy sau cùng, từng file một
 ├── test/notice-*.e2e-spec.ts         # ★ §9.21.4 — phép thử bắt buộc của tin và việc, mỗi nhóm một file:
-│                                     #   items, race, audience, sweeps, push, attendance; lượt đổ dữ
-│                                     #   liệu sang hình dạng mới là notice-backfill.e2e-alone-spec.ts,
-│                                     #   lượt đối soát trên dữ liệu mọi bộ khác để lại là
+│                                     #   items, audience, sweeps, attendance, channels, feed, kinds,
+│                                     #   list; push chạy riêng là notice-push.e2e-alone-spec.ts, lượt
+│                                     #   đối soát trên dữ liệu mọi bộ khác để lại là
 │                                     #   notice-reconcile.e2e-alone-spec.ts
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 ├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk
@@ -4579,7 +4579,7 @@ backend/
     │   └── configuration.ts          # ConfigModule.forRoot, validate lúc boot
     ├── common/
     │   ├── generated/                # ★ sinh từ contracts/schema — commit, KHÔNG sửa tay
-    │   ├── guards/{jwt-auth.guard.ts, roles.guard.ts, device-auth.guard.ts}
+    │   ├── guards/{jwt-auth.guard.ts, jwt-refresh.guard.ts, roles.guard.ts, device-auth.guard.ts}
     │   ├── cache/{cache.module.ts, cache.service.ts, cache-keys.ts}
     │   ├── decorators/  ├── filters/  ├── dto/
     │   ├── interceptors/{audit.interceptor.ts, change.interceptor.ts}   # ★ §9.24 · §9.4 — mỗi lần ghi: một dòng sổ, một tin feed
@@ -4628,14 +4628,14 @@ backend/
     ├── queue/
     │   ├── queue.module.ts           # BullMQ, dùng chung kết nối Redis với cache
     │   ├── queues.ts                 # ★ tên hàng đợi + kiểu job, khai một chỗ
-    │   └── processors/{image, report, notify, timesheet, payroll, people, leave}.processor.ts
+    │   └── processors/{report, notify, timesheet, payroll, people, leave}.processor.ts
     └── database/{database.module.ts, prisma.service.ts, redis.service.ts}
 ```
 
 **Khối này là ESM, không phải CommonJS.** NestJS 12 phát hành `"type": "module"` và không còn
 bản CommonJS nào, nên `backend/package.json` cũng phải khai `"type": "module"`. Hệ quả chạm vào
 mọi file: import tương đối phải mang đuôi `.js` kể cả khi nguồn là `.ts`, và bộ sinh của
-`contracts/` phát đúng dạng ấy. TypeScript ghim ở 6.x vì `ts-jest` chặn trên ở `<7`.
+`contracts/` phát đúng dạng ấy. TypeScript ghim ở 6.x vì `@nestjs/cli` 12 tự kéo `typescript ~6.0`.
 
 **Cấu hình ứng dụng nằm ở `bootstrap.ts`, không ở `main.ts`.** `main.ts` chạy ngay khi được
 nhập, nên một bộ test muốn dựng ứng dụng thật buộc phải dựng lại cấu hình bằng tay — và bản
@@ -4723,7 +4723,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | Queue | Job | Ai đẩy vào | Vì sao không làm đồng bộ |
 |---|---|---|---|
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
-| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; `notice-sweep`: mỗi lượt quét của §9.21.4 theo lịch của nó; `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
+| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; mỗi lượt quét của §9.21.4 là một job lặp mang tên riêng theo lịch của nó (`contracts-ending`, `kiosk-alerts`, `documents-due`…); `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
 | `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `payroll` | `run`: tính một lượt lương của kỳ; `deliver`: gửi một phiếu lương, `jobId` theo phiếu nên gửi lại không ra hai thư | `payroll/` khi chạy kỳ và khi gửi phiếu | Một kỳ ba mươi nghìn phiếu, tính và gửi đều không vừa trong một request (§9.9) |
@@ -4822,6 +4822,7 @@ ngoại. Khi E13-T9 tồn tại thì HTTPS là cửa chính, còn cửa này là
 | `kiosk/{deviceId}/up/heartbeat` | kiosk → server | 0, retained | uptime, RSSI, heap, fw/model version |
 | `kiosk/{deviceId}/up/event` | kiosk → server | 1 | spoof, lỗi phần cứng, cửa mở tay |
 | `kiosk/{deviceId}/up/status` (LWT) | broker | 1, retained | `offline` khi mất kết nối |
+| `kiosk/{deviceId}/up/enroll` | kiosk → server | 1 | mẫu mặt chụp tại máy cho một lượt ghi danh server đã mở (§7.5) |
 | `kiosk/{deviceId}/down/cmd` | server → kiosk | 1 | mở cửa, reboot, đổi cấu hình |
 | `kiosk/{deviceId}/down/enroll` | server → kiosk | 1 | thêm/xoá embedding |
 | `kiosk/{deviceId}/down/ota` | server → kiosk | 1 | url + sha256 firmware hoặc model |
@@ -5217,6 +5218,7 @@ deploy/
 ├── emqx/{emqx.conf, acl.conf, gen_certs.sh, certs/}   # listener MQTTS, auth và ACL
 ├── postgres/{init.sql, postgresql.conf, archive.conf, pg_hba.conf}   # ★ WAL liên tục, cửa sao chép cho bản gốc
 ├── mfa-reset.sh                           # ★ cửa thoát hiểm của bước mã: đặt lại một tài khoản, có audit (§9.4 luật 8)
+├── watch.sh                               # nghe mọi topic `up/` của đội máy bằng tài khoản svc-ops (§7.4)
 └── backup/{Dockerfile, backup.sh, restore-drill.sh, wal-push.sh, pg-start.sh}   # ★ §9.22.2
               · offsite.sh                                       # ★ bản sao ngoài máy, luật 3
               · retention.sh                                     # ★ §9.22.7
@@ -5422,7 +5424,7 @@ dấu là thành công, khác dấu là hai cụm đang ghi chung một kho, và
 mất bao lâu để dựng lại, và lần kiểm phục hồi gần nhất là khi nào. Hai số đầu do thiết kế quyết,
 số thứ ba do `restore-drill.sh` ghi ra.
 
-**Vì sao EMQX chứ không phải mosquitto.** Bảy topic của `contracts/mqtt_topics.yaml` chỉ đòi
+**Vì sao EMQX chứ không phải mosquitto.** Tám topic của `contracts/mqtt_topics.yaml` chỉ đòi
 QoS 1, retained và LWT — mosquitto làm đủ, và nó tốn ~5 MB RAM so với **382 MB** đo được của
 EMQX. Chỗ quyết định nằm ở **§7.2**: device token là JWT xoay vòng khi còn 7 ngày, và ACL phải
 chặn mỗi kiosk trong đúng `kiosk/{chính nó}/#`. Với mosquitto, cả hai thứ ấy sống trong file
@@ -5444,8 +5446,9 @@ có `authentication = []` (cho nặc danh vào) và ACL mặc định `{allow, {
 (mở mọi topic trừ `$SYS/#`). Listener `8883` chạy được ngay bằng cert demo nằm sẵn trong image,
 nhưng khoá riêng của cert đó công khai trong mọi bản EMQX nên nó **chỉ dùng được ở bàn thí
 nghiệm**. Ba thứ ấy — authn hai tầng hỏi `api` (§7.4), ACL theo `kiosk/{chính nó}/#`, cert thật
-— là nội dung của `emqx/emqx.conf` và `emqx/certs/`. Image còn bật sẵn listener `ws:8083` và
-`wss:8084` bên trong container; compose không map chúng ra ngoài và không có kế hoạch map.
+— là nội dung của `emqx/emqx.conf` và `emqx/certs/`. Listener `ws:8083` và `wss:8084` mà image
+bật sẵn bị `emqx.conf` tắt hẳn: không client nào nói MQTT qua websocket, và cổng không nghe thì
+không phải canh.
 
 **Retained phải ghi xuống đĩa, không để mặc định.** EMQX mặc định
 `retainer.backend.storage_type = ram`, nên restart broker là mất sạch retained — đo được 0 bản
@@ -5477,7 +5480,7 @@ dùng sau này lẫn IP dùng ở bàn thí nghiệm thì không phải cấp l�
 `mqtt_uri` sang tên, còn chứng thư đã khai sẵn tên ấy từ đầu. Khoá riêng của cả CA lẫn máy chủ
 không rời `deploy/emqx/certs/`, và `.gitignore` chặn cả thư mục.
 
-`ci/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
+`.github/workflows/contracts.yml` là workflow quan trọng nhất: chạy lại generator từ `contracts/`, fail nếu code sinh ra khác code đã commit. Đây là thứ chặn 3 khối trôi khỏi nhau.
 
 ---
 
