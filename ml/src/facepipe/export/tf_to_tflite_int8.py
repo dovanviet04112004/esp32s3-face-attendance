@@ -1,14 +1,12 @@
 """Convert a SavedModel to the two rungs the ladder starts with (KEHOACH 3.7).
 
-Q0 is float and only sets the ceiling. Q1 is full-integer PTQ, calibrated on
-real crops: without them the converter picks ranges from noise and the model
-loses far more than quantisation itself costs.
+Q0 is float and only sets the ceiling; the command line writes it. Q1 is full-integer
+PTQ, calibrated on real crops by ptq_tflite: without them the converter picks ranges
+from noise and the model loses far more than quantisation itself costs.
 """
 
 import argparse
 from pathlib import Path
-
-from facepipe.tasks import calibration_samples
 
 
 def convert(saved_dir: Path, out: Path, representative=None) -> int:
@@ -34,19 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--saved", type=Path, required=True, help="SavedModel directory")
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--run", type=Path, help="run whose split calibrates the ranges")
-    parser.add_argument("--split", default=None, help="which split the crops come from")
-    parser.add_argument("--samples", type=int, default=300)
     args = parser.parse_args(argv)
 
-    def representative():
-        yield from calibration_samples(args.run, args.split, args.samples)
-
-    feed = representative if args.run is not None else None
-
-    size = convert(args.saved, args.out, feed)
-    rung = "Q1 int8" if feed is not None else "Q0 float"
-    print(f"{rung}  {args.out.name}  {size / 1024.0:.1f} KB")
+    size = convert(args.saved, args.out)
+    print(f"Q0 float  {args.out.name}  {size / 1024.0:.1f} KB")
     return 0
 
 

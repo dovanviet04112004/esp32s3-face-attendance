@@ -27,7 +27,7 @@ set -uo pipefail
 ML_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${ML_ROOT}/.venv/bin/python"
 BENCH_LIMIT="${BENCH_LIMIT:-4000}"
-CALIB_SAMPLES="${CALIB_SAMPLES:-300}"
+CALIB_SAMPLES="${CALIB_SAMPLES:-}"
 SCORE="${SCORE:-1}"
 CLE="${CLE:-0}"
 TFLITE="${TFLITE:-1}"
@@ -95,10 +95,12 @@ ladder() {
 
     local equalise=(--no-cle)
     [[ "${CLE}" == "1" ]] && equalise=()
+    local samples=()
+    [[ -n "${CALIB_SAMPLES}" ]] && samples=(--samples "${CALIB_SAMPLES}")
     log "${tag}: Q1, fold then correct bias, ${#equalise[@]} flag(s) off"
     "${PY}" -m facepipe.compress.quant.ptq_tflite --run "${run}" \
         --out "${art}/tflite/${model}_int8_q1_${tag}.tflite" "${equalise[@]}" \
-        --work "${art}/tf/q1_${tag}" --samples "${CALIB_SAMPLES}" || return 1
+        --work "${art}/tf/q1_${tag}" "${samples[@]}" || return 1
 
     log "${tag}: operators, and whether the branch resolver covers them"
     "${PY}" -m facepipe.export.tflite_op_check \

@@ -12,7 +12,7 @@ import torch
 
 from ... import tasks
 from ...export import onnx_to_tf, tf_to_tflite_int8, to_onnx
-from . import bias_correction, cle, fold_bn
+from . import bias_correction, cle, fold_bn, ptq_espdl
 
 
 def prepared(run: Path, do_fold: bool, do_cle: bool, do_bias: bool, samples: int):
@@ -43,11 +43,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-fold", action="store_true")
     parser.add_argument("--no-cle", action="store_true")
     parser.add_argument("--no-bias", action="store_true")
-    parser.add_argument("--samples", type=int, default=300)
+    parser.add_argument("--samples", type=int, help="calibration crops; quant.yaml's by default")
     args = parser.parse_args(argv)
 
+    samples = args.samples or ptq_espdl.block(tasks.branch_of(args.run))["ladder"]["calib_samples"]
     _cfg, model, report = prepared(
-        args.run, not args.no_fold, not args.no_cle, not args.no_bias, args.samples
+        args.run, not args.no_fold, not args.no_cle, not args.no_bias, samples
     )
     for key, value in report.items():
         print(f"  {key}: {value}")
@@ -68,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     saved = onnx_to_tf.convert(onnx_path, args.work / "saved")
 
     def representative():
-        yield from tasks.calibration_samples(args.run, None, args.samples)
+        yield from tasks.calibration_samples(args.run, None, samples)
 
     size = tf_to_tflite_int8.convert(saved, args.out, representative)
     print(f"Q1  {args.out.name}  {size / 1024.0:.1f} KB")
