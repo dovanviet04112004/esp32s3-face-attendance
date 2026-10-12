@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, LayerCard, LayerDialog, Tabs } from "@cloudflare/kumo";
-import { CaretRightIcon, CheckCircleIcon, CheckIcon } from "@phosphor-icons/react";
+import { Button, LayerDialog } from "@cloudflare/kumo";
+import { CaretRightIcon, CheckIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
@@ -11,7 +11,8 @@ import { REQUEST_DECIDERS } from "@/components/nav/waiting-count";
 import { type Person } from "@/components/requests/request-card";
 import { InboxPreview } from "@/components/requests/inbox-preview";
 import { Failed } from "@/components/ui/failed";
-import { PageHeader, PageLayout } from "@/components/ui/page";
+import { periodName } from "@/components/ui/month-picker";
+import { AllClear, CardTabs, HomeCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
@@ -199,10 +200,6 @@ async function unlessMissing<T>(path: string): Promise<T | null> {
 
 // Kumo draws each line at a random width and pace, which the server render cannot match.
 
-function periodName(period: { year: number; month: number }): string {
-  return `${String(period.month).padStart(2, "0")}/${period.year}`;
-}
-
 function SkeletonRows({ rows = 4 }: { rows?: number }) {
   return (
     <ul aria-hidden className="flex flex-col">
@@ -213,46 +210,6 @@ function SkeletonRows({ rows = 4 }: { rows?: number }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function Quiet({ children }: { children: ReactNode }) {
-  return (
-    <p className="flex items-center gap-2.5 px-4 py-3.5 text-kumo-subtle">
-      <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
-      {children}
-    </p>
-  );
-}
-
-/** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
-interface CardLink {
-  label: string;
-  href?: string;
-  /** Opens the full list in place when no page holds it. */
-  onPick?: () => void;
-}
-
-function Card({ id, title, link, children }: { id?: string; title: ReactNode; link?: CardLink; children: ReactNode }) {
-  // Link or button, 44 px under a finger as globals.css makes every button, yet the band keeps one height (KEHOACH 9.21.2).
-  const face =
-    "shrink-0 font-normal text-kumo-link hover:underline pointer-coarse:-my-3 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center";
-  return (
-    <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
-      <LayerCard.Secondary className="justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2">{title}</span>
-        {link?.href ? (
-          <Link href={link.href} className={face}>
-            {link.label}
-          </Link>
-        ) : link?.onPick ? (
-          <button type="button" onClick={link.onPick} className={face}>
-            {link.label}
-          </button>
-        ) : null}
-      </LayerCard.Secondary>
-      <LayerCard.Primary className="gap-0 p-0 pr-0">{children}</LayerCard.Primary>
-    </LayerCard>
   );
 }
 
@@ -455,7 +412,7 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
   ];
 
   return (
-    <Card id="today" title={t("todayTitle")}>
+    <HomeCard id="today" title={t("todayTitle")}>
       {asked.isError ? (
         <div className="p-4">
           <Failed onRetry={() => void asked.refetch()} />
@@ -464,14 +421,14 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
         <Figures figures={figures} />
       )}
       <WhoSheet bucket={listing} onClose={() => setListing(null)} day={day} />
-    </Card>
+    </HomeCard>
   );
 }
 
 function PileList({ pile }: { pile: Pile }) {
   const t = useTranslations("overview");
   if (pile.rows.length === 0) {
-    return <Quiet>{t("attentionClear")}</Quiet>;
+    return <AllClear>{t("attentionClear")}</AllClear>;
   }
   return (
     <div className="flex flex-col motion-enter">
@@ -519,7 +476,7 @@ function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
   const onAll = current?.[1].onAll;
   const countOf = (pile: Pile) => `${format.number(pile.total)}${pile.exact ? "" : "+"}`;
   return (
-    <Card
+    <HomeCard
       title={title}
       link={
         current && (full || onAll) ? { href: full, onPick: onAll, label: t(current[1].exact ? "fullListOf" : "fullListAtLeast", { count: current[1].total }) } : undefined
@@ -533,48 +490,16 @@ function Piles<K extends string>({ title, piles, pending, failed, onRetry }: {
         <SkeletonRows rows={kPileRows} />
       ) : (
         <>
-          <div className="@container border-b border-kumo-hairline px-3 py-2.5">
-            <div className="hidden @xl:block">
-              <Tabs
-                variant="segmented"
-                value={current[0]}
-                onValueChange={(next) => setTab(next as K)}
-                tabs={shown.map(([key, pile]) => ({
-                  value: key,
-                  label: (
-                    <span className="flex items-center gap-1.5 whitespace-nowrap">
-                      {pile.label}
-                      <span className="text-kumo-subtle tabular-nums">{countOf(pile)}</span>
-                    </span>
-                  ),
-                }))}
-              />
-            </div>
-            <div role="tablist" className="grid grid-cols-2 gap-1 rounded-lg bg-kumo-recessed p-1 @xl:hidden">
-              {shown.map(([key, pile]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={key === current[0]}
-                  onClick={() => setTab(key)}
-                  className={cn(
-                    "flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-md px-3 text-start",
-                    key === current[0]
-                      ? "bg-kumo-base font-medium text-kumo-default shadow-sm ring ring-kumo-line"
-                      : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
-                  )}
-                >
-                  <span className="min-w-0 leading-snug text-pretty">{pile.label}</span>
-                  <span className="shrink-0 tabular-nums">{countOf(pile)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <CardTabs
+            layout="pairs"
+            value={current[0]}
+            onChange={setTab}
+            tabs={shown.map(([key, pile]) => ({ value: key, label: pile.label, count: countOf(pile) }))}
+          />
           <PileList key={current[0]} pile={current[1]} />
         </>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -810,7 +735,7 @@ function PeriodCard() {
   }
   const blockers = (checklist.data ?? []).filter((item) => item.count > 0);
   return (
-    <Card
+    <HomeCard
       title={open ? t("periodTitle", { name: periodName(open) }) : t("tabPeriod")}
       link={open ? { href: `/payroll/${open.id}`, label: t("periodGo", { name: periodName(open) }) } : { href: "/payroll", label: nav("payroll") }}
     >
@@ -827,7 +752,7 @@ function PeriodCard() {
           <Stepper now={stepOf(open, runs.data, checklist.data)} />
           <p className="border-t border-kumo-hairline px-4 pt-3 pb-1 text-sm font-medium text-kumo-subtle">{t("blockersTitle")}</p>
           {blockers.length === 0 ? (
-            <Quiet>{pay("checklistClear")}</Quiet>
+            <AllClear>{pay("checklistClear")}</AllClear>
           ) : (
             <ul className="flex flex-col">
               {blockers.map((item) => (
@@ -843,7 +768,7 @@ function PeriodCard() {
           )}
         </div>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -872,7 +797,7 @@ function FleetCard() {
       ]
     : [];
   return (
-    <Card title={t("fleetTitle")} link={{ href: "/devices", label: common("seeAll") }}>
+    <HomeCard title={t("fleetTitle")} link={{ href: "/devices", label: common("seeAll") }}>
       {counts.isError ? (
         <div className="p-4">
           <Failed onRetry={() => void counts.refetch()} />
@@ -892,7 +817,7 @@ function FleetCard() {
           ))}
         </ul>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 

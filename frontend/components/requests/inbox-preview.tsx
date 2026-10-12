@@ -5,7 +5,6 @@ import type { Icon as IconType } from "@phosphor-icons/react";
 import {
   CaretRightIcon,
   CertificateIcon,
-  CheckCircleIcon,
   CheckIcon,
   ClockCountdownIcon,
   CoinsIcon,
@@ -23,6 +22,7 @@ import { useState, type AnimationEvent, type FormEvent } from "react";
 import { COUNTS_KEY, QUEUE_ROLES, WAITING_POLL_MS, useInboxCounts, type Queue } from "@/components/nav/waiting-count";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { AllClear } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
@@ -198,10 +198,7 @@ export function InboxPreview() {
         ) : pending ? (
           <Waiting />
         ) : total === 0 ? (
-          <p className="flex items-center gap-2.5 px-4 py-3.5 text-kumo-subtle">
-            <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
-            {r("nothingWaiting")}
-          </p>
+          <AllClear>{r("nothingWaiting")}</AllClear>
         ) : (
           <ul className="flex flex-col">
             {rows.map((row) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { LayerCard, Tabs, type TabsItem } from "@cloudflare/kumo";
-import { CaretLeftIcon } from "@phosphor-icons/react";
+import { CaretLeftIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -245,7 +245,139 @@ export function Facts({ rows }: { rows: [string, ReactNode][] }) {
   );
 }
 
-export interface Stat {
+interface HomeCardLink {
+  label: string;
+  href?: string;
+  /** Opens the full list in place when no page holds it. */
+  onPick?: () => void;
+}
+
+// Link or button, 44 px under a finger as globals.css makes every button, yet the band keeps one height (KEHOACH 9.21.2).
+const HOME_LINK =
+  "shrink-0 font-normal text-kumo-link hover:underline pointer-coarse:-my-3 pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center";
+
+/** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
+export function HomeCard({
+  id,
+  title,
+  link,
+  truncate,
+  children,
+}: {
+  id?: string;
+  title: ReactNode;
+  link?: HomeCardLink;
+  /** Keeps the title on one line, clipping what does not fit. */
+  truncate?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
+      <LayerCard.Secondary className="justify-between gap-3">
+        <span className={cn("flex min-w-0 items-center gap-2", truncate && "truncate")}>{title}</span>
+        {link?.href ? (
+          <Link href={link.href} className={HOME_LINK}>
+            {link.label}
+          </Link>
+        ) : link?.onPick ? (
+          <button type="button" onClick={link.onPick} className={HOME_LINK}>
+            {link.label}
+          </button>
+        ) : null}
+      </LayerCard.Secondary>
+      <LayerCard.Primary className="gap-0 p-0 pr-0">{children}</LayerCard.Primary>
+    </LayerCard>
+  );
+}
+
+/** The line a home card shows when nothing in it waits. */
+export function AllClear({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex items-center gap-2.5 px-4 py-3.5 text-kumo-subtle">
+      <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
+      {children}
+    </p>
+  );
+}
+
+interface CardTab<K extends string> {
+  value: K;
+  label: string;
+  count: string;
+}
+
+const TAB_ON = "bg-kumo-base font-medium text-kumo-default shadow-sm ring ring-kumo-line";
+const TAB_OFF = "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default";
+// Whole class names, so Tailwind finds each one in the source.
+const NARROW = {
+  pairs: {
+    wide: "hidden @xl:block",
+    strip: "grid grid-cols-2 gap-1 rounded-lg bg-kumo-recessed p-1 @xl:hidden",
+    tab: "flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-md px-3 text-start",
+    label: "min-w-0 leading-snug text-pretty",
+    count: "shrink-0 tabular-nums",
+  },
+  trio: {
+    wide: "hidden @md:block",
+    strip: "grid grid-cols-3 gap-1 rounded-lg bg-kumo-recessed p-1 @md:hidden",
+    tab: "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-md px-1 leading-tight",
+    label: "max-w-full truncate text-sm",
+    count: "tabular-nums",
+  },
+} as const;
+
+/** Kumo's segmented tabs while the card is wide, a grid of 44 px buttons once it is narrow. */
+export function CardTabs<K extends string>({
+  tabs,
+  value,
+  onChange,
+  layout,
+}: {
+  tabs: CardTab<K>[];
+  value: K;
+  onChange: (next: K) => void;
+  /** pairs: two to a row, the count beside the label; trio: three in a row, the count under it. */
+  layout: keyof typeof NARROW;
+}) {
+  const look = NARROW[layout];
+  return (
+    <div className="@container border-b border-kumo-hairline px-3 py-2.5">
+      <div className={look.wide}>
+        <Tabs
+          variant="segmented"
+          value={value}
+          onValueChange={(next) => onChange(next as K)}
+          tabs={tabs.map((tab) => ({
+            value: tab.value,
+            label: (
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                {tab.label}
+                <span className="text-kumo-subtle tabular-nums">{tab.count}</span>
+              </span>
+            ),
+          }))}
+        />
+      </div>
+      <div role="tablist" className={look.strip}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={tab.value === value}
+            onClick={() => onChange(tab.value)}
+            className={cn(look.tab, tab.value === value ? TAB_ON : TAB_OFF)}
+          >
+            <span className={look.label}>{tab.label}</span>
+            <span className={look.count}>{tab.count}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface Stat {
   key: string;
   label: string;
   value: ReactNode;

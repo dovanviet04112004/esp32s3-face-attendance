@@ -1,38 +1,26 @@
 "use client";
 
-import { Button, Empty, LayerCard, Tabs } from "@cloudflare/kumo";
+import { Button, Empty, LayerCard } from "@cloudflare/kumo";
 import { CalendarPlusIcon, CaretRightIcon, CheckCircleIcon, FileTextIcon, ListChecksIcon, UserCircleIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 
-import { StatePill as RequestPill, useRequestWords, type RequestRow } from "@/components/requests/request-card";
+import { StatePill as RequestPill, useLeaveBalances, useRequestWords, type RequestRow } from "@/components/requests/request-card";
 import { InboxPreview, useShortSpan } from "@/components/requests/inbox-preview";
 import { RequestForm } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
-import { PageHeader, PageLayout } from "@/components/ui/page";
+import { AllClear, CardTabs, HomeCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { addDays, atClock, clockOf, dayOnly, dayWindow, days, money, todayIso } from "@/lib/format";
+import { addDays, clockOf, dayOnly, dayWindow, days, lateBy, money, todayIso } from "@/lib/format";
 import { useFocusOnArrival } from "@/lib/url-state";
-
-interface Balance {
-  leaveTypeId: string;
-  name: string;
-  year: number;
-  entitled: number;
-  carriedOver: number;
-  taken: number;
-  pending: number;
-  remaining: number;
-  bookedAfter: number;
-}
 
 interface Me {
   id: number;
@@ -104,7 +92,6 @@ const TEAM_BUCKETS: { key: TeamBucket; label: "teamAbsent" | "teamOnLeave" | "te
 ];
 
 const kDayMs = 86_400_000;
-const kMinuteMs = 60_000;
 const kPunchesShown = 20;
 const kRecentTake = 20;
 const kDecidedShown = 3;
@@ -126,12 +113,6 @@ async function unlessMissing<T>(path: string): Promise<T | null> {
   }
 }
 
-/** Minutes past the shift's start plus its grace; zero or less is on time. */
-function lateBy(day: string, shift: NonNullable<PlannedDay["shift"]>, firstPunch: string): number {
-  const start = atClock(day, shift.startTime);
-  return Math.floor((new Date(firstPunch).getTime() - start.getTime()) / kMinuteMs) - (shift.graceMinutes ?? 0);
-}
-
 function worksOn(day: PlannedDay | undefined): day is PlannedDay & { shift: NonNullable<PlannedDay["shift"]> } {
   return Boolean(day?.shift && !day.holiday && !day.away && !day.weekend);
 }
@@ -151,34 +132,8 @@ function SkeletonRows({ rows = 2 }: { rows?: number }) {
   );
 }
 
-function Quiet({ children }: { children: ReactNode }) {
-  return (
-    <p className="flex items-center gap-2.5 px-4 py-3.5 text-kumo-subtle">
-      <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
-      {children}
-    </p>
-  );
-}
-
 function Pad({ children }: { children: ReactNode }) {
   return <div className="p-4">{children}</div>;
-}
-
-/** Card anatomy of both home pages: a title strip with one link at its right, rows in the body. */
-function Card({ id, title, link, children }: { id?: string; title: ReactNode; link?: { href: string; label: string }; children: ReactNode }) {
-  return (
-    <LayerCard id={id} className={id ? "scroll-mt-20" : undefined}>
-      <LayerCard.Secondary className="justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2 truncate">{title}</span>
-        {link ? (
-          <Link href={link.href} className="shrink-0 font-normal text-kumo-link hover:underline">
-            {link.label}
-          </Link>
-        ) : null}
-      </LayerCard.Secondary>
-      <LayerCard.Primary className="gap-0 p-0 pr-0">{children}</LayerCard.Primary>
-    </LayerCard>
-  );
 }
 
 function RowLink({ href, children }: { href: string; children: ReactNode }) {
@@ -291,7 +246,8 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
     ) : null;
 
   return (
-    <Card
+    <HomeCard
+      truncate
       title={
         <span className="truncate">
           {t("todayTitle")}
@@ -350,7 +306,7 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
           </li>
         </ul>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -362,7 +318,7 @@ function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
   const short = usePlanShort();
   const today = todayIso();
   return (
-    <Card title={t("weekTitle")} link={{ href: "/me/shifts", label: nav("myShifts") }}>
+    <HomeCard truncate title={t("weekTitle")} link={{ href: "/me/shifts", label: nav("myShifts") }}>
       {week.failed ? (
         <Pad>
           <Failed onRetry={week.retry} />
@@ -401,7 +357,7 @@ function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
           })}
         </ol>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -430,7 +386,8 @@ function TeamCard() {
   const total = held?.totals[bucket] ?? 0;
   const allIn = held !== undefined && TEAM_BUCKETS.every(({ key }) => held.totals[key] === 0);
   return (
-    <Card
+    <HomeCard
+      truncate
       id="today"
       title={t("teamTitle")}
       link={bucket === "onLeave" && total > 0 ? { href: `/leave?kind=LEAVE&state=APPROVED&from=${day}&to=${day}`, label: t("teamLeaveAll", { count: total }) } : undefined}
@@ -442,49 +399,17 @@ function TeamCard() {
       ) : held === undefined ? (
         <SkeletonRows rows={3} />
       ) : allIn ? (
-        <Quiet>{t("teamAllIn")}</Quiet>
+        <AllClear>{t("teamAllIn")}</AllClear>
       ) : (
         <>
-          <div className="@container border-b border-kumo-hairline px-3 py-2.5">
-            <div className="hidden @md:block">
-              <Tabs
-                variant="segmented"
-                value={bucket}
-                onValueChange={(next) => setPicked(next as TeamBucket)}
-                tabs={TEAM_BUCKETS.map(({ key, label }) => ({
-                  value: key,
-                  label: (
-                    <span className="flex items-center gap-1.5 whitespace-nowrap">
-                      {t(label)}
-                      <span className="text-kumo-subtle tabular-nums">{format.number(held.totals[key])}</span>
-                    </span>
-                  ),
-                }))}
-              />
-            </div>
-            <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-kumo-recessed p-1 @md:hidden">
-              {TEAM_BUCKETS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={key === bucket}
-                  onClick={() => setPicked(key)}
-                  className={cn(
-                    "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-md px-1 leading-tight",
-                    key === bucket
-                      ? "bg-kumo-base font-medium text-kumo-default shadow-sm ring ring-kumo-line"
-                      : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
-                  )}
-                >
-                  <span className="max-w-full truncate text-sm">{t(label)}</span>
-                  <span className="tabular-nums">{format.number(held.totals[key])}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <CardTabs
+            layout="trio"
+            value={bucket}
+            onChange={setPicked}
+            tabs={TEAM_BUCKETS.map(({ key, label }) => ({ value: key, label: t(label), count: format.number(held.totals[key]) }))}
+          />
           {people.length === 0 ? (
-            <Quiet>{t("teamNone")}</Quiet>
+            <AllClear>{t("teamNone")}</AllClear>
           ) : (
             <ul className="flex flex-col motion-enter" key={bucket}>
               {people.slice(0, kTeamShown).map((one) => (
@@ -502,7 +427,7 @@ function TeamCard() {
           )}
         </>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -559,11 +484,7 @@ export default function MyPage() {
     enabled: has,
     queryFn: () => unlessMissing<MonthTally>(`/timesheet/mine?month=${monthKey}`),
   });
-  const balances = useQuery({
-    queryKey: ["leave-balances", "mine", today],
-    enabled: has,
-    queryFn: async () => (await api.get<Balance[]>(`/leave-balances?asOf=${today}`)).data,
-  });
+  const balances = useLeaveBalances(employeeId, today);
   const pending = useQuery({
     queryKey: ["requests", "mine", employeeId, "pending"],
     enabled: has,
@@ -655,7 +576,7 @@ export default function MyPage() {
       ) : null}
 
       {unsigned.length + turnedDown.length + ownTasks.length > 0 ? (
-        <Card title={t("todoTitle")}>
+        <HomeCard truncate title={t("todoTitle")}>
           <ul className="flex flex-col">
             {ownTasks.map((task) => {
               const due = task.dueOn.slice(0, 10);
@@ -693,12 +614,12 @@ export default function MyPage() {
               </RowLink>
             ))}
           </ul>
-        </Card>
+        </HomeCard>
       ) : null}
 
       <WeekCard week={week} />
 
-      <Card title={r("mine")} link={{ href: "/me/requests", label: common("seeAll") }}>
+      <HomeCard truncate title={r("mine")} link={{ href: "/me/requests", label: common("seeAll") }}>
         {pending.isPending || recent.isPending ? (
           <SkeletonRows rows={3} />
         ) : pending.isError || recent.isError ? (
@@ -725,13 +646,13 @@ export default function MyPage() {
             ))}
           </ul>
         )}
-      </Card>
+      </HomeCard>
     </div>
   );
 
   const side = (
     <div className="grid items-start gap-4 @2xl/page:grid-cols-2 @4xl/page:grid-cols-3 @5xl/page:grid-cols-1">
-      <Card title={`${t("leaveLeft")} · ${year}`}>
+      <HomeCard truncate title={`${t("leaveLeft")} · ${year}`}>
         {balances.isPending ? (
           <SkeletonRows rows={1} />
         ) : balances.isError ? (
@@ -767,10 +688,10 @@ export default function MyPage() {
             })}
           </ul>
         )}
-      </Card>
+      </HomeCard>
 
       {tally.data === null ? null : (
-        <Card title={`${t("thisMonth")} · ${monthName}`}>
+        <HomeCard truncate title={`${t("thisMonth")} · ${monthName}`}>
           {tally.isError ? (
             <Pad>
               <Failed onRetry={() => void tally.refetch()} />
@@ -793,10 +714,10 @@ export default function MyPage() {
               ))}
             </ul>
           )}
-        </Card>
+        </HomeCard>
       )}
 
-      <Card title={t("latestPayslip")} link={{ href: "/me/payslips", label: nav("myPayslips") }}>
+      <HomeCard truncate title={t("latestPayslip")} link={{ href: "/me/payslips", label: nav("myPayslips") }}>
         {latest.isPending ? (
           <SkeletonRows rows={1} />
         ) : latest.isError ? (
@@ -824,7 +745,7 @@ export default function MyPage() {
             </RowLink>
           </ul>
         )}
-      </Card>
+      </HomeCard>
     </div>
   );
 
