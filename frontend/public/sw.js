@@ -105,9 +105,6 @@ self.addEventListener("message", (event) => {
   event.waitUntil(caches.keys().then((names) => Promise.all(names.filter(drawer).map((n) => caches.delete(n)))));
 });
 
-// The manifest's short_name: the system's name reads the same in both languages (KEHOACH 9.21.6).
-const APP_NAME = "Nhân Lực";
-
 function wording(body) {
   const words = self.SW_WORDS[body.locale] || self.SW_WORDS.vi;
   if (body.count > 1) {
@@ -124,14 +121,15 @@ self.addEventListener("push", (event) => {
     body = {};
   }
   const tag = body.tag || body.kind || "notice";
+  const locale = body.locale === "en" ? "en" : "vi";
   event.waitUntil(
-    self.registration.showNotification(APP_NAME, {
+    self.registration.showNotification(self.SW_NAME[locale], {
       body: wording(body),
       icon: "/icon-192.png",
       badge: "/badge.png",
       tag,
       renotify: body.renotify === true,
-      data: { id: body.id || null, kind: body.kind || null, locale: body.locale === "en" ? "en" : "vi" },
+      data: { id: body.id || null, kind: body.kind || null, locale },
     }),
   );
 });
