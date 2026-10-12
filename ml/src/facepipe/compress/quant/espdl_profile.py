@@ -182,8 +182,52 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
     return tags, None
 
 
-def report(log_text: str, espdl: Path, top: int) -> str:
-    """The profile in log_text of espdl: time by op type, then the slowest modules, tagged."""
+def kernel_class(module: Module, laid: dict[str, list[int]]) -> str:
+    """The esp-dl kernel family module runs on, the unit the inventory sums time by."""
+    if module.op not in espdl_shapes.CONV_OPS:
+        return f"{module.op} (table lookup)" if LUT_MARK in module.attrs else module.op
+    x, y = laid.get(module.inputs[0]), laid.get(module.outputs[0])
+    if x is None or y is None:
+        return "convolution, shapes unknown"
+    kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1])
+    stride = espdl_shapes.attribute(module.attrs, "strides", [1])[0]
+    group = espdl_shapes.attribute(module.attrs, "group", 1)
+    aligned = "unaligned" if x[-1] % CHANNEL_STEP or y[-1] % CHANNEL_STEP else "aligned"
+    size = "x".join(str(k) for k in kernel)
+    if x[-1] == 3:
+        return f"convolution {size} s{stride} from 3 channels"
+    if group > 1 and group == x[-1]:
+        return f"depthwise {size} s{stride} {aligned}"
+    if group == 1 and all(k == 1 for k in kernel):
+        return f"pointwise {aligned}"
+    return f"convolution {size} s{stride} {aligned}"
+
+
+def classes(
+    entries: list[tuple[str, int, float | None]],
+) -> list[tuple[str, int, int, list, float]]:
+    """Per kernel class: modules, microseconds, cycle rates, and microseconds at its best rate.
+
+    entries are (class, us, cycles a MAC or None); a module without a rate keeps its own time.
+    """
+    grouped = defaultdict(list)
+    for name, us, rate in entries:
+        grouped[name].append((us, rate))
+    found = []
+    for name, members in grouped.items():
+        rates = sorted(rate for _, rate in members if rate is not None)
+        best = rates[0] if rates else None
+        floor = sum(us * best / rate if rate else us for us, rate in members) if best else None
+        total = sum(us for us, _ in members)
+        found.append((name, len(members), total, rates, total if floor is None else floor))
+    return sorted(found, key=lambda row: -row[2])
+
+
+def report(log_text: str, espdl: Path, top: int, every: bool = False) -> str:
+    """The profile in log_text of espdl: time by op type, then the slowest modules, tagged.
+
+    every adds each module and the kernel classes with what reaching their best rate would save.
+    """
     cpu_mhz, cache_bytes = chip()
     info_text = espdl.with_suffix(".info").read_text(encoding="utf-8")
     graph, info = nodes(espdl), espdl_shapes.parse(info_text)
@@ -215,14 +259,27 @@ def report(log_text: str, espdl: Path, top: int) -> str:
     lines.append("by op type:")
     ranked_ops = sorted(by_op.items(), key=lambda kv: -kv[1][1])
     lines += [f"  {op:22s} {n:4d} {us / 1000:8.1f} ms" for op, (n, us) in ranked_ops]
-    lines.append(f"slowest {top} modules:")
-    for m in sorted(modules, key=lambda m: -m.us)[:top]:
-        tags, rate = tags_of(m, laid, readers, cpu_mhz, cache_bytes)
+    ranked = sorted(modules, key=lambda m: -m.us)
+    tagged = {m.name: tags_of(m, laid, readers, cpu_mhz, cache_bytes) for m in ranked}
+    lines.append(f"{'every' if every else f'slowest {top}'} modules:")
+    for m in ranked if every else ranked[:top]:
+        tags, rate = tagged[m.name]
         cycles = f"{rate:5.2f} c/MAC " if rate is not None else ""
         lines.append(
             f"  {m.us / 1000:7.1f} ms {m.op:18s} {cycles}{m.name}"
             + "".join(f"\n      - {t}" for t in tags)
         )
+    if every:
+        total = max(sum(m.us for m in modules), 1)
+        entries = [(kernel_class(m, laid), m.us, tagged[m.name][1]) for m in modules]
+        lines.append("by kernel class, with the time saved at the class's fastest module's rate:")
+        for name, count, us, rates, floor in classes(entries):
+            line = f"  {us / 1000:7.1f} ms {100 * us / total:5.1f}% x{count:<3d} {name}"
+            if rates:
+                line += f"  c/MAC {rates[0]:.2f} / {rates[len(rates) // 2]:.2f} / {rates[-1]:.2f}"
+            if us - floor >= 50:
+                line += f"  saves {(us - floor) / 1000:.1f} ms"
+            lines.append(line)
     return "\n".join(lines)
 
 
@@ -231,8 +288,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--espdl", type=Path, required=True)
     parser.add_argument("--top", type=int, default=40)
+    parser.add_argument("--all", action="store_true", help="every module and the kernel classes")
     args = parser.parse_args(argv)
-    print(report(args.log.read_text(encoding="utf-8", errors="replace"), args.espdl, args.top))
+    log_text = args.log.read_text(encoding="utf-8", errors="replace")
+    print(report(log_text, args.espdl, args.top, args.all))
     return 0
 
 

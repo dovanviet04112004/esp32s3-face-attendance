@@ -373,11 +373,11 @@ ai-unit: idf ai-probe ## Run the probe of ROW on the board: test_apps/probe, the
 	  grep -aq "^[0-9]* Tests 0 Failures" $$log || { echo "$$log: the probe failed or never finished"; exit 1; }; \
 	done
 
-ai-profile: ## Rank esp-dl's per-module profile in LOG against the .espdl ESPDL that ran, slow paths tagged (TOP=)
+ai-profile: ## Rank esp-dl's per-module profile in LOG against the .espdl ESPDL that ran, slow paths tagged (TOP=, ALL=1)
 	$(call need,LOG,a board log of make ai-unit)
 	$(call need,ESPDL,the .espdl that log ran)
 	cd ml && $(ML_PY) -m facepipe.compress.quant.espdl_profile --log $(abspath $(LOG)) \
-	  --espdl $(abspath $(ESPDL)) $(if $(TOP),--top $(TOP))
+	  --espdl $(abspath $(ESPDL)) $(if $(TOP),--top $(TOP)) $(if $(ALL),--all)
 
 speed: idf ## KEHOACH 3.7 step 2 for the run: timing row, its probe on the board, the profile ranked
 	$(MAKE) --no-print-directory quant-timing $(run_vars)

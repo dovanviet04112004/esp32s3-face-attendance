@@ -83,6 +83,40 @@ def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
     ]
 
 
+def test_each_module_falls_in_one_kernel_class() -> None:
+    three = POINTWISE.replace("[1, 1], pads", "[3, 3], pads")
+    stride_two = three.replace("strides = [1, 1]", "strides = [2, 2]")
+    depthwise = stride_two.replace("group = 1", "group = 24")
+
+    def kind(op: str, x: list[int], y: list[int], attrs: str = POINTWISE) -> str:
+        laid = {"x": x, "w": [1, 1, x[-1], y[-1]], "y": y}
+        return espdl_profile.kernel_class(module(op, ["x", "w"], ["y"], attrs=attrs), laid)
+
+    assert kind("Conv", [1, 8, 8, 32], [1, 8, 8, 64]) == "pointwise aligned"
+    assert kind("ConvPRelu", [1, 8, 8, 32], [1, 8, 8, 103]) == "pointwise unaligned"
+    assert kind("Conv", [1, 16, 16, 3], [1, 8, 8, 32], stride_two) == (
+        "convolution 3x3 s2 from 3 channels"
+    )
+    assert kind("Conv", [1, 16, 16, 24], [1, 8, 8, 24], depthwise) == "depthwise 3x3 s2 unaligned"
+    assert kind("Conv", [1, 8, 8, 32], [1, 8, 8, 32], three) == "convolution 3x3 s1 aligned"
+    assert kind("Clip", [1, 8, 8, 32], [1, 8, 8, 32], "lut = 'Clip_lut_0'") == (
+        "Clip (table lookup)"
+    )
+    assert kind("Add", [1, 8, 8, 32], [1, 8, 8, 32], "") == "Add"
+    unknown = espdl_profile.kernel_class(module("Conv", ["x", "w"], ["y"]), {})
+    assert unknown == "convolution, shapes unknown"
+
+
+def test_a_class_saves_what_its_fastest_module_s_rate_would_save() -> None:
+    entries = [("pointwise", 100, 0.2), ("pointwise", 300, 0.6), ("Add", 50, None)]
+    found = espdl_profile.classes(entries)
+    assert [row[0] for row in found] == ["pointwise", "Add"]
+    _name, count, us, rates, floor = found[0]
+    assert (count, us, rates) == (2, 400, [0.2, 0.6])
+    assert floor == pytest.approx(200.0)
+    assert found[1][1:] == (1, 50, [], 50)
+
+
 def test_the_other_slow_paths_name_their_patch() -> None:
     def tags(op: str, laid: dict | None = None, attrs: str = "") -> list[str]:
         found = module(op, ["a"], ["b"], attrs=attrs)
