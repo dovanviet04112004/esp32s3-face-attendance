@@ -688,3 +688,65 @@ ba graph, 50 lượt không đổi byte heap nào. Vòng nóng nằm trong kerne
 tối ưu của phần còn lại gần như không đổi gì, như TFLM ở §3.
 
 Tái lập: `ml/artifacts/device/board_20260923/bench_espdl_deploy_og.log`.
+
+## 14. Bản dò ESP-DL trên kiosk — đo 12/10 (E9-T33, E9-T34)
+
+Kiosk `kiosk-2884859fd3c8`, app `components/ai_engine/test_apps/probe` (`-O2`, assert im lặng, WDT tắt),
+esp-dl 3.3.11, trọng số chép sang PSRAM như kiosk (`param_copy`). Mỗi nhánh chạy hàng `timing` của chính
+run đang deploy (KẾ HOẠCH §3.7 bước 1–2): min-max, không equalization, không bias correction. Hàng ấy có
+cùng cấu trúc đồ thị với bộ deploy, nên giờ và bộ nhớ đọc được ở đây là của bộ deploy. Giờ một khung là
+`model.run()` đo bằng `esp_timer`; bảng theo op là `profile_module` của esp-dl, chạy từng module trên một
+lõi, nên tổng của nó lệch giờ một khung vài phần trăm.
+
+| Nhánh | `model->test()`, đồ thị + 4 bản cắt | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | RAM nội | PSRAM | flash |
+|---|---|---|---:|---:|---:|---:|
+| detect `1616` | PASS cả 5 | 8 khung, **0 / 46.200** | 62,5 / 63,7 ms | 34,9 KB | 308,7 KB | 225,7 KB |
+| spoof `0118` | PASS cả 5 | 40 khung, **0 / 120** | 83,2 / 84,8 ms | 38,5 KB | 746,9 KB | 548,2 KB |
+| recog `2106` | PASS cả 5 | 24 khung, **0 / 12.288** | 299,1 / 300,1 ms | 63,1 KB | 2.070,6 KB | 1.385,5 KB |
+| spoof, `cache_sized_convolutions` | PASS cả 5 | 40 khung, **0 / 120** | **79,9** / 82,0 ms | 38,9 KB | 747,3 KB | 549,7 KB |
+| recog, `cache_sized_convolutions` | PASS cả 5 | 24 khung, **0 / 12.288** | **264,5** / 267,4 ms | 65,0 KB | 2.071,9 KB | 1.389,8 KB |
+
+Chip tính đúng như mô phỏng ESP-PPQ ở cả ba nhánh: không một số nguyên nào lệch trên khung OV5640 thật,
+và mọi bản cắt qua `test()`. Giờ khớp §13.7 (detect 64,1, spoof 85,2, recog 302,0 ms ở `bench_ai`).
+
+### 14.1 Giờ theo op, trước khi vá
+
+| Op | detect | spoof | recog |
+|---|---:|---:|---:|
+| Conv | 43,3 ms (53) | 64,3 ms (55) | 221,9 ms (64) |
+| Activation chạy riêng | Clip 15,2 ms (18) | PRelu 14,5 ms (33) | PRelu 51,1 ms (33) |
+| Còn lại | 4,7 ms | 6,4 ms | 28,1 ms |
+| **Tổng** | **63,2 ms** | **85,2 ms** | **301,1 ms** |
+
+### 14.2 Đường chậm và bản vá (KẾ HOẠCH §3.7 bước 2)
+
+**Tích chập 1×1 mà trọng số lấp đầy data cache 64 KB.** Tích chập 1×1 có trọng số ≤ 38 KB chạy 0,13–0,25
+chu kỳ một phép nhân-cộng. Bốn cái đúng 64 KB thì chạy 0,44–0,75 chu kỳ: ba ở recog, một ở spoof.
+`cache_sized_convolutions` (port từ esp-sr, ngưỡng hạ xuống "≥ cache" vì trọng số bằng đúng cache vẫn
+phải đọc lại từ PSRAM) cắt mỗi tích chập theo kênh ra thành từng lát nửa cache, rồi nối lại bằng
+`Concat`. Số nguyên giữ nguyên; bản dò xác nhận ở bảng trên.
+
+| Tích chập | Trước | Sau: các lát + `Concat` |
+|---|---:|---:|
+| recog `conv_45/conv_expand` 128→512, 14×14 | 34,5 ms, 0,64 c/MAC | 3,5 + 3,5 + 3,1 = 10,1 ms |
+| recog `conv_6_sep` 128→512, 7×7 | 9,4 ms, 0,70 c/MAC | 1,1 + 1,1 + 0,5 = 2,7 ms |
+| recog `conv_45/conv_project` 512→128, 7×7 | 5,8 ms, 0,44 c/MAC | 1,0 + 1,2 + 0,1 = 2,3 ms |
+| spoof 128→512, 5×5 | 5,1 ms, 0,75 c/MAC | 0,7 + 0,8 + 0,2 = 1,7 ms |
+
+Recog nhanh hơn 34,6 ms một khung (−11,6%), spoof nhanh hơn 3,3 ms (−4,0%), đổi lấy chưa tới 2 KB RAM
+nội. Bản vá được giữ, bật trong khối hai nhánh của `quant.yaml`. Detect không có tích chập nào cỡ ấy.
+
+**Còn lại chỉ là nhãn không có bản vá, nên cả ba nhánh dừng ở bước 2.5:**
+
+- *Tích chập đầu 3 kênh vào* (detect 8,4 ms, spoof 5,0 ms, recog 17,4 ms): ảnh RGB có đúng 3 kênh.
+- *Clip của ReLU6 ở detect* (15,2 ms): ESP-PPQ chỉ gộp `Relu` vào tích chập, còn `activation_type_t` của
+  esp-dl 3.3.11 chưa có ReLU6. Mỗi `Clip` chạy riêng qua một bảng tra 256 giá trị.
+- *PRelu đứng riêng* (spoof 14,5 ms, recog 51,1 ms): esp-dl gộp được PReLU vào `Conv`, nhưng ESP-PPQ
+  không gộp. Gộp ở bước xuất sẽ dời chỗ làm tròn, nên đổi số nguyên; đó không còn là bản vá xuất.
+- *Kênh lệch 16 ở spoof* (103, 231, 308, 13, 26…): `aligned_pointwise` chỉ nhận một tích chập khi ghép
+  `k` cột mà trọng số khối chéo vẫn vừa cache. Hai cái nhận được (64→52 và 52→64, ghép 4 cột) tốn 2,6 ms
+  và đã chạy ở 0,21–0,25 chu kỳ. Ghép 4 cột thì số phép nhân-cộng nhân bốn; ở tốc độ đường vector đo được
+  (~0,15 chu kỳ), mỗi phép có ích tốn ~0,6 chu kỳ, chậm hơn hiện tại. Vì thế không port.
+
+Tái lập: `make board-save DIR=…`, `make speed BRANCH=<nhánh>` (hàng `timing`, bản dò, bảng xếp hạng),
+`make board-restore DIR=…`. Log từng ảnh nằm ở `<run>/int8/timing/probe/models_<n>.log`.
