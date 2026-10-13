@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "espdl_channel_conv.hpp"
+#include "espdl_conv_im2col.hpp"
 #include "espdl_conv_prelu.hpp"
 #include "espdl_conv_slices.hpp"
 #include "sdkconfig.h"
@@ -39,6 +40,7 @@ void register_espdl_modules() noexcept
     creator->register_module("ConvPRelu", conv_prelu_from);
     creator->register_module("ConvSlices", conv_slices_from);
     creator->register_module("ChannelConv", channel_conv_from);
+    creator->register_module("ConvIm2col", conv_im2col_from);
 }
 
 TensorView view_of(dl::TensorBase *tensor) noexcept
