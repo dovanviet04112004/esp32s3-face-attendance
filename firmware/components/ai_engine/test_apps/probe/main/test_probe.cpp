@@ -216,17 +216,18 @@ TEST_CASE("the whole graph matches the simulation on every real frame", "[probe]
     const struct {
         uint8_t trigger;
         const char *on;
-    } triggers[] = {{CACHE_AUTOLOAD_MISS_TRIGGER, "miss"}, {CACHE_AUTOLOAD_BOTH_TRIGGER, "miss and hit"}};
-    for (const auto &trigger : triggers) {
-        for (const int lines : {1, 2, 4}) {
-            autoload_psram(trigger.trigger, lines);
-            const Pass ahead = run_frames(model, records, input);
-            Cache_Disable_DCache_Autoload();
-            printf("probe %s autoload %d lines on %s: %u of %u values off the simulation, %lld us mean, "
-                   "%lld us peak a frame\n",
-                   name.c_str(), lines, trigger.on, static_cast<unsigned>(ahead.off),
-                   static_cast<unsigned>(ahead.values), mean_us(ahead), static_cast<long long>(ahead.peak_us));
-        }
+        int lines;
+    } settings[] = {{CACHE_AUTOLOAD_MISS_TRIGGER, "miss", 1},
+                    {CACHE_AUTOLOAD_MISS_TRIGGER, "miss", 4},
+                    {CACHE_AUTOLOAD_BOTH_TRIGGER, "miss and hit", 4}};
+    for (const auto &setting : settings) {
+        autoload_psram(setting.trigger, setting.lines);
+        const Pass ahead = run_frames(model, records, input);
+        Cache_Disable_DCache_Autoload();
+        printf("probe %s autoload %d lines on %s: %u of %u values off the simulation, %lld us mean, "
+               "%lld us peak a frame\n",
+               name.c_str(), setting.lines, setting.on, static_cast<unsigned>(ahead.off),
+               static_cast<unsigned>(ahead.values), mean_us(ahead), static_cast<long long>(ahead.peak_us));
     }
     TEST_ASSERT_EQUAL(0, pass.off);
 }
