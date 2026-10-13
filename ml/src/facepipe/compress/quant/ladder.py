@@ -414,8 +414,24 @@ def step_deploy(run: Path, row: str) -> None:
         raise SystemExit(f"{row}: the firmware feeds and reads int8, ports carry {sorted(bits)}")
     espdl = folder / f"{branch}.espdl"
     run_id = f"{branch}/{run.name}"
+    # update_lock's defaults are paths from the repo root; make runs the ladder from ml/.
     update_lock.main(
-        ["--branch", branch, "--model", str(espdl), "--run-id", run_id, "--arena-bytes", "0"]
+        [
+            "--branch",
+            branch,
+            "--model",
+            str(espdl.resolve()),
+            "--run-id",
+            run_id,
+            "--arena-bytes",
+            "0",
+            "--artifacts",
+            str(ML_ROOT / "artifacts"),
+            "--lock",
+            str(REPO_ROOT / "contracts" / "models.lock.json"),
+            "--models-dir",
+            str(REPO_ROOT / "firmware" / "models"),
+        ]
     )
 
 

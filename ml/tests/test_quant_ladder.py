@@ -10,7 +10,7 @@ import pytest
 import torch
 import yaml
 
-from facepipe import tasks
+from facepipe import ML_ROOT, REPO_ROOT, tasks
 from facepipe.compress.quant import esp_ppq_patches, export_espdl, ladder, ptq_espdl
 from facepipe.tasks.antispoof import quant as antispoof_quant
 from facepipe.tasks.detection import quant as detection_quant
@@ -124,6 +124,32 @@ def test_a_row_whose_ports_are_not_int8_never_reaches_the_lock(
     monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
     with pytest.raises(SystemExit, match="int8"):
         ladder.step_deploy(tmp_path, "int16_top1")
+
+
+def test_a_row_reaches_the_repo_s_lock_from_whatever_directory(
+    ladder_graph, tmp_path: Path, monkeypatch
+) -> None:
+    wide = quantise_ladder_net(
+        ladder_graph.model,
+        tmp_path / "work",
+        ladder_graph.calib,
+        ptq_espdl.timing_rungs("recognition"),
+    )
+    export_espdl.save_native(wide, ladder.row_dir(tmp_path, "kl") / ladder.GRAPH_FILE)
+    monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(ladder.update_lock, "main", seen.append)
+    monkeypatch.chdir(tmp_path)
+    ladder.step_deploy(tmp_path, "kl")
+    (args,) = seen
+    paths = {
+        flag: Path(args[args.index(flag) + 1]) for flag in ("--artifacts", "--lock", "--models-dir")
+    }
+    assert paths == {
+        "--artifacts": ML_ROOT / "artifacts",
+        "--lock": REPO_ROOT / "contracts" / "models.lock.json",
+        "--models-dir": REPO_ROOT / "firmware" / "models",
+    }
 
 
 def test_detection_holds_the_served_size_within_one_percent_of_q0() -> None:
