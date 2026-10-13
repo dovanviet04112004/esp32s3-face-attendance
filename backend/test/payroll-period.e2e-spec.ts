@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { after, before, describe, it } from "node:test";
 
-import type { INestApplication } from "@nestjs/common";
+import { NotFoundException, type INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { UnrecoverableError } from "bullmq";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
@@ -14,6 +15,7 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
 import { dayWindow } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
+import { failureOf, spent } from "../src/queue/processors/payroll.processor.js";
 import { signIn } from "./fixtures.js";
 
 // An entity of its own, so every run and lock here reaches only the people this suite made.
@@ -35,6 +37,8 @@ const OWN_DAY = "2026-02-10";
 const WIDE_FROM = "2026-01-17";
 const WIDE_YEAR = 2031;
 const WIDE_MONTH = 5;
+const EARLY_YEAR = 2001;
+const EARLY_MONTH = 12;
 const BASE = 26_000_000;
 const ADVANCE = 1_000_000;
 const FOUR_HOURS = 240;
@@ -232,6 +236,39 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal(wide.status, 201, JSON.stringify(wide.body));
     const wideAgain = await as("payroll").post("/payroll-periods", { year: WIDE_YEAR, month: WIDE_MONTH });
     assert.equal(wideAgain.status, 409, "two company-wide periods for one month were both accepted");
+  });
+
+  it("prices a company-wide period with each person's own entity policy, and clears an old failure", async () => {
+    const wide = await db.payrollPeriod.findFirstOrThrow({ where: { legalEntityId: null, year: WIDE_YEAR, month: WIDE_MONTH } });
+    const run = await db.payrollRun.create({
+      data: { periodId: wide.id, kind: "REGULAR", departmentId, state: "FAILED", failure: "POLICY_MISSING" },
+    });
+    const done = await payroll.runNow(run.id);
+    assert.equal(done.state, "DONE", JSON.stringify(done));
+    assert.equal(done.failure, null, "a run that finished still told of its last failure");
+    const slips = await db.payslip.findMany({ where: { runId: run.id }, select: { policyId: true } });
+    assert.equal(slips.length, CODES.length);
+    assert.ok(
+      slips.every((slip) => slip.policyId === policyId),
+      "a company-wide period priced its people off another policy than their entity's",
+    );
+    await db.payrollRun.delete({ where: { id: run.id } });
+  });
+
+  it("refuses the press when someone it prices has no policy in force, and keeps the code a run stops on", async () => {
+    const early = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, year: EARLY_YEAR, month: EARLY_MONTH });
+    assert.equal(early.status, 201, JSON.stringify(early.body));
+    const run = await db.payrollRun.create({ data: { periodId: early.body.id, kind: "REGULAR" } });
+    const pressed = await as("payroll").post(`/payroll-runs/${run.id}/execute`);
+    assert.equal(pressed.status, 404, JSON.stringify(pressed.body));
+    assert.equal(pressed.body.message, "POLICY_MISSING");
+    const kept = await db.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
+    assert.equal(kept.state, "DRAFT", "a refused press still claimed the run");
+
+    await db.payrollPeriod.update({ where: { id: early.body.id }, data: { state: "LOCKED" } });
+    const stopped = await payroll.runNow(run.id);
+    assert.equal(stopped.state, "FAILED");
+    assert.equal(stopped.failure, "PERIOD_NOT_OPEN");
   });
 
   it("prices a weekend and a holiday worked as overtime, at their own rates", async () => {
@@ -579,5 +616,18 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     });
     assert.equal(taken.status, 409);
     assert.equal(taken.body.message, "POLICY_DATE_TAKEN");
+  });
+});
+
+describe("a payroll run's job that fails", () => {
+  it("keeps the api code it stopped on, and the unnamed-failure code for anything else", () => {
+    assert.equal(failureOf(new NotFoundException("POLICY_MISSING")), "POLICY_MISSING");
+    assert.equal(failureOf(new Error("connect ECONNREFUSED 127.0.0.1:5432")), "INTERNAL_ERROR");
+  });
+
+  it("gives up at once on a business error and only after every attempt on anything else", () => {
+    assert.equal(spent(new UnrecoverableError("POLICY_MISSING"), 1, 3), true);
+    assert.equal(spent(new Error("timeout"), 1, 3), false);
+    assert.equal(spent(new Error("timeout"), 3, 3), true);
   });
 });
