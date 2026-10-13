@@ -120,9 +120,10 @@ type BlockerCode =
   | "NO_COMPENSATION"
   | "PAY_CHANGES"
   | "NO_ATTENDANCE_DAYS"
+  | "NOT_IN_RUN"
+  | "PAID_ELSEWHERE"
   | "LEAVERS_HOLDING_ASSETS"
-  | "DISPUTES_OVERDUE"
-  | "NO_LEGAL_ENTITY";
+  | "DISPUTES_OVERDUE";
 
 interface Blocker {
   code: BlockerCode;

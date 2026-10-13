@@ -66,9 +66,9 @@ export function RunProgress({ run, action, children }: { run: PayrollRun; action
         {action}
       </LayerCard.Secondary>
       <LayerCard.Primary className="flex flex-col gap-4">
-        {run.state === "FAILED" && run.failure ? (
+        {run.failure && (run.state === "FAILED" || run.state === "DRAFT") ? (
           <Banner
-            variant="error"
+            variant={run.state === "FAILED" ? "error" : "alert"}
             size="sm"
             icon={<WarningCircleIcon weight="fill" />}
             title={say(run.failure)}

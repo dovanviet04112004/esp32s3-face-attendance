@@ -143,7 +143,6 @@ function useHitDetail(): (hit: Hit) => string {
   const letters = useTranslations("certificates");
   const profile = useTranslations("profile");
   const documents = useTranslations("documents");
-  const payroll = useTranslations("payroll");
   return useCallback(
     (hit: Hit) => {
       const what = hit.requestKind
@@ -155,10 +154,9 @@ function useHitDetail(): (hit: Hit) => string {
             : hit.documentKind
               ? documents(`kind_${hit.documentKind}`)
               : null;
-      const detail = hit.kind === "payrollPeriod" && hit.detail === "" ? payroll("wholeCompany") : hit.detail;
-      return what ? `${what} · ${detail}` : detail;
+      return what ? `${what} · ${hit.detail}` : hit.detail;
     },
-    [requests, letters, profile, documents, payroll],
+    [requests, letters, profile, documents],
   );
 }
 

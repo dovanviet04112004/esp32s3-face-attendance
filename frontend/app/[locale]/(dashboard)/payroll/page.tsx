@@ -21,7 +21,7 @@ import { dayOnly } from "@/lib/format";
 
 interface Period {
   id: string;
-  legalEntityId: string | null;
+  legalEntityId: string;
   year: number;
   month: number;
   state: "OPEN" | "LOCKED" | "PAID";
@@ -63,15 +63,11 @@ const STEP_KEY: Record<StepKey, { name: "stepRun" | "stepCheck" | "stepLock" | "
   pay: { name: "stepPay", go: "goPay" },
 };
 
-// Company-wide is its own choice in the picker; the api reads a missing id as that.
-const kWholeCompany = "";
-
-/** This month, or the month after the newest period when this one is already open. */
+/** The month after the entity's newest period, since months only move forward; this month for a first one. */
 function nextToOpen(periods: Period[], entityId: string): Month {
-  const own = periods.filter((one) => (one.legalEntityId ?? kWholeCompany) === entityId);
-  const now = thisMonth();
-  if (!own.some((one) => one.year === now.year && one.month === now.month)) {
-    return now;
+  const own = periods.filter((one) => entityId === "" || one.legalEntityId === entityId);
+  if (own.length === 0) {
+    return thisMonth();
   }
   const newest = own.reduce((best, one) => (monthOrder(one) > monthOrder(best) ? one : best), own[0]);
   return shiftMonth({ year: newest.year, month: newest.month }, 1);
@@ -90,7 +86,7 @@ export default function PayrollPage() {
 
   const [opening, setOpening] = useState(false);
   const [month, setMonth] = useState<Month>(thisMonth);
-  const [entityId, setEntityId] = useState(kWholeCompany);
+  const [entityId, setEntityId] = useState("");
   const [payDate, setPayDate] = useState("");
   const [fault, setFault] = useState<string | null>(null);
 
@@ -99,7 +95,7 @@ export default function PayrollPage() {
     queryFn: async () => (await api.get<Period[]>("/payroll-periods")).data,
   });
 
-  // The catalogue may not answer yet; one entity, or none, needs no picker.
+  // The catalogue may not answer yet; one entity needs no picker, and the api takes the only one when none is sent.
   const entities = useQuery({
     queryKey: ["legal-entities"],
     retry: false,
@@ -107,8 +103,7 @@ export default function PayrollPage() {
   });
   const entityList = entities.data ?? [];
   const manyEntities = entityList.length > 1;
-  const entityName = (id: string | null) =>
-    id === null ? t("wholeCompany") : (entityList.find((one) => one.id === id)?.name ?? common("empty"));
+  const entityName = (id: string) => entityList.find((one) => one.id === id)?.name ?? common("empty");
 
   const current =
     periods.data?.find((one) => one.state === "OPEN") ?? periods.data?.find((one) => one.state === "LOCKED");
@@ -132,7 +127,7 @@ export default function PayrollPage() {
           year: month.year,
           month: month.month,
           payDate: payDate || undefined,
-          legalEntityId: entityId === kWholeCompany ? undefined : entityId,
+          legalEntityId: entityId || undefined,
         })
       ).data,
     onSuccess: (made) => {
@@ -145,7 +140,7 @@ export default function PayrollPage() {
   });
 
   function startOpening(): void {
-    const first = manyEntities ? entityList[0].id : kWholeCompany;
+    const first = entityList[0]?.id ?? "";
     setFault(null);
     setPayDate("");
     setEntityId(first);
@@ -204,10 +199,7 @@ export default function PayrollPage() {
     },
   ];
 
-  const entityItems: Record<string, string> = {
-    [kWholeCompany]: t("wholeCompany"),
-    ...Object.fromEntries(entityList.map((one) => [one.id, one.name])),
-  };
+  const entityItems: Record<string, string> = Object.fromEntries(entityList.map((one) => [one.id, one.name]));
 
   return (
     <>
@@ -286,7 +278,7 @@ export default function PayrollPage() {
                   label={t("entity")}
                   value={entityId}
                   onValueChange={(next) => {
-                    const chosen = String(next ?? kWholeCompany);
+                    const chosen = String(next ?? "");
                     setEntityId(chosen);
                     setMonth(nextToOpen(periods.data ?? [], chosen));
                   }}

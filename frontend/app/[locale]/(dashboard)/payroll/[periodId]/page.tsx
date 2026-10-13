@@ -11,6 +11,7 @@ import {
   PlayIcon,
   PlusIcon,
   ReceiptIcon,
+  TrashIcon,
   WalletIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
@@ -89,9 +90,10 @@ type ItemKey =
   | "NO_COMPENSATION"
   | "PAY_CHANGES"
   | "NO_ATTENDANCE_DAYS"
+  | "NOT_IN_RUN"
+  | "PAID_ELSEWHERE"
   | "LEAVERS_HOLDING_ASSETS"
-  | "DISPUTES_OVERDUE"
-  | "NO_LEGAL_ENTITY";
+  | "DISPUTES_OVERDUE";
 
 // Where each open item is settled; an item without a row here is only counted.
 const HANDLED_AT: Record<string, string> = {
@@ -100,7 +102,6 @@ const HANDLED_AT: Record<string, string> = {
   CORRECTIONS_OPEN: "/timesheet",
   NO_ATTENDANCE_DAYS: "/timesheet",
   NO_COMPENSATION: "/employees",
-  NO_LEGAL_ENTITY: "/employees",
   LEAVERS_HOLDING_ASSETS: "/assets",
 };
 
@@ -208,6 +209,7 @@ function PayrollPeriod() {
   const [kind, setKind] = useState<RunKind>("REGULAR");
   const [label, setLabel] = useState("");
   const [locking, setLocking] = useState(false);
+  const [discarding, setDiscarding] = useState<PayrollRun | null>(null);
   const [accept, setAccept] = useState(false);
   const [paying, setPaying] = useState(false);
   const [sending, setSending] = useState(false);
@@ -334,6 +336,19 @@ function PayrollPeriod() {
     onError: notify.failed,
   });
 
+  const discard = useMutation({
+    mutationFn: async (run: PayrollRun) => (await api.post<PayrollRun>(`/payroll-runs/${run.id}/discard`)).data,
+    onSuccess: (_, run) => {
+      setDiscarding(null);
+      notify.done(t("runDiscarded", { name: runName(run) }));
+      if (url.run === run.id) {
+        setUrl({ run: "" });
+      }
+      refresh();
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
   const lock = useMutation({
     mutationFn: () => api.post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: accept }),
     onSuccess: () => {
@@ -402,6 +417,7 @@ function PayrollPeriod() {
 
   const openItems = (checklist.data ?? []).filter((item) => item.count > 0);
   const regularDone = newestRegular !== undefined;
+  const regularAny = runList.some((run) => run.kind === "REGULAR" && run.state !== "DISCARDED");
   const delivered =
     deliver.isSuccess || (delivery.data !== undefined && delivery.data.issued > 0 && delivery.data.sent === delivery.data.issued);
 
@@ -448,8 +464,8 @@ function PayrollPeriod() {
     run:
       current === "run" ? (
         <>
-          <p className="text-sm text-kumo-subtle">{runList.some((run) => run.kind === "REGULAR") ? t("stepRunEach") : t("stepRunNone")}</p>
-          {mayWrite && !runList.some((run) => run.kind === "REGULAR") ? (
+          <p className="text-sm text-kumo-subtle">{regularAny ? t("stepRunEach") : t("stepRunNone")}</p>
+          {mayWrite && !regularAny ? (
             <Button variant="secondary" icon={PlusIcon} className="self-start" onClick={startCreating}>
               {t("newRun")}
             </Button>
@@ -639,7 +655,8 @@ function PayrollPeriod() {
               </LayerCard>
             ) : (
               runList.map((run) => {
-                const editable = mayWrite && open && run.state !== "RUNNING";
+                const live = mayWrite && open && run.state !== "DISCARDED";
+                const editable = live && run.state !== "RUNNING";
                 return (
                   <RunProgress
                     key={run.id}
@@ -651,7 +668,20 @@ function PayrollPeriod() {
                             {t("payslips")}
                           </Button>
                         ) : null}
-                        {mayWrite && open ? (
+                        {editable ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={TrashIcon}
+                            onClick={() => {
+                              setFault(null);
+                              setDiscarding(run);
+                            }}
+                          >
+                            {t("discard")}
+                          </Button>
+                        ) : null}
+                        {live ? (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -866,6 +896,34 @@ function PayrollPeriod() {
               onClick={() => lock.mutate()}
             >
               {t("lockGo", { period: name })}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+
+      <LayerDialog.Alert
+        open={discarding !== null}
+        onOpenChange={(next) => !next && setDiscarding(null)}
+        dismissDisabled={discard.isPending}
+      >
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{discarding ? t("discardTitle", { name: runName(discarding) }) : null}</LayerDialog.Title>
+          <LayerDialog.Description>{t("discardWarn")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-3">
+              {discarding?.kind === "REGULAR" && discarding.state === "DONE" ? (
+                <p className="text-kumo-warning">{t("discardWarnRegular")}</p>
+              ) : null}
+              <FaultBanner fault={fault} />
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              variant="destructive"
+              loading={discard.isPending}
+              onClick={() => discarding && discard.mutate(discarding)}
+            >
+              {t("discardGo")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
