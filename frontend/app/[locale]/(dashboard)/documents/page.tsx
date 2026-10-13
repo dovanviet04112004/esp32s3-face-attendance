@@ -28,6 +28,7 @@ import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+import { useGroupWide } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { fold } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -136,6 +137,8 @@ function Documents() {
   const faultOf = useFault();
   const notify = useNotify();
   const optional = useOptional();
+  // Documents and file types are shared by every entity; a desk held to some only reads them (KEHOACH 9.4).
+  const mayWrite = useGroupWide();
 
   const [url, setUrl] = useUrlState({ tab: "publish", q: "", kind: "", retired: "", open: "" });
   const tab: Tab = (TABS as readonly string[]).includes(url.tab) ? (url.tab as Tab) : "publish";
@@ -384,6 +387,8 @@ function Documents() {
   function openRow(row: Doc): void {
     if (row.versions.length > 0) {
       openReaders(row);
+    } else if (!mayWrite) {
+      return;
     } else if (row.active) {
       openPublish(row);
     } else {
@@ -500,6 +505,9 @@ function Documents() {
     if (row.versions.length > 0) {
       actions.push({ key: "readers", label: t("whoSigned"), icon: UsersIcon, onSelect: () => openReaders(row) });
     }
+    if (!mayWrite) {
+      return actions;
+    }
     if (row.active) {
       actions.push({ key: "publish", label: t("publishNext"), icon: MegaphoneIcon, onSelect: () => openPublish(row) });
     }
@@ -551,16 +559,15 @@ function Documents() {
     />
   );
 
-  const actions =
-    tab === "publish" ? (
-      <Button variant="primary" icon={PlusIcon} onClick={() => openDoc(null)}>
-        {t("add")}
-      </Button>
-    ) : tab === "types" ? (
-      <Button variant="primary" icon={PlusIcon} onClick={() => openType(null)}>
-        {t("addType")}
-      </Button>
-    ) : undefined;
+  const actions = !mayWrite ? undefined : tab === "publish" ? (
+    <Button variant="primary" icon={PlusIcon} onClick={() => openDoc(null)}>
+      {t("add")}
+    </Button>
+  ) : tab === "types" ? (
+    <Button variant="primary" icon={PlusIcon} onClick={() => openType(null)}>
+      {t("addType")}
+    </Button>
+  ) : undefined;
 
   function panel() {
     if (tab === "gaps") {
@@ -569,10 +576,14 @@ function Documents() {
           <p className="text-kumo-subtle">{t("gapsLead")}</p>
           <FileGaps
             declared={types.data ? types.data.some((one) => one.active && one.required) : undefined}
-            onDeclare={() => {
-              pick("types");
-              openType(null);
-            }}
+            onDeclare={
+              mayWrite
+                ? () => {
+                    pick("types");
+                    openType(null);
+                  }
+                : undefined
+            }
           />
         </div>
       );
@@ -592,12 +603,12 @@ function Documents() {
             pending={types.isPending}
             failed={types.isError}
             onRetry={() => void types.refetch()}
-            onRowClick={openType}
-            rowActions={typeActions}
+            onRowClick={mayWrite ? openType : undefined}
+            rowActions={mayWrite ? typeActions : undefined}
             empty={url.q ? shared("noMatch") : t("typesEmptyTitle")}
             emptyHint={url.q ? undefined : t("typesEmpty")}
             emptyAction={
-              url.q ? undefined : (
+              url.q || !mayWrite ? undefined : (
                 <Button variant="secondary" icon={PlusIcon} onClick={() => openType(null)}>
                   {t("addType")}
                 </Button>
@@ -636,7 +647,7 @@ function Documents() {
           empty={url.q || url.kind ? t("noneInFilter") : t("none")}
           emptyHint={url.q || url.kind ? undefined : t("noneHint")}
           emptyAction={
-            url.q || url.kind ? undefined : (
+            url.q || url.kind || !mayWrite ? undefined : (
               <Button variant="secondary" icon={PlusIcon} onClick={() => openDoc(null)}>
                 {t("add")}
               </Button>

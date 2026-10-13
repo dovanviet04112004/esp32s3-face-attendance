@@ -13,7 +13,7 @@ import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useGroupWide, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -42,7 +42,8 @@ function Holidays() {
   const common = useTranslations("common");
   const format = useFormatter();
   const role = useSession((s) => s.role);
-  const mayWrite = role === "ADMIN" || role === "HR";
+  const groupWide = useGroupWide();
+  const mayWrite = (role === "ADMIN" || role === "HR") && groupWide;
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();

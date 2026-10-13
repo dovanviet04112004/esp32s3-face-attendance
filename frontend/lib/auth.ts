@@ -10,6 +10,7 @@ interface Claims {
   userId: string | null;
   role: Role | null;
   employeeId: number | null;
+  entityIds: string[] | null;
 }
 
 interface Session {
@@ -19,6 +20,7 @@ interface Session {
   userId: string | null;
   role: Role | null;
   employeeId: number | null;
+  entityIds: string[] | null;
   /** The signed-in address, as sign-in and every refresh return it. */
   email: string | null;
   setSession: (accessToken: string, claims: Claims, email?: string) => void;
@@ -34,7 +36,7 @@ export function whenSignedOut(forget: () => void): () => void {
   return () => forgetters.delete(forget);
 }
 
-const kSignedOut = { accessToken: null, renewAt: null, userId: null, role: null, employeeId: null, email: null };
+const kSignedOut = { accessToken: null, renewAt: null, userId: null, role: null, employeeId: null, entityIds: null, email: null };
 
 const kRenewEarlyMs = 60_000;
 
@@ -136,6 +138,7 @@ export const useSession = create<Session>((set, get) => ({
       userId: claims.userId,
       role: claims.role,
       employeeId: claims.employeeId,
+      entityIds: claims.entityIds,
       email: email ?? held.email,
     }));
   },
@@ -163,5 +166,11 @@ export function claimsOf(accessToken: string): Claims {
     userId: typeof claims?.sub === "string" ? claims.sub : null,
     role: (claims?.role as Role | undefined) ?? null,
     employeeId: typeof claims?.employeeId === "number" ? claims.employeeId : null,
+    entityIds: Array.isArray(claims?.ent) && claims.ent.length > 0 ? claims.ent.map(String) : null,
   };
+}
+
+/** Whether this session may change what every entity shares; a desk held to some entities only reads it (KEHOACH 9.4). */
+export function useGroupWide(): boolean {
+  return useSession((s) => s.entityIds === null);
 }

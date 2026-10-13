@@ -24,7 +24,7 @@ import { AsideCard, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill } from "@/components/ui/pill";
 import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useGroupWide, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -128,7 +128,10 @@ function Onboarding() {
   const notify = useNotify();
   const optional = useOptional();
   const mayFinish = role !== null && FINISHERS.includes(role);
+  const groupWide = useGroupWide();
   const mayManage = role !== null && MANAGERS_OF_TEMPLATES.includes(role);
+  // Templates are shared by every entity; a desk held to some reads them and starts checklists from them (KEHOACH 9.4).
+  const mayEditTemplates = mayManage && groupWide;
 
   const [url, setUrl] = useUrlState({ q: "", kind: "", owner: "", pick: "", dept: "" });
   const [typed, setTyped] = useState(url.q);
@@ -302,21 +305,30 @@ function Onboarding() {
 
   function templateRow(one: Template) {
     const scope = [one.jobTitle?.name, one.department?.name].filter(Boolean).join(" · ");
+    const body = (
+      <>
+        <span className="flex min-w-0 flex-col py-1">
+          <span className={one.active ? "truncate" : "truncate text-kumo-subtle"}>{one.name}</span>
+          <span className="truncate text-sm text-kumo-subtle">
+            {t(`kind${one.kind}`)} · {scope || t("everyone")}
+          </span>
+        </span>
+        <CountPill>{t("itemCount", { count: one.items.length })}</CountPill>
+      </>
+    );
     return (
       <li key={one.id}>
-        <button
-          type="button"
-          onClick={() => openTemplate(one)}
-          className="flex min-h-9 w-full items-center justify-between gap-3 rounded-md px-2 text-start hover:bg-kumo-tint pointer-coarse:min-h-11"
-        >
-          <span className="flex min-w-0 flex-col py-1">
-            <span className={one.active ? "truncate" : "truncate text-kumo-subtle"}>{one.name}</span>
-            <span className="truncate text-sm text-kumo-subtle">
-              {t(`kind${one.kind}`)} · {scope || t("everyone")}
-            </span>
-          </span>
-          <CountPill>{t("itemCount", { count: one.items.length })}</CountPill>
-        </button>
+        {mayEditTemplates ? (
+          <button
+            type="button"
+            onClick={() => openTemplate(one)}
+            className="flex min-h-9 w-full items-center justify-between gap-3 rounded-md px-2 text-start hover:bg-kumo-tint pointer-coarse:min-h-11"
+          >
+            {body}
+          </button>
+        ) : (
+          <div className="flex min-h-9 w-full items-center justify-between gap-3 px-2 pointer-coarse:min-h-11">{body}</div>
+        )}
       </li>
     );
   }
@@ -331,9 +343,11 @@ function Onboarding() {
             <AsideCard
               title={t("templatesTitle")}
               action={
-                <Button variant="ghost" size="sm" icon={PlusIcon} onClick={() => openTemplate(null)}>
-                  {t("templateAdd")}
-                </Button>
+                mayEditTemplates ? (
+                  <Button variant="ghost" size="sm" icon={PlusIcon} onClick={() => openTemplate(null)}>
+                    {t("templateAdd")}
+                  </Button>
+                ) : undefined
               }
             >
               {templates.isError ? (
@@ -406,7 +420,7 @@ function Onboarding() {
           empty={filtered ? t("noMatch") : noTemplates ? t("noTemplates") : t("allDone")}
           emptyHint={filtered ? t("noMatchHint") : noTemplates ? t("noTemplatesHint") : t("allDoneHint")}
           emptyAction={
-            !filtered && noTemplates && mayManage ? (
+            !filtered && noTemplates && mayEditTemplates ? (
               <Button variant="primary" icon={PlusIcon} onClick={() => openTemplate(null)}>
                 {t("templateAdd")}
               </Button>

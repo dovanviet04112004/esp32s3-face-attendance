@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Field, Input, LayerDialog, Select } from "@cloudflare/kumo";
 import {
   EnvelopeSimpleIcon,
   LockIcon,
@@ -29,6 +29,8 @@ import { useUrlState } from "@/lib/url-state";
 const ROLES: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER", "EMPLOYEE", "VIEWER"];
 // The roles that read or decide as one person in the company (KEHOACH 9.4).
 const NEEDS_PERSON: ReadonlySet<Role> = new Set<Role>(["EMPLOYEE", "MANAGER", "HR", "PAYROLL"]);
+// The desks an administrator may hold to some legal entities (KEHOACH 9.4).
+const DESKS: ReadonlySet<Role> = new Set<Role>(["HR", "PAYROLL"]);
 const STATUSES = ["active", "pending", "locked"] as const;
 const kPage = 50;
 const kEmailMax = 128;
@@ -48,6 +50,13 @@ interface Account {
   createdAt: string;
   mfaEnabledAt: string | null;
   employee: { id: number; code: string; fullName: string; department: { id: string; name: string } | null } | null;
+  entities: Entity[];
+}
+
+interface Entity {
+  id: string;
+  code: string;
+  name: string;
 }
 
 interface AccountPage {
@@ -72,6 +81,11 @@ interface Draft {
   email: string;
   role: Role;
   person: Person | null;
+  entityIds: string[];
+}
+
+function sameSet(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((one) => right.includes(one));
 }
 
 function statusOf(row: Account): Status {
@@ -131,6 +145,12 @@ function Accounts() {
     queryFn: async () => (await api.get<Department[]>("/departments")).data,
   });
 
+  const entities = useQuery({
+    queryKey: ["legal-entities", "all"],
+    enabled: isAdmin,
+    queryFn: async () => (await api.get<(Entity & { active: boolean })[]>("/legal-entities?all=true")).data,
+  });
+
   const self = useQuery({
     queryKey: ["users", "me"],
     enabled: isAdmin,
@@ -146,16 +166,24 @@ function Accounts() {
   const save = useMutation({
     mutationFn: async (held: Draft) => {
       const email = held.email.trim();
+      const entityIds = DESKS.has(held.role) ? held.entityIds : [];
       if (!held.account) {
-        const body = { email, role: held.role, ...(held.person ? { employeeId: held.person.id } : {}) };
+        const body = {
+          email,
+          role: held.role,
+          ...(held.person ? { employeeId: held.person.id } : {}),
+          ...(entityIds.length > 0 ? { entityIds } : {}),
+        };
         return (await api.post<Account>("/users", body)).data;
       }
       const was = held.account.employee?.id ?? null;
       const now = held.person?.id ?? null;
+      const scoped = held.account.entities.map((one) => one.id);
       const patch = {
         ...(email !== held.account.email ? { email } : {}),
         ...(held.role !== held.account.role ? { role: held.role } : {}),
         ...(was !== now ? { employeeId: now } : {}),
+        ...(DESKS.has(held.role) && !sameSet(entityIds, scoped) ? { entityIds } : {}),
       };
       return (await api.patch<Account>(`/users/${held.account.id}`, patch)).data;
     },
@@ -208,6 +236,7 @@ function Accounts() {
       email: one?.email ?? "",
       role: one?.role ?? "VIEWER",
       person: one?.employee ? { id: one.employee.id, code: one.employee.code, fullName: one.employee.fullName } : null,
+      entityIds: one?.entities.map((entity) => entity.id) ?? [],
     });
   }
 
@@ -244,6 +273,8 @@ function Accounts() {
   const needsPerson = draft !== null && NEEDS_PERSON.has(draft.role);
   const emailWrong = draft !== null && tried && !EMAIL.test(draft.email.trim());
   const personMissing = tried && needsPerson && draft?.person === null;
+  // A retired entity stays on the list while an account still answers for it, so it can be taken off.
+  const offered = (entities.data ?? []).filter((one) => one.active || draft?.entityIds.includes(one.id));
 
   const columns: Column<Account>[] = [
     {
@@ -264,7 +295,20 @@ function Accounts() {
       truncate: true,
       cell: (row) => row.employee?.department?.name ?? common("empty"),
     },
-    { id: "role", header: t("role"), cell: (row) => <StatePill>{roleName(row.role)}</StatePill> },
+    {
+      id: "role",
+      header: t("role"),
+      cell: (row) => (
+        <div className="flex flex-col items-start gap-1">
+          <StatePill>{roleName(row.role)}</StatePill>
+          {DESKS.has(row.role) ? (
+            <span className="text-sm text-kumo-subtle">
+              {row.entities.length > 0 ? row.entities.map((one) => one.code).join(", ") : t("wholeGroup")}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
     {
       id: "status",
       header: t("status"),
@@ -444,6 +488,22 @@ function Accounts() {
                   value={draft.person}
                   onChange={(next) => void pick(next)}
                 />
+                {DESKS.has(draft.role) ? (
+                  <Checkbox.Group
+                    legend={t("entities")}
+                    description={t("entitiesHint")}
+                    value={draft.entityIds}
+                    onValueChange={(next) => setDraft({ ...draft, entityIds: next })}
+                  >
+                    {offered.map((one) => (
+                      <Checkbox.Item
+                        key={one.id}
+                        value={one.id}
+                        label={one.active ? `${one.code} · ${one.name}` : t("entityRetired", { code: one.code, name: one.name })}
+                      />
+                    ))}
+                  </Checkbox.Group>
+                ) : null}
                 <Input
                   label={t("email")}
                   type="email"

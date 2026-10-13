@@ -13,7 +13,7 @@ import { useOptional } from "@/components/ui/optional";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useGroupWide, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { fold, money } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -50,7 +50,8 @@ function Allowances() {
   const common = useTranslations("common");
   const locale = useLocale();
   const role = useSession((s) => s.role);
-  const mayWrite = role === "ADMIN" || role === "PAYROLL";
+  const groupWide = useGroupWide();
+  const mayWrite = (role === "ADMIN" || role === "PAYROLL") && groupWide;
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();

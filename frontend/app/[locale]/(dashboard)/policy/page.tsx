@@ -14,7 +14,7 @@ import { AsideCard, Facts, PageHeader, PageLayout, StatList } from "@/components
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useGroupWide, useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 import { dayOnly, money, monthStart, percent, todayIso } from "@/lib/format";
@@ -297,7 +297,7 @@ function PolicyPageBody() {
   const faultOf = useFault();
   const optional = useOptional();
   const role = useSession((s) => s.role);
-  const mayWrite = role === "ADMIN" || role === "PAYROLL";
+  const groupWide = useGroupWide();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [section, setSection] = useState<Section>("days");
   const [tried, setTried] = useState(false);
@@ -317,12 +317,14 @@ function PolicyPageBody() {
     queryFn: async () => (await api.get<LegalEntity[]>("/legal-entities")).data,
   });
   const entityList = entities.data ?? [];
-  const manyEntities = entityList.length > 1;
+  const manyEntities = entityList.length > 1 || !groupWide;
   const allRows = policies.data ?? [];
-  const fallbackScope = allRows.some((one) => one.legalEntityId === null)
+  const fallbackScope = groupWide && allRows.some((one) => one.legalEntityId === null)
     ? COMPANY
     : (entityList.find((one) => allRows.some((row) => row.legalEntityId === one.id))?.id ?? entityList[0]?.id ?? COMPANY);
   const scope = manyEntities ? url.entity || fallbackScope : "";
+  // A desk held to some entities reads the company-wide versions and writes only its own entities' (KEHOACH 9.4).
+  const mayWrite = (role === "ADMIN" || role === "PAYROLL") && (groupWide || scope !== COMPANY);
   const scopeItems: Record<string, string> = {
     [COMPANY]: t("wholeCompany"),
     ...Object.fromEntries(entityList.map((one) => [one.id, one.name])),

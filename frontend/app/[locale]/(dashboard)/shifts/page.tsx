@@ -25,7 +25,7 @@ import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useGroupWide, useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { clockOf, dayOnly, todayIso } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
@@ -77,7 +77,10 @@ function Shifts() {
   const role = useSession((s) => s.role);
   const faultOf = useFault();
   const notify = useNotify();
-  const mayWrite = role !== null && WRITERS.includes(role);
+  const groupWide = useGroupWide();
+  const mayRoster = role !== null && WRITERS.includes(role);
+  // A desk held to some entities rosters its people but leaves the shifts themselves alone (KEHOACH 9.4).
+  const mayWrite = mayRoster && groupWide;
 
   const [url, setUrl] = useUrlState({ retired: "" });
   const [editing, setEditing] = useState<Shift | null>(null);
@@ -251,8 +254,12 @@ function Shifts() {
   ];
 
   function actionsOf(row: Shift): RowAction[] {
+    const roster: RowAction = { key: "roster", label: t("roster"), icon: UsersThreeIcon, onSelect: () => openRoster(row) };
+    if (!mayWrite) {
+      return [roster];
+    }
     return [
-      { key: "roster", label: t("roster"), icon: UsersThreeIcon, onSelect: () => openRoster(row) },
+      roster,
       row.active
         ? { key: "retire", label: t("retire"), icon: ProhibitIcon, danger: true, onSelect: () => setRetiring(row) }
         : { key: "restore", label: t("restore"), icon: ArrowCounterClockwiseIcon, onSelect: () => restore.mutate(row) },
@@ -293,8 +300,8 @@ function Shifts() {
           pending={shifts.isPending}
           failed={shifts.isError}
           onRetry={() => void shifts.refetch()}
-          onRowClick={mayWrite ? openForm : undefined}
-          rowActions={mayWrite ? actionsOf : undefined}
+          onRowClick={mayWrite ? openForm : mayRoster ? openRoster : undefined}
+          rowActions={mayRoster ? actionsOf : undefined}
           empty={t("empty")}
           emptyHint={t("emptyHint")}
           emptyAction={

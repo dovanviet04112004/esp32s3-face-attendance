@@ -42,7 +42,7 @@ interface Gap {
  *  Its search and department filter sit in the page URL beside the page's own.
  *  @param declared whether any active type is required; without one nobody can be short
  */
-export function FileGaps({ declared, onDeclare }: { declared: boolean | undefined; onDeclare: () => void }) {
+export function FileGaps({ declared, onDeclare }: { declared: boolean | undefined; onDeclare?: () => void }) {
   const t = useTranslations("documents");
   const common = useTranslations("common");
 
@@ -112,9 +112,11 @@ export function FileGaps({ declared, onDeclare }: { declared: boolean | undefine
           title={t("requiredNoneTitle")}
           description={t("requiredNoneHint")}
           contents={
-            <Button variant="secondary" icon={PlusIcon} onClick={onDeclare}>
-              {t("addType")}
-            </Button>
+            onDeclare ? (
+              <Button variant="secondary" icon={PlusIcon} onClick={onDeclare}>
+                {t("addType")}
+              </Button>
+            ) : undefined
           }
           className="py-12"
         />
