@@ -843,3 +843,80 @@ chép lại các lát (recog 3,6 ms ở ba chỗ, spoof 0,2 ms).
 Cả ba qua `model->test()` ở đồ thị và 4 bản cắt; lát mang PReLU đã gộp (`conv_45/conv_expand` ở nấc cuối) cũng
 khớp từng bit. Một khuôn mặt qua cả ba nhánh: **312,3 ms** với các nấc làm tròn (từ 444,8, −29,8%), **387,9 ms**
 với riêng bản vá giữ nguyên số nguyên (spoof đo trước `ConvSlices`, 62,4 ms).
+
+### 14.7 Ba bản vá xuất cuối, và autoload của cache — đo 13/10 (E9-T39)
+
+Cùng kiosk, cùng app dò. Ba bản vá có code từ E9-T38: `channel_conv` (recog), `im2col_convolutions` (cả ba
+nhánh), `mul_add` (spoof, recog). Mỗi hàng dựng lại bằng `make quant-timing`, dò trong một phiên
+`board-save`/`board-restore`. Mọi hàng ở mục này qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit
+trên khung thật.
+
+Lần dò đầu, cả ba bản vá bật:
+
+| Hàng | Một khung, mean / đỉnh | Trước |
+|---|---:|---:|
+| detect `timing` | 62,96 / 64,11 ms | 62,9 ms |
+| detect `timing+clip_as_relu` | 47,52 / 48,69 ms | 47,4 ms |
+| spoof `timing` | 61,75 / 63,76 ms | 62,4 ms |
+| spoof `timing+fused_prelu+prelu_on_input_grid` | 50,92 / 52,87 ms | 51,0 ms |
+| recog `timing` | 255,23 / 257,94 ms | 263,0 ms |
+| recog `timing+fused_prelu+prelu_on_input_grid` | 205,00 / 207,70 ms | 213,9 ms |
+
+**`mul_add` chậm hơn các op nó thay, ở cả hai nhánh.** A/B trên hàng `timing`, hai hàng chỉ khác bản vá này:
+
+| Nhánh | Có `mul_add` | Không | Theo op |
+|---|---:|---:|---|
+| recog | 255,23 ms | **251,75 ms** | 12 `MulAdd` 19,9 ms; 12 `Mul` + 12 `Add` + 3 `RequantizeLinear` 16,3 ms |
+| spoof | 61,75 ms | **60,85 ms** | 3 `MulAdd` 2,2 ms; 3 `Mul` + 3 `Add` 1,6 ms |
+
+`MulAdd` gọi chính nhân `elemwise_mul` và `elemwise_add` của esp-dl cho từng hàng qua một hàng đệm: phép tính
+không bớt, còn phần dựng tham số và gọi nhân nhân lên theo số hàng. Bản vá rời `quant.yaml` của cả hai nhánh.
+
+**`im2col_convolutions` nhanh ở spoof và recog, không ở detect.**
+
+| Tích chập đầu 3 kênh | Trước | `ConvIm2col` |
+|---|---:|---:|
+| recog | 17,4 ms | **8,5 ms**, 0,32 c/MAC |
+| spoof | 5,0 ms | **3,5 ms**, 0,52 c/MAC |
+| detect | 8,4 ms | 8,5 ms, 0,83 c/MAC |
+
+Detect chỉ ra 16 kênh, và nhân 1×1 ít kênh của esp-dl vốn chậm (pointwise đầu tiên của detect chạy
+0,65 c/MAC). Đặt hàng patch vào RAM nội vẫn 8,4 ms, nên chỗ tốn không phải bộ đệm. Bản vá rời detect.
+
+`channel_conv`: 15 `ChannelConv` tốn 0,7 ms, thay 30 `Transpose`, 30 `Squeeze`/`Unsqueeze` và 15 `Conv` 1-D.
+Recog `timing` bớt 11,3 ms so với §14.6; trừ 8,9 ms của tích chập đầu, phần của cổng ECA khoảng 2,4 ms
+(suy từ hiệu, không đo riêng).
+
+Hàng cuối, với các bản vá giữ lại:
+
+| Hàng | Bản vá xuất | Một khung, mean / đỉnh | Trước | RAM nội | PSRAM | flash |
+|---|---|---:|---:|---:|---:|---:|
+| detect `timing` | — | 62,85 / 64,05 ms | 62,9 ms | 34,9 KB | 308,7 KB | 225,6 KB |
+| detect `timing+clip_as_relu` | — | **47,36** / 48,59 ms | 47,4 ms | 29,3 KB | 303,2 KB | 210,7 KB |
+| spoof `timing` | cache, đệm, im2col | 60,85 / 62,91 ms | 62,4 ms | 38,8 KB | 787,6 KB | 573,5 KB |
+| spoof nấc cuối | cache, đệm, im2col | **49,47** / 51,55 ms | 51,0 ms | 32,2 KB | 778,5 KB | 557,9 KB |
+| recog `timing` | cache, ECA, im2col | 251,75 / 254,75 ms | 263,0 ms | 49,9 KB | 2.059,8 KB | 1.353,1 KB |
+| recog nấc cuối | cache, ECA, im2col | **201,83** / 204,64 ms | 213,9 ms | 42,0 KB | 2.046,3 KB | 1.337,3 KB |
+
+"Trước" là §14.6, hoặc §14.4–14.5 với hàng §14.6 không đo. Một khuôn mặt qua cả ba nhánh: **298,7 ms** với các
+nấc làm tròn (từ 312,3; từ 444,8 lúc đầu, −32,9%), **375,5 ms** với riêng bản vá giữ nguyên số nguyên (từ 387,9).
+
+**Autoload của cache dữ liệu, chỉ để đo.** ESP-IDF chạy cache dữ liệu với autoload tắt. App dò bật nó trên đúng
+vùng PSRAM đã map, chạy lại khung thật rồi tắt; bật trên cả cửa sổ dữ liệu 32 MB thì chip panic "Dcache preload
+parameter configuration error".
+
+| Hàng | Tắt | 1 dòng, khi trượt | 4 dòng, khi trượt | 4 dòng, trượt và trúng |
+|---|---:|---:|---:|---:|
+| detect `timing` | 62,85 ms | 61,95 ms | 59,80 ms | **59,08 ms** (−6,0%) |
+| detect `timing+clip_as_relu` | 47,36 ms | 46,97 ms | 45,47 ms | **44,40 ms** (−6,2%) |
+| spoof `timing` | 60,85 ms | 60,98 ms | 60,38 ms | 60,45 ms (−0,7%) |
+| spoof nấc cuối | 49,47 ms | 49,72 ms | 49,30 ms | **48,93 ms** (−1,1%) |
+| recog `timing` | 251,75 ms | 253,38 ms | 250,04 ms | **247,08 ms** (−1,9%) |
+| recog nấc cuối | 201,83 ms | 205,54 ms | 201,17 ms | **199,03 ms** (−1,4%) |
+
+Mọi số nguyên vẫn khớp mô phỏng. Một khuôn mặt với autoload 4 dòng: 292,4 ms (−2,1%). Một dòng thì spoof và
+recog chậm đi. Autoload là cấu hình cache của cả chip, camera, LCD và Wi-Fi cùng đi qua cache dữ liệu, nên số
+ở đây chưa đủ để bật nó trong kiosk.
+
+Tái lập: `make board-save DIR=…`; mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>`
+với `ROW=timing` và nấc cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`; `make board-restore DIR=…`.
