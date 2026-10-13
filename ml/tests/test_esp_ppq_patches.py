@@ -551,6 +551,42 @@ def test_im2col_convolutions_carry_the_stem_s_integers_into_patches(
     assert esp_ppq_patches.IM2COL_MARK not in attrs
 
 
+class ClippedStem(nn.Module):
+    """A 3x3 stride-2 convolution on an RGB image and its ReLU6, as YuNet's stem, then a 1x1 one."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stem = nn.Conv2d(3, 16, 3, stride=2, padding=1)
+        self.mix = nn.Conv2d(16, 16, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mix(torch.clamp(self.stem(x), 0.0, 6.0))
+
+
+def test_im2col_convolutions_take_the_relu6_after_the_stem(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(43)
+    calib = [torch.rand(1, 3, 12, 16) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("detection")
+    graph = quantise_ladder_net(ClippedStem().eval(), tmp_path, calib, rungs, ("out",))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain_file = export_espdl.export(graph, tmp_path / "plain.espdl", test_input)
+    with esp_ppq_patches.applied(["im2col_convolutions"]):
+        patched_file = export_espdl.export(graph, tmp_path / "patched.espdl", test_input)
+    plain, patched = espdl_graph(plain_file)[0], espdl_graph(patched_file)[0]
+    ((_, _inputs, (clipped,)),) = [n for n in plain.values() if n[0] == "Clip"]
+    assert "Clip" not in {op for op, _, _ in patched.values()}
+    op, _inputs, outputs = patched["/stem/Conv"]
+    assert op == espdl_shapes.IM2COL_CONV and outputs == [clipped]
+    info = espdl_shapes.parse(patched_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.IM2COL_CONV]
+    step = 2.0 ** exponent_of(plain_file, clipped)
+    assert espdl_shapes.attribute(attrs, "activation") == "Relu"
+    assert espdl_shapes.attribute(attrs, "clip_max") == min(127, round(6.0 / step))
+
+
 class GatedResidual(nn.Module):
     """A residual block of MobileFaceNet-ECA: its input plus its convolution gated by ECA."""
 

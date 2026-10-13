@@ -406,7 +406,8 @@ def im2col_convolutions() -> Iterator[None]:
     """Each convolution over too few input channels run by esp-dl's aligned 1x1 kernel on patches.
 
     An RGB stem's 3 channels send esp-dl down its unaligned path (latency.md 14.2). ConvIm2col
-    gathers each output pixel's patch into channels, so every sum keeps its products plus zeros.
+    gathers each output pixel's patch into channels, so every sum keeps its products plus zeros;
+    a ReLU6 Clip reading it alone folds in as take_clip folds one into a PointwiseDepthwise.
     """
     from esp_ppq.parser import espdl_exporter
 
@@ -416,7 +417,11 @@ def im2col_convolutions() -> Iterator[None]:
     def rewriting(self, graph, *args, **kwargs):
         for op in list(graph.topological_sort()):
             im2col_from(graph, op)
-        return prepare(self, graph, *args, **kwargs)
+        graph = prepare(self, graph, *args, **kwargs)
+        for op in list(graph.operations.values()):
+            if IM2COL_MARK in op.attributes:
+                take_clip(graph, op)
+        return graph
 
     def writing(self, graph, *args, **kwargs):
         for op in graph.operations.values():
@@ -705,22 +710,23 @@ def take_projection(graph, joined) -> bool:
     return True
 
 
-def clamp_top(graph, joined) -> int | None:
-    """The int8 top of the Clip that alone reads joined, a PointwiseDepthwise with no activation
-    or a Relu, when that Clip's table is max(0, min(x, top)) at all 256 inputs on joined's grid.
+def clamp_top(graph, op) -> int | None:
+    """The int8 top of the Clip that alone reads op, a PointwiseDepthwise or a ConvIm2col to be with
+    no activation or a Relu, when that Clip's table is max(0, min(x, top)) at all 256 inputs on
+    op's grid.
     """
     from esp_ppq.IR.quantize import QuantableOperation
     from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
 
-    out = joined.outputs[0]
+    out = op.outputs[0]
     if out.name in graph.outputs or len(out.dest_ops) != 1:
         return None
     clip = out.dest_ops[0]
     if not isinstance(clip, QuantableOperation) or clip.type != "Clip":
         return None
-    grid = [joined.output_quant_config[0], *clip.input_quant_config[:1], *clip.output_quant_config]
+    grid = [op.output_quant_config[0], *clip.input_quant_config[:1], *clip.output_quant_config]
     table = ExporterPatternInfo().get_lut(clip.attributes.get("lut", ""))
-    if table is None or joined.attributes.get("activation", "Linear") not in ("Linear", "Relu"):
+    if table is None or op.attributes.get("activation", "Linear") not in ("Linear", "Relu"):
         return None
     if not (int8(grid) and one_grid(*grid)):
         return None
@@ -729,16 +735,16 @@ def clamp_top(graph, joined) -> int | None:
     return top if torch.equal(values, torch.arange(-128, 128).clamp(0, top)) else None
 
 
-def take_clip(graph, joined) -> bool:
-    """joined, a PointwiseDepthwise, runs its depthwise with Relu and clamps at clamp_top, writing
-    the output of the Clip that alone read it; the Clip and its table leave the graph.
+def take_clip(graph, op) -> bool:
+    """op runs with Relu and clamps at clamp_top, writing the output of the Clip that alone read
+    it; the Clip and its table leave the graph.
     """
     from esp_ppq.core import OperationQuantizationConfig
 
-    top = clamp_top(graph, joined)
+    top = clamp_top(graph, op)
     if top is None:
         return False
-    out = joined.outputs[0]
+    out = op.outputs[0]
     clip = out.dest_ops[0]
     clipped = clip.outputs[0]
     bounds = [var for var in clip.inputs[1:] if var is not None]
@@ -754,10 +760,10 @@ def take_clip(graph, joined) -> bool:
             graph.remove_variable(var)
     out.source_op = None
     graph.remove_variable(out)
-    joined.outputs[0] = clipped
-    clipped.source_op = joined
-    joined.config = OperationQuantizationConfig(joined.input_quant_config, configs)
-    joined.attributes.update(activation="Relu", clip_max=top)
+    op.outputs[0] = clipped
+    clipped.source_op = op
+    op.config = OperationQuantizationConfig(op.input_quant_config, configs)
+    op.attributes.update(activation="Relu", clip_max=top)
     return True
 
 
