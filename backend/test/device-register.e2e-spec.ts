@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 const DEVICE = "e2e-reg-door";
 const STRANGER = "e2e-reg-thief";
@@ -211,7 +212,10 @@ describe("device registration (e2e)", () => {
   });
 
   it("tells a machine that lost its storage how far its punches already reach", async () => {
-    const worker = await db.employee.create({ data: { code: PUNCHER, fullName: "Người chấm thử", active: true } });
+    const entityId = await seedEntityId(db);
+    const worker = await db.employee.create({
+      data: { code: PUNCHER, fullName: "Người chấm thử", active: true, legalEntityId: entityId },
+    });
     await db.attendanceRecord.createMany({
       data: [1n, 2n].map((seq) => ({
         localId: String((BigInt(HELD_BOOT) << 32n) | seq),

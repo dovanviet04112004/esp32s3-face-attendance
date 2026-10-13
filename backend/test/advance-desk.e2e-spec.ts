@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const BOSS = "E2EAD01";
 const BOSS_MAIL = "e2ead-boss@kiosk.local";
@@ -58,12 +58,13 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     await sweep();
 
     const hash = await hashPassword(PASSWORD);
+    const entityId = await seedEntityId(db);
     bossId = (
-      await db.employee.create({ data: { code: BOSS, fullName: "Quản lý E2E", active: true } })
+      await db.employee.create({ data: { code: BOSS, fullName: "Quản lý E2E", active: true, legalEntityId: entityId } })
     ).id;
     askerId = (
       await db.employee.create({
-        data: { code: ASKER, fullName: "Người xin E2E", active: true, managerId: bossId },
+        data: { code: ASKER, fullName: "Người xin E2E", active: true, legalEntityId: entityId, managerId: bossId },
       })
     ).id;
     await db.user.create({
@@ -74,7 +75,13 @@ describe("an advance lands on the desk, not on the tree (e2e)", () => {
     });
     for (const [code, email, role] of [[CLERK, CLERK_MAIL, "HR"], [PAYER, PAYER_MAIL, "PAYROLL"]] as const) {
       await db.employee.create({
-        data: { code, fullName: `Bàn ${code}`, active: true, login: { create: { email, passwordHash: hash, role } } },
+        data: {
+          code,
+          fullName: `Bàn ${code}`,
+          active: true,
+          legalEntityId: entityId,
+          login: { create: { email, passwordHash: hash, role } },
+        },
       });
     }
 

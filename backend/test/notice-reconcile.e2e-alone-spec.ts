@@ -15,6 +15,7 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { INBOX_QUEUES } from "../src/modules/notifications/audience.service.js";
 import { itemKey } from "../src/modules/notifications/notice-items.service.js";
 import { ReconcileSweep } from "../src/modules/notifications/sweeps/reconcile.sweep.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-reconcile-password";
@@ -84,8 +85,11 @@ describe("the hourly reconcile, run after every other suite (e2e)", () => {
 
   it("closes once an item whose business row changed behind the write path", async () => {
     await sweep();
+    const entityId = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Đối soát ${who}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Đối soát ${who}`, active: true, legalEntityId: entityId },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },

@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const OPEN = "E2ENT01";
 const CLOSED = "E2ENT02";
@@ -68,12 +68,14 @@ describe("notices and push devices (e2e)", () => {
     await sweep();
 
     const hash = await hashPassword(PASSWORD);
+    const entityId = await seedEntityId(db);
     for (const code of [LOCKED, LEAVER]) {
       await db.employee.create({
         data: {
           code,
           fullName: `Người ${code}`,
           active: true,
+          legalEntityId: entityId,
           login: { create: { email: MAIL(code), passwordHash: hash, role: "EMPLOYEE" } },
         },
       });
@@ -84,6 +86,7 @@ describe("notices and push devices (e2e)", () => {
           code,
           fullName: `Người ${code}`,
           active: true,
+          legalEntityId: entityId,
           login: { create: { email: MAIL(code), passwordHash: hash, role: "EMPLOYEE", active: code === OPEN } },
           contracts: {
             create: {

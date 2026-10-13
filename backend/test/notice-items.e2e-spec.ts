@@ -13,6 +13,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import type { InboxQueue } from "../src/modules/notifications/audience.service.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-items-password";
@@ -47,6 +48,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
   const loginOf = new Map<Who, string>();
   const tokenOf = new Map<Who, string>();
   let periodId = "";
+  let entityId = "";
   let day = 0;
   // The record behind each queue's work, and the holder who must be able to open it.
   const records: { path: string; holder: Who; decidedBy: Who }[] = [];
@@ -96,9 +98,12 @@ describe("work a group shares, closed once for all (e2e)", () => {
     db = app.get(PrismaService);
     items = app.get(NoticeItemsService);
     await sweep();
+    entityId = await seedEntityId(db);
 
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: nameOf(who), active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: nameOf(who), active: true, legalEntityId: entityId },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },
@@ -276,6 +281,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
     const month = 1 + (Number.parseInt(RUN, 16) % 12);
     const period = await db.payrollPeriod.create({
       data: {
+        legalEntityId: entityId,
         year: PAY_YEAR,
         month,
         startDate: new Date(Date.UTC(PAY_YEAR, month - 1, 1)),

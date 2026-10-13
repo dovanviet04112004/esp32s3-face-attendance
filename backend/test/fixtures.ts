@@ -9,8 +9,14 @@ import type { IssuedTokens, SignedIn } from "../src/modules/auth/auth.service.js
 
 const LEAVE_CODE = "E2E-ANNUAL";
 const LEAVE_DAYS = 12;
+const SEED_ENTITY_CODE = "DEFAULT";
 
 type Server = Parameters<typeof request>[0];
+
+/** The entity prisma/seed.ts opens every database with; whoever a suite makes without an entity of its own belongs here. */
+export async function seedEntityId(db: PrismaService): Promise<string> {
+  return (await db.legalEntity.findUniqueOrThrow({ where: { code: SEED_ENTITY_CODE }, select: { id: true } })).id;
+}
 
 /** The paid annual leave a suite books against, which the minimal seed lacks. */
 export async function paidLeaveType(db: PrismaService): Promise<LeaveType> {

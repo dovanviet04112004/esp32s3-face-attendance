@@ -380,7 +380,7 @@ export class OrgService {
       this.db.legalEntity.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } }),
       this.db.employee.groupBy({
         by: ["legalEntityId"],
-        where: { active: true, legalEntityId: { not: null } },
+        where: { active: true },
         _count: { _all: true },
       }),
     ]);

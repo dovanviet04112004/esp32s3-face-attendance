@@ -14,7 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { FEED, RealtimeGateway, type FeedName } from "../src/modules/realtime/realtime.gateway.js";
-import { paidLeaveType, tokensOf } from "./fixtures.js";
+import { paidLeaveType, seedEntityId, tokensOf } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const BOSS = "E2EFS01";
@@ -57,6 +57,7 @@ describe("who the feed talks to (e2e)", () => {
   let underId = 0;
   let leaveTypeId = "";
   let requestId = "";
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, [UNDER]);
@@ -95,6 +96,7 @@ describe("who the feed talks to (e2e)", () => {
     db = app.get(PrismaService);
     gateway = app.get(RealtimeGateway);
     await sweep();
+    entityId = await seedEntityId(db);
 
     const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     const placed = { departmentId: template.departmentId, legalEntityId: template.legalEntityId };
@@ -110,7 +112,7 @@ describe("who the feed talks to (e2e)", () => {
       data: { employeeId: under.id, leaveTypeId, year: 2026, entitled: 12 },
     });
     const stranger = await db.employee.create({
-      data: { code: STRANGER, fullName: "Người ngoài feed", active: true },
+      data: { code: STRANGER, fullName: "Người ngoài feed", active: true, legalEntityId: entityId },
     });
     const passwordHash = await hashPassword(PASSWORD);
     await db.user.create({
@@ -319,7 +321,7 @@ describe("who the feed talks to (e2e)", () => {
       const made = await request(app.getHttpServer())
         .post("/employees")
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ code: newcomer, fullName: "Người mới feed", managerId: above.id });
+        .send({ code: newcomer, fullName: "Người mới feed", legalEntityId: entityId, managerId: above.id });
       assert.equal(made.status, 201, JSON.stringify(made.body));
       await settle();
 

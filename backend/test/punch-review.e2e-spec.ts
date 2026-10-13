@@ -14,7 +14,7 @@ import { AttendanceService } from "../src/modules/attendance/attendance.service.
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, dayWindow, localDay } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
-import { signIn } from "./fixtures.js";
+import { seedEntityId, signIn } from "./fixtures.js";
 
 const WORKER = "E2EPV01";
 const STRANGER = "E2EPV02";
@@ -109,13 +109,14 @@ describe("punch review (e2e)", () => {
     entityId = (await db.legalEntity.create({ data: { code: ENTITY, name: "Pháp nhân duyệt lượt" } })).id;
     await db.device.create({ data: { id: DEVICE, status: "APPROVED" } });
     const roles: Record<string, "EMPLOYEE" | "HR" | "MANAGER"> = { [REVIEWER]: "HR", [BOSS]: "MANAGER" };
+    const seedEntity = await seedEntityId(db);
     for (const code of CODES) {
       const made = await db.employee.create({
         data: {
           code,
           fullName: `Duyệt lượt ${code}`,
           active: true,
-          ...(code === WORKER ? { legalEntityId: entityId } : {}),
+          legalEntityId: code === WORKER ? entityId : seedEntity,
           login: { create: { email: MAIL(code), passwordHash: await hashPassword(PASSWORD), role: roles[code] ?? "EMPLOYEE" } },
         },
       });

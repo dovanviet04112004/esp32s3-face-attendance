@@ -205,7 +205,7 @@ const TEMPLATE_SAMPLE: Omit<
 };
 
 interface HeldPlace {
-  legalEntityId: string | null;
+  legalEntityId: string;
   departmentId: string | null;
 }
 
@@ -1105,7 +1105,8 @@ export class EmployeesService implements OnModuleInit {
   }
 
   /** Check that the entity, department, job title and manager asked for exist and fit together.
-   *  A department decides the entity when none is named; a new hire with neither gets the only entity.
+   *  A department decides the entity when none is named; a new hire with neither gets the only entity,
+   *  and is refused when there are several, since everyone belongs to one (KEHOACH 9.3).
    */
   private async placement(
     asked: {
@@ -1115,7 +1116,7 @@ export class EmployeesService implements OnModuleInit {
       managerId?: number | null;
     },
     held: HeldPlace | null,
-  ): Promise<{ legalEntityId?: string }> {
+  ): Promise<{ legalEntityId: string }> {
     const departmentId = asked.departmentId === undefined ? (held?.departmentId ?? null) : asked.departmentId;
     const [entity, department, title, manager, entities] = await Promise.all([
       asked.legalEntityId
@@ -1155,8 +1156,11 @@ export class EmployeesService implements OnModuleInit {
     if (moves && department && !entityId) {
       return { legalEntityId: department.legalEntityId };
     }
-    const only = entities.length === 1 ? entities[0] : undefined;
-    return !entityId && only ? { legalEntityId: only.id } : {};
+    const placed = entityId ?? (entities.length === 1 ? entities[0].id : null);
+    if (!placed) {
+      throw new BadRequestException("LEGAL_ENTITY_REQUIRED");
+    }
+    return { legalEntityId: placed };
   }
 
   /**

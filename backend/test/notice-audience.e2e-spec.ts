@@ -17,7 +17,7 @@ import { QUEUE_DESKS } from "../src/modules/leave/queue-filter.js";
 import { AudienceService, type InboxQueue } from "../src/modules/notifications/audience.service.js";
 import { INBOX_ROLES } from "../src/modules/notifications/notice-kinds.js";
 import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-audience-password";
@@ -52,9 +52,14 @@ describe("who a piece of work waits on (e2e)", () => {
   const accounts: Account[] = [];
   const subjects: { label: string; queue: InboxQueue; id: string }[] = [];
   let periodId = "";
+  let entityId = "";
 
   async function person(code: string, managerId: number | null = null): Promise<number> {
-    return (await db.employee.create({ data: { code, fullName: `Thử nhóm ${code}`, active: true, managerId } })).id;
+    return (
+      await db.employee.create({
+        data: { code, fullName: `Thử nhóm ${code}`, active: true, legalEntityId: entityId, managerId },
+      })
+    ).id;
   }
 
   async function login(email: string, role: Role, employeeId: number): Promise<void> {
@@ -91,6 +96,7 @@ describe("who a piece of work waits on (e2e)", () => {
     db = app.get(PrismaService);
     audience = app.get(AudienceService);
     await sweep();
+    entityId = await seedEntityId(db);
 
     const boss = await person(CODE.boss);
     const payroll = await person(CODE.payroll);
@@ -138,7 +144,13 @@ describe("who a piece of work waits on (e2e)", () => {
     subjects.push({ label: "a dependant", queue: "DEPENDENTS", id: dependent.id });
     const policy = await db.payrollPolicy.findFirstOrThrow({ orderBy: { effectiveFrom: "asc" } });
     const period = await db.payrollPeriod.create({
-      data: { year: 2039, month: 1 + (Number.parseInt(RUN, 16) % 12), startDate: new Date("2039-01-01"), endDate: new Date("2039-01-31") },
+      data: {
+        legalEntityId: entityId,
+        year: 2039,
+        month: 1 + (Number.parseInt(RUN, 16) % 12),
+        startDate: new Date("2039-01-01"),
+        endDate: new Date("2039-01-31"),
+      },
     });
     periodId = period.id;
     const run = await db.payrollRun.create({ data: { periodId } });

@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 const ASSET = "E2EAS-01";
 const FIRST = "E2EAS01";
@@ -74,9 +75,10 @@ describe("assets (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
+    const entityId = await seedEntityId(db);
     for (const code of MADE_CODES) {
       const made = await db.employee.create({
-        data: { code, fullName: `Giữ tài sản ${code}`, active: true },
+        data: { code, fullName: `Giữ tài sản ${code}`, active: true, legalEntityId: entityId },
       });
       idOf.set(code, made.id);
     }

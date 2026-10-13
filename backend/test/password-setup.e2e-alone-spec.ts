@@ -14,7 +14,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { UNUSABLE_PASSWORD, verifyPassword } from "../src/modules/auth/password.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
-import { postLogin, tokensOf } from "./fixtures.js";
+import { postLogin, seedEntityId, tokensOf } from "./fixtures.js";
 
 const CODE = "E2EPS01";
 const EMAIL = "e2eps@kiosk.local";
@@ -33,6 +33,7 @@ describe("first password (e2e)", () => {
   let token = "";
   let userId = "";
   let link = "";
+  let entityId = "";
   let auth: AuthService;
 
   async function sweep(): Promise<void> {
@@ -68,8 +69,9 @@ describe("first password (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
+    entityId = await seedEntityId(db);
     await db.employee.create({
-      data: { code: CODE, fullName: "Người mới vào", active: true, personalEmail: EMAIL },
+      data: { code: CODE, fullName: "Người mới vào", active: true, legalEntityId: entityId, personalEmail: EMAIL },
     });
   });
 
@@ -253,6 +255,7 @@ describe("first password (e2e)", () => {
         code,
         fullName: `Chờ mở ${at}`,
         active: true,
+        legalEntityId: entityId,
         personalEmail: `e2epv-${at}@kiosk.local`,
       })),
     });

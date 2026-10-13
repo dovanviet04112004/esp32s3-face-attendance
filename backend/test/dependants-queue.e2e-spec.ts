@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const HOLDER = "E2EDQ01";
 const HOLDER_MAIL = "e2edq-holder@kiosk.local";
@@ -47,8 +47,9 @@ describe("the dependants queue says how much is waiting (e2e)", () => {
     db = app.get(PrismaService);
     await sweep();
 
+    const entityId = await seedEntityId(db);
     const made = await db.employee.create({
-      data: { code: HOLDER, fullName: "Giữ người phụ thuộc", active: true },
+      data: { code: HOLDER, fullName: "Giữ người phụ thuộc", active: true, legalEntityId: entityId },
     });
     holderId = made.id;
     await db.dependent.createMany({

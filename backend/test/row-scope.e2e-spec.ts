@@ -66,7 +66,7 @@ describe("row scope (e2e)", () => {
     }
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     for (const code of MADE_CODES) {
       const made = await db.employee.create({
@@ -87,7 +87,13 @@ describe("row scope (e2e)", () => {
 
     const policy = await db.payrollPolicy.findFirstOrThrow();
     const period = await db.payrollPeriod.create({
-      data: { year: PAY_YEAR, month: 1, startDate: new Date(`${PAY_YEAR}-01-01`), endDate: new Date(`${PAY_YEAR}-01-31`) },
+      data: {
+        legalEntityId: template.legalEntityId,
+        year: PAY_YEAR,
+        month: 1,
+        startDate: new Date(`${PAY_YEAR}-01-01`),
+        endDate: new Date(`${PAY_YEAR}-01-31`),
+      },
     });
     const run = await db.payrollRun.create({ data: { periodId: period.id } });
     await db.payslip.create({

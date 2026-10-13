@@ -340,14 +340,16 @@ export class AttendanceService {
       return "LATE";
     }
     const person = await this.db.employee.findUnique({ where: { id: employeeId }, select: { legalEntityId: true } });
+    if (!person) {
+      return null;
+    }
     const date = dayAsDate(day);
-    // A company-wide period covers everyone; an entity's period covers its own people.
     const closed = await this.db.payrollPeriod.count({
       where: {
         state: { in: ["LOCKED", "PAID"] },
         startDate: { lte: date },
         endDate: { gte: date },
-        OR: [{ legalEntityId: null }, ...(person?.legalEntityId ? [{ legalEntityId: person.legalEntityId }] : [])],
+        legalEntityId: person.legalEntityId,
       },
     });
     return closed > 0 ? "CLOSED_PERIOD" : null;

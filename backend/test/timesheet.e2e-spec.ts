@@ -361,7 +361,7 @@ describe("timesheet day list (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
-    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     const department = await db.department.create({
       data: { code: RANGE_DEPARTMENT, name: "Phòng thử khoảng ngày", legalEntityId: template.legalEntityId as string },
     });
@@ -369,7 +369,14 @@ describe("timesheet day list (e2e)", () => {
     for (const code of RANGE_PEOPLE) {
       // Closed records, so no build from another suite adds a day to what this one counts.
       const made = await db.employee.create({
-        data: { code, fullName: `Thử khoảng ${code}`, departmentId, active: false, leaveDate: new Date("2026-01-31") },
+        data: {
+          code,
+          fullName: `Thử khoảng ${code}`,
+          legalEntityId: template.legalEntityId,
+          departmentId,
+          active: false,
+          leaveDate: new Date("2026-01-31"),
+        },
       });
       ids.push(made.id);
       await db.attendanceDay.createMany({
@@ -382,7 +389,14 @@ describe("timesheet day list (e2e)", () => {
       data: { code: RANGE_CHILD, name: "Tổ con thử khoảng", parentId: departmentId, legalEntityId: template.legalEntityId as string },
     });
     const below = await db.employee.create({
-      data: { code: CHILD_PERSON, fullName: "Thử nhánh con", departmentId: child.id, active: false, leaveDate: new Date("2026-01-31") },
+      data: {
+        code: CHILD_PERSON,
+        fullName: "Thử nhánh con",
+        legalEntityId: template.legalEntityId,
+        departmentId: child.id,
+        active: false,
+        leaveDate: new Date("2026-01-31"),
+      },
     });
     await db.attendanceDay.create({ data: { employeeId: below.id, date: new Date(rangeDay(RANGE_DAYS + 5)) } });
   });

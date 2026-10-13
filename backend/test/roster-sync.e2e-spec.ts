@@ -14,6 +14,7 @@ import type { EnrollPlan } from "../src/modules/employees/bulk.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import type { EnrollPayload } from "../src/common/generated/enroll_payload.js";
+import { seedEntityId } from "./fixtures.js";
 
 const DOOR_A = "e2e-door-a";
 const DOOR_B = "e2e-door-b";
@@ -70,6 +71,7 @@ describe("roster sync across doors (e2e)", () => {
   let enrollment: EnrollmentService;
   let token = "";
   let employeeId = 0;
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS, DECOMPOSED] } } });
@@ -135,8 +137,9 @@ describe("roster sync across doors (e2e)", () => {
     for (const id of DOORS) {
       await db.device.create({ data: { id, name: id, status: "APPROVED" } });
     }
+    entityId = await seedEntityId(db);
     const made = await db.employee.create({
-      data: { code: CODE, fullName: "Một người hai cửa", active: true },
+      data: { code: CODE, fullName: "Một người hai cửa", active: true, legalEntityId: entityId },
     });
     employeeId = made.id;
     const agreed = await request(http)
@@ -315,7 +318,9 @@ describe("roster sync across doors (e2e)", () => {
     await db.device.create({ data: { id: DOOR_C, name: DOOR_C, status: "APPROVED" } });
     const crowd: number[] = [];
     for (const code of CROWD) {
-      const one = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true } });
+      const one = await db.employee.create({
+        data: { code, fullName: `Người ${code}`, active: true, legalEntityId: entityId },
+      });
       await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
       crowd.push(one.id);
     }
@@ -368,7 +373,9 @@ describe("roster sync across doors (e2e)", () => {
 
   it("sends a name typed decomposed in the precomposed form the kiosk fonts hold", async () => {
     const typed = "Nguyễn Thị Hằng";
-    const one = await db.employee.create({ data: { code: DECOMPOSED, fullName: typed.normalize("NFD"), active: true } });
+    const one = await db.employee.create({
+      data: { code: DECOMPOSED, fullName: typed.normalize("NFD"), active: true, legalEntityId: entityId },
+    });
     await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
     const names: (string | undefined)[] = [];
     const spy = mock.method(app.get(MqttService), "publishDown", async (_name: string, _to: string, payload: EnrollPayload) => {
@@ -457,7 +464,9 @@ describe("roster sync across doors (e2e)", () => {
         ],
       });
       for (const code of NEWCOMERS) {
-        const one = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true } });
+        const one = await db.employee.create({
+          data: { code, fullName: `Người ${code}`, active: true, legalEntityId: entityId },
+        });
         await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
         ids.set(code, one.id);
       }

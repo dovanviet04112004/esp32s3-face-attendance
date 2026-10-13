@@ -11,7 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
-import { paidLeaveType } from "./fixtures.js";
+import { paidLeaveType, seedEntityId } from "./fixtures.js";
 
 const HIRE = "E2EON01";
 const FROM_NEW_YEAR = "E2EON02";
@@ -62,12 +62,13 @@ describe("onboarding (e2e)", () => {
   let fullYear = 0;
   let paidTypeId = "";
   let paidCode = "";
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL, CLERK_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [HIRE, FROM_NEW_YEAR, GONE, BOSS, CLERK, PAID] } } });
     await db.jobTitle.deleteMany({ where: { code: TITLE } });
-    await db.payrollPeriod.deleteMany({ where: { legalEntityId: null, year: YEAR, month: 10 } });
+    await db.payrollPeriod.deleteMany({ where: { legalEntityId: entityId, year: YEAR, month: 10 } });
   }
 
   before(async () => {
@@ -78,6 +79,7 @@ describe("onboarding (e2e)", () => {
     await app.init();
     http = app.getHttpServer();
     db = app.get(PrismaService);
+    entityId = await seedEntityId(db);
     await sweep();
 
     const signedIn = await request(http)
@@ -109,7 +111,7 @@ describe("onboarding (e2e)", () => {
     titleId = title.id;
 
     const boss = await db.employee.create({
-      data: { code: BOSS, fullName: "Quản lý thử", active: true },
+      data: { code: BOSS, fullName: "Quản lý thử", active: true, legalEntityId: entityId },
     });
     bossId = boss.id;
     const made = await db.employee.create({
@@ -117,6 +119,7 @@ describe("onboarding (e2e)", () => {
         code: HIRE,
         fullName: "Người mới",
         active: true,
+        legalEntityId: entityId,
         jobTitleId: titleId,
         managerId: bossId,
         personalEmail: EMAIL,
@@ -124,7 +127,7 @@ describe("onboarding (e2e)", () => {
     });
     hireId = made.id;
     const onNewYear = await db.employee.create({
-      data: { code: FROM_NEW_YEAR, fullName: "Vào từ đầu năm", active: true },
+      data: { code: FROM_NEW_YEAR, fullName: "Vào từ đầu năm", active: true, legalEntityId: entityId },
     });
     newYearId = onNewYear.id;
     const left = await db.employee.create({
@@ -132,6 +135,7 @@ describe("onboarding (e2e)", () => {
         code: GONE,
         fullName: "Đã nghỉ",
         active: false,
+        legalEntityId: entityId,
         leaveDate: new Date(`${YEAR}-01-31T00:00:00.000Z`),
       },
     });
@@ -144,14 +148,13 @@ describe("onboarding (e2e)", () => {
     paidCode = paid.code;
     fullYear = Number(paid.daysPerYear);
 
-    const entity = await db.legalEntity.findUniqueOrThrow({ where: { code: "DEFAULT" } });
     clerkId = (
       await db.employee.create({
         data: {
           code: CLERK,
           fullName: "Nhân sự tự nhận việc",
           active: true,
-          legalEntityId: entity.id,
+          legalEntityId: entityId,
           login: { create: { email: CLERK_EMAIL, passwordHash: await hashPassword(CLERK_PASSWORD), role: "HR" } },
         },
       })
@@ -165,7 +168,7 @@ describe("onboarding (e2e)", () => {
           code: PAID,
           fullName: "Đã có lương",
           active: true,
-          legalEntityId: entity.id,
+          legalEntityId: entityId,
           compensation: {
             create: { effectiveFrom: new Date(NEW_YEAR), baseSalary: FIRST_PAY, insuranceSalary: FIRST_PAY, reason: "HIRE" },
           },
@@ -342,7 +345,13 @@ describe("onboarding (e2e)", () => {
 
   it("puts pay that takes effect in a period on that period's checklist", async () => {
     const period = await db.payrollPeriod.create({
-      data: { year: YEAR, month: 10, startDate: new Date(LATE_START), endDate: new Date(`${YEAR}-10-31`) },
+      data: {
+        legalEntityId: entityId,
+        year: YEAR,
+        month: 10,
+        startDate: new Date(LATE_START),
+        endDate: new Date(`${YEAR}-10-31`),
+      },
     });
     const res = await request(http)
       .get(`/payroll-periods/${period.id}/checklist`)

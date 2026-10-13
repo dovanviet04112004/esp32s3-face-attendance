@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const BOTH_ON = "E2ENC01";
 const IN_APP_OFF = "E2ENC02";
@@ -53,9 +53,10 @@ describe("notice channels answer for themselves (e2e)", () => {
     notices = app.get(NotificationsService);
     await sweep();
 
+    const entityId = await seedEntityId(db);
     for (const code of CODES) {
       const made = await db.employee.create({
-        data: { code, fullName: `Kênh ${code}`, active: true },
+        data: { code, fullName: `Kênh ${code}`, active: true, legalEntityId: entityId },
       });
       idOf.set(code, made.id);
       // A switch belongs to a login, so each fixture needs one.

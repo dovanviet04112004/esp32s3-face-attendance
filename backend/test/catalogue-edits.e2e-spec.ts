@@ -85,7 +85,7 @@ describe("catalogue edits and the lists around them (e2e)", () => {
     token.payroll = await signIn(http, "payroll@kiosk.local", password);
     token.manager = await signIn(http, "manager@kiosk.local", password);
 
-    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     const dept = await db.department.create({
       data: { code: DEPT, name: "Phòng sửa danh mục", legalEntityId: template.legalEntityId as string },
     });

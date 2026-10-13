@@ -186,6 +186,7 @@ describe("the global search box (e2e)", () => {
           code: one.code,
           fullName: one.name,
           active: true,
+          legalEntityId: entity.id,
           departmentId: one.dept ? dept[one.dept] : null,
           createdAt: new Date(Date.UTC(2001, 0, day)),
         },
@@ -258,6 +259,7 @@ describe("the global search box (e2e)", () => {
     periodId = (
       await db.payrollPeriod.create({
         data: {
+          legalEntityId: entity.id,
           year: PAY_YEAR,
           month: PAY_MONTH,
           state: "LOCKED",

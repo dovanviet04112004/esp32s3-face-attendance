@@ -14,7 +14,7 @@ import type { AttendanceRecord } from "../src/common/generated/attendance_record
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AttendanceService } from "../src/modules/attendance/attendance.service.js";
 import { AuthService, deviceFingerprint } from "../src/modules/auth/auth.service.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const KIOSK = "e2e-ba-door";
 const OTHER = "e2e-ba-side";
@@ -206,7 +206,10 @@ describe("broker login and device tickets (e2e)", () => {
 
   it("keeps punches from either side of a revoke and drops those made while revoked", async () => {
     await issued(OUTCAST, "APPROVED");
-    const person = await db.employee.create({ data: { code: PUNCHER, fullName: "Thử thu hồi" } });
+    const entityId = await seedEntityId(db);
+    const person = await db.employee.create({
+      data: { code: PUNCHER, fullName: "Thử thu hồi", legalEntityId: entityId },
+    });
     await db.deviceEnrollment.create({ data: { deviceId: OUTCAST, employeeId: person.id, state: "ENROLLED" } });
     const attendance = app.get(AttendanceService);
     let serial = 0;

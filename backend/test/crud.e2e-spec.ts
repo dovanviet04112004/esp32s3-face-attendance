@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 const MADE_CODES = ["NV9001", "NV9002", "NV9003"];
 const MADE_SHIFTS = ["Ca chiều", "Ca hỏng"];
@@ -28,6 +29,7 @@ describe("crud (e2e)", () => {
   const token: Record<keyof typeof ACCOUNTS, string> = { admin: "", hr: "", viewer: "" };
   let madeEmployeeId = 0;
   let madeShiftId = "";
+  let entityId = "";
   let db: PrismaService;
 
   // The suite writes real rows, so it clears its own at each end of the run.
@@ -47,6 +49,7 @@ describe("crud (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
+    entityId = await seedEntityId(db);
     const asked = await request(http).post("/devices/register").send({
       deviceId: WAITING,
       bootstrapToken: validateEnv().DEVICE_BOOTSTRAP_TOKEN,
@@ -88,7 +91,7 @@ describe("crud (e2e)", () => {
     const res = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token.hr}`)
-      .send({ code: "NV9002", fullName: "Lê Văn C" });
+      .send({ code: "NV9002", fullName: "Lê Văn C", legalEntityId: entityId });
     assert.equal(res.status, 201);
     assert.ok(Number.isInteger(res.body.id));
     madeEmployeeId = res.body.id;
@@ -98,7 +101,7 @@ describe("crud (e2e)", () => {
     const res = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token.hr}`)
-      .send({ code: "NV9002", fullName: "Trùng mã" });
+      .send({ code: "NV9002", fullName: "Trùng mã", legalEntityId: entityId });
     assert.equal(res.status, 409);
   });
 
@@ -106,13 +109,16 @@ describe("crud (e2e)", () => {
     const res = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token.hr}`)
-      .send({ code: "NV9003", fullName: "Thừa trường", isAdmin: true });
+      .send({ code: "NV9003", fullName: "Thừa trường", legalEntityId: entityId, isAdmin: true });
     assert.equal(res.status, 400);
   });
 
   it("refuses a bank or a name that a spreadsheet would run, at every door that takes one", async () => {
     const hire = (fields: object) =>
-      request(http).post("/employees").set("Authorization", `Bearer ${token.hr}`).send({ code: "NV9003", fullName: "Lê Văn D", ...fields });
+      request(http)
+        .post("/employees")
+        .set("Authorization", `Bearer ${token.hr}`)
+        .send({ code: "NV9003", fullName: "Lê Văn D", legalEntityId: entityId, ...fields });
     const refused: [object, string][] = [
       [{ fullName: '=HYPERLINK("http://attacker.example","x")' }, "fullName"],
       [{ fullName: "Lê Văn\r\nD" }, "fullName"],

@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { CertificatesService } from "../src/modules/certificates/certificates.service.js";
 import type { Viewer } from "../src/common/scope/viewer.js";
-import { signIn } from "./fixtures.js";
+import { seedEntityId, signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const CODE = "E2ECT01";
@@ -45,6 +45,7 @@ describe("letters of employment and income (e2e)", () => {
   let clerk = "";
   let asked = "";
   let deskViewer: Viewer;
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, [CODE, OTHER, BOSS, CLERK]);
@@ -55,7 +56,13 @@ describe("letters of employment and income (e2e)", () => {
 
   async function makePerson(code: string, email: string, role: "EMPLOYEE" | "MANAGER" | "HR" = "EMPLOYEE"): Promise<number> {
     const made = await db.employee.create({
-      data: { code, fullName: `Người ${code}`, active: true, hireDate: new Date("2024-03-01") },
+      data: {
+        code,
+        fullName: `Người ${code}`,
+        active: true,
+        legalEntityId: entityId,
+        hireDate: new Date("2024-03-01"),
+      },
     });
     await db.user.create({
       data: {
@@ -85,6 +92,7 @@ describe("letters of employment and income (e2e)", () => {
     desk = signedIn.body.accessToken;
     const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
     deskViewer = { userId: admin.id, role: "ADMIN", employeeId: admin.employeeId };
+    entityId = await seedEntityId(db);
 
     const mineId = await makePerson(CODE, EMAIL);
     await makePerson(OTHER, OTHER_EMAIL);
@@ -308,6 +316,7 @@ describe("letters of employment and income (e2e)", () => {
         (await db.payrollPeriod.findFirst({ where: { year: PAY_YEAR, month } })) ??
         (await db.payrollPeriod.create({
           data: {
+            legalEntityId: entityId,
             year: PAY_YEAR,
             month,
             startDate: new Date(Date.UTC(PAY_YEAR, month - 1, 1)),

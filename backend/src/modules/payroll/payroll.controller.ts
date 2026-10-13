@@ -255,11 +255,27 @@ export class PayrollController {
   @AuditedInService()
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
-  @ApiOperation({ summary: "Claim the run as RUNNING and queue it; a second press is refused" })
+  @ApiOperation({
+    summary: "Claim the run as RUNNING and queue it; refused for a second press and while another run of the period goes",
+  })
   @ApiCreatedResponse({ type: RunView })
+  @ApiErrors(HttpStatus.CONFLICT)
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   execute(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun> {
     return this.payroll.execute(viewer, id);
+  }
+
+  @Post("payroll-runs/:id/discard")
+  @AuditedInService()
+  @Roles("ADMIN", "PAYROLL")
+  @ApiOperation({
+    summary: "Take a run of an open period out for good; a finished regular run sends the others back to draft",
+  })
+  @ApiCreatedResponse({ type: RunView })
+  @ApiErrors(HttpStatus.CONFLICT)
+  @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
+  discard(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun> {
+    return this.payroll.discard(viewer, id);
   }
 
   @Get("tax-year/:employeeId")

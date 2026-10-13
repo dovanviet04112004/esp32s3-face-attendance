@@ -19,6 +19,7 @@ import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sw
 import { ProbationSweep } from "../src/modules/notifications/sweeps/probation.sweep.js";
 import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-sweeps-password";
@@ -47,6 +48,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
   const idOf = new Map<Who, number>();
   const loginOf = new Map<Who, string>();
   const tokenOf = new Map<Who, string>();
+  let entityId = "";
 
   const post = (who: Who, path: string, body: object = {}) =>
     request(app.getHttpServer()).post(path).set("Authorization", `Bearer ${tokenOf.get(who)}`).send(body);
@@ -92,8 +94,11 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     db = app.get(PrismaService);
     stalled = app.get(StalledSweep);
     await sweep();
+    entityId = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Quét ${who} ${RUN}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Quét ${who} ${RUN}`, active: true, legalEntityId: entityId },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },
@@ -179,7 +184,13 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     const policy = await db.payrollPolicy.findFirstOrThrow({ orderBy: { effectiveFrom: "asc" } });
     const month = 1 + (Number.parseInt(RUN, 16) % 12);
     const period = await db.payrollPeriod.create({
-      data: { year: PAY_YEAR, month, startDate: new Date(Date.UTC(PAY_YEAR, month - 1, 1)), endDate: new Date(Date.UTC(PAY_YEAR, month, 0)) },
+      data: {
+        legalEntityId: entityId,
+        year: PAY_YEAR,
+        month,
+        startDate: new Date(Date.UTC(PAY_YEAR, month - 1, 1)),
+        endDate: new Date(Date.UTC(PAY_YEAR, month, 0)),
+      },
     });
     const run = await db.payrollRun.create({ data: { periodId: period.id, kind: "REGULAR", state: "DONE" } });
     const slip = await db.payslip.create({

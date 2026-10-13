@@ -14,7 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { itemKey } from "../src/modules/notifications/notice-items.service.js";
 import { FEED } from "../src/modules/realtime/realtime.gateway.js";
-import { signIn } from "./fixtures.js";
+import { seedEntityId, signIn } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-feed-password";
@@ -72,8 +72,11 @@ describe("who hears a notice on the feed (e2e)", () => {
     port = (app.getHttpServer().address() as { port: number }).port;
     db = app.get(PrismaService);
     await sweep();
+    const entityId = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Feed ${who} ${RUN}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Feed ${who} ${RUN}`, active: true, legalEntityId: entityId },
+      });
       await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },
       });

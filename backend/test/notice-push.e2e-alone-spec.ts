@@ -15,6 +15,7 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { KIOSK_EVENT } from "../src/modules/mqtt/mqtt.events.js";
 import { pushBody } from "../src/modules/notifications/dto/push-body.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 // Push turns on with a key pair, and a one-second window keeps the desk's gathering inside a test.
 // The config is read when AppModule loads, so the module is imported only after these are set.
@@ -102,8 +103,11 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     await app.init();
     db = app.get(PrismaService);
     await sweep();
+    const entityId = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Đẩy ${who} ${RUN}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Đẩy ${who} ${RUN}`, active: true, legalEntityId: entityId },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },

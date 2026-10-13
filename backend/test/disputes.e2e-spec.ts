@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { DisputesService } from "../src/modules/disputes/disputes.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
-import { signIn } from "./fixtures.js";
+import { seedEntityId, signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const ENTITY = "E2EDS";
@@ -144,8 +144,7 @@ describe("disputing a payslip (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     desk = signedIn.body.accessToken;
 
-    // Its own entity, because a run with no entity walks every active employee
-    // in the database, including whatever another suite is holding.
+    // Its own entity, so a run here prices nobody another suite is holding or deleting.
     const entity = await db.legalEntity.create({ data: { code: ENTITY, name: "Thử khiếu nại" } });
     entityId = entity.id;
     await copyPolicyTo(entityId);
@@ -157,6 +156,7 @@ describe("disputing a payslip (e2e)", () => {
         code: BOSS,
         fullName: "Quản lý khiếu nại",
         active: true,
+        legalEntityId: await seedEntityId(db),
         login: { create: { email: BOSS_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "MANAGER" } },
       },
     });

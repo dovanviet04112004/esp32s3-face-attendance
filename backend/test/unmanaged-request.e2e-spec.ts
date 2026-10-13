@@ -12,7 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { clearDeskNotices } from "./teardown.js";
-import { tokensOf } from "./fixtures.js";
+import { seedEntityId, tokensOf } from "./fixtures.js";
 
 const LONE = "E2EUR01";
 const UNSIGNED_BOSS = "E2EUR02";
@@ -31,6 +31,7 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
   const token = new Map<string, string>();
   const id = new Map<string, number>();
   const filed = new Map<string, string>();
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, CODES);
@@ -40,7 +41,9 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
   }
 
   async function person(code: string, managerId: number | null, login: "open" | "locked" | "none"): Promise<number> {
-    const made = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true, managerId } });
+    const made = await db.employee.create({
+      data: { code, fullName: `Người ${code}`, active: true, legalEntityId: entityId, managerId },
+    });
     id.set(code, made.id);
     if (login !== "none") {
       await db.user.create({
@@ -79,6 +82,7 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
     await app.init();
     db = app.get(PrismaService);
     await sweep();
+    entityId = await seedEntityId(db);
 
     await person(LONE, null, "open");
     await person(UNSIGNED_REPORT, await person(UNSIGNED_BOSS, null, "none"), "open");

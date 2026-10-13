@@ -65,7 +65,7 @@ describe("d02-lt extract (e2e)", () => {
     token = signedIn.body.accessToken;
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     entityId = template.legalEntityId as string;
     const other = await db.legalEntity.create({

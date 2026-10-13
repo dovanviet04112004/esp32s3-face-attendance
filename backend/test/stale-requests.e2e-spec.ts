@@ -9,6 +9,7 @@ import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
+import { seedEntityId } from "./fixtures.js";
 
 const FILER = "NV9801";
 const APPROVER = "NV9802";
@@ -66,10 +67,11 @@ describe("stale requests (e2e)", () => {
     items = app.get(NoticeItemsService);
     await db.user.deleteMany({ where: { email: { in: [`${FILER}@kiosk.local`, `${APPROVER}@kiosk.local`] } } });
     await db.employee.deleteMany({ where: { code: { in: [FILER, APPROVER] } } });
-    const boss = await db.employee.create({ data: { code: APPROVER, fullName: "E2E approver" } });
+    const entityId = await seedEntityId(db);
+    const boss = await db.employee.create({ data: { code: APPROVER, fullName: "E2E approver", legalEntityId: entityId } });
     approverId = boss.id;
     const person = await db.employee.create({
-      data: { code: FILER, fullName: "E2E filer", managerId: boss.id },
+      data: { code: FILER, fullName: "E2E filer", legalEntityId: entityId, managerId: boss.id },
     });
     filerId = person.id;
     // A notice is addressed to a login, so somebody with none hears nothing.

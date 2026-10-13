@@ -22,6 +22,7 @@ import { TasksSweep } from "../src/modules/notifications/sweeps/tasks.sweep.js";
 import type { MailBody } from "../src/modules/payroll/mail-text.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
 import { localDay } from "../src/modules/timesheet/local-day.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-kinds-password";
@@ -82,8 +83,11 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
       return true;
     };
     await sweep();
+    const seedEntity = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Loại ${who} ${RUN}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Loại ${who} ${RUN}`, active: true, legalEntityId: seedEntity },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },

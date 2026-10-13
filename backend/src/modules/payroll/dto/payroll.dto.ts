@@ -27,7 +27,8 @@ const CHECKLIST_CODES = [
   "NO_COMPENSATION",
   "PAY_CHANGES",
   "NO_ATTENDANCE_DAYS",
-  "NO_LEGAL_ENTITY",
+  "NOT_IN_RUN",
+  "PAID_ELSEWHERE",
   "LEAVERS_HOLDING_ASSETS",
   "DISPUTES_OVERDUE",
 ] as const;
@@ -35,7 +36,7 @@ const CHECKLIST_CODES = [
 export class CreatePeriodDto {
   @ApiPropertyOptional({
     example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e",
-    description: "Entity the period pays; left out, one company-wide period",
+    description: "Entity the period pays; left out, the only entity in use, else LEGAL_ENTITY_REQUIRED",
   })
   @IsOptional()
   @IsUUID()
@@ -278,13 +279,8 @@ export class TaxYearQueryDto {
 
 export class PeriodView {
   @ApiProperty({ example: "da693adb-e137-44a8-8b1d-2f89ad567a26", description: "Period id (UUID)" }) id!: string;
-  @ApiProperty({
-    type: String,
-    nullable: true,
-    example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e",
-    description: "Entity it pays; null for a company-wide period",
-  })
-  legalEntityId!: string | null;
+  @ApiProperty({ example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e", description: "Entity it pays" })
+  legalEntityId!: string;
   @ApiProperty({ example: 2026, description: "Calendar year of the pay month" }) year!: number;
   @ApiProperty({ example: 9, description: "Pay month, 1 for January" }) month!: number;
   @ApiProperty({
@@ -372,7 +368,7 @@ export class RunView {
     enum: RunState,
     enumName: "RunState",
     example: RunState.DONE,
-    description: "DRAFT until executed, RUNNING while the worker has it, then DONE or FAILED",
+    description: "DRAFT until executed, RUNNING while the worker has it, then DONE or FAILED; DISCARDED for good",
   })
   state!: RunState;
   @ApiProperty({
@@ -397,7 +393,8 @@ export class RunView {
     type: String,
     nullable: true,
     example: "POLICY_MISSING",
-    description: "Error code a FAILED run stopped on, which the period page explains; null otherwise",
+    description:
+      "Error code a FAILED run stopped on, or RUN_BASE_CHANGED on a run sent back to DRAFT; null otherwise",
   })
   failure!: string | null;
   @ApiProperty({ example: "2580000000", description: "Whole dong as a decimal string" }) grossTotal!: string;

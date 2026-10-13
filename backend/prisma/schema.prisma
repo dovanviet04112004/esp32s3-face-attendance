@@ -244,7 +244,7 @@ model Employee {
   id                Int                  @id @default(autoincrement())
   code              String               @unique
   fullName          String
-  legalEntityId     String?
+  legalEntityId     String
   departmentId      String?
   jobTitleId        String?
   managerId         Int?
@@ -268,7 +268,7 @@ model Employee {
   embeddingVersion  String?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
-  legalEntity       LegalEntity?         @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  legalEntity       LegalEntity          @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
   department        Department?          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
   jobTitle          JobTitle?            @relation(fields: [jobTitleId], references: [id], onDelete: Restrict)
   manager           Employee?            @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
@@ -1026,12 +1026,12 @@ enum PeriodState {
 }
 
 /**
- * The pay month. Locking freezes its inputs, so a figure already sent to
- * somebody cannot move behind their back (KEHOACH 9.6).
+ * One legal entity's pay month. Locking freezes its inputs, so a figure
+ * already sent to somebody cannot move behind their back (KEHOACH 9.6).
  */
 model PayrollPeriod {
   id            String            @id @default(uuid())
-  legalEntityId String?
+  legalEntityId String
   year          Int
   month         Int
   state         PeriodState       @default(OPEN)
@@ -1044,13 +1044,12 @@ model PayrollPeriod {
   paidAt        DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
-  legalEntity   LegalEntity?      @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  legalEntity   LegalEntity       @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
   runs          PayrollRun[]
   payslips      Payslip[]
   retroSource   RetroAdjustment[] @relation("RetroSource")
   retroApplied  RetroAdjustment[] @relation("RetroApplied")
 
-  // NULLS NOT DISTINCT in the migration: two company-wide periods for one month are one period.
   @@unique([legalEntityId, year, month])
   @@index([state, year, month])
 }

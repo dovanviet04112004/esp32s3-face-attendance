@@ -34,6 +34,7 @@ describe("nobody decides their own request (e2e)", () => {
   let deskId = 0;
   let otherId = 0;
   let templateId = "";
+  let entityId = "";
 
   function post(path: string, body: object): request.Test {
     return request(http).post(path).set("Authorization", `Bearer ${token}`).send(body);
@@ -73,8 +74,9 @@ describe("nobody decides their own request (e2e)", () => {
     await sweep();
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
+    entityId = template.legalEntityId;
     const person = await db.employee.create({
       data: { code: CODE, fullName: "Tự duyệt thử", active: true, legalEntityId: template.legalEntityId },
     });
@@ -134,7 +136,13 @@ describe("nobody decides their own request (e2e)", () => {
   it("will not let payroll answer its own claim about its own payslip", async () => {
     const policy = await db.payrollPolicy.findFirstOrThrow();
     const period = await db.payrollPeriod.create({
-      data: { year: PAY_YEAR, month: 1, startDate: new Date("1998-01-01"), endDate: new Date("1998-01-31") },
+      data: {
+        legalEntityId: entityId,
+        year: PAY_YEAR,
+        month: 1,
+        startDate: new Date("1998-01-01"),
+        endDate: new Date("1998-01-31"),
+      },
     });
     const run = await db.payrollRun.create({ data: { periodId: period.id } });
     const slip = await db.payslip.create({
@@ -175,7 +183,13 @@ describe("nobody decides their own request (e2e)", () => {
   it("will not let payroll load the settlement of its own leaving", async () => {
     await db.employee.update({ where: { id: employeeId }, data: { leaveDate: new Date(`${FAR_YEAR}-03-20`) } });
     const period = await db.payrollPeriod.create({
-      data: { year: FAR_YEAR, month: 3, startDate: new Date(`${FAR_YEAR}-03-01`), endDate: new Date(`${FAR_YEAR}-03-31`) },
+      data: {
+        legalEntityId: entityId,
+        year: FAR_YEAR,
+        month: 3,
+        startDate: new Date(`${FAR_YEAR}-03-01`),
+        endDate: new Date(`${FAR_YEAR}-03-31`),
+      },
     });
     const run = await db.payrollRun.create({ data: { periodId: period.id, kind: "FINAL_SETTLEMENT" } });
     refusedAsSelf(

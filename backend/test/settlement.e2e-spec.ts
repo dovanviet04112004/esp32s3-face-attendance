@@ -15,9 +15,11 @@ import { paidLeaveType } from "./fixtures.js";
 
 const YEAR = 2027;
 const MONTH = 6;
-const LEAVER = "NV9901";
-const STAYER = "NV9902";
-const LEFT_EARLIER = "NV9903";
+const PREFIX = "NV990";
+const LEAVER = `${PREFIX}1`;
+const STAYER = `${PREFIX}2`;
+const LEFT_EARLIER = `${PREFIX}3`;
+const DEPARTMENT_CODE = "E2E-SET-D";
 const BASE_SALARY = 26_000_000n;
 const UNUSED_DAYS = 4;
 const SEVERANCE = 13_000_000n;
@@ -59,6 +61,7 @@ describe("final settlement (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.employee.deleteMany({ where: { code: { in: [LEAVER, STAYER, LEFT_EARLIER] } } });
+    await db.department.deleteMany({ where: { code: DEPARTMENT_CODE } });
     await db.payrollPeriod.deleteMany({ where: { year: YEAR, month: MONTH } });
     await db.asset.deleteMany({ where: { code: "E2E-LAPTOP-9901" } });
   }
@@ -94,9 +97,12 @@ describe("final settlement (e2e)", () => {
     token = asAdmin.body.accessToken;
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     entityId = template.legalEntityId;
+    const department = await db.department.create({
+      data: { legalEntityId: template.legalEntityId, code: DEPARTMENT_CODE, name: "Phòng thử chốt cuối" },
+    });
 
     const people = [
       { code: LEAVER, active: false, leaveDate: new Date(Date.UTC(YEAR, MONTH - 1, 20)) },
@@ -111,7 +117,7 @@ describe("final settlement (e2e)", () => {
           active: one.active,
           leaveDate: one.leaveDate,
           hireDate: new Date(Date.UTC(YEAR - 3, MONTH - 1, 1)),
-          departmentId: template.departmentId,
+          departmentId: department.id,
           legalEntityId: template.legalEntityId,
         },
       });
@@ -175,8 +181,9 @@ describe("final settlement (e2e)", () => {
       (BASE_SALARY * 100n * 2n + BigInt(Number(inForce.standardDaysPerMonth) * 100)) /
       (BigInt(Number(inForce.standardDaysPerMonth) * 100) * 2n);
 
+    // Its own department, so the run prices nobody another suite is deleting meanwhile.
     const regular = await db.payrollRun.create({
-      data: { periodId, kind: "REGULAR", state: "DRAFT" },
+      data: { periodId, kind: "REGULAR", state: "DRAFT", departmentId: department.id },
     });
     regularRunId = regular.id;
     await payroll.runNow(regularRunId);
@@ -218,7 +225,7 @@ describe("final settlement (e2e)", () => {
   });
 
   it("offers tenure, half a month and the assets still held", async () => {
-    const rows = await sheet();
+    const rows = (await sheet()).filter((one) => [LEAVER, STAYER, LEFT_EARLIER].includes(one.code));
     assert.equal(rows.length, 1, "only the leaver of this period belongs on the sheet");
     const row = rows[0];
     assert.equal(row.code, LEAVER);
@@ -292,7 +299,9 @@ describe("final settlement (e2e)", () => {
 
   it("runs twice for the same figures rather than doubling them", async () => {
     await payroll.runNow(settlementRunId);
-    const slips = await db.payslip.findMany({ where: { runId: settlementRunId } });
+    const slips = await db.payslip.findMany({
+      where: { runId: settlementRunId, employeeId: { in: [leaverId, stayerId, earlierId] } },
+    });
     assert.equal(slips.length, 1);
     const payout = dailyPay * BigInt(UNUSED_DAYS);
     assert.equal(slips[0].grossPay.toFixed(0), (payout + SEVERANCE).toString());
@@ -300,7 +309,7 @@ describe("final settlement (e2e)", () => {
 
   it("lists a run's payslips with the person each belongs to", async () => {
     const res = await request(http)
-      .get(`/payslips?runId=${regularRunId}`)
+      .get(`/payslips?runId=${regularRunId}&search=${PREFIX}`)
       .set("Authorization", `Bearer ${token}`);
     assert.equal(res.status, 200);
     const rows = res.body.rows as { employeeId: number; employee: { id: number; code: string; fullName: string } }[];
@@ -335,9 +344,10 @@ describe("final settlement (e2e)", () => {
     const read = async () =>
       (await request(http).get(`/payroll-periods/${periodId}/delivery`).set("Authorization", `Bearer ${token}`)).body;
     assert.deepEqual(await read(), { issued: 0, sent: 0 }, "a draft counted as issued");
-    await db.payslip.updateMany({ where: { runId: regularRunId }, data: { state: "ISSUED" } });
+    const ours = { runId: regularRunId, employeeId: { in: [leaverId, stayerId] } };
+    await db.payslip.updateMany({ where: ours, data: { state: "ISSUED" } });
     await db.payslip.updateMany({ where: { runId: regularRunId, employeeId: stayerId }, data: { sentAt: new Date() } });
-    const slips = await db.payslip.count({ where: { runId: regularRunId } });
+    const slips = await db.payslip.count({ where: ours });
     assert.deepEqual(await read(), { issued: slips, sent: 1 });
   });
 });

@@ -9,7 +9,7 @@ import type { MqttClient } from "mqtt";
 import type { AttendanceRecord } from "../src/common/generated/attendance_record.js";
 import type { Heartbeat } from "../src/common/generated/heartbeat.js";
 import type { KioskMessage } from "../src/modules/mqtt/mqtt.events.js";
-import { publishAsKiosk } from "./fixtures.js";
+import { publishAsKiosk, seedEntityId } from "./fixtures.js";
 
 // Every running api hears every kiosk, so this suite runs alone, on a session of its own name.
 process.env.MQTT_CLIENT_ID = `svc-e2e-session-${process.pid}`;
@@ -93,7 +93,12 @@ describe("broker session (e2e)", () => {
     client = (mqtt as unknown as { client: MqttClient }).client;
     await sweep();
     await db.device.create({ data: { id: KIOSK, status: "APPROVED", rosterVersion: SERVER_ROSTER } });
-    employeeId = (await db.employee.create({ data: { code: CODE, fullName: "Người chấm qua phiên bền", active: true } })).id;
+    const entityId = await seedEntityId(db);
+    employeeId = (
+      await db.employee.create({
+        data: { code: CODE, fullName: "Người chấm qua phiên bền", active: true, legalEntityId: entityId },
+      })
+    ).id;
     await db.deviceEnrollment.create({ data: { deviceId: KIOSK, employeeId, state: "ENROLLED" } });
   });
 

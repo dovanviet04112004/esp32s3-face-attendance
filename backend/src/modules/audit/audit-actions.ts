@@ -62,6 +62,7 @@ export const AUDIT_ACTIONS = {
   PAYROLL_LOCK: "payroll.lock",
   PAYROLL_PAID: "payroll.paid",
   PAYROLL_QUEUE: "payroll.queue",
+  PAYROLL_DISCARD: "payroll.discard",
   PAYROLL_DELIVER: "payroll.deliver",
   PAYROLL_SETTLEMENT: "payroll.settlement",
   PAYROLL_BONUS: "payroll.bonus",

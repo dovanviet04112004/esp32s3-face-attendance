@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { parseCsv } from "../src/modules/employees/import.js";
+import { seedEntityId } from "./fixtures.js";
 
 const PREFIX = "E2EHIR";
 const DOMAIN = "@e2e-hiring.local";
@@ -24,6 +25,7 @@ describe("hiring and the employee record (e2e)", () => {
   let http: ReturnType<INestApplication["getHttpServer"]>;
   let db: PrismaService;
   const token = {} as Record<Who, string>;
+  let entityId = "";
   let department = { id: "", legalEntityId: "" };
 
   async function sweep(): Promise<void> {
@@ -57,9 +59,9 @@ describe("hiring and the employee record (e2e)", () => {
       assert.equal(res.status, 200, `${who} could not sign in`);
       token[who as Who] = res.body.accessToken;
     }
-    const entity = await db.legalEntity.findUniqueOrThrow({ where: { code: "DEFAULT" } });
+    entityId = await seedEntityId(db);
     department = await db.department.findFirstOrThrow({
-      where: { legalEntityId: entity.id, code: "PB0001" },
+      where: { legalEntityId: entityId, code: "PB0001" },
       select: { id: true, legalEntityId: true },
     });
   });
@@ -88,7 +90,7 @@ describe("hiring and the employee record (e2e)", () => {
   });
 
   it("clears the manager and the department with an explicit null", async () => {
-    const boss = await hire("03");
+    const boss = await hire("03", { legalEntityId: entityId });
     const id = await hire("04", { departmentId: department.id, managerId: boss });
     const res = await as("hr", "patch", `/employees/${id}`).send({ managerId: null, departmentId: null });
     assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -97,9 +99,9 @@ describe("hiring and the employee record (e2e)", () => {
   });
 
   it("refuses a manager who is gone or never was", async () => {
-    const id = await hire("05");
+    const id = await hire("05", { legalEntityId: entityId });
     const left = await db.employee.create({
-      data: { code: `${PREFIX}06`, fullName: "Đã nghỉ", active: false, leaveDate: new Date() },
+      data: { code: `${PREFIX}06`, fullName: "Đã nghỉ", active: false, legalEntityId: entityId, leaveDate: new Date() },
     });
     const gone = await as("hr", "patch", `/employees/${id}`).send({ managerId: left.id });
     assert.equal(gone.status, 409);
@@ -110,7 +112,7 @@ describe("hiring and the employee record (e2e)", () => {
   });
 
   it("opens a login, mails it again, and says why when it cannot", async () => {
-    const bare = await hire("10");
+    const bare = await hire("10", { legalEntityId: entityId });
     const none = await as("hr", "post", `/employees/${bare}/login`);
     assert.equal(none.status, 400);
     assert.equal(none.body.message, "NO_EMAIL");
@@ -118,7 +120,7 @@ describe("hiring and the employee record (e2e)", () => {
     assert.equal(state.status, 200);
     assert.deepEqual([state.body.state, state.body.hasEmail], ["none", false]);
 
-    const id = await hire("11", { personalEmail: `hire11${DOMAIN}` });
+    const id = await hire("11", { legalEntityId: entityId, personalEmail: `hire11${DOMAIN}` });
     const opened = await as("hr", "post", `/employees/${id}/login`);
     assert.equal(opened.status, 201, JSON.stringify(opened.body));
     assert.equal(opened.body.state, "opened");
@@ -137,12 +139,12 @@ describe("hiring and the employee record (e2e)", () => {
     assert.equal(refused.body.message, "ACCOUNT_LOCKED");
     assert.equal((await as("hr", "get", `/employees/${id}/login`)).body.state, "locked");
 
-    const clash = await hire("12", { personalEmail: ACCOUNTS.hr });
+    const clash = await hire("12", { legalEntityId: entityId, personalEmail: ACCOUNTS.hr });
     const taken = await as("hr", "post", `/employees/${clash}/login`);
     assert.equal(taken.status, 409);
     assert.equal(taken.body.message, "EMAIL_TAKEN");
 
-    const leaver = await hire("13", { personalEmail: `hire13${DOMAIN}` });
+    const leaver = await hire("13", { legalEntityId: entityId, personalEmail: `hire13${DOMAIN}` });
     const off = await as("hr", "post", `/employees/${leaver}/offboard`).send({ leaveDate: "2026-01-31" });
     assert.equal(off.status, 201);
     const late = await as("hr", "post", `/employees/${leaver}/login`);
@@ -171,7 +173,13 @@ describe("hiring and the employee record (e2e)", () => {
     const inDays = (count: number) => new Date(Date.now() + count * DAY_MS);
     const deal = async (code: string, ends: { endDate?: Date; probationEnd?: Date }, active = true) => {
       const made = await db.employee.create({
-        data: { code: `${PREFIX}${code}`, fullName: `Sắp hết ${code}`, active, ...(active ? {} : { leaveDate: new Date() }) },
+        data: {
+          code: `${PREFIX}${code}`,
+          fullName: `Sắp hết ${code}`,
+          active,
+          legalEntityId: entityId,
+          ...(active ? {} : { leaveDate: new Date() }),
+        },
       });
       await db.employmentContract.create({
         data: { employeeId: made.id, kind: "FIXED_TERM", state: "ACTIVE", startDate: inDays(-300), ...ends },

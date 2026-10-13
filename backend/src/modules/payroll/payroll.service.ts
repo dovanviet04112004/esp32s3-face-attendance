@@ -73,13 +73,13 @@ interface Leaver {
   leaveDate: Date | null;
   baseSalary: string;
   tenureMonths: number;
-  legalEntityId: string | null;
+  legalEntityId: string;
 }
 
 /** Someone a run prices, with the entity whose policy prices them (KEHOACH 9.7). */
 interface Priced {
   id: number;
-  legalEntityId: string | null;
+  legalEntityId: string;
 }
 
 interface RunPolicy {
@@ -227,6 +227,33 @@ export interface TaxYearStatement {
 const ISSUED_STATES: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
 const READ_BACK = [LINE_RELIEF_SELF, LINE_RELIEF_DEPENDENT, LINE_EXEMPT_OVERTIME, LINE_TAX];
 
+function monthIndex(month: { year: number; month: number }): number {
+  return month.year * 12 + month.month;
+}
+
+/** Everyone a regular run of the period prices: its entity's people, the period's own leavers included. */
+function coveredBy(period: PayrollPeriod): Prisma.EmployeeWhereInput {
+  return {
+    legalEntityId: period.legalEntityId,
+    // `active` alone drops a mid-month leaver and the days they worked (KEHOACH 9.18.8).
+    OR: [{ active: true }, { leaveDate: { gte: period.startDate } }],
+  };
+}
+
+/** Payslip `s` is for someone a regular payslip of the same month already went to from another period (KEHOACH 9.6). */
+function paidElsewhere(periodId: string): Prisma.Sql {
+  return Prisma.sql`EXISTS (
+    SELECT 1
+      FROM "Payslip" o
+      JOIN "PayrollRun" orun ON orun."id" = o."runId"
+      JOIN "PayrollPeriod" op ON op."id" = o."periodId"
+      JOIN "PayrollPeriod" here ON here."id" = ${periodId}
+     WHERE o."employeeId" = s."employeeId" AND o."periodId" <> here."id"
+       AND o."state" <> 'DRAFT' AND orun."kind" = 'REGULAR'
+       AND op."year" = here."year" AND op."month" = here."month"
+  )`;
+}
+
 function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string): Dong {
   return lines
     .filter((line) => line.code === code)
@@ -274,20 +301,38 @@ export class PayrollService {
     });
   }
 
+  /** Open one entity's month: one open period an entity at a time, months only forward (KEHOACH 9.6). */
   async createPeriod(viewer: Viewer, body: CreatePeriodDto): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
-    const start = new Date(Date.UTC(body.year, body.month - 1, 1));
-    const end = new Date(Date.UTC(body.year, body.month, 0));
+    const legalEntityId = await this.entityToPay(body.legalEntityId);
+    const asked = monthIndex(body);
     try {
-      return await this.db.payrollPeriod.create({
-        data: {
-          legalEntityId: body.legalEntityId ?? null,
-          year: body.year,
-          month: body.month,
-          startDate: start,
-          endDate: end,
-          payDate: body.payDate ? new Date(body.payDate) : null,
-        },
+      return await this.db.$transaction(async (tx) => {
+        // Two presses for one entity queue on its row, so the second sees the period the first made.
+        await tx.$queryRaw`SELECT "id" FROM "LegalEntity" WHERE "id" = ${legalEntityId} FOR NO KEY UPDATE`;
+        const held = await tx.payrollPeriod.findMany({
+          where: { legalEntityId },
+          select: { year: true, month: true, state: true },
+        });
+        if (held.some((one) => monthIndex(one) === asked)) {
+          throw new ConflictException("PERIOD_TAKEN");
+        }
+        if (held.some((one) => one.state === "OPEN")) {
+          throw new ConflictException("PERIOD_STILL_OPEN");
+        }
+        if (held.some((one) => monthIndex(one) > asked)) {
+          throw new ConflictException("PERIOD_OUT_OF_ORDER");
+        }
+        return tx.payrollPeriod.create({
+          data: {
+            legalEntityId,
+            year: body.year,
+            month: body.month,
+            startDate: new Date(Date.UTC(body.year, body.month - 1, 1)),
+            endDate: new Date(Date.UTC(body.year, body.month, 0)),
+            payDate: body.payDate ? new Date(body.payDate) : null,
+          },
+        });
       });
     } catch (error) {
       if (isPrismaCode(error, UNIQUE_VIOLATION)) {
@@ -297,20 +342,38 @@ export class PayrollService {
     }
   }
 
+  /** The entity a new period pays: the one named, else the only one in use (KEHOACH 9.6). */
+  private async entityToPay(named?: string): Promise<string> {
+    if (named) {
+      const entity = await this.db.legalEntity.findUnique({ where: { id: named }, select: { active: true } });
+      if (!entity?.active) {
+        throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+      }
+      return named;
+    }
+    const inUse = await this.db.legalEntity.findMany({ where: { active: true }, select: { id: true }, take: 2 });
+    if (inUse.length !== 1) {
+      throw new BadRequestException("LEGAL_ENTITY_REQUIRED");
+    }
+    return inUse[0].id;
+  }
+
   /**
    * What is still unsettled in a period. Locking over an open item is allowed
    * but names who accepted it, so the decision has an owner (KEHOACH 9.18).
    */
   async checklist(periodId: string): Promise<ChecklistItem[]> {
     const period = await this.requirePeriod(periodId);
-    const ofEntity = period.legalEntityId ? { employee: { legalEntityId: period.legalEntityId } } : {};
+    const legalEntityId = period.legalEntityId;
+    const ofEntity = { employee: { legalEntityId } };
     const [
       pendingRequests,
       missingPay,
       payChanges,
       unbuiltDays,
       openCorrections,
-      strays,
+      notInRun,
+      paidElsewhere,
       stillHolding,
       lateDisputes,
     ] = await Promise.all([
@@ -325,7 +388,7 @@ export class PayrollService {
       this.db.employee.count({
         where: {
           active: true,
-          ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
+          legalEntityId,
           compensation: { none: { effectiveFrom: { lte: period.endDate } } },
         },
       }),
@@ -335,7 +398,7 @@ export class PayrollService {
       this.db.employee.count({
         where: {
           active: true,
-          ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
+          legalEntityId,
           days: { none: { date: { gte: period.startDate, lte: period.endDate } } },
         },
       }),
@@ -348,17 +411,21 @@ export class PayrollService {
           ...ofEntity,
         },
       }),
-      // A person with no legal entity is invisible to every entity-scoped run,
-      // so they would go unpaid with nothing reporting it.
-      period.legalEntityId
-        ? this.db.employee.count({ where: { active: true, legalEntityId: null } })
-        : Promise.resolve(0),
+      // Hired or moved in after the newest regular run: a lock would leave them unpaid without a word.
+      this.db.employee.count({
+        where: {
+          ...coveredBy(period),
+          compensation: { some: { effectiveFrom: { lte: period.endDate } } },
+          payslips: { none: { periodId, run: { kind: "REGULAR", state: "DONE" } } },
+        },
+      }),
+      this.paidElsewhereCount(periodId),
       // Somebody who left this month and still holds a laptop: the last payslip
       // is the last moment anything can be set against (KEHOACH 9.16 item 10).
       this.db.employee.count({
         where: {
           leaveDate: { gte: period.startDate, lte: period.endDate },
-          ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
+          legalEntityId,
           assetsHeld: { some: { state: "ISSUED" } },
         },
       }),
@@ -368,9 +435,7 @@ export class PayrollService {
         where: {
           state: "OPEN",
           dueAt: { lt: new Date() },
-          ...(period.legalEntityId
-            ? { payslip: { period: { legalEntityId: period.legalEntityId } } }
-            : {}),
+          payslip: { period: { legalEntityId } },
         },
       }),
     ]);
@@ -380,10 +445,23 @@ export class PayrollService {
       { code: "NO_COMPENSATION", count: missingPay },
       { code: "PAY_CHANGES", count: payChanges },
       { code: "NO_ATTENDANCE_DAYS", count: unbuiltDays },
-      { code: "NO_LEGAL_ENTITY", count: strays },
+      { code: "NOT_IN_RUN", count: notInRun },
+      { code: "PAID_ELSEWHERE", count: paidElsewhere },
       { code: "LEAVERS_HOLDING_ASSETS", count: stillHolding },
       { code: "DISPUTES_OVERDUE", count: lateDisputes },
     ];
+  }
+
+  /** How many of this period's regular payslips belong to someone a regular payslip for the month already went to. */
+  private async paidElsewhereCount(periodId: string): Promise<number> {
+    const [row] = await this.db.$queryRaw<{ count: number }[]>`
+      SELECT count(DISTINCT s."employeeId")::int AS "count"
+        FROM "Payslip" s
+        JOIN "PayrollRun" r ON r."id" = s."runId"
+       WHERE s."periodId" = ${periodId} AND r."state" = 'DONE' AND r."kind" = 'REGULAR'
+         AND ${paidElsewhere(periodId)}
+    `;
+    return row?.count ?? 0;
   }
 
   async lock(viewer: Viewer, periodId: string, body: LockPeriodDto): Promise<PayrollPeriod> {
@@ -392,6 +470,7 @@ export class PayrollService {
     if (period.state !== "OPEN") {
       throw new BadRequestException("PERIOD_NOT_OPEN");
     }
+    await this.requireRunsSettled(this.db, periodId);
     const open = (await this.checklist(periodId)).filter((item) => item.count > 0);
     if (open.length > 0 && !body.acceptOpenItems) {
       throw new BadRequestException("CHECKLIST_NOT_CLEAR");
@@ -400,8 +479,9 @@ export class PayrollService {
     // closed with its back payments still owed.
     const locked = await this.db.$transaction(
       async (tx) => {
-        // Taken ahead of execute's share lock, so a run cannot start between the check and the lock.
-        await tx.$queryRaw`SELECT "id" FROM "PayrollPeriod" WHERE "id" = ${periodId} FOR UPDATE`;
+        // The row lock execute and discard take too, so no run starts or goes between the check and the lock.
+        await tx.$queryRaw`SELECT "id" FROM "PayrollPeriod" WHERE "id" = ${periodId} FOR NO KEY UPDATE`;
+        await this.requireRunsSettled(tx, periodId);
         const shut = await tx.payrollPeriod.updateMany({
           where: { id: periodId, state: "OPEN" },
           data: {
@@ -413,9 +493,6 @@ export class PayrollService {
         });
         if (shut.count === 0) {
           throw new BadRequestException("PERIOD_NOT_OPEN");
-        }
-        if ((await tx.payrollRun.count({ where: { periodId, state: "RUNNING" } })) > 0) {
-          throw new ConflictException("PERIOD_RUN_IN_PROGRESS");
         }
         await tx.$executeRaw`
           WITH chosen AS (${this.chosenSlips(periodId)})
@@ -490,6 +567,28 @@ export class PayrollService {
     return locked;
   }
 
+  /** A lock needs no run going, the newest regular run done, and every bonus or settlement done or discarded (KEHOACH 9.6). */
+  private async requireRunsSettled(client: Prisma.TransactionClient, periodId: string): Promise<void> {
+    const runs = await client.payrollRun.findMany({
+      where: { periodId, state: { not: "DISCARDED" } },
+      select: { id: true, kind: true, state: true, failure: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    if (runs.some((run) => run.state === "RUNNING")) {
+      throw new ConflictException("PERIOD_RUN_IN_PROGRESS");
+    }
+    const newestRegular = runs.find((run) => run.kind === "REGULAR");
+    const unfinished = runs.filter(
+      (run) => run.state !== "DONE" && (run.kind !== "REGULAR" || run.id === newestRegular?.id),
+    );
+    if (unfinished.some((run) => run.failure === "RUN_BASE_CHANGED")) {
+      throw new ConflictException("RUN_BASE_CHANGED");
+    }
+    if (unfinished.length > 0) {
+      throw new ConflictException("PERIOD_RUNS_UNFINISHED");
+    }
+  }
+
   async markPaid(viewer: Viewer, periodId: string): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
     const period = await this.requirePeriod(periodId);
@@ -544,19 +643,29 @@ export class PayrollService {
     }
     // Someone priced with no policy in force stops the whole run, so the press says so (KEHOACH 9.6).
     await this.policiesFor(run.period, await this.pricedBy(run));
-    // RUNNING is claimed in one statement ahead of the queue, so a second press finds it taken.
+    // Claimed under the period's row lock, which lock and discard take too, so a period runs one run at a time.
     const claimed = await this.db.$transaction(async (tx) => {
       const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
-        SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${run.periodId} FOR SHARE
+        SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${run.periodId} FOR NO KEY UPDATE
       `;
       if (period?.state !== "OPEN") {
         throw new BadRequestException("PERIOD_NOT_OPEN");
       }
-      const moved = await tx.payrollRun.updateMany({
-        where: { id: run.id, state: { not: "RUNNING" } },
+      const { state } = await tx.payrollRun.findUniqueOrThrow({ where: { id: run.id }, select: { state: true } });
+      if (state === "DISCARDED") {
+        throw new ConflictException("RUN_DISCARDED");
+      }
+      if (state === "RUNNING") {
+        return false;
+      }
+      if ((await tx.payrollRun.count({ where: { periodId: run.periodId, state: "RUNNING" } })) > 0) {
+        throw new ConflictException("PERIOD_RUN_IN_PROGRESS");
+      }
+      await tx.payrollRun.update({
+        where: { id: run.id },
         data: { state: "RUNNING", startedAt: new Date(), finishedAt: null, doneCount: 0, failedCount: 0, failure: null },
       });
-      return moved.count === 1;
+      return true;
     });
     if (!claimed) {
       throw new BadRequestException("RUN_ALREADY_RUNNING");
@@ -592,7 +701,97 @@ export class PayrollService {
     if (run.state === "RUNNING") {
       throw new BadRequestException("RUN_ALREADY_RUNNING");
     }
+    if (run.state === "DISCARDED") {
+      throw new ConflictException("RUN_DISCARDED");
+    }
     return run;
+  }
+
+  /** Take a run of an open period out for good: its payslips go, and a finished regular one sends
+   *  the period's other finished runs back to draft (KEHOACH 9.6).
+   */
+  async discard(viewer: Viewer, runId: string): Promise<PayrollRun> {
+    this.mayWrite(viewer);
+    const found = await this.db.payrollRun.findUnique({ where: { id: runId }, select: { periodId: true } });
+    if (!found) {
+      throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    const { run, was } = await this.db.$transaction(async (tx) => {
+      const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
+        SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${found.periodId} FOR NO KEY UPDATE
+      `;
+      if (period?.state !== "OPEN") {
+        throw new BadRequestException("PERIOD_NOT_OPEN");
+      }
+      const held = await tx.payrollRun.findUniqueOrThrow({ where: { id: runId } });
+      if (held.state === "RUNNING") {
+        throw new BadRequestException("RUN_ALREADY_RUNNING");
+      }
+      if (held.state === "DISCARDED") {
+        throw new ConflictException("RUN_DISCARDED");
+      }
+      if (held.kind === "REGULAR" && held.state === "DONE") {
+        await this.staleOver(tx, held.periodId, ["REGULAR", "BONUS", "FINAL_SETTLEMENT"], runId);
+      }
+      await this.dropSlips(tx, [runId]);
+      return {
+        run: await tx.payrollRun.update({
+          where: { id: runId },
+          data: { state: "DISCARDED", failure: null, doneCount: 0, failedCount: 0, grossTotal: 0, netTotal: 0 },
+        }),
+        was: held.state,
+      };
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.PAYROLL_DISCARD,
+      subject: AUDIT_SUBJECTS.PAYROLL,
+      subjectId: runId,
+      meta: { kind: run.kind, state: was },
+    });
+    return run;
+  }
+
+  /** Send a period's finished runs of these kinds back to draft: payslips go, inputs stay (KEHOACH 9.6). */
+  private async staleOver(
+    tx: Prisma.TransactionClient,
+    periodId: string,
+    kinds: RunKind[],
+    except?: string,
+  ): Promise<void> {
+    const stale = await tx.payrollRun.findMany({
+      where: { periodId, kind: { in: kinds }, state: "DONE", ...(except ? { id: { not: except } } : {}) },
+      select: { id: true },
+    });
+    if (stale.length === 0) {
+      return;
+    }
+    const ids = stale.map((one) => one.id);
+    await this.dropSlips(tx, ids);
+    await tx.payrollRun.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        state: "DRAFT",
+        failure: "RUN_BASE_CHANGED",
+        finishedAt: null,
+        employeeCount: 0,
+        doneCount: 0,
+        failedCount: 0,
+        grossTotal: 0,
+        netTotal: 0,
+      },
+    });
+  }
+
+  /** Delete runs' payslips, and let go of the advances they deducted for the next regular run to carry. */
+  private async dropSlips(tx: Prisma.TransactionClient, runIds: string[]): Promise<void> {
+    await tx.$executeRaw`
+      UPDATE "SalaryAdvance" a
+         SET "payslipId" = NULL
+        FROM "Payslip" p
+       WHERE p."runId" = ANY(${runIds}::text[]) AND a."payslipId" = p."id" AND a."state" = 'PAID'
+    `;
+    await tx.payslip.deleteMany({ where: { runId: { in: runIds } } });
   }
 
   /** The work itself, called by the worker. A second delivery of the same job
@@ -690,6 +889,7 @@ export class PayrollService {
     // Linked as the run finishes, so a run that never finishes claims nothing the lock settles.
     return this.db.$transaction(async (tx) => {
       await this.markCarried(tx, runId, period.id, retroIds, advanceIds);
+      await this.staleOver(tx, period.id, ["BONUS", "FINAL_SETTLEMENT"]);
       return tx.payrollRun.update({
         where: { id: runId },
         data: {
@@ -1106,6 +1306,7 @@ export class PayrollService {
       data: {
         state: "DONE",
         finishedAt: new Date(),
+        failure: null,
         employeeCount: ids.length,
         doneCount: written,
         failedCount: ids.length - written,
@@ -1169,7 +1370,9 @@ export class PayrollService {
     );
   }
 
-  /** The payslips a lock issues: the newest finished regular and settlement run per person, every finished bonus. */
+  /** The payslips a lock issues: the newest finished regular and settlement run per person, every finished
+   *  bonus; a regular one for someone paid that month from another period stays a draft (KEHOACH 9.6).
+   */
   private chosenSlips(periodId: string): Prisma.Sql {
     return Prisma.sql`
       (SELECT DISTINCT ON (s."employeeId", r."kind") s."id"
@@ -1177,6 +1380,7 @@ export class PayrollService {
          JOIN "PayrollRun" r ON r."id" = s."runId"
         WHERE s."periodId" = ${periodId} AND r."state" = 'DONE'
           AND r."kind" IN ('REGULAR', 'FINAL_SETTLEMENT')
+          AND NOT (r."kind" = 'REGULAR' AND ${paidElsewhere(periodId)})
         ORDER BY s."employeeId", r."kind", r."finishedAt" DESC NULLS LAST, r."createdAt" DESC, r."id" DESC)
       UNION ALL
       (SELECT s."id"
@@ -1667,7 +1871,7 @@ export class PayrollService {
            ORDER BY r."effectiveFrom" DESC LIMIT 1
         ) c ON true
        WHERE e."leaveDate" >= ${period.startDate} AND e."leaveDate" <= ${period.endDate}
-         ${period.legalEntityId ? Prisma.sql`AND e."legalEntityId" = ${period.legalEntityId}` : Prisma.empty}
+         AND e."legalEntityId" = ${period.legalEntityId}
        ORDER BY e."id"
     `;
   }
@@ -1682,13 +1886,7 @@ export class PayrollService {
       return this.leaversOf(run.period);
     }
     return this.db.employee.findMany({
-      where: {
-        // A closed record has `active` off, so filtering on it alone drops a
-        // mid-month leaver and the days they worked (KEHOACH 9.18.8).
-        OR: [{ active: true }, { leaveDate: { gte: run.period.startDate } }],
-        ...(run.period.legalEntityId ? { legalEntityId: run.period.legalEntityId } : {}),
-        ...(run.departmentId ? { departmentId: run.departmentId } : {}),
-      },
+      where: { ...coveredBy(run.period), ...(run.departmentId ? { departmentId: run.departmentId } : {}) },
       select: { id: true, legalEntityId: true },
       orderBy: { id: "asc" },
     });
@@ -1852,6 +2050,7 @@ export class PayrollService {
       data: {
         state: "DONE",
         finishedAt: new Date(),
+        failure: null,
         employeeCount: ids.length,
         doneCount: written,
         failedCount: ids.length - written,

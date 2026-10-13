@@ -12,6 +12,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { REFRESH_COOKIE } from "../src/modules/auth/auth.types.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { localDay } from "../src/modules/timesheet/local-day.js";
+import { seedEntityId } from "./fixtures.js";
 
 const DAY_MS = 86_400_000;
 const CODE = "E2EAU01";
@@ -96,10 +97,11 @@ describe("audit trail (e2e)", () => {
     const jar = (carrier.headers["set-cookie"] ?? []) as unknown as string[];
     refreshCookie = (jar.find((line) => line.startsWith(`${REFRESH_COOKIE}=`)) ?? "").split(";")[0];
 
+    const entityId = await seedEntityId(db);
     const made = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token}`)
-      .send({ code: CODE, fullName: "Người bị soi" });
+      .send({ code: CODE, fullName: "Người bị soi", legalEntityId: entityId });
     assert.equal(made.status, 201);
     employeeId = made.body.id;
 

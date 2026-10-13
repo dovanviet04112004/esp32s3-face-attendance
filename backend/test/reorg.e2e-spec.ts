@@ -64,7 +64,7 @@ describe("reorganisation (e2e)", () => {
     token = signedIn.body.accessToken;
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     const department = await db.department.create({
       data: { code: DEPT, name: "Phòng thử", legalEntityId: template.legalEntityId as string },

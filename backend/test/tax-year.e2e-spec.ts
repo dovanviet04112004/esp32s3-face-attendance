@@ -85,7 +85,7 @@ describe("tax year statement (e2e)", () => {
     adminToken = asAdmin.body.accessToken;
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     entityId = template.legalEntityId;
     for (const code of [CODE, NEIGHBOUR]) {
@@ -109,6 +109,7 @@ describe("tax year statement (e2e)", () => {
     for (const month of MONTHS) {
       const period = await db.payrollPeriod.create({
         data: {
+          legalEntityId: entityId,
           year: YEAR,
           month,
           startDate: new Date(Date.UTC(YEAR, month - 1, 1)),

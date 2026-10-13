@@ -14,6 +14,7 @@ import { EmployeesService } from "../src/modules/employees/employees.service.js"
 import { parseCsv } from "../src/modules/employees/import.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RAISE_BP = 100;
 const RAISE_AMOUNT = 500_000;
@@ -284,7 +285,7 @@ describe("bulk actions on the directory (e2e)", () => {
     assert.equal(signedIn.status, 200, "hr could not sign in");
     token = signedIn.body.accessToken;
 
-    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     const entityA = template.legalEntityId as string;
     entityB = (await db.legalEntity.create({ data: { code: `${PREFIX}-LE`, name: "Pháp nhân thử" } })).id;
     const parent = await db.department.create({ data: { code: `${PREFIX}-PARENT`, name: "Khối thử", legalEntityId: entityA } });
@@ -614,11 +615,13 @@ describe("directory filters that match the bulk jobs (e2e)", () => {
     assert.equal(signedIn.status, 200, "hr could not sign in");
     token = signedIn.body.accessToken;
 
+    const entityId = await seedEntityId(db);
     for (const code of FILTERED) {
       const made = await db.employee.create({
         data: {
           code,
           fullName: `Bộ lọc ${code}`,
+          legalEntityId: entityId,
           personalEmail: code === NONE_BARE ? null : `${code.toLowerCase()}${FL_DOMAIN}`,
           active: code !== LEFT_FL,
           leaveDate: code === LEFT_FL ? new Date("2026-01-31") : null,
@@ -870,7 +873,7 @@ describe("bulk offboarding (e2e)", () => {
     hrUserId = hr.id;
     hrEmployeeId = hr.employeeId as number;
 
-    const template = await db.employee.findFirstOrThrow({ where: { active: true, legalEntityId: { not: null } } });
+    const template = await db.employee.findFirstOrThrow({ where: { active: true } });
     for (const code of LEAVERS) {
       const made = await db.employee.create({
         data: {

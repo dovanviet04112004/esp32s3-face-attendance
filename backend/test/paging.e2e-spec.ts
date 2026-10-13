@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { COUNT_CEILING, encodeCursor, MAX_OFFSET } from "../src/common/dto/cursor.dto.js";
+import { seedEntityId } from "./fixtures.js";
 
 const DEVICE = "e2e-paging-door";
 const CODE = "E2EPG01";
@@ -36,6 +37,7 @@ describe("paging (e2e)", () => {
   let db: PrismaService;
   let token = "";
   let employeeId = 0;
+  let entityId = "";
   let shared: Date;
 
   async function sweep(): Promise<void> {
@@ -50,7 +52,9 @@ describe("paging (e2e)", () => {
     if (missing <= 0) {
       return;
     }
-    const filler = await db.employee.create({ data: { code: FILLER, fullName: PERSON, active: true } });
+    const filler = await db.employee.create({
+      data: { code: FILLER, fullName: PERSON, active: true, legalEntityId: entityId },
+    });
     for (let from = 0; from < missing; from += FILL_BATCH) {
       await db.attendanceRecord.createMany({
         data: Array.from({ length: Math.min(FILL_BATCH, missing - from) }, (unused, at) => ({
@@ -90,8 +94,9 @@ describe("paging (e2e)", () => {
     token = signedIn.body.accessToken;
 
     await db.device.create({ data: { id: DEVICE, name: DEVICE, status: "APPROVED" } });
+    entityId = await seedEntityId(db);
     const made = await db.employee.create({
-      data: { code: CODE, fullName: PERSON, active: true },
+      data: { code: CODE, fullName: PERSON, active: true, legalEntityId: entityId },
     });
     employeeId = made.id;
 

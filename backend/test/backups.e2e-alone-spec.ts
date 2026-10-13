@@ -222,7 +222,7 @@ describe("backups (e2e)", () => {
 
   it("rewrites FaceTemplate when a face is erased, so no page keeps the old bytes", async () => {
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     const person = await db.employee.create({
       data: { code: CODE, fullName: "Xoá mặt thử", active: true, legalEntityId: template.legalEntityId },

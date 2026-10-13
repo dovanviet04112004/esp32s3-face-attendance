@@ -546,7 +546,7 @@ export class SearchService {
         kind: "payrollPeriod",
         id: row.id,
         title: monthName(row),
-        detail: row.legalEntity?.name ?? "",
+        detail: row.legalEntity.name,
         href: `/payroll/${row.id}`,
       })),
       more: null,

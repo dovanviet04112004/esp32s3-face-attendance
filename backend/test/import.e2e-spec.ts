@@ -17,6 +17,7 @@ import { IMPORT_COLUMNS, IMPORT_MAX_BYTES, IMPORT_MAX_ROWS, parseCsv, readRows }
 import { IMPORT_MAX_INFLATED_BYTES, XLSX_MIME } from "../src/modules/employees/workbook.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
+import { seedEntityId } from "./fixtures.js";
 
 const PREFIX = "E2EIMP";
 
@@ -656,7 +657,10 @@ describe("employee import (e2e)", () => {
     await db.device.create({ data: { id: PAPER_KIOSK, status: "APPROVED" } });
     const env = validateEnv();
     const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
-    const gone = await db.employee.create({ data: { code: `${PREFIX}88`, fullName: "Đã nghỉ", active: false } });
+    const entityId = await seedEntityId(db);
+    const gone = await db.employee.create({
+      data: { code: `${PREFIX}88`, fullName: "Đã nghỉ", active: false, legalEntityId: entityId },
+    });
     const file = csvOf(["code", "fullName", "legalEntityCode", "consentPaper", "kioskId"], [
       [`${PREFIX}87`, "Tám bảy", ENTITY, "YES", PAPER_KIOSK],
       [gone.code, "Đã nghỉ", "", "YES", ""],

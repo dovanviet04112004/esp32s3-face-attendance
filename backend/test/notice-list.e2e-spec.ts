@@ -12,6 +12,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-list-password";
@@ -84,8 +85,11 @@ describe("the bell's list, counts and marks (e2e)", () => {
     http = app.getHttpServer();
     db = app.get(PrismaService);
     await sweep();
+    const entityId = await seedEntityId(db);
     for (const who of PEOPLE) {
-      const made = await db.employee.create({ data: { code: codeOf(who), fullName: `Danh sách ${who} ${RUN}`, active: true } });
+      const made = await db.employee.create({
+        data: { code: codeOf(who), fullName: `Danh sách ${who} ${RUN}`, active: true, legalEntityId: entityId },
+      });
       idOf.set(who, made.id);
       const login = await db.user.create({
         data: { email: mailOf(who), role: ROLE[who], employeeId: made.id, passwordHash: await hashPassword(PASSWORD) },

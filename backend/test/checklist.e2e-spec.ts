@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { seedEntityId } from "./fixtures.js";
 
 const BOSS = "E2ECL01";
 const STARTER = "E2ECL02";
@@ -69,8 +70,9 @@ describe("onboarding checklist (e2e)", () => {
     token = signedIn.body.accessToken;
 
     const title = await db.jobTitle.create({ data: { code: TITLE, name: "Chức danh thử" } });
+    const entityId = await seedEntityId(db);
     const boss = await db.employee.create({
-      data: { code: BOSS, fullName: "Cấp trên", active: true },
+      data: { code: BOSS, fullName: "Cấp trên", active: true, legalEntityId: entityId },
     });
     idOf.set(BOSS, boss.id);
     const starter = await db.employee.create({
@@ -78,6 +80,7 @@ describe("onboarding checklist (e2e)", () => {
         code: STARTER,
         fullName: "Người mới",
         active: true,
+        legalEntityId: entityId,
         jobTitleId: title.id,
         managerId: boss.id,
       },

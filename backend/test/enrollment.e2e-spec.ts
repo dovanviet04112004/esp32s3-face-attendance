@@ -14,7 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { openTemplate } from "../src/modules/enrollment/template-crypto.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
-import { publishAsKiosk } from "./fixtures.js";
+import { publishAsKiosk, seedEntityId } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-enroll";
 const OFF_FLEET = "kiosk-e2e-enroll-off";
@@ -39,6 +39,7 @@ describe("enrollment (e2e)", () => {
   let db: PrismaService;
   let admin = "";
   let employeeId = 0;
+  let entityId = "";
   const sample = embedding();
 
   async function sweep(): Promise<void> {
@@ -64,10 +65,11 @@ describe("enrollment (e2e)", () => {
     admin = login.body.accessToken;
 
     await db.device.create({ data: { id: DEVICE_ID, status: "APPROVED" } });
+    entityId = await seedEntityId(db);
     const made = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ code: CODE, fullName: "Phạm Thị D" });
+      .send({ code: CODE, fullName: "Phạm Thị D", legalEntityId: entityId });
     employeeId = made.body.id;
     await request(http)
       .post("/biometric-consents")
@@ -84,7 +86,7 @@ describe("enrollment (e2e)", () => {
     const other = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${admin}`)
-      .send({ code: `${CODE}X`, fullName: "Chưa đồng ý" });
+      .send({ code: `${CODE}X`, fullName: "Chưa đồng ý", legalEntityId: entityId });
     const res = await request(http)
       .post("/enrollments")
       .set("Authorization", `Bearer ${admin}`)
@@ -95,7 +97,9 @@ describe("enrollment (e2e)", () => {
   });
 
   it("puts nobody on a kiosk outside the fleet and sends it no roster", async () => {
-    const outsider = await db.employee.create({ data: { code: OUTSIDER, fullName: "Ngoài đội", active: true } });
+    const outsider = await db.employee.create({
+      data: { code: OUTSIDER, fullName: "Ngoài đội", active: true, legalEntityId: entityId },
+    });
     await db.biometricConsent.create({ data: { employeeId: outsider.id, noticeVersion: "e2e", method: "PAPER" } });
     for (const status of ["REVOKED", "PENDING"] as const) {
       await db.device.upsert({ where: { id: OFF_FLEET }, update: { status }, create: { id: OFF_FLEET, status } });

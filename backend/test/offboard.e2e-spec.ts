@@ -90,7 +90,7 @@ describe("offboarding (e2e)", () => {
     token = signedIn.body.accessToken;
 
     const template = await db.employee.findFirstOrThrow({
-      where: { active: true, legalEntityId: { not: null } },
+      where: { active: true },
     });
     const entityId = template.legalEntityId as string;
     // A department of its own, so the payroll run below pays nobody another suite holds.

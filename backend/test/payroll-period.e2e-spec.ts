@@ -35,8 +35,6 @@ const SATURDAY = "2026-02-07";
 const HOLIDAY = "2026-02-09";
 const OWN_DAY = "2026-02-10";
 const WIDE_FROM = "2026-01-17";
-const WIDE_YEAR = 2031;
-const WIDE_MONTH = 5;
 const EARLY_YEAR = 2001;
 const EARLY_MONTH = 12;
 const BASE = 26_000_000;
@@ -105,7 +103,6 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     await db.user.deleteMany({ where: { email: STEADY_EMAIL } });
     await db.attendanceDay.deleteMany({ where: { employee: { code: HR_CODE }, date: dateOf(OWN_DAY) } });
     await db.payrollPeriod.deleteMany({ where: { legalEntity: { code: ENTITY_CODE } } });
-    await db.payrollPeriod.deleteMany({ where: { legalEntityId: null, year: WIDE_YEAR, month: WIDE_MONTH } });
     await db.payrollPolicy.deleteMany({ where: { legalEntityId: null, effectiveFrom: dateOf(WIDE_FROM) } });
     await db.employee.deleteMany({ where: { code: { in: CODES } } });
     await db.department.deleteMany({ where: { code: DEPARTMENT_CODE } });
@@ -224,48 +221,47 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     await app.close();
   });
 
-  it("refuses a second period for one entity and month, company-wide included", async () => {
+  it("refuses a second period for one entity and month", async () => {
     const first = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, year: 2026, month: 2 });
     assert.equal(first.status, 201, JSON.stringify(first.body));
     periodId = first.body.id;
     const again = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, year: 2026, month: 2 });
     assert.equal(again.status, 409);
     assert.equal(again.body.message, "PERIOD_TAKEN");
-
-    const wide = await as("payroll").post("/payroll-periods", { year: WIDE_YEAR, month: WIDE_MONTH });
-    assert.equal(wide.status, 201, JSON.stringify(wide.body));
-    const wideAgain = await as("payroll").post("/payroll-periods", { year: WIDE_YEAR, month: WIDE_MONTH });
-    assert.equal(wideAgain.status, 409, "two company-wide periods for one month were both accepted");
   });
 
-  it("prices a company-wide period with each person's own entity policy, and clears an old failure", async () => {
-    const wide = await db.payrollPeriod.findFirstOrThrow({ where: { legalEntityId: null, year: WIDE_YEAR, month: WIDE_MONTH } });
+  it("prices each person with their entity's policy, and clears an old failure", async () => {
     const run = await db.payrollRun.create({
-      data: { periodId: wide.id, kind: "REGULAR", departmentId, state: "FAILED", failure: "POLICY_MISSING" },
+      data: { periodId, kind: "REGULAR", departmentId, state: "FAILED", failure: "POLICY_MISSING" },
     });
     const done = await payroll.runNow(run.id);
     assert.equal(done.state, "DONE", JSON.stringify(done));
     assert.equal(done.failure, null, "a run that finished still told of its last failure");
     const slips = await db.payslip.findMany({ where: { runId: run.id }, select: { policyId: true } });
     assert.equal(slips.length, CODES.length);
-    assert.ok(
-      slips.every((slip) => slip.policyId === policyId),
-      "a company-wide period priced its people off another policy than their entity's",
-    );
+    assert.ok(slips.every((slip) => slip.policyId === policyId), "a person was priced off another policy than their entity's");
     await db.payrollRun.delete({ where: { id: run.id } });
   });
 
   it("refuses the press when someone it prices has no policy in force, and keeps the code a run stops on", async () => {
-    const early = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, year: EARLY_YEAR, month: EARLY_MONTH });
-    assert.equal(early.status, 201, JSON.stringify(early.body));
-    const run = await db.payrollRun.create({ data: { periodId: early.body.id, kind: "REGULAR" } });
+    // Made in the table: the api opens no month behind the entity's newest (KEHOACH 9.6).
+    const early = await db.payrollPeriod.create({
+      data: {
+        legalEntityId: entityId,
+        year: EARLY_YEAR,
+        month: EARLY_MONTH,
+        startDate: dateOf("2001-12-01"),
+        endDate: dateOf("2001-12-31"),
+      },
+    });
+    const run = await db.payrollRun.create({ data: { periodId: early.id, kind: "REGULAR" } });
     const pressed = await as("payroll").post(`/payroll-runs/${run.id}/execute`);
     assert.equal(pressed.status, 404, JSON.stringify(pressed.body));
     assert.equal(pressed.body.message, "POLICY_MISSING");
     const kept = await db.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
     assert.equal(kept.state, "DRAFT", "a refused press still claimed the run");
 
-    await db.payrollPeriod.update({ where: { id: early.body.id }, data: { state: "LOCKED" } });
+    await db.payrollPeriod.update({ where: { id: early.id }, data: { state: "LOCKED" } });
     const stopped = await payroll.runNow(run.id);
     assert.equal(stopped.state, "FAILED");
     assert.equal(stopped.failure, "PERIOD_NOT_OPEN");
@@ -342,6 +338,11 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     const leftover = await db.payslip.create({
       data: { runId: broken.id, periodId, employeeId: steadyId, policyId, grossPay: 1, netPay: 1 },
     });
+    const behind = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true });
+    assert.equal(behind.status, 409, "a lock issued an older run over the newest one that failed");
+    assert.equal(behind.body.message, "PERIOD_RUNS_UNFINISHED");
+    const dropped = await as("payroll").post(`/payroll-runs/${broken.id}/discard`);
+    assert.equal(dropped.status, 201, JSON.stringify(dropped.body));
 
     const locked = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
@@ -349,7 +350,7 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     const issued = await db.payslip.findMany({ where: { periodId, state: { not: "DRAFT" } } });
     assert.equal(issued.length, CODES.length, "two regular runs issued two sets");
     assert.ok(issued.every((one) => one.runId === secondRunId), "a slip of an older run was issued");
-    assert.equal((await db.payslip.findUniqueOrThrow({ where: { id: leftover.id } })).state, "DRAFT");
+    assert.equal(await db.payslip.count({ where: { id: leftover.id } }), 0, "a discarded run left its payslip");
     assert.equal(await db.payslip.count({ where: { runId: firstRunId, state: { not: "DRAFT" } } }), 0);
 
     const steadySlip = issued.find((one) => one.employeeId === steadyId);

@@ -14,7 +14,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { ProfileService } from "../src/modules/profile/profile.service.js";
-import { signIn } from "./fixtures.js";
+import { seedEntityId, signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const CODE = "E2EPR01";
@@ -119,6 +119,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
   let periodId = "";
   let bankChange = "";
   let mailPort = 0;
+  let entityId = "";
 
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, [CODE, OTHER, CLERK]);
@@ -135,6 +136,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
         code,
         fullName: `Nguoi ${code}`,
         active: true,
+        legalEntityId: entityId,
         hireDate: new Date("2024-03-01"),
         personalEmail: personalEmail ?? null,
         bankName: OLD_BANK,
@@ -169,6 +171,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     desk = signedIn.body.accessToken;
 
+    entityId = await seedEntityId(db);
     employeeId = await makePerson(CODE, EMAIL, PERSONAL);
     otherId = await makePerson(OTHER, OTHER_EMAIL);
     await db.user.create({
@@ -181,6 +184,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
     const policy = await db.payrollPolicy.findFirstOrThrow();
     const period = await db.payrollPeriod.create({
       data: {
+        legalEntityId: entityId,
         year: YEAR,
         month: MONTH,
         startDate: new Date(Date.UTC(YEAR, MONTH - 1, 1)),
@@ -436,6 +440,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
           code: CLERK,
           fullName: `Nguoi ${CLERK}`,
           active: true,
+          legalEntityId: entityId,
           login: { create: { email: CLERK_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "HR" } },
         },
       })

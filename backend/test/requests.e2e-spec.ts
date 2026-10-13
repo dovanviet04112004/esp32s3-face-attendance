@@ -10,7 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
-import { paidLeaveType, tokensOf } from "./fixtures.js";
+import { paidLeaveType, seedEntityId, tokensOf } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
 
 const PASSWORD = "kiosk-e2e-password";
@@ -95,14 +95,16 @@ describe("the requests inbox and ledger (e2e)", () => {
     db = app.get(PrismaService);
     await sweep();
 
-    const entity = await db.legalEntity.findFirstOrThrow();
-    parentId = (await db.department.create({ data: { legalEntityId: entity.id, code: PARENT_DEPT, name: "Khối thử" } })).id;
+    const entityId = await seedEntityId(db);
+    parentId = (await db.department.create({ data: { legalEntityId: entityId, code: PARENT_DEPT, name: "Khối thử" } })).id;
     childId = (
-      await db.department.create({ data: { legalEntityId: entity.id, code: CHILD_DEPT, name: "Tổ thử", parentId } })
+      await db.department.create({ data: { legalEntityId: entityId, code: CHILD_DEPT, name: "Tổ thử", parentId } })
     ).id;
     const leaveType = await paidLeaveType(db);
     const hash = await hashPassword(PASSWORD);
-    const boss = await db.employee.create({ data: { code: BOSS, fullName: "Sếp Thử Hộp", active: true } });
+    const boss = await db.employee.create({
+      data: { code: BOSS, fullName: "Sếp Thử Hộp", active: true, legalEntityId: entityId },
+    });
     id.set(BOSS, boss.id);
     const placed: Record<string, string | null> = { [ALICE]: childId, [BOB]: parentId, [CAROL]: null, [STAND]: null };
     for (const code of [ALICE, BOB, CAROL, STAND]) {
@@ -111,6 +113,7 @@ describe("the requests inbox and ledger (e2e)", () => {
           code,
           fullName: `Người ${code}`,
           active: true,
+          legalEntityId: entityId,
           departmentId: placed[code],
           managerId: code === STAND ? null : boss.id,
         },

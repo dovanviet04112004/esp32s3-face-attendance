@@ -23,6 +23,7 @@ import { dayAsDate, dayWindow, localDateSql, localDay } from "../src/modules/tim
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
 import { QUEUE } from "../src/queue/queues.js";
+import { seedEntityId } from "./fixtures.js";
 
 const DOUBTED = "NV9831";
 const LATE = "NV9832";
@@ -105,12 +106,14 @@ describe("company time (e2e)", () => {
     adminToken = signedIn.body.accessToken;
 
     await db.device.create({ data: { id: DEVICE, status: "APPROVED" } });
+    const entityId = await seedEntityId(db);
     for (const code of CODES) {
       const made = await db.employee.create({
         data: {
           code,
           fullName: `Giờ công ty ${code}`,
           active: true,
+          legalEntityId: entityId,
           login: { create: { email: MAIL(code), passwordHash: UNREACHABLE, role: "EMPLOYEE" } },
         },
       });

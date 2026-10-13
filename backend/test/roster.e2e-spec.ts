@@ -10,6 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { seedEntityId } from "./fixtures.js";
 
 const CODE = "E2ERS01";
 const STRANGER = "E2ERS02";
@@ -70,12 +71,13 @@ describe("my shift roster (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     admin = signedIn.body.accessToken;
 
+    const entityId = await seedEntityId(db);
     const made = await db.employee.create({
-      data: { code: CODE, fullName: "Người làm ca", active: true },
+      data: { code: CODE, fullName: "Người làm ca", active: true, legalEntityId: entityId },
     });
     employeeId = made.id;
     const other = await db.employee.create({
-      data: { code: STRANGER, fullName: "Người khác", active: true },
+      data: { code: STRANGER, fullName: "Người khác", active: true, legalEntityId: entityId },
     });
     strangerId = other.id;
     await db.user.create({

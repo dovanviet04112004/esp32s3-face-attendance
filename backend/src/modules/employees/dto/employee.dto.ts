@@ -20,6 +20,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 
@@ -172,7 +173,18 @@ export class UpdateEmployeeDto extends OmitType(PartialType(CreateEmployeeDto), 
   "managerId",
   "departmentId",
   "jobTitleId",
+  "legalEntityId",
 ] as const) {
+  @ApiPropertyOptional({
+    description: "Which legal entity employs them (KEHOACH 9.20); everyone has one, so null is refused",
+    example: "0e9a7b6c-5d4e-4f3a-8b2c-1d0e9f8a7b6c",
+    maxLength: 64,
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  @MaxLength(64)
+  legalEntityId?: string;
+
   @ApiPropertyOptional({
     type: String,
     nullable: true,
