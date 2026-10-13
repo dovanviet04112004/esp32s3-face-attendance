@@ -32,7 +32,7 @@ branches:
       layerwise_samples: 32
       int16_tops: [1, 2, 4]
       qat: {batch: 32, steps: 2000, learning_rate: 1.0e-5}
-    esp_ppq_patches: [cache_sized_convolutions, padded_channels, im2col_convolutions, pointwise_depthwise]
+    esp_ppq_patches: [cache_sized_convolutions, padded_channels, im2col_convolutions, pointwise_depthwise, mul_add]
     rounding_patches: [fused_prelu, prelu_on_input_grid]
     probe: {cuts: 4, frames: 40}
     chosen: null
@@ -45,7 +45,7 @@ branches:
       layerwise_samples: 32
       int16_tops: [1, 2, 4, 8]
       qat: {batch: 32, steps: 2000, learning_rate: 1.0e-5}
-    esp_ppq_patches: [cache_sized_convolutions, channel_conv, im2col_convolutions, pointwise_depthwise]
+    esp_ppq_patches: [cache_sized_convolutions, channel_conv, im2col_convolutions, pointwise_depthwise, mul_add]
     rounding_patches: [fused_prelu, prelu_on_input_grid]
     probe: {cuts: 4, frames: 24}
     chosen: null
