@@ -7940,6 +7940,13 @@ khai trên loại, không theo thứ tự mã.
 `OPEN → LOCKED → PAID`. `PayrollRun` là **một lần tính**, và một kỳ có thể có nhiều lượt: chạy
 nháp, xem, sửa, chạy lại. Chỉ khi kỳ `LOCKED` thì phiếu mới là bản chính thức.
 
+**Lượt không chạy được thì nói vì sao, ngay lúc bấm.** Bấm chạy thì hệ kiểm trước những gì chắc chắn
+làm lượt hỏng — kỳ không còn mở, một người sẽ được tính mà pháp nhân của họ thiếu chính sách hiệu
+lực (§9.7) — và trả mã lỗi cho người bấm, không xếp hàng một việc không thể xong. Lượt vẫn hỏng khi
+đang chạy thì `PayrollRun.failure` giữ mã lỗi, và trang kỳ hiện câu của mã ấy ngay dưới lượt, kèm
+đường tới chỗ sửa: thiếu chính sách thì nút mở trang chính sách lương. Một lượt chỉ ghi *Hỏng* là
+một lượt người ta bấm lại mãi mà không biết phải sửa gì.
+
 **Chốt kỳ đóng băng đầu vào.** Sau khi `LOCKED`, một lượt chấm công gửi muộn hoặc một đơn nghỉ
 duyệt muộn **không** đổi phiếu đã phát. Lượt chấm công cho một ngày của kỳ đã chốt không tự vào
 bảng công mà chờ HR duyệt (§9.8); duyệt rồi nó chỉ sửa bảng công của ngày ấy. Khoản chênh, nếu có,
@@ -8177,6 +8184,8 @@ mục trên biểu thức, nên lần sinh migration kế tiếp sẽ đòi xoá
 **5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
 phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
 và `backoff`, và **idempotent theo `(runId, employeeId)`** để giao hai lần không đẻ hai phiếu.
+Thử lại chỉ dành cho lỗi thoáng qua: lỗi nghiệp vụ mang mã 4xx, như thiếu chính sách, dừng job ngay
+vì lần thử sau đọc cùng dữ liệu và ra cùng lỗi, chỉ giữ lượt ở `RUNNING` thêm mấy giây.
 
 **6. Đếm chính xác chỉ khi cần chính xác.** `COUNT(*)` không dừng sớm được: nó quét hết mọi
 dòng khớp điều kiện, kể cả khi người hỏi chỉ định nhìn năm mươi dòng đầu. Đo trên 300.001 lượt
