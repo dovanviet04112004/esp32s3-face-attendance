@@ -1195,3 +1195,28 @@ với riêng bản vá giữ nguyên số nguyên (từ 337,2).
 
 Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
 `ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.18 `ReduceMean` trên H×W của spoof cộng tổng trong QACC — đo 14/10 (E9-T50)
+
+Cùng kiosk, cùng app dò. `spatial_mean` đổi ba `ReduceMean` của khối SE trong spoof thành `SpatialMean`: dựng tham số
+pool của cả tensor một lần, gọi `dl_tie728_s8_avg_pool2d_hwc_sum` của esp-dl để cộng mỗi 16 kênh qua mọi điểm vào
+QACC, rồi tính từng kênh bằng đúng biểu thức float của `ReduceMean` esp-dl (KẾ HOẠCH §3.7). Mã máy của hai bên làm
+cùng chuỗi lệnh: `float.s`, `mul.s` với scale vào, `__divsf3` cho số điểm, `madd.s` với scale ra cộng 0,5,
+`floor.s`. Hàng recog chạy cùng firmware có E9-T48 và E9-T49 làm đối chứng. Mọi hàng qua `model->test()` ở đồ thị
+và 4 bản cắt, và khớp từng bit trên khung thật.
+
+| Hàng | Một khung, mean / đỉnh | Trước |
+|---|---:|---:|
+| spoof nấc cuối | **39,59** / 43,00 ms | 41,35 ms (§14.15) |
+| spoof `timing` | **56,81** / 59,08 ms | 58,37 ms (§14.15) |
+| recog nấc cuối | 180,26 / 183,68 ms | 180,15 ms (§14.15) |
+| recog `timing` | 244,99 / 247,77 ms | 245,11 ms (§14.15) |
+
+Ba `ReduceMean` tốn 1,9 ms ở bảng theo op của nấc cuối; ba `SpatialMean` tốn 0,2 ms. Hai hàng recog giữ như
+§14.15 trong 0,12 ms.
+
+Một khuôn mặt qua cả ba nhánh: **251,6 ms** ở nấc làm tròn cuối (từ 253,3; từ 444,8 lúc đầu, −43,4%), **333,8 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 335,5).
+
+Tái lập: `make quant-timing BRANCH=antispoof`, rồi `make ai-unit` với `ROW=timing` và nấc cuối của spoof và recog;
+`make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
