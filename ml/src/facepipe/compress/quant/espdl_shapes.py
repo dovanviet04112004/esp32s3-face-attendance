@@ -136,10 +136,14 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
         kernel, (top, left, bottom, right), strides = (
             attribute(attrs, key) for key in ("kernel_shape", "pads", "strides")
         )
+        parts = (attribute(attrs, key, 0) for key in ("pointwise_inputs", "depthwise_inputs"))
+        last_filter = shapes[1 + sum(parts)] if attribute(attrs, "project_inputs", 0) else shapes[1]
+        if last_filter is None:
+            return None
         out = list(x)
         out[1] = (x[1] + top + bottom - kernel[0]) // strides[0] + 1
         out[2] = (x[2] + left + right - kernel[1]) // strides[1] + 1
-        out[-1] = shapes[1][-1]
+        out[-1] = last_filter[-1]
         return out
     if op in CONV_OPS and shapes[1] is not None:
         w, pads, strides = shapes[1], attribute(attrs, "pads"), attribute(attrs, "strides")

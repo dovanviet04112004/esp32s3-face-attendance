@@ -170,12 +170,15 @@ def conv_tags(
 
 
 def banded_rate(module: Module, laid: dict[str, list[int]], cpu_mhz: int) -> float | None:
-    """A PointwiseDepthwise's cycles a multiply-add over both its convolutions."""
+    """A PointwiseDepthwise's cycles a multiply-add over all its convolutions."""
     x, w, y = (laid.get(name) for name in (*module.inputs[:2], module.outputs[0]))
     if x is None or w is None or y is None:
         return None
     kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1, 1])
-    macs = math.prod(x) * w[-1] + math.prod(y) * math.prod(kernel)
+    middle, spots = w[-1], math.prod(y[:-1])
+    macs = math.prod(x) * middle + spots * middle * math.prod(kernel)
+    if espdl_shapes.attribute(module.attrs, "project_inputs", 0):
+        macs += spots * middle * y[-1]
     return module.us * cpu_mhz / max(macs, 1)
 
 
@@ -221,9 +224,10 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
 def kernel_class(module: Module, laid: dict[str, list[int]]) -> str:
     """The esp-dl kernel family module runs on, the unit the inventory sums time by."""
     if module.op == espdl_shapes.POINTWISE_DEPTHWISE:
-        kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1, 1])
+        kernel = "x".join(str(k) for k in espdl_shapes.attribute(module.attrs, "kernel_shape", [1]))
         stride = espdl_shapes.attribute(module.attrs, "strides", [1])[0]
-        return f"pointwise + depthwise {'x'.join(str(k) for k in kernel)} s{stride} in bands"
+        tail = " + pointwise" if espdl_shapes.attribute(module.attrs, "project_inputs", 0) else ""
+        return f"pointwise + depthwise {kernel} s{stride}{tail} in bands"
     if module.op not in espdl_shapes.CONV_OPS:
         return f"{module.op} (table lookup)" if LUT_MARK in module.attrs else module.op
     x, y = laid.get(module.inputs[0]), laid.get(module.outputs[0])

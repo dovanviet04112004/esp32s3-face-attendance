@@ -628,7 +628,80 @@ def pointwise_depthwise_from(graph, dw) -> bool:
         middle_exponent=exponent,
     )
     dw.type = POINTWISE_DEPTHWISE
-    take_clip(graph, dw)
+    return True
+
+
+def projection_of(graph, joined):
+    """The 1x1 projection that alone reads joined's output, when running it from a band pays: an
+    ungrouped int8 per-tensor one at stride 1 with no pad on aligned channels, claimed by no other
+    patch, its weights and the expansion's within half the data cache, and that output beyond it.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
+
+    out = joined.outputs[0]
+    if out.name in graph.outputs or len(out.dest_ops) != 1:
+        return None
+    proj = out.dest_ops[0]
+    if not isinstance(proj, QuantableOperation) or proj.type != "Conv" or len(proj.inputs) < 2:
+        return None
+    weight = proj.inputs[1].value
+    expansion = joined.inputs[1].value
+    info = ExporterPatternInfo()
+    projected = laid_shape(proj.outputs[0], info)
+    cache_bytes = chip()[1]
+    if (
+        weight is None
+        or expansion is None
+        or len(projected) != 4
+        or proj.attributes.get("group", 1) != 1
+        or list(proj.attributes.get("kernel_shape", [])) != [1, 1]
+        or list(proj.attributes.get("strides", [1, 1])) != [1, 1]
+        or any(proj.attributes.get("pads", [0]))
+        or any(mark in proj.attributes for mark in (SLICES_MARK, IM2COL_MARK))
+        or projected[-1] % CHANNEL_STEP
+        or not per_tensor(proj)
+        or not int8([*proj.input_quant_config[:2], *proj.output_quant_config])
+        or weight.numel() + expansion.numel() > cache_bytes // 2
+        or math.prod(laid_shape(out, info)) <= cache_bytes
+    ):
+        return None
+    return proj
+
+
+def take_projection(graph, joined) -> bool:
+    """joined, a PointwiseDepthwise, runs projection_of from a second band and writes its output;
+    the projection and the depthwise's output tensor leave the graph, whose exponent rides on.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+
+    proj = projection_of(graph, joined)
+    if proj is None:
+        return False
+    out = joined.outputs[0]
+    projected = proj.outputs[0]
+    params = list(proj.inputs[1:])
+    configs = [*joined.input_quant_config, *proj.input_quant_config[1:]]
+    exponent = round(math.log2(float(joined.output_quant_config[0].scale)))
+    activation = proj.attributes.get("activation", "Linear")
+    output_configs = proj.output_quant_config
+    for var in proj.inputs:
+        var.dest_ops.remove(proj)
+    proj.inputs.clear()
+    proj.outputs.clear()
+    projected.source_op = None
+    graph.remove_operation(proj)
+    out.source_op = None
+    graph.remove_variable(out)
+    joined.outputs[0] = projected
+    projected.source_op = joined
+    for var in params:
+        joined.inputs.append(var)
+        var.dest_ops.append(joined)
+    joined.config = OperationQuantizationConfig(configs, output_configs)
+    joined.attributes.update(
+        project_inputs=len(params), project_activation=activation, depthwise_exponent=exponent
+    )
     return True
 
 
@@ -701,9 +774,14 @@ def pointwise_depthwise() -> Iterator[None]:
 
     def joining(self, graph, *args, **kwargs):
         graph = prepare(self, graph, *args, **kwargs)
-        for op in list(graph.topological_sort()):
-            if op.name in graph.operations:
-                pointwise_depthwise_from(graph, op)
+        ops = list(graph.topological_sort())
+        joined = [
+            op for op in ops if op.name in graph.operations and pointwise_depthwise_from(graph, op)
+        ]
+        # Every pair joins first, so a 1x1 Conv still reading a joined op is no next pair's feeder.
+        for op in joined:
+            if not take_clip(graph, op):
+                take_projection(graph, op)
         return graph
 
     espdl_exporter.EspdlExporter.prepare_graph = joining

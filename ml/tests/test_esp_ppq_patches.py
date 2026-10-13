@@ -670,11 +670,22 @@ def exported_pair(tmp_path: Path, model: nn.Module, patches: list[str]) -> Path:
         )
 
 
-@pytest.mark.parametrize("stride", [1, 2])
-def test_pointwise_depthwise_joins_an_expansion_with_its_depthwise(
-    tmp_path: Path, stride: int
+def exponent_of(info_file: Path, name: str) -> int:
+    text = info_file.with_suffix(".info").read_text(encoding="utf-8")
+    line = next(line for line in text.splitlines() if line.startswith(f"%{name}["))
+    return int(line.split()[-1].strip("[]"))
+
+
+# 10x10 frames: the depthwise writes 3.2 KB at stride 1; the weights are 512 B each side.
+@pytest.mark.parametrize(
+    ("stride", "cache_bytes", "folds"),
+    [(1, 2048, True), (1, 1024, False), (1, 64 * 1024, False), (2, 64 * 1024, False)],
+)
+def test_pointwise_depthwise_folds_a_projection_only_where_it_pays(
+    tmp_path: Path, stride: int, cache_bytes: int, folds: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pytest.importorskip("esp_ppq")
+    monkeypatch.setattr(esp_ppq_patches, "chip", lambda: (240, cache_bytes))
     torch.manual_seed(31)
     model = ExpandDepthwise(stride)
     plain_file = exported_pair(tmp_path / "plain", model, [])
@@ -686,23 +697,28 @@ def test_pointwise_depthwise_joins_an_expansion_with_its_depthwise(
     (dw_out,) = [out for out, ins in convs.items() if ins[0] in convs and out in read]
     middle, dw_params = convs[dw_out][0], convs[dw_out][1:]
     expand_ins = convs[middle]
+    ((project_out, project_ins),) = [(out, ins) for out, ins in convs.items() if ins[0] == dw_out]
+    tail, out = (project_ins[1:], project_out) if folds else ([], dw_out)
     ((_, inputs, outputs),) = [
         n for n in joined.values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
     ]
-    assert (inputs, outputs) == ([*expand_ins, *dw_params], [dw_out])
-    assert [op for op, _, _ in joined.values()].count("Conv") == 1
-    for name in [*expand_ins[1:], *dw_params]:
+    assert (inputs, outputs) == ([*expand_ins, *dw_params, *tail], [out])
+    assert [op for op, _, _ in joined.values()].count("Conv") == (0 if folds else 1)
+    for name in [*expand_ins[1:], *dw_params, *tail]:
         assert np.array_equal(joined_tensors[name], plain_tensors[name]), name
         assert joined_exps[name] == plain_exps[name], name
     info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
     assert espdl_shapes.problems(info) == []
     (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
-    plain_text = plain_file.with_suffix(".info").read_text(encoding="utf-8")
-    line = next(line for line in plain_text.splitlines() if line.startswith(f"%{middle}["))
-    assert espdl_shapes.attribute(attrs, "middle_exponent") == int(line.split()[-1].strip("[]"))
+    assert espdl_shapes.attribute(attrs, "middle_exponent") == exponent_of(plain_file, middle)
     assert espdl_shapes.attribute(attrs, "pointwise_inputs") == len(expand_ins) - 1
     assert espdl_shapes.attribute(attrs, "depthwise_inputs") == len(dw_params)
     assert espdl_shapes.attribute(attrs, "pointwise_activation") == "Relu"
+    assert espdl_shapes.attribute(attrs, "project_inputs") == (len(tail) or None)
+    if folds:
+        staged = espdl_shapes.attribute(attrs, "depthwise_exponent")
+        assert staged == exponent_of(plain_file, dw_out)
+        assert espdl_shapes.attribute(attrs, "project_activation") == "Linear"
 
 
 def test_pointwise_depthwise_joins_a_pair_whose_prelus_are_fused(sloped, tmp_path: Path) -> None:
@@ -781,6 +797,32 @@ def test_pointwise_depthwise_leaves_a_clip_whose_table_is_not_a_relu6(tmp_path: 
     info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
     (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
     assert espdl_shapes.attribute(attrs, "clip_max") is None
+
+
+class ChainedUnits(nn.Module):
+    """Two YuNet units in a row: each 1x1 convolution feeds a 3x3 depthwise, and the first unit's
+    output is the second one's 1x1 input.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.units = nn.ModuleList(
+            nn.Sequential(nn.Conv2d(16, 16, 1), nn.Conv2d(16, 16, 3, padding=1, groups=16))
+            for _ in range(2)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for unit in self.units:
+            x = torch.relu(unit(x))
+        return x
+
+
+def test_pointwise_depthwise_joins_each_unit_before_it_takes_a_projection(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(41)
+    joined_file = exported_pair(tmp_path, ChainedUnits(), ["pointwise_depthwise"])
+    ops = [op for op, _, _ in espdl_graph(joined_file)[0].values()]
+    assert ops.count(espdl_shapes.POINTWISE_DEPTHWISE) == 2 and "Conv" not in ops
 
 
 def test_pointwise_depthwise_leaves_a_middle_tensor_another_op_reads(tmp_path: Path) -> None:

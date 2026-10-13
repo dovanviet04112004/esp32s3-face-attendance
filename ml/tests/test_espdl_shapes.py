@@ -76,6 +76,15 @@ def test_a_banded_pair_reads_onnx_pads_as_its_module_reorders_them() -> None:
     assert got == [1, 4, 3, 32]
 
 
+def test_a_banded_block_takes_its_projection_s_channels() -> None:
+    x = [1, 28, 28, 64]
+    attrs = "kernel_shape = [3, 3], pads = [1, 1, 1, 1], strides = [1, 1], pointwise_inputs = 2, "
+    attrs += "depthwise_inputs = 2, project_inputs = 2"
+    shapes = [x, [1, 1, 64, 128], [128], [3, 3, 128, 1], [128], [1, 1, 128, 48], [48]]
+    got = espdl_shapes.output_shape(espdl_shapes.POINTWISE_DEPTHWISE, attrs, shapes, [None] * 7)
+    assert got == [1, 28, 28, 48]
+
+
 def test_a_gated_residual_keeps_its_input_s_shape() -> None:
     x, gate = [1, 28, 28, 64], [1, 1, 1, 64]
     got = espdl_shapes.output_shape(espdl_shapes.MUL_ADD, "", [x, gate, x], [None] * 3)
