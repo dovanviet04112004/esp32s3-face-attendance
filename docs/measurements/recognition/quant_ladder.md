@@ -57,3 +57,36 @@ số thứ tư, tức bỏ `Expand` không đổi graph lượng tử hoá — �
   gấp đôi PSRAM.
 - `2106` mất nhiều nhất ở TAR@1e-4 (CFP-FP 0,814 → 0,669). Nghi do 15 khối ECA — sigmoid rồi nhân —
   chịu kém scale per-tensor luỹ thừa 2 🔬; chưa thử giữ riêng các khối ấy ở w8a16.
+
+## 4. Thang bốn bậc ESP-DL trên đồ thị cuối — 14/10 (E9-T35, E9-T36, E9-T38)
+
+`make quant-ptq`, `quant-int16`, `quant-qat ALLOW_TRAIN=1`, `quant-variants` trên run `20260923-2106_59828c4_9a6954`
+(MobileFaceNet-ECA nhập từ FRBench), sau mọi bản vá tốc độ của `latency.md` §14.8–14.18. Thước là mô phỏng ESP-PPQ
+của chính đồ thị xuất; thước chính là TAR@FAR 1e-3 trên CFP-FP, cửa là sụt dưới 1% so với Q0, tức ≥ 0,822. Giờ trên
+chip là `make ai-unit` của chính hàng.
+
+| Bậc | Hàng | **CFP-FP TAR@1e-3** | CFP-FP TAR@1e-4 | AgeDB-30 TAR@1e-3 | LFW TAR@1e-3 | Cửa | Giờ trên chip |
+|---|---|---:|---:|---:|---:|---|---:|
+| 0 | `float` | **0,830** | 0,813 | 0,895 | 0,995 | — | — |
+| 2 | `minmax` | **0,607** | 0,520 | 0,775 | 0,985 | trượt | — |
+| 2 | `percentile` | **0,768** | 0,693 | 0,836 | 0,995 | trượt | — |
+| 2 | `mse` | **0,757** | 0,746 | 0,802 | 0,991 | trượt | — |
+| 2 | `kl` | **0,775** | 0,740 | 0,838 | 0,995 | trượt | — |
+| 3 | `int16_top1` | **0,770** | 0,743 | 0,834 | 0,994 | trượt | — |
+| 3 | `int16_top2` | **0,760** | 0,744 | 0,839 | 0,995 | trượt | — |
+| 3 | `int16_top4` | **0,768** | 0,723 | 0,830 | 0,994 | trượt | — |
+| 3 | `int16_top8` | **0,765** | 0,716 | 0,854 | 0,993 | trượt | — |
+| 4 | `qat` | **0,799** | 0,767 | 0,849 | 0,994 | trượt | 245,09 ms |
+| 4 | `qat+fused_prelu` | **0,783** | 0,690 | 0,864 | 0,994 | trượt | 218,87 ms |
+| 4 | `qat+fused_prelu+prelu_on_input_grid` | **0,677** | 0,495 | 0,688 | 0,991 | trượt | — |
+
+- Bậc 2: không cách hiệu chuẩn nào giữ được CFP-FP; `kl` tốt nhất ở 0,775, `minmax` mất tới 0,224.
+- Bậc 3 xếp lớp theo SNR trên `kl`: một tới tám lớp int16 (depthwise và tích chập chiếu của các khối `conv_3`,
+  `conv_34`, `conv_4`, `conv_5`) không kéo CFP-FP lên.
+- Bậc 4 học 2.000 bước trên `kl`, chưng cất embedding từ mô hình float: loss 0,0021 → ~0,0008, CFP-FP 0,775 → 0,799,
+  hàng tốt nhất của thang nhưng còn dưới cửa 0,023.
+- Biến thể `+fused_prelu` trên `qat` mất 0,016 CFP-FP nhưng AgeDB lên 0,864, nhanh hơn 26 ms; thêm
+  `prelu_on_input_grid` thì CFP-FP rơi xuống 0,677.
+
+**Không hàng nào đạt cửa**, nên luật của KẾ HOẠCH §3.7 không chọn được hàng. Bộ đang deploy từ 24/09 cũng dưới cửa
+(CFP-FP 0,756, E9-T35). Hàng recog cuối cùng do chủ repo quyết; ADR-0006 ghi quyết định ấy.
