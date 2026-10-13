@@ -1012,3 +1012,27 @@ hơn cache, nên spoof giữ đồ thị của §14.8. Một khuôn mặt qua c�
 Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với hàng ở bảng;
 `make ai-profile LOG=… ESPDL=…` trên `models_0.log`. Hàng spoof gộp cả 12 khối cần bỏ điều kiện kích thước tensor
 trong `esp_ppq_patches.projection_of`.
+
+### 14.11 `MulAdd` trong một vòng PIE — đo 13/10 (E9-T43)
+
+Cùng kiosk, cùng app dò. `mul_add` bật lại ở spoof và recog: module `MulAdd` gọi một lần `mul_add_s8_esp32s3.S`
+cho cả tensor (KẾ HOẠCH §3.7). Mọi hàng dưới đây qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit trên
+khung thật.
+
+| Hàng | Một khung, mean / đỉnh | Trước (§14.7, §14.10) |
+|---|---:|---:|
+| recog nấc cuối | **187,86** / 191,43 ms | 191,96 ms |
+| recog `timing` | **248,33** / 251,11 ms | 251,75 ms |
+| spoof nấc cuối | **44,43** / 47,48 ms | 44,56 ms |
+| spoof `timing` | **60,39** / 62,69 ms | 60,85 ms |
+
+Ở recog nấc cuối, 12 `MulAdd` tốn 12,9 ms, thay cho 12 `Mul`, 12 `Add` và 3 `RequantizeLinear` tốn khoảng 16,6 ms;
+3 `Mul` của khối bước 2 không có residual vẫn đứng riêng (1,4 ms). Spoof có 3 `MulAdd`, 1,0 ms. Một `MulAdd` 28×28×64
+tốn 2,0 ms, khoảng 9,6 chu kỳ một phần tử, trong khi phần tính chỉ khoảng 1,1: vòng chờ nạp dòng cache của ba luồng
+PSRAM (x, residual, đầu ra), và autoload không bớt được. RAM nội recog 36,0 KB (từ 38,5), spoof 28,6 KB (từ 29,6).
+
+Một khuôn mặt qua cả ba nhánh: **277,0 ms** ở nấc làm tròn cuối (từ 281,2; từ 444,8 lúc đầu, −37,7%), **356,0 ms**
+với riêng bản vá giữ nguyên số nguyên.
+
+Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
+cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
