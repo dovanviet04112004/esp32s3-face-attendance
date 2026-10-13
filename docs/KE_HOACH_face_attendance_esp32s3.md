@@ -2248,7 +2248,7 @@ không sập theo. Thước đọc tập chấm theo lô, không bao giờ giữ
       `profile_module` của esp-dl, và bộ nhớ model chiếm (RAM nội, PSRAM, flash) bằng `profile_memory`. Hàng ấy hiệu chuẩn trên chính dữ liệu thật của thang: lưới hiệu
       chuẩn bằng nhiễu có thể không chạm giá trị nào sát nửa bước, nên che mất lỗi mô phỏng. Sau lượt
       chính, bản dò chạy lại các khung thật với autoload của cache dữ liệu bật (nạp trước dòng PSRAM kế
-      tiếp khi trượt hoặc khi trúng, 1–4 dòng), chỉ để đo: ESP-IDF mở lại cache với autoload tắt và cấm
+      tiếp khi trượt, 1 rồi 4 dòng, và cả khi trúng, 4 dòng), chỉ để đo: ESP-IDF mở lại cache với autoload tắt và cấm
       ứng dụng gọi các hàm ấy, nên firmware sản phẩm không bật. Lượt đo ấy in giờ và số giá trị lệch mô
       phỏng, không là điều kiện qua.
    2. `espdl_profile.py` (`make ai-profile`) đọc bảng ấy cùng `.espdl` đã chạy: thời gian theo loại op,
