@@ -6,7 +6,8 @@ set(srcs src/core/pixels.cpp
 # Only the chosen runtime's facade is compiled, so ai_engine.h has one definition
 # and only that runtime's library is pulled in at link (KEHOACH 4.5.6).
 if(CONFIG_AI_RUNTIME_ESPDL)
-    list(APPEND srcs src/ai_engine_espdl.cpp src/core/espdl_model.cpp src/core/espdl_conv_prelu.cpp)
+    list(APPEND srcs src/ai_engine_espdl.cpp src/core/espdl_model.cpp src/core/espdl_conv_prelu.cpp
+                     src/core/espdl_conv_slices.cpp)
 else()
     list(APPEND srcs src/ai_engine.cpp src/core/arena.cpp src/core/model_base.cpp src/core/model_store.cpp
                      src/core/profiler.cpp
