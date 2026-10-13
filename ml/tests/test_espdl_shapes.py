@@ -68,6 +68,12 @@ def test_a_convolution_over_patches_shapes_by_its_kernel_not_its_filter() -> Non
     assert got == [1, 56, 56, 64]
 
 
+def test_a_gated_residual_keeps_its_input_s_shape() -> None:
+    x, gate = [1, 28, 28, 64], [1, 1, 1, 64]
+    got = espdl_shapes.output_shape(espdl_shapes.MUL_ADD, "", [x, gate, x], [None] * 3)
+    assert got == x
+
+
 def test_pooling_flattening_and_unknown_ops() -> None:
     x = [1, 4, 4, 32]
     assert espdl_shapes.output_shape("GlobalAveragePool", "", [x], [None]) == [1, 1, 1, 32]

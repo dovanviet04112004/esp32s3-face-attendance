@@ -551,8 +551,59 @@ def test_im2col_convolutions_carry_the_stem_s_integers_into_patches(
     assert esp_ppq_patches.IM2COL_MARK not in attrs
 
 
+class GatedResidual(nn.Module):
+    """A residual block of MobileFaceNet-ECA: its input plus its convolution gated by ECA."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv2d(16, 16, 1)
+        self.eca = nn.Conv1d(1, 1, 3, padding=1, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.conv(x)
+        w = nn.functional.adaptive_avg_pool2d(y, 1)
+        w = self.eca(w.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
+        return x + y * torch.sigmoid(w)
+
+
+def test_mul_add_joins_a_gated_residual_on_one_grid_and_refuses_another(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(19)
+    calib = [torch.rand(1, 16, 8, 8) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("recognition")
+    graph = quantise_ladder_net(GatedResidual().eval(), tmp_path, calib, rungs, ("out",))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain_file = export_espdl.export(graph, tmp_path / "plain.espdl", test_input)
+    with esp_ppq_patches.applied(["mul_add"]):
+        joined_file = export_espdl.export(graph, tmp_path / "joined.espdl", test_input)
+    plain, joined = espdl_graph(plain_file)[0], espdl_graph(joined_file)[0]
+    ((_, (x, gate), (product,)),) = [n for n in plain.values() if n[0] == "Mul"]
+    ((_, adds, (y,)),) = [n for n in plain.values() if n[0] == "Add"]
+    (residual,) = [name for name in adds if name != product]
+    assert not {"Mul", "Add"} & {op for op, _, _ in joined.values()}
+    ((_, inputs, outputs),) = [n for n in joined.values() if n[0] == espdl_shapes.MUL_ADD]
+    assert (inputs, outputs) == ([x, gate, residual], [y])
+    info_text = joined_file.with_suffix(".info").read_text(encoding="utf-8")
+    info = espdl_shapes.parse(info_text)
+    assert espdl_shapes.problems(info) == []
+    grids = {name: f"%{name}[" for name in (product, residual, y)}
+    plain_text = plain_file.with_suffix(".info").read_text(encoding="utf-8")
+    exponents = {
+        name: next(line for line in plain_text.splitlines() if line.startswith(head)).split()[-1]
+        for name, head in grids.items()
+    }
+    assert len(set(exponents.values())) == 1
+    monkeypatch.setattr(esp_ppq_patches, "one_grid", lambda *_configs: False)
+    with esp_ppq_patches.applied(["mul_add"]):
+        apart_file = export_espdl.export(graph, tmp_path / "apart.espdl", test_input)
+    assert {"Mul", "Add"} <= {op for op, _, _ in espdl_graph(apart_file)[0].values()}
+
+
 def test_ai_engine_registers_every_module_the_patches_export() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     found = espdl_op_check.own_modules(core)
     own = {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV}
-    assert own | {espdl_shapes.IM2COL_CONV} <= found
+    assert own | {espdl_shapes.IM2COL_CONV, espdl_shapes.MUL_ADD} <= found

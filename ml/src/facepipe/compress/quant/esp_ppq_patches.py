@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator, Sequence
 import torch
 
 from .espdl_profile import CHANNEL_STEP, chip
-from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, IM2COL_CONV, SLICED_CONV
+from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, IM2COL_CONV, MUL_ADD, SLICED_CONV
 
 
 def laid_shape(var, info) -> list[int]:
@@ -426,6 +426,96 @@ def im2col_convolutions() -> Iterator[None]:
         espdl_exporter.EspdlExporter.export_graph = write
 
 
+def gated(graph, add) -> tuple | None:
+    """add's Mul, x, gate and residual when a prepared graph can run the pair as MulAdd: an int8
+    per-tensor Mul of a [1, H, W, C] map by a [1, 1, 1, C] gate as the chip lays them, read by add
+    alone, with the product, the residual and add on one grid.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
+
+    if add.type != "Add" or not isinstance(add, QuantableOperation) or len(add.inputs) != 2:
+        return None
+    info = ExporterPatternInfo()
+    for index in (0, 1):
+        product, residual = add.inputs[index], add.inputs[1 - index]
+        mul = product.source_op
+        if not isinstance(mul, QuantableOperation) or mul.type != "Mul" or len(mul.inputs) != 2:
+            continue
+        x_shape = laid_shape(product, info)
+        x, gate = mul.inputs if laid_shape(mul.inputs[0], info) == x_shape else mul.inputs[::-1]
+        gate_shape = laid_shape(gate, info)
+        if (
+            product.dest_ops != [add]
+            or product.name in graph.outputs
+            or residual in (product, x, gate)
+            or len(x_shape) != 4
+            or x_shape[-1] % CHANNEL_STEP
+            or gate_shape != [1, 1, 1, x_shape[-1]]
+            or laid_shape(residual, info) != x_shape
+            or not (per_tensor(mul) and per_tensor(add))
+            or not int8([*mul.input_quant_config, *add.input_quant_config])
+            or not int8(add.output_quant_config)
+        ):
+            continue
+        grid = [mul.output_quant_config[0], *add.input_quant_config, add.output_quant_config[0]]
+        if one_grid(*grid):
+            return mul, x, gate, residual
+    return None
+
+
+def mul_add_from(graph, add) -> bool:
+    """add and its gated Mul replaced by one MulAdd reading x, the gate and the residual."""
+    from esp_ppq.core import OperationQuantizationConfig
+
+    found = gated(graph, add)
+    if found is None:
+        return False
+    mul, x, gate, residual = found
+    product = mul.outputs[0]
+    configs = [
+        mul.input_quant_config[mul.inputs.index(x)],
+        mul.input_quant_config[mul.inputs.index(gate)],
+        add.input_quant_config[add.inputs.index(residual)],
+    ]
+    graph.remove_operation(mul)
+    for var in add.inputs:
+        var.dest_ops.remove(add)
+    add.inputs.clear()
+    graph.remove_variable(product)
+    for var in (x, gate, residual):
+        add.inputs.append(var)
+        var.dest_ops.append(add)
+    add.config = OperationQuantizationConfig(configs, add.output_quant_config)
+    add.type = MUL_ADD
+    return True
+
+
+@contextlib.contextmanager
+def mul_add() -> Iterator[None]:
+    """Each gated residual exported as one MulAdd, its product never written out (KEHOACH 3.7).
+
+    The pairs are joined once the layout, requantisation and exponents are settled, so MulAdd reads
+    the very tensors and grids esp-dl's Mul and Add would.
+    """
+    from esp_ppq.parser import espdl_exporter
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+
+    def joining(self, graph, *args, **kwargs):
+        graph = prepare(self, graph, *args, **kwargs)
+        for op in list(graph.topological_sort()):
+            if op.name in graph.operations:
+                mul_add_from(graph, op)
+        return graph
+
+    espdl_exporter.EspdlExporter.prepare_graph = joining
+    try:
+        yield
+    finally:
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
+
+
 def relu_ready(clip) -> bool:
     """clip, a Clip from 0 that a Relu fused into its Conv can stand for: an int8 Conv's lone
     reader, the Conv's output grid kept through it.
@@ -667,6 +757,7 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "padded_channels": padded_channels,
     "channel_conv": channel_conv,
     "im2col_convolutions": im2col_convolutions,
+    "mul_add": mul_add,
     "clip_as_relu": clip_as_relu,
     "prelu_on_input_grid": contextlib.nullcontext,
 }

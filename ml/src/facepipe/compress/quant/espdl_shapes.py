@@ -46,6 +46,7 @@ FUSED_PRELU = "ConvPRelu"
 SLICED_CONV = "ConvSlices"
 CHANNEL_CONV = "ChannelConv"
 IM2COL_CONV = "ConvIm2col"
+MUL_ADD = "MulAdd"
 CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV, IM2COL_CONV)
 
 
@@ -106,6 +107,8 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
         return None
     if op in SAME_SHAPE:
         return list(x)
+    if op == MUL_ADD and None not in shapes[:3]:
+        return broadcast(broadcast(x, shapes[1])[0], shapes[2])[0]
     if op == "Transpose":
         return [x[p] for p in attribute(attrs, "perm")]
     if op == "Flatten":
