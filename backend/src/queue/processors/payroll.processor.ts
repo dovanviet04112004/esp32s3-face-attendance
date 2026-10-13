@@ -1,6 +1,6 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Worker } from "bullmq";
+import { UnrecoverableError, Worker } from "bullmq";
 import { createTransport, type Transporter } from "nodemailer";
 
 import type { Env } from "../../config/env.schema.js";
@@ -10,6 +10,20 @@ import { payslipMail } from "../../modules/payroll/mail-text.js";
 import { PayrollService } from "../../modules/payroll/payroll.service.js";
 import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
 import { JOB, QUEUE, type DeliverJob, type PayrollJob } from "../queues.js";
+
+const ERROR_CODE = /^[A-Z][A-Z0-9_]*$/;
+// The code the exception filter answers any failure without one with.
+const UNNAMED = "INTERNAL_ERROR";
+
+/** The code a failed run keeps: the api error code it stopped on, else the one for an unnamed failure (KEHOACH 9.6). */
+export function failureOf(error: Error): string {
+  return ERROR_CODE.test(error.message) ? error.message : UNNAMED;
+}
+
+/** A run's job is over once its attempts are spent or it failed in a way no retry changes. */
+export function spent(error: Error, attemptsMade: number, attempts: number): boolean {
+  return error instanceof UnrecoverableError || attemptsMade >= attempts;
+}
 
 @Injectable()
 export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
@@ -32,7 +46,12 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       async (job) => {
         const body = job.data as PayrollJob;
         if (body.type === JOB.run) {
-          await this.payroll.runNow(body.runId);
+          try {
+            await this.payroll.runNow(body.runId);
+          } catch (fell) {
+            // A retry reads the same data and meets the same business error (KEHOACH 9.9 rule 5).
+            throw fell instanceof HttpException ? new UnrecoverableError(failureOf(fell)) : fell;
+          }
           this.announceRun();
           return;
         }
@@ -43,10 +62,10 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
     this.worker.on("failed", (job, error) => {
       this.log.error(`payroll ${job?.id} failed: ${error.message}`);
       const body = job?.data as PayrollJob | undefined;
-      // Out of attempts, so the run says so rather than sitting on RUNNING.
-      if (body?.type === JOB.run && job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      // Out of attempts or not worth one, so the run says why rather than sitting on RUNNING.
+      if (body?.type === JOB.run && job !== undefined && spent(error, job.attemptsMade, job.opts.attempts ?? 1)) {
         void this.payroll
-          .failRun(body.runId)
+          .failRun(body.runId, failureOf(error))
           .then(() => this.announceRun())
           .catch(() => undefined);
       }

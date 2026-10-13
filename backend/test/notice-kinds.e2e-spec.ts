@@ -146,7 +146,7 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     assert.equal(factsOf(await toldOf()).failed, true, "a run that did not finish read as finished");
 
     const stray = await db.payrollRun.create({ data: { periodId: period.id, kind: "REGULAR" } });
-    await payroll.failRun(stray.id);
+    await payroll.failRun(stray.id, "INTERNAL_ERROR");
     assert.equal(
       await db.notification.count({ where: { kind: "PAYROLL_RUN_DONE", subjectId: stray.id } }),
       0,

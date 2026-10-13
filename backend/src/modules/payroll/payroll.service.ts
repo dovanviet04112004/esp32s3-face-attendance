@@ -554,7 +554,7 @@ export class PayrollService {
       }
       const moved = await tx.payrollRun.updateMany({
         where: { id: run.id, state: { not: "RUNNING" } },
-        data: { state: "RUNNING", startedAt: new Date(), finishedAt: null, doneCount: 0, failedCount: 0 },
+        data: { state: "RUNNING", startedAt: new Date(), finishedAt: null, doneCount: 0, failedCount: 0, failure: null },
       });
       return moved.count === 1;
     });
@@ -604,9 +604,12 @@ export class PayrollService {
     return ended;
   }
 
-  /** Close a run the worker gave up on as failed, and tell whoever pressed it. */
-  async failRun(runId: string): Promise<PayrollRun> {
-    const failed = await this.db.payrollRun.update({ where: { id: runId }, data: { state: "FAILED", finishedAt: new Date() } });
+  /** Close a run the worker gave up on as failed with the code that stopped it, and tell whoever pressed it. */
+  async failRun(runId: string, failure: string): Promise<PayrollRun> {
+    const failed = await this.db.payrollRun.update({
+      where: { id: runId },
+      data: { state: "FAILED", finishedAt: new Date(), failure },
+    });
     await this.tellEnded(failed);
     return failed;
   }
@@ -636,7 +639,7 @@ export class PayrollService {
     if (run.period.state !== "OPEN") {
       return this.db.payrollRun.update({
         where: { id: runId },
-        data: { state: "FAILED", finishedAt: new Date() },
+        data: { state: "FAILED", finishedAt: new Date(), failure: "PERIOD_NOT_OPEN" },
       });
     }
 
@@ -654,7 +657,7 @@ export class PayrollService {
 
     await this.db.payrollRun.update({
       where: { id: runId },
-      data: { state: "RUNNING", startedAt: new Date(), employeeCount: ids.length, doneCount: 0, failedCount: 0 },
+      data: { state: "RUNNING", startedAt: new Date(), employeeCount: ids.length, doneCount: 0, failedCount: 0, failure: null },
     });
     // A rerun of a draft recomputes rather than appends: one payslip per person
     // per run, whatever any earlier attempt left behind.

@@ -393,6 +393,13 @@ export class RunView {
   @ApiProperty({ example: 118, description: "Payslips it wrote so far" }) doneCount!: number;
   @ApiProperty({ example: 2, description: "People it could not pay, such as one without a pay record" })
   failedCount!: number;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "POLICY_MISSING",
+    description: "Error code a FAILED run stopped on, which the period page explains; null otherwise",
+  })
+  failure!: string | null;
   @ApiProperty({ example: "2580000000", description: "Whole dong as a decimal string" }) grossTotal!: string;
   @ApiProperty({ example: "2190000000", description: "Whole dong as a decimal string" }) netTotal!: string;
   @ApiProperty({

@@ -1085,6 +1085,7 @@ model PayrollRun {
   employeeCount Int           @default(0)
   doneCount     Int           @default(0)
   failedCount   Int           @default(0)
+  failure       String? // error code the run stopped on (KEHOACH 9.6)
   grossTotal    Decimal       @default(0) @db.Decimal(16, 0)
   netTotal      Decimal       @default(0) @db.Decimal(16, 0)
   createdById   String?
