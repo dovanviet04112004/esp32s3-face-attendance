@@ -432,6 +432,11 @@ be-prisma: ## Regenerate the Prisma client from backend/prisma/schema.prisma (to
 be-migrate: ## Create and apply a Prisma migration on the dev database
 	cd backend && npm run prisma:migrate
 
+be-schema-sql: ## Print the SQL Prisma writes for schema.prisma against its copy at REF (default HEAD); touches no database
+	@set -euo pipefail; from="$$(mktemp --suffix=.prisma)"; trap 'rm -f "$$from"' EXIT; \
+	git show "$(or $(REF),HEAD):backend/prisma/schema.prisma" > "$$from"; \
+	cd backend && npx prisma migrate diff --from-schema "$$from" --to-schema prisma/schema.prisma --script
+
 be-seed: ## Seed the database backend/.env names
 	cd backend && npm run prisma:seed
 
