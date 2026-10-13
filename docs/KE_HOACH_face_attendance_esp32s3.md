@@ -4798,7 +4798,7 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | Queue | Job | Ai đẩy vào | Vì sao không làm đồng bộ |
 |---|---|---|---|
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
-| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; mỗi lượt quét của §9.21.4 là một job lặp mang tên riêng theo lịch của nó (`contracts-ending`, `kiosk-alerts`, `documents-due`…); `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
+| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; mỗi lượt quét của §9.21.4 là một job lặp mang tên riêng theo lịch của nó (`contracts-ending`, `kiosk-alerts`, `documents-due`…); `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm; `notice-rescope`: xếp lại người nhận việc khi danh sách pháp nhân của một bàn giấy đổi (§9.4) | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
 | `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `payroll` | `run`: tính một lượt lương của kỳ; `deliver`: gửi một phiếu lương, `jobId` theo phiếu nên gửi lại không ra hai thư | `payroll/` khi chạy kỳ và khi gửi phiếu | Một kỳ ba mươi nghìn phiếu, tính và gửi đều không vừa trong một request (§9.9) |
@@ -7592,11 +7592,17 @@ làm được cho công ty con. Pháp nhân còn tài khoản phụ trách thì 
   giấy tờ, đọc phiếu nháp, duyệt hàng chờ của vai mình — chỉ là trên người thuộc các pháp nhân nó
   phụ trách. Nên phạm vi trả hai thứ tách nhau: vai ấy có quyền bàn giấy không, và tập pháp nhân
   nó chạm tới (`null` là toàn hệ). Gộp làm một danh sách người thì `HR` bị giới hạn mất quyền đọc
-  giấy tờ, còn `PAYROLL` bị giới hạn bỗng duyệt được đơn nghỉ.
+  giấy tờ, còn `PAYROLL` bị giới hạn bỗng duyệt được đơn nghỉ. Dòng của **chính** tài khoản (đơn,
+  công, phiếu lương, việc của mình) luôn trong tầm, kể cả khi hồ sơ của nó thuộc pháp nhân khác;
+  danh bạ, báo cáo và file xuất theo pháp nhân thì không tính nó vào.
 - **Ngoài phạm vi là không có.** Hồ sơ, đơn, phiếu, kỳ lương hay báo cáo của pháp nhân khác trả
   đúng mã không-tìm-thấy của loại ấy, như quản lý hỏi người ngoài cây; danh sách và số đếm chỉ đếm
   trong phạm vi. Ghi cũng vậy, kể cả **đích** của một lần chuyển: sửa hồ sơ, chuyển phòng ban,
   nhập Excel hay thao tác hàng loạt không đưa được ai sang pháp nhân mà tài khoản không phụ trách.
+- **Phiếu lương thuộc hai pháp nhân.** Phiếu là của pháp nhân phát nó (pháp nhân của kỳ) và của
+  pháp nhân người ấy đang thuộc. Người chuyển pháp nhân thì bàn giấy cũ vẫn thấy đủ phiếu của kỳ
+  mình phát — danh sách khớp tổng và file ngân hàng — còn bàn giấy mới thấy cả phiếu cũ, vì nó
+  quyết toán thuế cả năm và trả lời khiếu nại của người ấy.
 - **Danh mục chung chỉ đọc.** Loại phép, ca, chức danh, loại phụ cấp, mẫu nhận việc, loại hồ sơ
   giấy, văn bản phải ký, cùng ngày lễ và chính sách lương để trống pháp nhân là của cả nhóm công
   ty; sửa chúng là sửa cho mọi pháp nhân. Tài khoản bị giới hạn đọc được, ghi thì nhận
@@ -7605,7 +7611,9 @@ làm được cho công ty con. Pháp nhân còn tài khoản phụ trách thì 
   người trong phạm vi đang giữ và tài sản còn trong kho, để còn cấp phát.
 - **Đổi phạm vi là đổi vé.** Vé access mang danh sách (`ent`), nên đổi danh sách đóng mọi phiên
   của tài khoản ấy như đổi vai (§9.23), cắt luôn ổ cắm realtime, và xếp lại người nhận của mọi
-  việc chung đang mở (§9.21.4).
+  việc chung đang mở về những người vừa vào hay vừa ra khỏi phạm vi (§9.21.4). Một lần đổi từ toàn
+  hệ xuống một pháp nhân chạm cả nghìn việc, nên việc xếp lại là job `notice-rescope` trên hàng
+  `notify`, không chạy trong request; job hỏng hẳn thì lượt đối soát mỗi giờ xếp lại thay.
 
 Phạm vi ấy đi tới **mọi** đường đọc của bàn giấy, không riêng REST: hộp chờ duyệt và chuông —
 hàng chờ của bàn giấy, nhắc hạn hợp đồng và thử việc, việc nhận việc chỉ tới tài khoản phụ trách
