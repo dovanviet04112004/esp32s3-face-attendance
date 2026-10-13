@@ -1220,3 +1220,31 @@ với riêng bản vá giữ nguyên số nguyên (từ 335,5).
 
 Tái lập: `make quant-timing BRANCH=antispoof`, rồi `make ai-unit` với `ROW=timing` và nấc cuối của spoof và recog;
 `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.19 Bộ chọn của thang lượng tử hoá trên kiosk — đo 14/10 (E9-T35, E9-T36, E9-T38)
+
+Cùng kiosk, cùng app dò, firmware của §14.18. Thang bốn bậc chạy trên đồ thị cuối cho cả ba nhánh
+(`<nhánh>/quant_ladder.md`, ADR-0006); mọi hàng dưới đây qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng
+bit trên khung thật. Bộ nhớ là bảng của `make ai-profile` trên log dò của chính hàng, tức trong app dò, nơi model
+dựng không có `ExternalMallocGuard` của `espdl_model.cpp`.
+
+| Nhánh | Hàng | Vai | Một khung, mean / đỉnh | RAM nội | PSRAM | flash |
+|---|---|---|---:|---:|---:|---:|
+| detect | **`mse+clip_as_relu`** | chọn | **31,58** / 36,13 ms | 23,2 KB | 324,0 KB | 192,9 KB |
+| detect | `mse` | ứng viên | 31,81 / 36,36 ms | | | |
+| detect | `int16_top1` | ứng viên | 34,17 / 38,66 ms | | | |
+| detect | `qat` | bậc 4 | 31,81 / 36,35 ms | | | |
+| spoof | **`int16_top1`** | chọn | **72,63** / 74,74 ms | 38,5 KB | 1.067,8 KB | 577,1 KB |
+| spoof | `int16_top2` | ứng viên | 79,64 / 81,81 ms | | | |
+| spoof | `qat` | bậc 4 | 72,57 / 74,68 ms | | | |
+| recog | **`qat`** | chọn | **245,09** / 247,79 ms | 47,4 KB | 2.057,1 KB | 1.345,8 KB |
+| recog | `qat+fused_prelu` | ứng viên | 218,87 / 221,88 ms | | | |
+
+Một khuôn mặt qua cả ba nhánh của bộ chọn: **349,3 ms**. Bảng §14.18 đo được 251,6 ms ở các nấc làm tròn cuối; spoof
+và recog không đạt được con số ấy vì hàng gộp PReLU của chúng trượt cửa chất lượng (ADR-0006). PSRAM của ba model là
+3.449 KB, hơn bộ 24/09 (3.281 KB, §13.6) 168 KB: hàng spoof và recog không gộp PReLU nên giữ thêm tensor trung gian,
+và lớp int16 của spoof mang tensor 16 bit. Đáy RAM nội và PSRAM của kiosk với bộ này phải đo lại trên firmware kiosk,
+theo cổng của E9-T31.
+
+Tái lập: mỗi nhánh `make quant-ptq`, `quant-int16`, `quant-qat ALLOW_TRAIN=1`, `quant-variants`, rồi `make ai-unit`
+với `ROW=` của hàng và `make quant-choose`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log` của hàng.
