@@ -1350,6 +1350,7 @@
     "slipsOf": "Payslips · {name}",
     "runProgress": "Worked out",
     "runFailedCount": "Failed payslips",
+    "openPolicy": "Open pay policy",
     "unsaved": "Not saved",
     "bonusInRun": "{count, plural, one {# amount} other {# amounts}} loaded",
     "bonusAmountHint": "People added get this; change it per row.",

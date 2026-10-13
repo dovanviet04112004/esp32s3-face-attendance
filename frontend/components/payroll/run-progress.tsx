@@ -1,10 +1,12 @@
 "use client";
 
-import { LayerCard, Meter } from "@cloudflare/kumo";
+import { Banner, LayerCard, LinkButton, Meter } from "@cloudflare/kumo";
+import { ScalesIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { useCodeWords } from "@/lib/fault";
 import { money } from "@/lib/format";
 
 type RunState = "DRAFT" | "RUNNING" | "DONE" | "FAILED" | "DISCARDED";
@@ -18,6 +20,7 @@ export interface PayrollRun {
   employeeCount: number;
   doneCount: number;
   failedCount: number;
+  failure: string | null;
   grossTotal: string;
   netTotal: string;
 }
@@ -48,6 +51,7 @@ export function RunProgress({ run, action, children }: { run: PayrollRun; action
   const t = useTranslations("payroll");
   const format = useFormatter();
   const locale = useLocale();
+  const say = useCodeWords();
   const kindName = t(`run${run.kind}`);
   const share = run.employeeCount === 0 ? 0 : run.doneCount / run.employeeCount;
 
@@ -62,6 +66,21 @@ export function RunProgress({ run, action, children }: { run: PayrollRun; action
         {action}
       </LayerCard.Secondary>
       <LayerCard.Primary className="flex flex-col gap-4">
+        {run.state === "FAILED" && run.failure ? (
+          <Banner
+            variant="error"
+            size="sm"
+            icon={<WarningCircleIcon weight="fill" />}
+            title={say(run.failure)}
+            action={
+              run.failure === "POLICY_MISSING" ? (
+                <LinkButton href="/policy" variant="secondary" size="sm" icon={ScalesIcon}>
+                  {t("openPolicy")}
+                </LinkButton>
+              ) : undefined
+            }
+          />
+        ) : null}
         <Meter
           label={t("runProgress")}
           value={Math.round(share * 100)}

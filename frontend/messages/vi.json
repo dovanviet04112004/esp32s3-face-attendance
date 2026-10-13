@@ -1350,6 +1350,7 @@
     "slipsOf": "Phiếu lương · {name}",
     "runProgress": "Đã tính",
     "runFailedCount": "Phiếu lỗi",
+    "openPolicy": "Mở chính sách lương",
     "unsaved": "Chưa lưu",
     "bonusInRun": "Đã nạp {count, number} khoản",
     "bonusAmountHint": "Người thêm vào nhận số này; sửa riêng ở từng dòng.",

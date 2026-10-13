@@ -20,12 +20,14 @@ export function faultCode(fell: unknown): string {
   return Array.isArray(held) ? (held[0] ?? "") : (held ?? "");
 }
 
-/** The one place an api code becomes a sentence (CLAUDE.md 3.1 rule 2). */
-export function useFault(): (fell: unknown) => string {
+/** The one place an api code becomes a sentence, answered now or kept on a row (CLAUDE.md 3.1 rule 2). */
+export function useCodeWords(): (code: string) => string {
   const t = useTranslations("errors");
   const common = useTranslations("common");
-  return (fell) => {
-    const code = faultCode(fell);
-    return t.has(code as ErrorCode) ? t(code as ErrorCode) : common("failed");
-  };
+  return (code) => (t.has(code as ErrorCode) ? t(code as ErrorCode) : common("failed"));
+}
+
+export function useFault(): (fell: unknown) => string {
+  const words = useCodeWords();
+  return (fell) => words(faultCode(fell));
 }
