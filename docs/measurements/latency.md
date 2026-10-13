@@ -986,3 +986,29 @@ trúng: `timing` 44,03 ms. Một khuôn mặt với riêng bản vá giữ nguy�
 
 Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
 `ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.10 Tích chập chiếu gộp vào dải — đo 13/10 (E9-T42)
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` nuốt thêm tích chập 1×1 chiếu sau depthwise (KẾ HOẠCH §3.7):
+depthwise ghi dải ra vào vùng đệm thứ hai, tích chập chiếu đọc từ đó. Mọi hàng dưới đây qua `model->test()` ở đồ
+thị và 4 bản cắt, và khớp từng bit trên khung thật.
+
+| Hàng | Phần chiếu gộp | Một khung, mean / đỉnh | Trước (§14.8–14.9) |
+|---|---:|---:|---:|
+| recog nấc cuối | 5 (`conv_23`, 4 khối `conv_3`) | **191,96** / 195,43 ms | 195,92 ms |
+| spoof nấc cuối, gộp cả 12 khối vừa ngân sách trọng số | 12 | 44,83 / 48,37 ms | 44,53 ms |
+| spoof nấc cuối, luật cuối | 0 | 44,56 / 47,83 ms | 44,53 ms |
+| detect `timing`, dựng lại | 0 | 47,23 / 49,47 ms | 47,37 ms |
+
+Ở recog, mỗi khối `conv_3` 28×28 từ 10,6 ms (cặp 6,7 + chiếu 3,9) xuống 9,3 ms; `conv_23` gần như không đổi
+(22,9 → 22,7 ms), vì tích chập mở rộng 56×56 chiếm gần hết giờ của nó. Recog nhanh hơn 3,96 ms (−2,0%); RAM nội
+38,5 KB (từ 39,7), PSRAM 1.687,3 KB (thêm 6,6 KB cho vùng đệm thứ hai), flash 1.325,2 KB.
+
+**Ở spoof, gộp phần chiếu chậm hơn.** Tensor ra depthwise của spoof chỉ 1–45 KB, vừa cache 64 KB, nên tích chập
+chiếu đứng riêng đã đọc nó từ cache; gộp chỉ thêm một lần gọi nhân mỗi dải. Luật cuối chỉ gộp khi tensor ấy lớn
+hơn cache, nên spoof giữ đồ thị của §14.8. Một khuôn mặt qua cả ba nhánh ở nấc làm tròn cuối: **281,2 ms** (từ
+285,2; từ 444,8 lúc đầu, −36,8%); với riêng bản vá giữ nguyên số nguyên: **359,8 ms**.
+
+Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với hàng ở bảng;
+`make ai-profile LOG=… ESPDL=…` trên `models_0.log`. Hàng spoof gộp cả 12 khối cần bỏ điều kiện kích thước tensor
+trong `esp_ppq_patches.projection_of`.
