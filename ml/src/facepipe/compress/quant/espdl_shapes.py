@@ -17,6 +17,7 @@ ELEMENTWISE = {"Add", "Sub", "Mul", "Div", "Pow"}
 SAME_SHAPE = {
     "Relu", "PRelu", "Gelu", "Tanh", "Sigmoid", "Swish", "Sqrt", "Clip", "LUT", "Softmax",
     "LayerNormalization", "QuantizeLinear", "DequantizeLinear", "RequantizeLinear", "Identity",
+    "ChannelConv",
 }  # fmt: skip
 REDUCE = {"ReduceMean", "ReduceSum", "ReduceMax", "ReduceMin"}
 SHAPE_PARAMS_MAX = 8  # longer values are weights, never shapes or axes
@@ -42,6 +43,7 @@ class Info:
 # Conv run as slices of its outputs (KEHOACH 3.7).
 FUSED_PRELU = "ConvPRelu"
 SLICED_CONV = "ConvSlices"
+CHANNEL_CONV = "ChannelConv"
 CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV)
 
 

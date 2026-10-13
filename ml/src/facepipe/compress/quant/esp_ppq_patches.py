@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator, Sequence
 import torch
 
 from .espdl_profile import CHANNEL_STEP, chip
-from .espdl_shapes import FUSED_PRELU, SLICED_CONV
+from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, SLICED_CONV
 
 
 def laid_shape(var, info) -> list[int]:
@@ -126,6 +126,100 @@ def cache_sized_convolutions() -> Iterator[None]:
     finally:
         espdl_exporter.reset_graph_layout = reset
         espdl_exporter.EspdlExporter.export_graph = write
+
+
+def lone_reader(var):
+    """The one op reading var, None when there are more or none."""
+    return var.dest_ops[0] if len(var.dest_ops) == 1 else None
+
+
+def eca_chain(graph, conv) -> list | None:
+    """The ECA chain around conv, a 1-D Conv over channels: Squeeze, Transpose, conv, Transpose and
+    Unsqueeze between two 1x1 maps, each tensor between them read once; None for any other Conv.
+    """
+    weight = conv.inputs[1] if len(conv.inputs) == 2 else None
+    if conv.type != "Conv" or weight is None or not weight.is_parameter:
+        return None
+    if list(weight.value.shape[:2]) != [1, 1] or weight.value.dim() != 3:
+        return None
+    if conv.attributes.get("strides", [1]) != [1] or conv.attributes.get("dilations", [1]) != [1]:
+        return None
+    first = conv.inputs[0].source_op
+    squeeze = first.inputs[0].source_op if first is not None else None
+    second = lone_reader(conv.outputs[0])
+    unsqueeze = lone_reader(second.outputs[0]) if second is not None else None
+    chain = [squeeze, first, conv, second, unsqueeze]
+    if [op.type if op is not None else None for op in chain] != [
+        "Squeeze", "Transpose", "Conv", "Transpose", "Unsqueeze",
+    ]:  # fmt: skip
+        return None
+    inner = [op.outputs[0] for op in chain[:-1]]
+    if any(lone_reader(var) is None or var.name in graph.outputs for var in inner):
+        return None
+    x, y = squeeze.inputs[0], unsqueeze.outputs[0]
+    if len(x.shape) != 4 or x.shape[2:] != [1, 1] or y.shape != x.shape:
+        return None
+    return chain
+
+
+def channel_conv_from(graph, conv) -> bool:
+    """conv's ECA chain replaced by one ChannelConv op on the same weight and grids."""
+    from esp_ppq.core import OperationQuantizationConfig
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    chain = eca_chain(graph, conv)
+    if chain is None:
+        return False
+    squeeze, unsqueeze = chain[0], chain[-1]
+    x, y, weight = squeeze.inputs[0], unsqueeze.outputs[0], conv.inputs[1]
+    config = OperationQuantizationConfig(
+        [squeeze.input_quant_config[0], conv.input_quant_config[1]], [conv.output_quant_config[0]]
+    )
+    attributes = {key: list(conv.attributes[key]) for key in ("kernel_shape", "pads")}
+    conv.inputs.remove(weight)
+    weight.dest_ops.remove(conv)
+    inner = [op.outputs[0] for op in chain[:-1]]
+    for op in chain:
+        graph.remove_operation(op)
+    for var in inner:
+        graph.remove_variable(var)
+    op = QuantableOperation(
+        graph.create_operation(op_type=CHANNEL_CONV, attributes=attributes), config, conv.platform
+    )
+    graph.operations[op.name] = op
+    for var in (x, weight):
+        op.inputs.append(var)
+        var.dest_ops.append(op)
+    op.outputs.append(y)
+    y.source_op = op
+    return True
+
+
+@contextlib.contextmanager
+def channel_conv() -> Iterator[None]:
+    """Each ECA chain exported as one ChannelConv, laid out like a passive op (KEHOACH 3.7).
+
+    The chain runs a 1-D convolution over C values; as a 1x1xC map it has one byte order in either
+    layout, so the export needs none of the four Transposes and Squeezes around it.
+    """
+    from esp_ppq.parser import espdl_exporter
+    from esp_ppq.parser.espdl.espdl_typedef import PASSIVE_LAYOUT_OP_SET
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+
+    def rewriting(self, graph, *args, **kwargs):
+        for op in list(graph.topological_sort()):
+            if op.name in graph.operations:
+                channel_conv_from(graph, op)
+        return prepare(self, graph, *args, **kwargs)
+
+    PASSIVE_LAYOUT_OP_SET.add(CHANNEL_CONV)
+    espdl_exporter.EspdlExporter.prepare_graph = rewriting
+    try:
+        yield
+    finally:
+        PASSIVE_LAYOUT_OP_SET.discard(CHANNEL_CONV)
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
 
 
 ZERO_KEEPING = frozenset({"PRelu", "Relu", "LeakyRelu", "Clip"})
@@ -492,6 +586,7 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "cache_sized_convolutions": cache_sized_convolutions,
     "fused_prelu": fused_prelu,
     "padded_channels": padded_channels,
+    "channel_conv": channel_conv,
     "clip_as_relu": clip_as_relu,
     "prelu_on_input_grid": contextlib.nullcontext,
 }

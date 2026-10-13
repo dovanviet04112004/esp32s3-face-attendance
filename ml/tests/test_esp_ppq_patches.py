@@ -411,6 +411,65 @@ def test_a_patch_stacked_before_the_one_it_needs_is_refused(monkeypatch) -> None
         ptq_espdl.block("recognition")
 
 
-def test_ai_engine_registers_the_fused_module() -> None:
+class EcaGate(nn.Module):
+    """A convolution gated by ECA as MobileFaceNet-ECA has it: pooled, convolved across channels."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv2d(3, 16, 3, padding=1)
+        self.eca = nn.Conv1d(1, 1, 3, padding=1, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.conv(x)
+        w = nn.functional.adaptive_avg_pool2d(y, 1)
+        w = self.eca(w.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
+        return y * torch.sigmoid(w)
+
+
+def channel_conv_reference(x: np.ndarray, w: np.ndarray, shift: int, pad: int) -> np.ndarray:
+    """ChannelConv's integers: a zero-padded correlation along the channels, rounded half up."""
+    padded = np.concatenate([np.zeros(pad, np.int64), x.astype(np.int64), np.zeros(pad, np.int64)])
+    acc = np.array([padded[c : c + len(w)] @ w.astype(np.int64) for c in range(len(x))])
+    rounded = (acc + (1 << (shift - 1))) >> shift if shift > 0 else acc << -shift
+    return np.clip(rounded, -128, 127)
+
+
+def test_channel_conv_replaces_the_eca_chain_with_its_own_integers(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    from esp_ppq.executor import TorchExecutor
+    from esp_ppq.quantization.qfunction.linear import PPQLinearQuant_toInt
+
+    torch.manual_seed(17)
+    calib = [torch.rand(1, 3, 8, 8) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("recognition")
+    graph = quantise_ladder_net(EcaGate().eval(), tmp_path, calib, rungs, ("out",))
+    conv = next(op for op in graph.operations.values() if esp_ppq_patches.eca_chain(graph, op))
+    pooled, out = conv.inputs[0].source_op.inputs[0].source_op.inputs[0], conv.outputs[0]
+    executor = TorchExecutor(graph, device="cpu")
+    for sample in calib:
+        x, y = executor.forward(sample, output_names=[pooled.name, out.name])
+        steps = [float(c.scale) for c in (conv.input_quant_config[0], conv.output_quant_config[0])]
+        w_config = conv.input_quant_config[1]
+        w = PPQLinearQuant_toInt(conv.inputs[1].value, w_config).flatten().numpy()
+        shift = round(math.log2(steps[1] / steps[0] / float(w_config.scale)))
+        x_int = torch.round(x / steps[0]).flatten().numpy()
+        want = channel_conv_reference(x_int, w, shift, conv.attributes["pads"][0])
+        assert np.array_equal(torch.round(y / steps[1]).flatten().numpy(), want)
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
+    with esp_ppq_patches.applied(["channel_conv"]):
+        joined = espdl_graph(export_espdl.export(graph, tmp_path / "joined.espdl", test_input))
+    gone = {"Squeeze", "Unsqueeze", "Transpose"}
+    assert gone <= {op for op, _, _ in plain[0].values()}
+    assert not gone & {op for op, _, _ in joined[0].values()}
+    ((_op, inputs, _),) = [n for n in joined[0].values() if n[0] == espdl_shapes.CHANNEL_CONV]
+    weight = plain[0][conv.name][1][1]
+    assert inputs[1] == weight and joined[2][weight] == plain[2][weight]
+    assert np.array_equal(joined[1][weight].reshape(-1), plain[1][weight].reshape(-1))
+
+
+def test_ai_engine_registers_every_module_the_patches_export() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
-    assert espdl_shapes.FUSED_PRELU in espdl_op_check.own_modules(core)
+    found = espdl_op_check.own_modules(core)
+    assert {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV} <= found
