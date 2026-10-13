@@ -1,5 +1,5 @@
-import { ConflictException, Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { ConflictException, ForbiddenException, Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service.js";
 import { CACHE, SCOPE_PREFIX } from "../cache/cache-keys.js";
@@ -38,6 +38,14 @@ export class ScopeService {
       return null;
     }
     return viewer.employeeId === null ? [] : [viewer.employeeId];
+  }
+
+  async peopleOf(entityIds: string[], own: number | null): Promise<number[]> {
+    const rows = await this.db.employee.findMany({
+      where: { OR: [{ legalEntityId: { in: entityIds } }, ...(own === null ? [] : [{ id: own }])] },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
   }
 
   /** A manager and everyone under them, however deep. */
@@ -89,4 +97,66 @@ export class ScopeService {
   static sees(visible: number[] | null, employeeId: number): boolean {
     return visible === null || visible.includes(employeeId);
   }
+
+  /** The people a viewer reaches, as a filter on Employee: its list, its desk's entities, or everyone. */
+  static peopleWhere(viewer: Viewer, visible: number[] | null): Prisma.EmployeeWhereInput {
+    if (visible !== null) {
+      return { id: { in: visible } };
+    }
+    return viewer.entityIds === null ? {} : { legalEntityId: { in: viewer.entityIds } };
+  }
+
+  /** Rows owned by the people a viewer reaches; a limited desk keeps its own rows too (KEHOACH 9.4). */
+  static ownedWhere(viewer: Viewer, visible: number[] | null): OwnedWhere {
+    if (visible !== null) {
+      return { employeeId: { in: visible } };
+    }
+    if (viewer.entityIds === null) {
+      return {};
+    }
+    const ofEntities = { legalEntityId: { in: viewer.entityIds } };
+    return { employee: viewer.employeeId === null ? ofEntities : { OR: [ofEntities, { id: viewer.employeeId }] } };
+  }
+
+  static peopleSql(viewer: Viewer, visible: number[] | null, id: Prisma.Sql, entity: Prisma.Sql): Prisma.Sql {
+    if (visible !== null) {
+      return Prisma.sql`${id} = ANY(${visible}::int[])`;
+    }
+    return viewer.entityIds === null ? Prisma.sql`TRUE` : Prisma.sql`${entity} = ANY(${viewer.entityIds}::text[])`;
+  }
+
+  /** Whether a viewer who sees `visible` reaches this employee, a limited desk by the employee's entity. */
+  async reaches(viewer: Viewer, visible: number[] | null, employeeId: number): Promise<boolean> {
+    if (visible !== null) {
+      return visible.includes(employeeId);
+    }
+    if (viewer.entityIds === null || employeeId === viewer.employeeId) {
+      return true;
+    }
+    const person = await this.db.employee.findUnique({ where: { id: employeeId }, select: { legalEntityId: true } });
+    return person !== null && viewer.entityIds.includes(person.legalEntityId);
+  }
+
+  /** Whether a viewer reaches a row of this entity; a row with none belongs to the whole group and is read by all. */
+  static reachesEntity(viewer: Viewer, entityId: string | null): boolean {
+    return viewer.entityIds === null || entityId === null || viewer.entityIds.includes(entityId);
+  }
+
+  /** Rows that carry an entity, narrowed for a limited desk; group-wide rows stay in when asked for. */
+  static entityWhere(viewer: Viewer, groupRows: boolean): { legalEntityId?: { in: string[] } } | object {
+    if (viewer.entityIds === null) {
+      return {};
+    }
+    const own = { legalEntityId: { in: viewer.entityIds } };
+    return groupRows ? { OR: [own, { legalEntityId: null }] } : own;
+  }
+
+  /** Refuse a write to a group-wide row from a desk held to some entities (KEHOACH 9.4). */
+  static mustWriteGroup(viewer: Viewer): void {
+    if (viewer.entityIds !== null) {
+      throw new ForbiddenException("GROUP_WIDE_ONLY");
+    }
+  }
 }
+
+export type OwnedWhere = { employeeId?: { in: number[] }; employee?: Prisma.EmployeeWhereInput };

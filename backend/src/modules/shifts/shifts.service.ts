@@ -142,7 +142,7 @@ export class ShiftsService {
       return viewer.employeeId;
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, asked)) {
+    if (!(await this.scope.reaches(viewer, visible, asked))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return asked;
@@ -193,12 +193,13 @@ export class ShiftsService {
   }
 
   /** Newest first, paged on (validFrom, id) so a busy shift still pages (KEHOACH 9.9 rule 3). */
-  async assignments(id: string, query: ListAssignmentsDto): Promise<Page<RosteredAssignment>> {
+  async assignments(viewer: Viewer, id: string, query: ListAssignmentsDto): Promise<Page<RosteredAssignment>> {
     await this.get(id);
+    const visible = await this.scope.visibleEmployeeIds(viewer);
     const term = query.search?.trim();
     const where: Prisma.ShiftAssignmentWhereInput = {
       shiftId: id,
-      ...(term ? { employeeId: await namedFilter(this.db, term) } : {}),
+      AND: [ScopeService.ownedWhere(viewer, visible), term ? { employeeId: await namedFilter(this.db, term) } : {}],
     };
     const [rows, found] = await Promise.all([
       this.db.shiftAssignment.findMany({
@@ -214,8 +215,9 @@ export class ShiftsService {
   }
 
   /** Every shift one person has been put on, the latest start first (KEHOACH 9.15). */
-  async heldBy(employeeId: number): Promise<HeldShift[]> {
-    if ((await this.db.employee.count({ where: { id: employeeId } })) === 0) {
+  async heldBy(viewer: Viewer, employeeId: number): Promise<HeldShift[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if ((await this.db.employee.count({ where: { AND: [{ id: employeeId }, ScopeService.peopleWhere(viewer, visible)] } })) === 0) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.db.shiftAssignment.findMany({
@@ -272,8 +274,12 @@ export class ShiftsService {
     return { applied: true, assigned: done.length, rows: done, skipped: [...skipped, ...raced] };
   }
 
-  async assign(id: string, body: AssignShiftDto): Promise<ShiftAssignment> {
+  async assign(viewer: Viewer, id: string, body: AssignShiftDto): Promise<ShiftAssignment> {
     await this.get(id);
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (!(await this.scope.reaches(viewer, visible, body.employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     let made: ShiftAssignment;
     try {
       made = await this.db.shiftAssignment.create({
@@ -297,9 +303,10 @@ export class ShiftsService {
     return made;
   }
 
-  async unassign(id: string, assignmentId: string): Promise<void> {
+  async unassign(viewer: Viewer, id: string, assignmentId: string): Promise<void> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
     const found = await this.db.shiftAssignment.findFirst({
-      where: { id: assignmentId, shiftId: id },
+      where: { id: assignmentId, shiftId: id, ...ScopeService.ownedWhere(viewer, visible) },
     });
     if (!found) {
       throw new NotFoundException("ASSIGNMENT_NOT_FOUND");

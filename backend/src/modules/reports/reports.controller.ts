@@ -13,6 +13,7 @@ import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { CursorPageDto, type Page } from "../../common/dto/pagination.dto.js";
 import { JOB } from "../../queue/queues.js";
@@ -55,22 +56,25 @@ export class ReportsController {
 
   @Get("attention")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @ApiOperation({ summary: "What needs a decision today (KEHOACH 9.18)" })
   @ApiOkResponse({ type: AttentionView })
-  attention(): Promise<Attention> {
-    return this.reports.attention();
+  attention(@CurrentViewer() viewer: Viewer): Promise<Attention> {
+    return this.reports.attention(viewer);
   }
 
   @Get("attention/exceptions")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @ApiOperation({ summary: "Today's late, missing and still-in punches in full, a page at a time by code" })
   @ApiOkResponse({ type: ExceptionPage })
-  exceptions(@Query() query: CursorPageDto): Promise<Page<Exception>> {
-    return this.reports.exceptionsPage(query.cursor, query.take);
+  exceptions(@CurrentViewer() viewer: Viewer, @Query() query: CursorPageDto): Promise<Page<Exception>> {
+    return this.reports.exceptionsPage(viewer, query.cursor, query.take);
   }
 
   @Get("today")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("person")
   @ApiOperation({ summary: "Today's expected, present, late, absent and on-leave counts in the viewer's reach" })
   @ApiOkResponse({ type: TodayCountsView })
   today(@CurrentViewer() viewer: Viewer): Promise<TodayCounts> {
@@ -79,6 +83,7 @@ export class ReportsController {
 
   @Get("team-today")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("person")
   @ApiOperation({ summary: "Who in the viewer's reach is absent, on leave or not punched yet" })
   @ApiOkResponse({ type: TeamTodayView })
   teamToday(@CurrentViewer() viewer: Viewer): Promise<TeamToday> {
@@ -87,6 +92,7 @@ export class ReportsController {
 
   @Get("team-today/:bucket")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("person")
   @ApiOperation({ summary: "One of today's buckets in full, a page at a time by code" })
   @ApiOkResponse({ type: PersonRefPage })
   teamBucket(
@@ -100,6 +106,7 @@ export class ReportsController {
   @Get("d02-lt")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOkResponse({ description: "CSV with a byte order mark, columns in form order", schema: { type: "string" } })
@@ -110,10 +117,12 @@ export class ReportsController {
 
   @Get("insurance-changes")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Who started, who stopped, whose base moved" })
   @ApiOkResponse({ type: InsuranceChangesView })
-  insuranceChanges(@Query() query: InsuranceRangeDto): Promise<InsuranceChanges> {
+  insuranceChanges(@CurrentViewer() viewer: Viewer, @Query() query: InsuranceRangeDto): Promise<InsuranceChanges> {
     return this.reports.insuranceChanges(
+      viewer,
       query.legalEntityId,
       new Date(query.from),
       new Date(query.to),
@@ -122,6 +131,7 @@ export class ReportsController {
 
   @Get("attendance")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("person")
   @ApiOperation({ summary: "Punches per employee in a range; a finished range is served from cache" })
   @ApiOkResponse({ type: AttendanceTallyPage })
   summary(
@@ -133,6 +143,7 @@ export class ReportsController {
 
   @Get("attendance/totals")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("person")
   @ApiOperation({ summary: "The roll-up summed over everybody the range and the filters reach" })
   @ApiOkResponse({ type: TallyTotalsView })
   tallyTotals(@CurrentViewer() viewer: Viewer, @Query() range: TallyRangeDto): Promise<TallyTotals> {
@@ -142,6 +153,7 @@ export class ReportsController {
   @Post("attendance/monthly")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Queue a long roll-up; asking while one waits queues nothing more" })
   @ApiCreatedResponse({ type: ReportQueued })
   async schedule(@Body() range: RangeDto): Promise<{ jobId: string }> {

@@ -142,8 +142,8 @@ function anyOf(parts: (Prisma.Sql | null)[]): Prisma.Sql {
   return kept.length === 0 ? Prisma.sql`FALSE` : Prisma.sql`(${Prisma.join(kept, " OR ")})`;
 }
 
-function among(column: Prisma.Sql, ids: number[] | null): Prisma.Sql {
-  return ids === null ? Prisma.sql`TRUE` : Prisma.sql`${column} = ANY(${ids}::int[])`;
+function inEntities(viewer: Viewer, column: Prisma.Sql): Prisma.Sql {
+  return viewer.entityIds === null ? Prisma.sql`TRUE` : Prisma.sql`${column} = ANY(${viewer.entityIds}::text[])`;
 }
 
 function sender(term: string): { has: Prisma.Sql; leads: Prisma.Sql } {
@@ -153,14 +153,19 @@ function sender(term: string): { has: Prisma.Sql; leads: Prisma.Sql } {
   };
 }
 
-/** The viewer's own rows, and the others waiting in a desk queue the viewer decides (KEHOACH 9.4). */
+/** The viewer's own rows, and the others of its entities waiting in a desk queue it decides (KEHOACH 9.4). */
 function ownOrDesk(viewer: Viewer, desks: Desk[]): Prisma.Sql | null {
   const me = viewer.employeeId;
+  const reached = inEntities(viewer, Prisma.sql`e."legalEntityId"`);
   const parts = [
     me === null ? null : Prisma.sql`x."employeeId" = ${me}`,
     ...desks
       .filter((desk) => desk.roles.includes(viewer.role))
-      .map((desk) => (me === null ? desk.waiting : Prisma.sql`(${desk.waiting} AND x."employeeId" <> ${me})`)),
+      .map((desk) =>
+        me === null
+          ? Prisma.sql`(${desk.waiting} AND ${reached})`
+          : Prisma.sql`(${desk.waiting} AND ${reached} AND x."employeeId" <> ${me})`,
+      ),
   ];
   return parts.some((part) => part !== null) ? anyOf(parts) : null;
 }
@@ -247,7 +252,7 @@ export class SearchService {
     const ids = await this.ranked<number>(Prisma.sql`
       SELECT e."id", (CASE WHEN ${by.leads} THEN 0 ELSE 1 END) AS "rank"
         FROM "Employee" e
-       WHERE ${by.has} AND ${among(Prisma.sql`e."id"`, visible)}
+       WHERE ${by.has} AND ${ScopeService.peopleSql(viewer, visible, Prisma.sql`e."id"`, Prisma.sql`e."legalEntityId"`)}
        ORDER BY "rank", e."createdAt" DESC, e."id" DESC`);
     const rows = await this.db.employee.findMany({
       where: { id: { in: ids } },
@@ -275,7 +280,7 @@ export class SearchService {
     const ids = await this.ranked<string>(Prisma.sql`
       SELECT d."id", (CASE WHEN ${foldedLeads(name, term)} OR ${codeLeads(code, term)} THEN 0 ELSE 1 END) AS "rank"
         FROM "Department" d
-       WHERE d."active" AND (${foldedHas(name, term)} OR ${codeHas(code, term)})
+       WHERE d."active" AND ${inEntities(viewer, Prisma.sql`d."legalEntityId"`)} AND (${foldedHas(name, term)} OR ${codeHas(code, term)})
        ORDER BY "rank", d."createdAt" DESC, d."id" DESC`);
     const rows = await this.db.department.findMany({
       where: { id: { in: ids } },
@@ -299,7 +304,9 @@ export class SearchService {
     if (!ledger && viewer.employeeId === null) {
       return NONE;
     }
-    const scope = ledger ? among(Prisma.sql`r."employeeId"`, visible) : Prisma.sql`r."employeeId" = ${viewer.employeeId}`;
+    const scope = ledger
+      ? ScopeService.peopleSql(viewer, visible, Prisma.sql`r."employeeId"`, Prisma.sql`e."legalEntityId"`)
+      : Prisma.sql`r."employeeId" = ${viewer.employeeId}`;
     const kinds = kindsSaid(REQUEST_WORDS, term);
     const date = dayOf(term, this.thisYear());
     const reason = Prisma.sql`r."reason"`;
@@ -490,7 +497,15 @@ export class SearchService {
     if (!desk && viewer.employeeId === null) {
       return NONE;
     }
-    const scope = desk ? Prisma.sql`TRUE` : Prisma.sql`x."employeeId" = ${viewer.employeeId}`;
+    const me = viewer.employeeId;
+    // A slip belongs to its person's entity and to its period's (KEHOACH 9.4).
+    const scope = desk
+      ? anyOf([
+          me === null ? null : Prisma.sql`x."employeeId" = ${me}`,
+          inEntities(viewer, Prisma.sql`e."legalEntityId"`),
+          inEntities(viewer, Prisma.sql`p."legalEntityId"`),
+        ])
+      : Prisma.sql`x."employeeId" = ${me}`;
     const month = monthOf(term);
     const dated = month ? Prisma.sql`(p."year" = ${month.year} AND p."month" = ${month.month})` : null;
     const by = sender(term);
@@ -514,7 +529,9 @@ export class SearchService {
     });
     // Only a month has a list page: a period's own, when the month has one period.
     const months =
-      desk && month && ids.length > kPerKind ? await this.db.payrollPeriod.findMany({ where: month, select: { id: true }, take: 2 }) : [];
+      desk && month && ids.length > kPerKind
+        ? await this.db.payrollPeriod.findMany({ where: { ...month, ...ScopeService.entityWhere(viewer, false) }, select: { id: true }, take: 2 })
+        : [];
     return {
       hits: inOrder(ids, rows).map((row) => ({
         kind: "payslip",
@@ -536,7 +553,7 @@ export class SearchService {
       return NONE;
     }
     const rows = await this.db.payrollPeriod.findMany({
-      where: month,
+      where: { ...month, ...ScopeService.entityWhere(viewer, false) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: kPerKind,
       select: { id: true, year: true, month: true, legalEntity: { select: { name: true } } },
@@ -588,10 +605,12 @@ export class SearchService {
     const code = Prisma.sql`a."code"`;
     const serial = Prisma.sql`a."serialNo"`;
     const name = Prisma.sql`a."name"`;
+    // A limited desk reaches what its people hold and what sits in the store (KEHOACH 9.4).
+    const held = Prisma.sql`(a."holderId" IS NULL OR ${inEntities(viewer, Prisma.sql`h."legalEntityId"`)})`;
     const ids = await this.ranked<string>(Prisma.sql`
       SELECT a."id", (CASE WHEN ${anyOf([codeLeads(code, term), codeLeads(serial, term), foldedLeads(name, term)])} THEN 0 ELSE 1 END) AS "rank"
-        FROM "Asset" a
-       WHERE ${anyOf([codeHas(code, term), codeHas(serial, term), foldedHas(name, term)])}
+        FROM "Asset" a LEFT JOIN "Employee" h ON h."id" = a."holderId"
+       WHERE ${held} AND ${anyOf([codeHas(code, term), codeHas(serial, term), foldedHas(name, term)])}
        ORDER BY "rank", a."createdAt" DESC, a."id" DESC`);
     const rows = await this.db.asset.findMany({
       where: { id: { in: ids } },

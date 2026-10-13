@@ -14,7 +14,7 @@ import { Role, type Prisma } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
+import { JOB, QUEUE, type NoticeRescopeJob, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
 
 import type { Env } from "../../config/env.schema.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
@@ -70,6 +70,7 @@ const ACCOUNT = {
   employeeId: true,
   employee: { select: PERSON },
   mfa: { select: { enabledAt: true } },
+  entities: { select: { legalEntity: { select: { id: true, code: true, name: true } } } },
 } as const satisfies Prisma.UserSelect;
 
 type AccountRow = Prisma.UserGetPayload<{ select: typeof ACCOUNT }>;
@@ -85,7 +86,12 @@ function asAccount(row: AccountRow, lastSeenAt: Date | null): AccountView {
     createdAt: row.createdAt,
     mfaEnabledAt: row.mfa?.enabledAt ?? null,
     employee: row.employee,
+    entities: row.entities.map((one) => one.legalEntity).sort((a, b) => a.code.localeCompare(b.code)),
   };
+}
+
+function entityIdsOf(row: AccountRow): string[] {
+  return row.entities.map((one) => one.legalEntity.id).sort();
 }
 
 /** The accounts in one status, as the users page and the directory's account filter both read it. */
@@ -569,6 +575,7 @@ export class UsersService {
       assertLinkable(person, null);
     }
     const role = settledRole(body.role, person);
+    const entityIds = (await this.entitiesFor(role, body.entityIds)) ?? [];
     let made: AccountRow;
     try {
       made = await this.db.user.create({
@@ -577,6 +584,7 @@ export class UsersService {
           role,
           passwordHash: UNUSABLE_PASSWORD,
           employeeId: person?.id ?? null,
+          entities: { create: entityIds.map((legalEntityId) => ({ legalEntityId })) },
         },
         select: ACCOUNT,
       });
@@ -589,7 +597,7 @@ export class UsersService {
       action: AUDIT_ACTIONS.USER_CREATE,
       subject: AUDIT_SUBJECTS.USER,
       subjectId: made.id,
-      meta: { role: made.role, employeeId: made.employeeId },
+      meta: { role: made.role, employeeId: made.employeeId, entityIds: entityIdsOf(made) },
     });
     return asAccount(made, null);
   }
@@ -615,6 +623,11 @@ export class UsersService {
       throw new ConflictException("EMPLOYEE_HAS_LEFT");
     }
     const role = body.role !== undefined || relinks ? settledRole(body.role ?? held.role, person) : held.role;
+    const before = entityIdsOf(held);
+    const asked = await this.entitiesFor(role, body.entityIds);
+    // A role off the desk answers for no entity; one staying keeps its list unless a new one is sent.
+    const after = LINKED_DESKS.has(role) ? (asked ?? before) : [];
+    const rescoped = after.join() !== before.join();
     const active = body.active ?? held.active;
     const locking = held.active && !active;
     const losesAdmin = held.role === "ADMIN" && held.active && (role !== "ADMIN" || !active);
@@ -628,19 +641,33 @@ export class UsersService {
         if (locking) {
           await tx.pushSubscription.deleteMany({ where: { userId: id } });
         }
-        return tx.user.update({
+        const updated = await tx.user.update({
           where: { id },
           data: { ...(body.email ? { email: body.email } : {}), role, active, employeeId },
           select: ACCOUNT,
         });
+        if (!rescoped) {
+          return updated;
+        }
+        // The update above holds the account's row, so two admins rescoping it queue (KEHOACH 9.23).
+        await tx.userEntity.deleteMany({ where: { userId: id } });
+        await tx.userEntity.createMany({ data: after.map((legalEntityId) => ({ userId: id, legalEntityId })) });
+        return tx.user.findUniqueOrThrow({ where: { id }, select: ACCOUNT });
       });
     } catch (error) {
       throw asTaken(error);
     }
 
-    // The token carries the role and the employee, so either one moving ends every session (KEHOACH 9.23).
-    if (saved.role !== held.role || relinks || locking) {
+    // The token carries the role, the employee and the entities, so any of them moving ends every session (KEHOACH 9.23).
+    if (saved.role !== held.role || relinks || locking || rescoped) {
       await this.auth.closeAll(id);
+    }
+    if (rescoped) {
+      await this.queues[QUEUE.notify].add(JOB.noticeRescope, {
+        type: JOB.noticeRescope,
+        from: before,
+        to: after,
+      } satisfies NoticeRescopeJob);
     }
     await this.recordUpdate(actorId, held, saved);
     const seen = await this.lastSeen([id]);
@@ -678,6 +705,27 @@ export class UsersService {
         meta: { from: held.employeeId, to: saved.employeeId },
       });
     }
+    if (entityIdsOf(saved).join() !== entityIdsOf(held).join()) {
+      await this.audit.record({
+        ...entry,
+        action: AUDIT_ACTIONS.USER_ENTITIES,
+        meta: { from: entityIdsOf(held), to: entityIdsOf(saved) },
+      });
+    }
+  }
+
+  /** The entities asked for a desk account, each one on record; undefined when the body leaves the list out (KEHOACH 9.4). */
+  private async entitiesFor(role: Role, asked: readonly string[] | undefined): Promise<string[] | undefined> {
+    if (asked === undefined) {
+      return undefined;
+    }
+    if (asked.length > 0 && !LINKED_DESKS.has(role)) {
+      throw new BadRequestException("ENTITIES_NEED_DESK");
+    }
+    if ((await this.db.legalEntity.count({ where: { id: { in: [...asked] } } })) !== asked.length) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
+    return [...asked].sort();
   }
 
   /** Drop another account's authenticator and sign it out; its next sign-in enrols again (KEHOACH 9.4 rule 7). */

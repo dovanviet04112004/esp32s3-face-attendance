@@ -18,6 +18,7 @@ import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   DocumentsService,
@@ -60,6 +61,7 @@ export class DocumentsController {
 
   @Get("documents")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Everything published, whoever it is aimed at" })
   @ApiOkResponse({ type: [DocumentWithLatestView] })
   list(@Query() query: ListAllDto): Promise<Document[]> {
@@ -69,6 +71,7 @@ export class DocumentsController {
   @Post("documents")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Register a document; its wording arrives as a version" })
   @ApiCreatedResponse({ type: DocumentView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "AUDIENCE_NOT_FOUND" })
@@ -80,6 +83,7 @@ export class DocumentsController {
   @Patch("documents/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Retitle, re-aim, retire or restore a document; its wording stays in versions" })
   @ApiParam(DOCUMENT_ID)
   @ApiOkResponse({ type: DocumentView })
@@ -95,6 +99,7 @@ export class DocumentsController {
   @Post("documents/:id/versions")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Publish the next wording; the number is assigned here" })
   @ApiParam(DOCUMENT_ID)
   @ApiCreatedResponse({ type: VersionView })
@@ -110,12 +115,17 @@ export class DocumentsController {
 
   @Get("documents/:id/readers")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Who a version reaches, and who has signed for it; unsigned first" })
   @ApiParam(DOCUMENT_ID)
   @ApiOkResponse({ type: ReaderPageView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "VERSION_NOT_FOUND" })
-  readers(@Param("id") id: string, @Query() query: ListReadersDto): Promise<ReaderPage> {
-    return this.documents.readers(id, query);
+  readers(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Query() query: ListReadersDto,
+  ): Promise<ReaderPage> {
+    return this.documents.readers(viewer, id, query);
   }
 
   @Get("me/documents")
@@ -155,6 +165,7 @@ export class DocumentsController {
 
   @Get("personnel-file-types")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "The kinds of paper a personnel file is meant to hold" })
   @ApiOkResponse({ type: [FileTypeView] })
   fileTypes(@Query() query: ListAllDto): Promise<PersonnelFileType[]> {
@@ -164,6 +175,7 @@ export class DocumentsController {
   @Post("personnel-file-types")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add a kind of paper, and how long one stays valid" })
   @ApiCreatedResponse({ type: FileTypeView })
   @ApiConflictResponse({ type: ErrorBody, description: "FILE_TYPE_CODE_TAKEN" })
@@ -177,6 +189,7 @@ export class DocumentsController {
   @Patch("personnel-file-types/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Edit, retire or restore a kind of paper" })
   @ApiParam({ name: "id", description: "Kind of paper id", example: "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d" })
   @ApiOkResponse({ type: FileTypeView })
@@ -192,6 +205,7 @@ export class DocumentsController {
   @Post("personnel-files")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Record that one piece of paper arrived" })
   @ApiCreatedResponse({ type: ReceivedView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "FILE_TYPE_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
@@ -204,6 +218,7 @@ export class DocumentsController {
 
   @Get("personnel-files/gaps")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Who is short of a required paper, or holds an expired one" })
   @ApiOkResponse({ type: GapPageView })
   gaps(@CurrentViewer() viewer: Viewer, @Query() query: ListGapsDto): Promise<Page<Gap>> {

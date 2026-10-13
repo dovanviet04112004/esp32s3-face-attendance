@@ -97,6 +97,21 @@ model User {
   noticeItemsClaimed NoticeItem[] @relation("NoticeItemClaim")
   mfa            UserMfa?
   punchReviews   AttendanceRecord[] @relation("PunchReviews")
+  entities       UserEntity[]
+}
+
+/**
+ * The entities a desk account answers for; an account with none answers for
+ * the whole group (KEHOACH 9.4).
+ */
+model UserEntity {
+  userId        String
+  legalEntityId String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+
+  @@id([userId, legalEntityId])
+  @@index([legalEntityId])
 }
 
 /**
@@ -171,6 +186,7 @@ model LegalEntity {
   holidays    Holiday[]
   policies    PayrollPolicy[]
   periods     PayrollPeriod[]
+  deskUsers   UserEntity[]
 }
 
 model Department {

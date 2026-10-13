@@ -48,10 +48,12 @@ export class ConsentController {
   @ApiOperation({ summary: "Withdraw and erase the face everywhere in one step; asking again erases again" })
   @ApiParam(EMPLOYEE_ID)
   @ApiCreatedResponse({ type: WithdrawnView })
-  withdraw(
+  async withdraw(
     @CurrentViewer() viewer: Viewer,
     @Param("employeeId", ParseIntPipe) employeeId: number,
   ): Promise<{ consent: BiometricConsent; devices: number }> {
+    this.consent.mayRecordFor(viewer, employeeId);
+    await this.consent.mustReach(viewer, employeeId);
     return this.enrollment.withdrawConsent(viewer, employeeId);
   }
 }

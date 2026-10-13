@@ -3,16 +3,21 @@ import type { Role } from "@prisma/client";
 
 import type { AccessClaims } from "../../modules/auth/auth.types.js";
 
-/** Who is asking; every HR service narrows its query by this. */
+/** Who is asking; every HR service narrows its query by this, a desk's entityIds included (KEHOACH 9.4). */
 export interface Viewer {
   userId: string;
   role: Role;
   employeeId: number | null;
+  entityIds: string[] | null;
 }
 
 export const LINKED_DESKS: ReadonlySet<Role> = new Set<Role>(["HR", "PAYROLL"]);
 
-export function isUnlinkedDesk(viewer: Viewer): boolean {
+export function heldEntities(role: Role, entityIds: readonly string[] | undefined): string[] | null {
+  return LINKED_DESKS.has(role) && entityIds !== undefined && entityIds.length > 0 ? [...entityIds] : null;
+}
+
+export function isUnlinkedDesk(viewer: Pick<Viewer, "role" | "employeeId">): boolean {
   return viewer.employeeId === null && LINKED_DESKS.has(viewer.role);
 }
 
@@ -34,9 +39,11 @@ export const CurrentSession = createParamDecorator(
 /** The viewer a guarded handler serves; JwtAuthGuard has put the claims on the request. */
 export const CurrentViewer = createParamDecorator((_data: unknown, context: ExecutionContext): Viewer => {
   const claims = context.switchToHttp().getRequest<{ user?: AccessClaims }>().user;
+  const role = claims?.role ?? "VIEWER";
   return {
     userId: claims?.sub ?? "",
-    role: claims?.role ?? "VIEWER",
+    role,
     employeeId: claims?.employeeId ?? null,
+    entityIds: heldEntities(role, claims?.ent),
   };
 });

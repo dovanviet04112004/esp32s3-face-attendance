@@ -295,7 +295,7 @@ export class DocumentsService {
   /** Whoever has not signed comes first, because that is the list a desk acts
    *  on, and the cursor carries that flag beside the code (KEHOACH 9.9 rule 3).
    */
-  async readers(documentId: string, query: ListReadersDto): Promise<ReaderPage> {
+  async readers(viewer: Viewer, documentId: string, query: ListReadersDto): Promise<ReaderPage> {
     const wanted = await this.db.documentVersion.findFirst({
       where: { documentId, ...(query.version === undefined ? {} : { version: query.version }) },
       orderBy: { version: "desc" },
@@ -304,12 +304,14 @@ export class DocumentsService {
     if (!wanted) {
       throw new NotFoundException("VERSION_NOT_FOUND");
     }
+    const visible = await this.scope.visibleEmployeeIds(viewer);
     const target = wanted.document;
     const after = query.cursor ? decodeCursor(query.cursor) : null;
     const reach = Prisma.sql`
        WHERE e."active" = true
          AND (${target.departmentId}::text IS NULL OR e."departmentId" = ${target.departmentId})
-         AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})`;
+         AND (${target.jobTitleId}::text IS NULL OR e."jobTitleId" = ${target.jobTitleId})
+         AND ${ScopeService.peopleSql(viewer, visible, Prisma.sql`e."id"`, Prisma.sql`e."legalEntityId"`)}`;
     const narrowed = Prisma.sql`${reach}
          ${personMatch(Prisma.raw("e"), query.search)}
          ${query.unsigned ? Prisma.sql`AND a."ackAt" IS NULL` : Prisma.empty}`;
@@ -423,6 +425,10 @@ export class DocumentsService {
     if (!kind) {
       throw new NotFoundException("FILE_TYPE_NOT_FOUND");
     }
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (!(await this.scope.reaches(viewer, visible, body.employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     const receivedAt = new Date(body.receivedAt);
     const expiresAt = kind.validMonths === null ? null : monthsAfter(receivedAt, kind.validMonths);
     const saved = await this.db.personnelFile
@@ -467,7 +473,7 @@ export class DocumentsService {
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
     const today = localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
     const whom = (alias: Prisma.Sql): Prisma.Sql => Prisma.sql`
-      ${visible === null ? Prisma.empty : Prisma.sql`AND ${alias}."id" = ANY(${visible}::int[])`}
+      AND ${ScopeService.peopleSql(viewer, visible, Prisma.sql`${alias}."id"`, Prisma.sql`${alias}."legalEntityId"`)}
       AND (${query.employeeId ?? null}::int IS NULL OR ${alias}."id" = ${query.employeeId ?? null}::int)
       ${personMatch(alias, query.search)}
       ${branch === null ? Prisma.empty : Prisma.sql`AND ${alias}."departmentId" = ANY(${branch}::text[])`}`;

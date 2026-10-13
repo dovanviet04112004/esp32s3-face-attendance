@@ -91,7 +91,7 @@ describe("letters of employment and income (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     desk = signedIn.body.accessToken;
     const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
-    deskViewer = { userId: admin.id, role: "ADMIN", employeeId: admin.employeeId };
+    deskViewer = { userId: admin.id, role: "ADMIN", employeeId: admin.employeeId, entityIds: null };
     entityId = await seedEntityId(db);
 
     const mineId = await makePerson(CODE, EMAIL);

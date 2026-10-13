@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Queue } from "bullmq";
 
@@ -207,9 +207,9 @@ function slotOf(from: Date, to: Date, query: TallyRangeDto): string {
 }
 
 /** The roll-up's own filters, the same for its rows, its count and its totals. */
-function tallyFilter(visible: number[] | null, query: TallyRangeDto, zone: string): Prisma.Sql {
+function tallyFilter(people: Prisma.Sql, query: TallyRangeDto, zone: string): Prisma.Sql {
   const term = query.search?.trim();
-  return Prisma.sql`${visible === null ? Prisma.empty : Prisma.sql`AND a."employeeId" = ANY(${visible}::int[])`}
+  return Prisma.sql`AND ${people}
     ${term ? Prisma.sql`AND (${foldedHas(Prisma.sql`e."fullName"`, term)} OR ${codeHas(Prisma.sql`e."code"`, term)})` : Prisma.empty}
     ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
     ${query.late ? Prisma.sql`AND a."employeeId" IN (${lateInRange(query, zone)})` : Prisma.empty}`;
@@ -362,9 +362,10 @@ export class ReportsService {
    * indefinite by law, so the horizon is a list rather than a search somebody
    * has to remember to run (KEHOACH 9.18).
    */
-  async attention(now: Date = new Date()): Promise<Attention> {
+  async attention(viewer: Viewer, now: Date = new Date()): Promise<Attention> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const today = localDay(now, zone);
+    const people = await this.peopleOf(viewer);
     const horizon = Prisma.sql`(${today}::date + ${ENDING_WINDOW_DAYS}::int)`;
     const [contracts, probation, exceptions] = await Promise.all([
       this.db.$queryRaw<Expiring[]>`
@@ -373,7 +374,7 @@ export class ReportsService {
                (c."endDate" - ${today}::date)::int AS "daysLeft"
           FROM "EmploymentContract" c
           JOIN "Employee" e ON e."id" = c."employeeId"
-         WHERE c."state" = 'ACTIVE' AND e."active" = true
+         WHERE c."state" = 'ACTIVE' AND e."active" = true AND ${people}
            AND c."endDate" IS NOT NULL AND c."endDate" <= ${horizon}
          ORDER BY c."endDate"
          LIMIT ${kAttentionCap + 1}
@@ -384,12 +385,12 @@ export class ReportsService {
                (c."probationEnd" - ${today}::date)::int AS "daysLeft"
           FROM "EmploymentContract" c
           JOIN "Employee" e ON e."id" = c."employeeId"
-         WHERE c."state" = 'ACTIVE' AND e."active" = true
+         WHERE c."state" = 'ACTIVE' AND e."active" = true AND ${people}
            AND c."probationEnd" >= ${today}::date AND c."probationEnd" <= ${horizon}
          ORDER BY c."probationEnd"
          LIMIT ${kAttentionCap + 1}
       `,
-      this.exceptionsOn(today, zone),
+      this.exceptionsOn(today, zone, people),
     ]);
     return {
       contractsEnding: pileOf(contracts),
@@ -402,9 +403,9 @@ export class ReportsService {
    * Today is not in AttendanceDay, because a day still running summarises to a
    * wrong number (KEHOACH 9.8), so this reads the punches directly.
    */
-  private exceptionsOn(day: string, zone: string): Promise<Exception[]> {
+  private exceptionsOn(day: string, zone: string, people: Prisma.Sql): Promise<Exception[]> {
     return this.db.$queryRaw<Exception[]>`
-      ${this.exceptionsListed(day, zone)}
+      ${this.exceptionsListed(day, zone, people)}
       SELECT "employeeId", "code", "fullName", "reason", "minutes", "receivedAt"
         FROM listed
        ORDER BY "code"
@@ -413,10 +414,11 @@ export class ReportsService {
   }
 
   /** Today's exceptions in full, a page at a time by code: the pile the home page caps at 200. */
-  async exceptionsPage(after: string | undefined, take: number): Promise<Page<Exception>> {
+  async exceptionsPage(viewer: Viewer, after: string | undefined, take: number): Promise<Page<Exception>> {
     const zone = this.zone;
+    const people = await this.peopleOf(viewer);
     const rows = await this.db.$queryRaw<(Exception & { total: number })[]>`
-      ${this.exceptionsListed(localDay(new Date(), zone), zone)}
+      ${this.exceptionsListed(localDay(new Date(), zone), zone, people)}
       SELECT "employeeId", "code", "fullName", "reason", "minutes", "receivedAt", "total"
         FROM listed
        WHERE true ${after ? Prisma.sql`AND "code" > ${after}` : Prisma.empty}
@@ -429,10 +431,10 @@ export class ReportsService {
 
   // One definition for the capped pile and the full list, so the count and the list agree.
   // A questionable punch heard today outranks what its absence makes of the day: it is the likely cause.
-  private exceptionsListed(day: string, zone: string): Prisma.Sql {
+  private exceptionsListed(day: string, zone: string, people: Prisma.Sql): Prisma.Sql {
     const { from, to } = dayWindow(day, zone);
     return Prisma.sql`
-      ${this.todayCtes(day, zone, null, null)},
+      ${this.todayCtes(day, zone, people, null)},
       doubted AS (
         SELECT r."employeeId", min(r."receivedAt") AS "receivedAt"
           FROM "AttendanceRecord" r
@@ -475,7 +477,7 @@ export class ReportsService {
   }
 
   /** The people a day concerns and what they did; a weekend or an entity holiday expects nobody. */
-  private todayCtes(day: string, zone: string, visible: number[] | null, leaveOut: number | null): Prisma.Sql {
+  private todayCtes(day: string, zone: string, people: Prisma.Sql, leaveOut: number | null): Prisma.Sql {
     const { from, to } = dayWindow(day, zone);
     const date = dayAsDate(day);
     const weekend = WEEKEND_DAYS.has(date.getUTCDay());
@@ -483,8 +485,7 @@ export class ReportsService {
       WITH people AS (
         SELECT e."id", e."code", e."fullName", e."legalEntityId"
           FROM "Employee" e
-         WHERE e."active" = true
-           ${visible === null ? Prisma.empty : Prisma.sql`AND e."id" = ANY(${visible}::int[])`}
+         WHERE e."active" = true AND ${people}
            ${leaveOut === null ? Prisma.empty : Prisma.sql`AND e."id" <> ${leaveOut}::int`}
       ),
       shifted AS (
@@ -528,9 +529,8 @@ export class ReportsService {
   async today(viewer: Viewer): Promise<TodayCounts> {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const day = localDay(new Date(), zone);
-    const visible = await this.scope.visibleEmployeeIds(viewer);
     const [counts] = await this.db.$queryRaw<Omit<TodayCounts, "date">[]>`
-      ${this.todayCtes(day, zone, visible, null)}
+      ${this.todayCtes(day, zone, await this.peopleOf(viewer), null)}
       SELECT (SELECT count(*) FROM expected)::int AS "expected",
              (SELECT count(*) FROM seen)::int AS "present",
              (SELECT count(*)
@@ -589,12 +589,12 @@ export class ReportsService {
    */
   async teamTally(viewer: Viewer, now: Date = new Date()): Promise<TeamTally | null> {
     const zone = this.zone;
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const people = await this.peopleOf(viewer);
     const due = dueMinutes(Prisma.sql`x`);
     const unseen = Prisma.sql`NOT EXISTS (SELECT 1 FROM seen k WHERE k."employeeId" = x."employeeId")
       AND NOT EXISTS (SELECT 1 FROM away w WHERE w."employeeId" = x."employeeId")`;
     const [tally] = await this.db.$queryRaw<(TeamTally & { expected: number })[]>`
-      ${this.todayCtes(localDay(now, zone), zone, visible, viewer.employeeId)}
+      ${this.todayCtes(localDay(now, zone), zone, people, viewer.employeeId)}
       SELECT (SELECT count(*) FROM expected)::int AS "expected",
              (SELECT min(split_part(x."startTime", ':', 1)::int * 60 + split_part(x."startTime", ':', 2)::int)
                 FROM expected x)::int AS "firstStartMinutes",
@@ -617,9 +617,9 @@ export class ReportsService {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const now = new Date();
     const day = localDay(now, zone);
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const people = await this.peopleOf(viewer);
     return Prisma.sql`
-      ${this.todayCtes(day, zone, visible, viewer.employeeId)},
+      ${this.todayCtes(day, zone, people, viewer.employeeId)},
       sorted AS (
         SELECT p."id", p."code", p."fullName",
                CASE
@@ -642,6 +642,12 @@ export class ReportsService {
       )`;
   }
 
+  /** The viewer's people as a condition on the employee alias `e` of every query here. */
+  private async peopleOf(viewer: Viewer): Promise<Prisma.Sql> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    return ScopeService.peopleSql(viewer, visible, Prisma.sql`e."id"`, Prisma.sql`e."legalEntityId"`);
+  }
+
   private get zone(): string {
     return this.config.get("APP_TIMEZONE", { infer: true });
   }
@@ -658,15 +664,16 @@ export class ReportsService {
       return { rows: [], total: 0, next: null };
     }
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    const people = ScopeService.peopleSql(viewer, visible, Prisma.sql`e."id"`, Prisma.sql`e."legalEntityId"`);
     if (to >= dayWindow(localDay(new Date(), zone), zone).from) {
-      return this.page(from, to, visible, query);
+      return this.page(from, to, people, query);
     }
-    const scope =
-      visible === null
-        ? "all"
-        : createHash("sha256").update(visible.join(",")).digest("hex").slice(0, 16);
+    // The entry carries whose rows it holds, or a narrower reader would be served a wider one (KEHOACH 9.4).
+    const entities = viewer.entityIds === null ? null : `ent:${[...viewer.entityIds].sort().join(",")}`;
+    const held = visible !== null ? visible.join(",") : entities;
+    const scope = held === null ? "all" : createHash("sha256").update(held).digest("hex").slice(0, 16);
     return this.cache.through(CACHE.report("summary", slotOf(from, to, query), scope), () =>
-      this.page(from, to, visible, query),
+      this.page(from, to, people, query),
     );
   }
 
@@ -675,7 +682,7 @@ export class ReportsService {
     const query = new TallyRangeDto();
     const entry = CACHE.report("summary", slotOf(from, to, query));
     await this.cache.drop(entry.key);
-    return this.cache.through(entry, () => this.page(from, to, null, query));
+    return this.cache.through(entry, () => this.page(from, to, Prisma.sql`TRUE`, query));
   }
 
   /** Counting is the expensive half of a page once the cursor is in place, so
@@ -684,23 +691,23 @@ export class ReportsService {
   private async page(
     from: Date,
     to: Date,
-    visible: number[] | null,
+    people: Prisma.Sql,
     query: TallyRangeDto,
   ): Promise<Page<AttendanceTally>> {
-    const rows = await this.build(from, to, visible, query);
+    const rows = await this.build(from, to, people, query);
     const last = rows[rows.length - 1];
     const next =
       rows.length === query.take && last ? encodeCursor(last.fullName, last.employeeId) : null;
     if (query.cursor) {
       return { rows, total: rows.length, next };
     }
-    return { ...countedTo(await this.countTallies(from, to, visible, query)), rows, next };
+    return { ...countedTo(await this.countTallies(from, to, people, query)), rows, next };
   }
 
   private async countTallies(
     from: Date,
     to: Date,
-    visible: number[] | null,
+    people: Prisma.Sql,
     query: TallyRangeDto,
   ): Promise<number> {
     const [seen] = await this.db.$queryRaw<{ found: bigint }[]>`
@@ -709,7 +716,7 @@ export class ReportsService {
         FROM "AttendanceRecord" a
         JOIN "Employee" e ON e."id" = a."employeeId"
         WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
-          ${tallyFilter(visible, query, this.zone)}
+          ${tallyFilter(people, query, this.zone)}
         GROUP BY a."employeeId", e."fullName"
         LIMIT ${COUNT_CEILING + 1}
       ) x
@@ -718,7 +725,7 @@ export class ReportsService {
   }
 
   async tallyTotals(viewer: Viewer, from: Date, to: Date, query: TallyRangeDto): Promise<TallyTotals> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const people = await this.peopleOf(viewer);
     const [summed] = await this.db.$queryRaw<{ people: number; punches: number; unsyncedClock: number }[]>`
       SELECT count(DISTINCT a."employeeId")::int                  AS "people",
              count(*)::int                                        AS "punches",
@@ -726,7 +733,7 @@ export class ReportsService {
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
-        ${tallyFilter(visible, query, this.zone)}
+        ${tallyFilter(people, query, this.zone)}
     `;
     return summed;
   }
@@ -753,7 +760,7 @@ export class ReportsService {
   private async build(
     from: Date,
     to: Date,
-    visible: number[] | null,
+    people: Prisma.Sql,
     query: TallyRangeDto,
   ): Promise<AttendanceTally[]> {
     const after = query.cursor ? decodeCursor(query.cursor, "int") : null;
@@ -778,7 +785,7 @@ export class ReportsService {
       FROM "AttendanceRecord" a
       JOIN "Employee" e ON e."id" = a."employeeId"
       WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
-        ${tallyFilter(visible, query, this.zone)}
+        ${tallyFilter(people, query, this.zone)}
         ${
           after
             ? Prisma.sql`AND e."fullName" >= ${after.sortValue}
@@ -806,6 +813,9 @@ export class ReportsService {
    */
   async d02(viewer: Viewer, query: D02QueryDto): Promise<string> {
     const { legalEntityId } = query;
+    if (!ScopeService.reachesEntity(viewer, legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
     const on = new Date(query.on);
     const staff = await this.db.employee.findMany({
       where: {
@@ -911,7 +921,10 @@ export class ReportsService {
    * The three filings a month of ordinary churn owes the insurance office:
    * who started, who stopped, and whose contribution base moved.
    */
-  async insuranceChanges(legalEntityId: string, from: Date, to: Date): Promise<InsuranceChanges> {
+  async insuranceChanges(viewer: Viewer, legalEntityId: string, from: Date, to: Date): Promise<InsuranceChanges> {
+    if (!ScopeService.reachesEntity(viewer, legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
     const policy = await this.policy.effectiveAt(to, legalEntityId);
     const threshold = policy.noContributionUnpaidDays;
     const [joined, gone, moved, away] = await Promise.all([

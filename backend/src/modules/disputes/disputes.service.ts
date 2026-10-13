@@ -17,7 +17,6 @@ import {
   personWhere,
   sortedBy,
   waitedDays,
-  whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
@@ -109,7 +108,8 @@ export class DisputesService {
     // different question than the one asked.
     const where = {
       AND: [
-        whoseRows(visible, query.employeeId),
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         await this.audience.inboxNarrowing(viewer, "DISPUTES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.overdue ? { state: "OPEN", dueAt: { lt: new Date() } } : {},
@@ -143,7 +143,7 @@ export class DisputesService {
   async one(viewer: Viewer, id: string): Promise<DisputeDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.payslipDispute.findUnique({ where: { id }, include: { ...DISPUTE_VIEW, answeredBy: NAMED } });
-    if (!held || !ScopeService.sees(visible, held.employeeId)) {
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("DISPUTE_NOT_FOUND");
     }
     const { answeredBy, ...row } = held;
@@ -158,7 +158,7 @@ export class DisputesService {
     if (!ANSWERERS.includes(viewer.role)) {
       throw new ForbiddenException("PAYROLL_WRITE_DENIED");
     }
-    const held = await this.open(id);
+    const held = await this.open(id, viewer);
     // Payroll answering its own claim would settle its own back pay (KEHOACH 9.4).
     refuseOwn(viewer, held.employeeId);
     const slip = await this.db.payslip.findUniqueOrThrow({
@@ -238,14 +238,19 @@ export class DisputesService {
     return dropped;
   }
 
-  private async open(id: string): Promise<PayslipDispute> {
+  /** An open dispute; one named for an answerer must also be about somebody that answerer reaches. */
+  private async open(id: string, answerer?: Viewer): Promise<PayslipDispute> {
     const held = await this.db.payslipDispute.findUnique({ where: { id } });
-    if (!held) {
+    if (!held || (answerer !== undefined && !(await this.reaches(answerer, held.employeeId)))) {
       throw new NotFoundException("DISPUTE_NOT_FOUND");
     }
     if (held.state !== "OPEN") {
       throw new ConflictException("DISPUTE_ALREADY_ANSWERED");
     }
     return held;
+  }
+
+  private async reaches(viewer: Viewer, employeeId: number): Promise<boolean> {
+    return this.scope.reaches(viewer, await this.scope.deskOrSelfEmployeeIds(viewer), employeeId);
   }
 }

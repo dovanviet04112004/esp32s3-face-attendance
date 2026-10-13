@@ -26,6 +26,7 @@ export const JOB = {
   tasksDue: "tasks-due",
   documentsDue: "documents-due",
   noticeDocuments: "notice-documents",
+  noticeRescope: "notice-rescope",
   attendanceDue: "attendance-due",
   teamAttendance: "team-attendance",
   passwordSetup: "password-setup",
@@ -104,6 +105,13 @@ export interface NoticeDocumentsJob {
   versionId: string;
 }
 
+/** A desk's entities moved from `from` to `to`; [] is the whole group (KEHOACH 9.4). */
+export interface NoticeRescopeJob {
+  type: typeof JOB.noticeRescope;
+  from: string[];
+  to: string[];
+}
+
 export interface AttendanceDueJob {
   type: typeof JOB.attendanceDue;
 }
@@ -164,6 +172,7 @@ export type NotifyJob =
   | TasksDueJob
   | DocumentsDueJob
   | NoticeDocumentsJob
+  | NoticeRescopeJob
   | AttendanceDueJob
   | TeamAttendanceJob
   | PasswordSetupJob

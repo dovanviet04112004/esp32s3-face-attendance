@@ -2,7 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { NoticeQueue, Prisma, Role } from "@prisma/client";
 
-import { isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
+import { heldEntities, isUnlinkedDesk, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_DESKS, THE_DESK } from "../leave/queue-filter.js";
@@ -66,6 +67,15 @@ interface Candidate {
   id: string;
   role: Role;
   employeeId: number | null;
+  entities: { legalEntityId: string }[];
+}
+
+const CANDIDATE = { id: true, role: true, employeeId: true, entities: { select: { legalEntityId: true } } } as const;
+
+/** A login as the viewer it reads the inbox as, its desk's entities included. */
+export function viewerOfLogin(one: Candidate): Viewer {
+  const held = one.entities.map((row) => row.legalEntityId);
+  return { userId: one.id, role: one.role, employeeId: one.employeeId, entityIds: heldEntities(one.role, held) };
 }
 
 /** Who a piece of work waits on: the inbox asks it per viewer, the bell per item, one rule for both (KEHOACH 9.21.4). */
@@ -83,7 +93,8 @@ export class AudienceService {
     if (!INBOX_ROLES.includes(viewer.role) || isUnlinkedDesk(viewer)) {
       return null;
     }
-    const notOwn = viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } };
+    // A desk held to some entities waits only on their people (KEHOACH 9.4).
+    const notOwn = { ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }), ...ScopeService.ownedWhere(viewer, null) };
     if (queue === "REQUESTS") {
       return (await this.requestsWaitingOn(viewer, notOwn)) as QueueWhere[Q] | null;
     }
@@ -113,7 +124,11 @@ export class AudienceService {
     if (!QUEUE_DESKS.punches.includes(viewer.role) || isUnlinkedDesk(viewer)) {
       return null;
     }
-    return { review: "PENDING", ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }) };
+    return {
+      review: "PENDING",
+      ...(viewer.employeeId === null ? {} : { employeeId: { not: viewer.employeeId } }),
+      ...ScopeService.ownedWhere(viewer, null),
+    };
   }
 
   /** A desk list of waiting rows narrowed to what waits on the viewer; other lists keep the viewer's scope.
@@ -155,7 +170,7 @@ export class AudienceService {
     const candidates = await this.candidates(queue, subjectId);
     const held: string[] = [];
     for (const one of candidates) {
-      const where = await this.waitingOn({ userId: one.id, role: one.role, employeeId: one.employeeId }, queue);
+      const where = await this.waitingOn(viewerOfLogin(one), queue);
       if (where !== null && (await this.holds(queue, subjectId, where))) {
         held.push(one.id);
       }
@@ -199,17 +214,24 @@ export class AudienceService {
     return boss ? [boss] : this.hrDesk(about);
   }
 
-  // ADMIN and HR, never the person the work is about, and only a desk with a record of its own (KEHOACH 9.4).
+  // ADMIN and HR answering for the person's entity, never the person, only a desk with a record of its own (KEHOACH 9.4).
   private async hrDesk(aboutEmployeeId: number): Promise<string[]> {
+    const about = await this.db.employee.findUnique({ where: { id: aboutEmployeeId }, select: { legalEntityId: true } });
+    if (!about) {
+      return [];
+    }
     const desk = await this.db.user.findMany({
       where: {
         active: true,
         role: { in: HR_DESK },
-        OR: [{ employeeId: null }, { employeeId: { not: aboutEmployeeId } }],
+        AND: [
+          { OR: [{ employeeId: null }, { employeeId: { not: aboutEmployeeId } }] },
+          { OR: [{ entities: { none: {} } }, { entities: { some: { legalEntityId: about.legalEntityId } } }] },
+        ],
       },
       select: { id: true, role: true, employeeId: true },
     });
-    return desk.filter((one) => !isUnlinkedDesk({ userId: one.id, role: one.role, employeeId: one.employeeId })).map((one) => one.id);
+    return desk.filter((one) => !isUnlinkedDesk(one)).map((one) => one.id);
   }
 
   // The login a morning summary is for, while it is open and still reads a team.
@@ -268,7 +290,7 @@ export class AudienceService {
 
   private async candidates(queue: InboxQueue, subjectId: string): Promise<Candidate[]> {
     const open = { active: true, role: { in: [...INBOX_ROLES] } } satisfies Prisma.UserWhereInput;
-    const select = { id: true, role: true, employeeId: true } as const;
+    const select = CANDIDATE;
     if (queue !== "REQUESTS") {
       const roles = QUEUE_DESKS[DESK_OF[queue]];
       return this.db.user.findMany({ where: { ...open, role: { in: roles } }, select });

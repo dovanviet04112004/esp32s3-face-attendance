@@ -172,18 +172,12 @@ export class TimesheetService implements OnModuleInit {
   /** Day rows inside a range, narrowed to what this viewer may read; too many is refused, never cut (KEHOACH 9.12). */
   async list(viewer: Viewer, query: ListDaysDto): Promise<NamedDay[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const wanted =
-      query.employeeId !== undefined
-        ? ScopeService.sees(visible, query.employeeId)
-          ? [query.employeeId]
-          : []
-        : visible;
     const branch = query.departmentId ? await departmentSubtree(this.db, query.departmentId) : null;
     const rows = await this.db.attendanceDay.findMany({
       where: {
+        AND: [ScopeService.ownedWhere(viewer, visible), branch ? { employee: { departmentId: { in: branch } } } : {}],
         date: { gte: dayAsDate(query.from), lte: dayAsDate(query.to) },
-        ...(wanted === null ? {} : { employeeId: { in: wanted } }),
-        ...(branch ? { employee: { departmentId: { in: branch } } } : {}),
+        ...(query.employeeId === undefined ? {} : { employeeId: query.employeeId }),
       },
       orderBy: [{ date: "asc" }, { employeeId: "asc" }],
       take: MAX_DAY_ROWS + 1,
@@ -206,7 +200,7 @@ export class TimesheetService implements OnModuleInit {
   async summary(viewer: Viewer, query: SummaryQueryDto): Promise<Page<DaySummary>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const after = query.cursor ? decodeCursor(query.cursor).sortValue : null;
-    const filter = this.dayFilter(query, visible);
+    const filter = this.dayFilter(query, viewer, visible);
     const [rows, found] = await Promise.all([
       this.db.$queryRaw<DaySummary[]>`
         SELECT e."id" AS "employeeId", e."code", e."fullName", ${SUMMED}
@@ -231,7 +225,7 @@ export class TimesheetService implements OnModuleInit {
 
   async totals(viewer: Viewer, query: SummaryQueryDto): Promise<DayTotals> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const filter = this.dayFilter(query, visible);
+    const filter = this.dayFilter(query, viewer, visible);
     const [summed] = await this.db.$queryRaw<DayTotals[]>`
       SELECT count(DISTINCT d."employeeId")::int AS "people", ${SUMMED}
         FROM "AttendanceDay" d
@@ -250,7 +244,7 @@ export class TimesheetService implements OnModuleInit {
         FROM "AttendanceDay" d
         JOIN "Employee" e ON e."id" = d."employeeId"
         LEFT JOIN "Department" p ON p."id" = e."departmentId"
-       WHERE ${this.dayFilter(query, visible)}
+       WHERE ${this.dayFilter(query, viewer, visible)}
        GROUP BY e."id", e."code", e."fullName", p."name"
        ${this.exceptionsOnly(query)}
        ORDER BY e."code"
@@ -310,10 +304,10 @@ export class TimesheetService implements OnModuleInit {
     return { month, ...tally };
   }
 
-  private dayFilter(query: SummaryQueryDto, visible: number[] | null): Prisma.Sql {
+  private dayFilter(query: SummaryQueryDto, viewer: Viewer, visible: number[] | null): Prisma.Sql {
     const term = query.search?.trim();
     return Prisma.sql`d."date" BETWEEN ${dayAsDate(query.from)} AND ${dayAsDate(query.to)}
-      ${visible === null ? Prisma.empty : Prisma.sql`AND d."employeeId" = ANY(${visible}::int[])`}
+      AND ${ScopeService.peopleSql(viewer, visible, Prisma.sql`d."employeeId"`, Prisma.sql`e."legalEntityId"`)}
       ${query.employeeId === undefined ? Prisma.empty : Prisma.sql`AND d."employeeId" = ${query.employeeId}::int`}
       ${query.departmentId ? Prisma.sql`AND e."departmentId" IN (${branchOf(query.departmentId)})` : Prisma.empty}
       ${term ? Prisma.sql`AND (${codeHas(Prisma.sql`e."code"`, term)} OR ${foldedHas(Prisma.sql`e."fullName"`, term)})` : Prisma.empty}`;
@@ -351,9 +345,12 @@ export class TimesheetService implements OnModuleInit {
    * device measured (KEHOACH 9.8).
    */
   async correct(viewer: Viewer, id: string, body: CorrectDayDto): Promise<AttendanceDay> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
     // The key is (id, date) since the table is partitioned, and a caller
     // holding only an id still finds the row through the key's first column.
-    const held = DAY_ID.test(id) ? await this.db.attendanceDay.findFirst({ where: { id: BigInt(id) } }) : null;
+    const held = DAY_ID.test(id)
+      ? await this.db.attendanceDay.findFirst({ where: { id: BigInt(id), ...ScopeService.ownedWhere(viewer, visible) } })
+      : null;
     if (!held) {
       throw new NotFoundException("DAY_NOT_FOUND");
     }

@@ -151,6 +151,18 @@ type ItemRead = Prisma.NoticeItemGetPayload<{ include: typeof ITEM_READ }>;
 
 const kHourMs = 3_600_000;
 
+/** The people whose open work a desk joins or leaves as its entities move from `from` to `to`; [] is the whole group. */
+function movedPeople(from: string[], to: string[]): Prisma.EmployeeWhereInput {
+  if (from.length === 0) {
+    return { legalEntityId: { notIn: to } };
+  }
+  if (to.length === 0) {
+    return { legalEntityId: { notIn: from } };
+  }
+  const moved = [...from.filter((id) => !to.includes(id)), ...to.filter((id) => !from.includes(id))];
+  return { legalEntityId: { in: moved } };
+}
+
 /** The key of the one open item a subject, or one part of it, has in a queue (KEHOACH 9.21.4). */
 export function itemKey(queue: NoticeQueue, subject: string | WorkRef): string {
   const ref = typeof subject === "string" ? { id: subject } : subject;
@@ -405,6 +417,18 @@ export class NoticeItemsService {
       }
     } catch (fell) {
       this.log.error(`${queue} items of ${employeeIds.length} people were not regrouped: ${String(fell)}`);
+    }
+  }
+
+  /** Recount, quietly as reconcile does, the open items about people a desk's entities brought into or out of reach (KEHOACH 9.4).
+   *  @ctx job notice-rescope | throws, so the queue retries; reconcile repairs what it never finishes
+   */
+  async regroupRescoped(from: string[], to: string[]): Promise<void> {
+    const items = await this.db.noticeItem.findMany({
+      where: { state: "OPEN", queue: { notIn: ["DOCUMENTS", "ATTENDANCE"] }, employee: { is: movedPeople(from, to) } },
+    });
+    for (const item of items) {
+      await this.regroup(item, "quiet");
     }
   }
 

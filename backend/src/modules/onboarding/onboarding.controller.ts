@@ -32,6 +32,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import {
@@ -68,6 +69,7 @@ export class OnboardingController {
 
   @Get("checklist-templates")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "The templates a new hire can be started on" })
   @ApiOkResponse({ type: [TemplateView] })
   templates(@Query() query: ListTemplatesDto): Promise<TemplateRow[]> {
@@ -77,6 +79,7 @@ export class OnboardingController {
   @Post("checklist-templates")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add a template and the items it opens" })
   @ApiCreatedResponse({ type: TemplateView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "AUDIENCE_NOT_FOUND" })
@@ -87,6 +90,7 @@ export class OnboardingController {
   @Patch("checklist-templates/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Edit, retire or restore a template; items sent replace the list" })
   @ApiParam({ name: "id", description: "Template id", example: "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c" })
   @ApiOkResponse({ type: TemplateView })
@@ -101,6 +105,7 @@ export class OnboardingController {
 
   @Post("checklists")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Pick the template that fits and hand out the work" })
   @ApiCreatedResponse({ type: ChecklistRunView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND | NO_CHECKLIST_TEMPLATE" })

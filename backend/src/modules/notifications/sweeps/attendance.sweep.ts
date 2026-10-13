@@ -9,6 +9,7 @@ import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
 import { ReportsService } from "../../reports/reports.service.js";
 import { localDay, localMinutesSql, minutesIntoDay } from "../../timesheet/local-day.js";
+import { viewerOfLogin } from "../audience.service.js";
 import { itemKey, NoticeItemsService } from "../notice-items.service.js";
 import {
   ATTENDANCE_OVERTIME_MINUTES,
@@ -228,11 +229,11 @@ export class AttendanceSweep implements OnModuleInit {
     const expired = await this.closeSummaries(now);
     const readers = await this.db.user.findMany({
       where: { active: true, role: { in: [...TEAM_READERS] } },
-      select: { id: true, role: true, employeeId: true },
+      select: { id: true, role: true, employeeId: true, entities: { select: { legalEntityId: true } } },
     });
     let opened = 0;
     for (const reader of readers) {
-      if (await this.summariseFor({ userId: reader.id, role: reader.role, employeeId: reader.employeeId }, now)) {
+      if (await this.summariseFor(viewerOfLogin(reader), now)) {
         opened += 1;
       }
     }

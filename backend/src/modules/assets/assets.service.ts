@@ -78,8 +78,9 @@ export class AssetsService {
     private readonly config: ConfigService<Env, true>,
   ) {}
 
-  async list(query: ListAssetsDto): Promise<Page<AssetRow>> {
-    const where = filterOf(query, await this.matching(query));
+  async list(viewer: Viewer, query: ListAssetsDto): Promise<Page<AssetRow>> {
+    const [matched, reach] = await Promise.all([this.matching(query), this.reachable(viewer)]);
+    const where: Prisma.AssetWhereInput = { AND: [filterOf(query, matched), reach] };
     // Code is unique, so the cursor resumes on it with no tiebreak (KEHOACH 9.9 rule 3).
     const [rows, found] = await Promise.all([
       this.db.asset.findMany({
@@ -97,8 +98,9 @@ export class AssetsService {
 
   /** The register under the list's own filters, as a file Excel opens. */
   async exportCsv(viewer: Viewer, query: AssetFilterDto): Promise<string> {
+    const [matched, reach] = await Promise.all([this.matching(query), this.reachable(viewer)]);
     const rows = await this.db.asset.findMany({
-      where: filterOf(query, await this.matching(query)),
+      where: { AND: [filterOf(query, matched), reach] },
       include: REGISTER_ROW,
       orderBy: { code: "asc" },
       take: kExportMax,
@@ -128,11 +130,15 @@ export class AssetsService {
   }
 
   /** How many assets stand in each state under the other filters, and the kinds on the register. */
-  async counts(query: AssetFilterDto): Promise<AssetCounts> {
-    const matched = await this.matching(query);
+  async counts(viewer: Viewer, query: AssetFilterDto): Promise<AssetCounts> {
+    const [matched, reach] = await Promise.all([this.matching(query), this.reachable(viewer)]);
     const [grouped, kinds] = await Promise.all([
-      this.db.asset.groupBy({ by: ["state"], where: filterOf(query, matched, false), _count: { _all: true } }),
-      this.db.asset.findMany({ distinct: ["kind"], select: { kind: true }, orderBy: { kind: "asc" } }),
+      this.db.asset.groupBy({
+        by: ["state"],
+        where: { AND: [filterOf(query, matched, false), reach] },
+        _count: { _all: true },
+      }),
+      this.db.asset.findMany({ where: reach, distinct: ["kind"], select: { kind: true }, orderBy: { kind: "asc" } }),
     ]);
     const states: Record<AssetState, number> = { IN_STOCK: 0, ISSUED: 0, RETURNED: 0, RETIRED: 0, LOST: 0 };
     for (const row of grouped) {
@@ -173,7 +179,7 @@ export class AssetsService {
 
   /** Correct the description of an asset; who holds it moves only through a hand-over. */
   async update(viewer: Viewer, id: string, body: UpdateAssetDto): Promise<Asset> {
-    const held = await this.require(id);
+    const held = await this.require(viewer, id);
     const saved = await this.db.asset.update({ where: { id }, data: body }).catch((error: unknown) => {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("ASSET_NOT_FOUND") : error;
     });
@@ -188,8 +194,8 @@ export class AssetsService {
   }
 
   /** Every hand-over this asset has been through, newest first. */
-  async history(assetId: string): Promise<AssetTransfer[]> {
-    await this.require(assetId);
+  async history(viewer: Viewer, assetId: string): Promise<AssetTransfer[]> {
+    await this.require(viewer, assetId);
     return this.db.assetTransfer.findMany({
       where: { assetId },
       include: { employee: HOLDER },
@@ -199,8 +205,7 @@ export class AssetsService {
 
   /** What one person is still holding, which is what offboarding reads. */
   async heldBy(viewer: Viewer, employeeId: number): Promise<AssetWithHolder[]> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
+    if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.db.asset.findMany({
@@ -215,7 +220,10 @@ export class AssetsService {
    * summary of it, so both move together or neither does (KEHOACH 9.3).
    */
   async handOver(viewer: Viewer, assetId: string, body: HandOverDto): Promise<AssetWithHolder> {
-    const asset = await this.require(assetId);
+    const asset = await this.require(viewer, assetId);
+    if (!(await this.reaches(viewer, body.employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     if (body.issued && asset.state === "ISSUED") {
       throw new ConflictException("ASSET_ALREADY_ISSUED");
     }
@@ -267,11 +275,25 @@ export class AssetsService {
     return moved;
   }
 
-  private async require(id: string): Promise<Asset> {
+  /** The asset, unless somebody this viewer does not reach holds it. */
+  private async require(viewer: Viewer, id: string): Promise<Asset> {
     const found = await this.db.asset.findUnique({ where: { id } });
-    if (!found) {
+    if (!found || (found.holderId !== null && !(await this.reaches(viewer, found.holderId)))) {
       throw new NotFoundException("ASSET_NOT_FOUND");
     }
     return found;
+  }
+
+  /** Assets held by people this viewer reaches, and the store, which every desk hands out from (KEHOACH 9.4). */
+  private async reachable(viewer: Viewer): Promise<Prisma.AssetWhereInput> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (visible === null && viewer.entityIds === null) {
+      return {};
+    }
+    return { OR: [{ holderId: null }, { holder: { is: ScopeService.peopleWhere(viewer, visible) } }] };
+  }
+
+  private async reaches(viewer: Viewer, employeeId: number): Promise<boolean> {
+    return this.scope.reaches(viewer, await this.scope.visibleEmployeeIds(viewer), employeeId);
   }
 }

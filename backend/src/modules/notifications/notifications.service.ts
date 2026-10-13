@@ -325,7 +325,7 @@ export class NotificationsService {
     }
     const person = await personWhere(this.db, { search: filter.search });
     if (person) {
-      parts.push(this.subjects.searchable(await this.subjects.reach(viewer), person));
+      parts.push(this.subjects.searchable(viewer, await this.subjects.reach(viewer), person));
     }
     return { AND: parts };
   }

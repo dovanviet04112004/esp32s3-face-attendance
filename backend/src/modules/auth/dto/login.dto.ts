@@ -73,6 +73,13 @@ export class ClaimsView {
   employeeId?: number;
 
   @ApiPropertyOptional({
+    type: [String],
+    description: "Legal entities an HR or PAYROLL account answers for; absent is the whole group (KEHOACH 9.4)",
+    example: ["0e9a7b6c-5d4e-4f3a-8b2c-1d0e9f8a7b6c"],
+  })
+  ent?: string[];
+
+  @ApiPropertyOptional({
     description: "true once the session gave its second factor; a role in MFA_ROLES holds no token without it (KEHOACH 9.4)",
     example: true,
   })

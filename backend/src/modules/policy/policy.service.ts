@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PayrollPolicy, TaxBracket } from "@prisma/client";
 
+import { ScopeService } from "../../common/scope/scope.service.js";
+import type { Viewer } from "../../common/scope/viewer.js";
 import { isPrismaCode, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
@@ -29,9 +31,9 @@ export class PolicyService {
     private readonly audit: AuditService,
   ) {}
 
-  list(legalEntityId?: string): Promise<PolicyWithBrackets[]> {
+  list(viewer: Viewer, legalEntityId?: string): Promise<PolicyWithBrackets[]> {
     return this.db.payrollPolicy.findMany({
-      where: legalEntityId ? { legalEntityId } : {},
+      where: { ...(legalEntityId ? { legalEntityId } : {}), ...ScopeService.entityWhere(viewer, true) },
       include: { brackets: { orderBy: { ordinal: "asc" } } },
       orderBy: { effectiveFrom: "desc" },
     });
@@ -41,6 +43,14 @@ export class PolicyService {
    * The policy in force on a date, which is what a recalculation of an old
    * period must ask for so it returns the old figure (KEHOACH 9.7).
    */
+  /** The policy in force for an entity the viewer answers for; another entity's answers as absent (KEHOACH 9.4). */
+  async effectiveFor(viewer: Viewer, on: Date, legalEntityId: string | null): Promise<PolicyWithBrackets> {
+    if (!ScopeService.reachesEntity(viewer, legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
+    return this.effectiveAt(on, legalEntityId);
+  }
+
   async effectiveAt(on: Date, legalEntityId: string | null): Promise<PolicyWithBrackets> {
     return (await this.inForce(on, [legalEntityId])).get(legalEntityId) as PolicyWithBrackets;
   }
@@ -72,7 +82,14 @@ export class PolicyService {
     return found;
   }
 
-  async create(body: CreatePolicyDto, createdById: string): Promise<PolicyWithBrackets> {
+  async create(body: CreatePolicyDto, viewer: Viewer): Promise<PolicyWithBrackets> {
+    // A row with no entity prices the whole group, so only a desk that answers for it writes one (KEHOACH 9.4).
+    if (!body.legalEntityId) {
+      ScopeService.mustWriteGroup(viewer);
+    } else if (!ScopeService.reachesEntity(viewer, body.legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
+    const createdById = viewer.userId;
     if (!bandsInOrder(body.brackets)) {
       throw new BadRequestException("BRACKETS_OUT_OF_ORDER");
     }

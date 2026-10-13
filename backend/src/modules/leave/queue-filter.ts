@@ -1,7 +1,6 @@
 import type { Prisma, Role } from "@prisma/client";
 
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
-import { ScopeService } from "../../common/scope/scope.service.js";
 import { namedFilter, type PrismaService } from "../../database/prisma.service.js";
 import { dayWindow } from "../timesheet/local-day.js";
 import type { Order, QueueQueryDto } from "./dto/queue.dto.js";
@@ -73,12 +72,4 @@ export function sortedBy(field: string, order: Order): Loose[] {
 /** Whole days a row has waited, counted from the first day (KEHOACH 9.17 item 12). */
 export function waitedDays(since: Date, now: Date): number {
   return Math.max(0, Math.floor((now.getTime() - since.getTime()) / MS_PER_DAY));
-}
-
-/** Naming a person narrows what the viewer may see; it never widens it. */
-export function whoseRows(visible: number[] | null, asked: number | undefined): Loose {
-  if (asked === undefined) {
-    return visible === null ? {} : { employeeId: { in: visible } };
-  }
-  return { employeeId: ScopeService.sees(visible, asked) ? asked : { in: [] } };
 }

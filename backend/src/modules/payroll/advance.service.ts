@@ -17,7 +17,6 @@ import {
   personWhere,
   sortedBy,
   waitedDays,
-  whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
@@ -60,7 +59,8 @@ export class AdvanceService {
         : await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_PAY", query.state === "APPROVED", query.employeeId);
     const where = {
       AND: [
-        whoseRows(visible, query.employeeId),
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         own,
         query.state ? { state: query.state } : {},
         person ? { employee: person } : {},
@@ -125,7 +125,7 @@ export class AdvanceService {
   async one(viewer: Viewer, id: string): Promise<AdvanceDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.salaryAdvance.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
-    if (!held || !ScopeService.sees(visible, held.employeeId)) {
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("ADVANCE_NOT_FOUND");
     }
     const [[row], decider] = await Promise.all([
@@ -154,7 +154,7 @@ export class AdvanceService {
     if (!QUEUE_DESKS.advancesToDecide.includes(viewer.role)) {
       throw new ForbiddenException("ADVANCE_DECIDE_DENIED");
     }
-    const found = await this.require(id);
+    const found = await this.reached(viewer, id);
     refuseOwn(viewer, found.employeeId);
     // Guarded on the state, so a withdrawal or a second desk landing first leaves this one refused.
     const claimed = await this.db.salaryAdvance.updateMany({
@@ -199,7 +199,7 @@ export class AdvanceService {
     if (!QUEUE_DESKS.advancesToPay.includes(viewer.role)) {
       throw new ForbiddenException("ADVANCE_PAY_DENIED");
     }
-    const found = await this.require(id);
+    const found = await this.reached(viewer, id);
     // Paying oneself is deciding one's own money a second time (KEHOACH 9.4).
     refuseOwn(viewer, found.employeeId);
     const claimed = await this.db.salaryAdvance.updateMany({
@@ -235,6 +235,15 @@ export class AdvanceService {
   private async require(id: string): Promise<SalaryAdvance> {
     const found = await this.db.salaryAdvance.findUnique({ where: { id } });
     if (!found) {
+      throw new NotFoundException("ADVANCE_NOT_FOUND");
+    }
+    return found;
+  }
+
+  private async reached(viewer: Viewer, id: string): Promise<SalaryAdvance> {
+    const found = await this.require(id);
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    if (!(await this.scope.reaches(viewer, visible, found.employeeId))) {
       throw new NotFoundException("ADVANCE_NOT_FOUND");
     }
     return found;

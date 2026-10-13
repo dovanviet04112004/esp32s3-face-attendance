@@ -415,7 +415,7 @@ describe("disputing a payslip (e2e)", () => {
       .send({ payslipId: issuedSlipId, lineCode: RACE_LINE, claim: CLAIM });
     assert.equal(asked.status, 201);
     const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
-    const viewer = { userId: admin.id, role: admin.role, employeeId: admin.employeeId };
+    const viewer = { userId: admin.id, role: admin.role, employeeId: admin.employeeId, entityIds: null };
     const service = app.get(DisputesService);
     const body = { outcome: "UPHELD" as const, answer: ANSWER, amount: OWED, code: RACE_LINE };
     const settled = await Promise.allSettled([

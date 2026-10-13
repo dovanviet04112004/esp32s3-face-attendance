@@ -43,10 +43,7 @@ export class ConsentService {
   }
 
   async history(viewer: Viewer, employeeId: number): Promise<BiometricConsent[]> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
-      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
-    }
+    await this.mustReach(viewer, employeeId);
     return this.db.biometricConsent.findMany({
       where: { employeeId },
       orderBy: { grantedAt: "desc" },
@@ -59,6 +56,7 @@ export class ConsentService {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     this.mayRecordFor(viewer, employeeId);
+    await this.mustReach(viewer, employeeId);
     if ((await this.live(employeeId)) !== null) {
       throw new BadRequestException("CONSENT_ALREADY_GRANTED");
     }
@@ -120,6 +118,13 @@ export class ConsentService {
   mayRecordFor(viewer: Viewer, employeeId: number): void {
     if (employeeId !== viewer.employeeId && !RECORDERS.has(viewer.role)) {
       throw new ForbiddenException("CONSENT_NOT_YOURS");
+    }
+  }
+
+  async mustReach(viewer: Viewer, employeeId: number): Promise<void> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    if (!(await this.scope.reaches(viewer, visible, employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
   }
 }

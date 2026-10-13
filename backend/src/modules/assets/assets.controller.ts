@@ -33,6 +33,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { AssetsService, type AssetCounts, type AssetRow, type AssetWithHolder } from "./assets.service.js";
@@ -61,23 +62,26 @@ export class AssetsController {
 
   @Get("assets")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "The asset register, narrowed by state, kind, holder or a search" })
   @ApiOkResponse({ type: AssetPageView })
-  list(@Query() query: ListAssetsDto): Promise<Page<AssetRow>> {
-    return this.assets.list(query);
+  list(@CurrentViewer() viewer: Viewer, @Query() query: ListAssetsDto): Promise<Page<AssetRow>> {
+    return this.assets.list(viewer, query);
   }
 
   @Get("assets/counts")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "How many assets stand in each state under the other filters, and the kinds" })
   @ApiOkResponse({ type: AssetCountsView })
-  counts(@Query() query: AssetFilterDto): Promise<AssetCounts> {
-    return this.assets.counts(query);
+  counts(@CurrentViewer() viewer: Viewer, @Query() query: AssetFilterDto): Promise<AssetCounts> {
+    return this.assets.counts(viewer, query);
   }
 
   @Get("assets/export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The register under the list's filters, as a file Excel opens" })
@@ -89,6 +93,7 @@ export class AssetsController {
   @Post("assets")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Put an asset on the register" })
   @ApiCreatedResponse({ type: AssetView })
   @ApiConflictResponse({ type: ErrorBody, description: "ASSET_CODE_TAKEN" })
@@ -99,6 +104,7 @@ export class AssetsController {
   @Patch("assets/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Correct an asset's name, kind, serial number or note" })
   @ApiParam(ASSET_ID)
   @ApiOkResponse({ type: AssetView })
@@ -109,17 +115,19 @@ export class AssetsController {
 
   @Get("assets/:id/history")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Who this asset has been through, newest first" })
   @ApiParam(ASSET_ID)
   @ApiOkResponse({ type: [AssetTransferView] })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ASSET_NOT_FOUND" })
-  history(@Param("id") id: string): Promise<AssetTransfer[]> {
-    return this.assets.history(id);
+  history(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<AssetTransfer[]> {
+    return this.assets.history(viewer, id);
   }
 
   @Post("assets/:id/hand-over")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Give it out or take it back; either way a row is written" })
   @ApiParam(ASSET_ID)
   @ApiCreatedResponse({ type: AssetWithHolderView })

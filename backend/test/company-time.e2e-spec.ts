@@ -150,7 +150,7 @@ describe("company time (e2e)", () => {
 
   it("hands today's questionable punch to HR with its receipt time, and the lists mark it", async () => {
     const reports = app.get(ReportsService);
-    const page = await reports.exceptionsPage("NV9830", 5);
+    const page = await reports.exceptionsPage({ userId: "", role: "HR", employeeId: null, entityIds: null }, "NV9830", 5);
     const mine = page.rows.find((row) => row.employeeId === idOf.get(DOUBTED));
     assert.equal(mine?.reason, "QUESTIONABLE_TIME", JSON.stringify(page.rows));
     assert.ok(mine?.receivedAt, "the exception carries no receipt time");

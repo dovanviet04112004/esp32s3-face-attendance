@@ -27,7 +27,6 @@ import {
   personWhere,
   sortedBy,
   waitedDays,
-  whoseRows,
 } from "../leave/queue-filter.js";
 import { MailerService } from "../notifications/mailer.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
@@ -132,7 +131,8 @@ export class ProfileService {
     // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
     const where = {
       AND: [
-        whoseRows(visible, query.employeeId),
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         await this.audience.inboxNarrowing(viewer, "PROFILE_CHANGES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.field ? { field: query.field } : {},
@@ -166,7 +166,7 @@ export class ProfileService {
   async one(viewer: Viewer, id: string): Promise<ProfileChangeDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.profileChange.findUnique({ where: { id }, include: { employee: PERSON_VIEW, decidedBy: NAMED } });
-    if (!held || !ScopeService.sees(visible, held.employeeId)) {
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
     }
     const { decidedBy, ...row } = held;
@@ -288,8 +288,7 @@ export class ProfileService {
   }
 
   private async reachable(viewer: Viewer, employeeId: number): Promise<Person> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
+    if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const person = await this.db.employee.findUnique({
@@ -302,9 +301,10 @@ export class ProfileService {
     return person;
   }
 
-  private async waiting(id: string): Promise<ProfileChange> {
+  /** A change still pending; one named for a decider must also be about somebody that decider reaches. */
+  private async waiting(id: string, decider?: Viewer): Promise<ProfileChange> {
     const held = await this.db.profileChange.findUnique({ where: { id } });
-    if (!held) {
+    if (!held || (decider !== undefined && !(await this.reaches(decider, held.employeeId)))) {
       throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
     }
     if (held.state !== "PENDING") {
@@ -329,12 +329,16 @@ export class ProfileService {
     if (!DESK.includes(viewer.role)) {
       throw new ForbiddenException("HR_ONLY");
     }
-    const held = await this.waiting(id);
+    const held = await this.waiting(id, viewer);
     // Neither the person whose record it is nor the one who asked decides it (KEHOACH 9.17 item 6 rule 2).
     if (held.askedById !== null && held.askedById === viewer.userId) {
       throw new ForbiddenException("SELF_DECISION");
     }
     refuseOwn(viewer, held.employeeId);
     return held;
+  }
+
+  private async reaches(viewer: Viewer, employeeId: number): Promise<boolean> {
+    return this.scope.reaches(viewer, await this.scope.deskOrSelfEmployeeIds(viewer), employeeId);
   }
 }

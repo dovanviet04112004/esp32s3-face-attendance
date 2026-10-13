@@ -71,7 +71,12 @@ describe("the attendance family, each told to its own people and closed when the
   const sockets: Socket[] = [];
 
   const id = (who: Who) => idOf.get(who) ?? 0;
-  const viewerOf = (who: Who): Viewer => ({ userId: loginOf.get(who) ?? "", role: ROLE[who], employeeId: id(who) });
+  const viewerOf = (who: Who): Viewer => ({
+    userId: loginOf.get(who) ?? "",
+    role: ROLE[who],
+    employeeId: id(who),
+    entityIds: null,
+  });
   const send = (who: Who, method: "post" | "patch" | "get", path: string, body: object = {}) =>
     request(app.getHttpServer())[method](path).set("Authorization", `Bearer ${tokenOf.get(who)}`).send(body);
   const at = (day: string, clock: string) => {

@@ -282,6 +282,10 @@ function heldOf(one: Prisma.EmployeeGetPayload<{ select: typeof HELD }>): Held {
   };
 }
 
+function entitiesOf(viewer: Viewer): Prisma.LegalEntityWhereInput {
+  return viewer.entityIds === null ? {} : { id: { in: viewer.entityIds } };
+}
+
 function chunks<T>(items: readonly T[]): T[][] {
   const cut: T[][] = [];
   for (let at = 0; at < items.length; at += kWriteChunk) {
@@ -486,11 +490,17 @@ export class EmployeesService implements OnModuleInit {
     const bosses = [
       ...new Set(read.rows.flatMap((row) => (row.managerCode && row.managerCode !== CLEAR ? [row.managerCode] : []))),
     ];
-    const [catalogue, heldBy, managers] = await Promise.all([
-      this.catalogueNow(),
-      this.heldFor(codes),
-      this.codesAmong(bosses),
+    const [catalogue, heldBy, managers, outside] = await Promise.all([
+      this.catalogueNow(viewer),
+      this.heldFor(codes, viewer),
+      this.codesAmong(bosses, viewer),
+      this.codesOutside(codes, viewer),
     ]);
+    read.rows.forEach((row, at) => {
+      if (row.code && outside.has(row.code)) {
+        faults.push({ row: read.lines[at] ?? 0, column: "code", code: "CODE_OUT_OF_SCOPE", value: row.code });
+      }
+    });
     const asking = read.rows
       .filter((row) => row.openLogin === "YES")
       .flatMap((row) => heldBy.get(row.code ?? "")?.values.personalEmail || row.personalEmail || []);
@@ -655,10 +665,13 @@ export class EmployeesService implements OnModuleInit {
   }
 
   /** Every catalogue entry by the key a file names it with, retired ones included (KEHOACH 9.20 rule 2). */
-  private async catalogueNow(): Promise<Catalogue> {
+  private async catalogueNow(viewer: Viewer): Promise<Catalogue> {
     const [entities, departments, titles, shifts, kiosks] = await Promise.all([
-      this.db.legalEntity.findMany({ select: { id: true, code: true, active: true } }),
-      this.db.department.findMany({ select: { id: true, code: true, legalEntityId: true, active: true } }),
+      this.db.legalEntity.findMany({ where: entitiesOf(viewer), select: { id: true, code: true, active: true } }),
+      this.db.department.findMany({
+        where: ScopeService.entityWhere(viewer, false),
+        select: { id: true, code: true, legalEntityId: true, active: true },
+      }),
       this.db.jobTitle.findMany({ select: { id: true, code: true, active: true } }),
       this.db.shift.findMany({ select: { id: true, name: true, active: true } }),
       this.enrollment.assignable(),
@@ -678,22 +691,51 @@ export class EmployeesService implements OnModuleInit {
     };
   }
 
-  private async heldFor(codes: string[]): Promise<Map<string, Held>> {
+  private async heldFor(codes: string[], viewer: Viewer): Promise<Map<string, Held>> {
     const held = new Map<string, Held>();
     for (const slice of chunks(codes)) {
-      const people = await this.db.employee.findMany({ where: { code: { in: slice } }, select: HELD });
+      const people = await this.db.employee.findMany({
+        where: { code: { in: slice }, ...ScopeService.peopleWhere(viewer, null) },
+        select: HELD,
+      });
       people.forEach((one) => held.set(one.code, heldOf(one)));
     }
     return held;
   }
 
-  private async codesAmong(codes: string[]): Promise<Set<string>> {
+  private async codesAmong(codes: string[], viewer: Viewer): Promise<Set<string>> {
     const found = new Set<string>();
     for (const slice of chunks(codes)) {
-      const rows = await this.db.employee.findMany({ where: { code: { in: slice } }, select: { code: true } });
+      const rows = await this.db.employee.findMany({
+        where: { code: { in: slice }, ...ScopeService.peopleWhere(viewer, null) },
+        select: { code: true },
+      });
       rows.forEach((one) => found.add(one.code));
     }
     return found;
+  }
+
+  // A code held by someone outside the account's entities can be neither made again nor edited (KEHOACH 9.4).
+  private async codesOutside(codes: string[], viewer: Viewer): Promise<Set<string>> {
+    const found = new Set<string>();
+    if (viewer.entityIds === null) {
+      return found;
+    }
+    for (const slice of chunks(codes)) {
+      const rows = await this.db.employee.findMany({
+        where: { code: { in: slice }, legalEntityId: { notIn: viewer.entityIds } },
+        select: { code: true },
+      });
+      rows.forEach((one) => found.add(one.code));
+    }
+    return found;
+  }
+
+  /** Refuse a person the viewer does not reach, the way an absent one is refused (KEHOACH 9.4). */
+  async mustReach(viewer: Viewer, id: number): Promise<void> {
+    if (!(await this.scope.reaches(viewer, await this.scope.visibleEmployeeIds(viewer), id))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
   }
 
   private async loginEmailsAmong(emails: string[]): Promise<Set<string>> {
@@ -745,7 +787,7 @@ export class EmployeesService implements OnModuleInit {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const today = dayAsDate(this.today());
     const rows = await this.db.employee.findMany({
-      where: await this.filterWhere(query, visible),
+      where: await this.filterWhere(query, viewer, visible),
       include: {
         legalEntity: { select: { code: true } },
         department: { select: { code: true } },
@@ -799,18 +841,18 @@ export class EmployeesService implements OnModuleInit {
     if (format === "csv") {
       return { body: Buffer.from(toExcelCsv([...IMPORT_COLUMNS], body), "utf8"), type: CSV_TYPE, name: "employees.csv" };
     }
-    const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: body, lists: await this.dropDowns() });
+    const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: body, lists: await this.dropDowns(viewer) });
     return { body: workbook, type: XLSX_MIME, name: "employees.xlsx" };
   }
 
   /** Built at download time from the catalogues in use, so an entry added a moment ago is already in it (KEHOACH 9.20 rule 2). */
-  async template(format: FileFormat): Promise<FileOut> {
+  async template(viewer: Viewer, format: FileFormat): Promise<FileOut> {
     if (format === "xlsx") {
-      const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: [], lists: await this.dropDowns() });
+      const workbook = await writeWorkbook({ header: IMPORT_COLUMNS, rows: [], lists: await this.dropDowns(viewer) });
       return { body: workbook, type: XLSX_MIME, name: "employees-template.xlsx" };
     }
     const [entity] = await this.db.legalEntity.findMany({
-      where: { active: true },
+      where: { active: true, ...entitiesOf(viewer) },
       orderBy: { code: "asc" },
       take: 1,
       select: { id: true, code: true },
@@ -840,11 +882,15 @@ export class EmployeesService implements OnModuleInit {
   }
 
   /** Each catalogue column's drop-down, `code · name`; a department names its entity too when there are several. */
-  private async dropDowns(): Promise<Map<ImportColumn, string[]>> {
+  private async dropDowns(viewer: Viewer): Promise<Map<ImportColumn, string[]>> {
     const [entities, departments, titles, shifts, kiosks] = await Promise.all([
-      this.db.legalEntity.findMany({ where: { active: true }, select: { code: true, name: true }, orderBy: { code: "asc" } }),
+      this.db.legalEntity.findMany({
+        where: { active: true, ...entitiesOf(viewer) },
+        select: { code: true, name: true },
+        orderBy: { code: "asc" },
+      }),
       this.db.department.findMany({
-        where: { active: true, legalEntity: { active: true } },
+        where: { active: true, legalEntity: { active: true, ...entitiesOf(viewer) } },
         select: { code: true, name: true, legalEntity: { select: { code: true } } },
         orderBy: [{ legalEntity: { code: "asc" } }, { code: "asc" }],
       }),
@@ -870,9 +916,13 @@ export class EmployeesService implements OnModuleInit {
     ]);
   }
 
-  private async filterWhere(query: EmployeeFilterDto, visible: number[] | null): Promise<Prisma.EmployeeWhereInput> {
+  private async filterWhere(
+    query: EmployeeFilterDto,
+    viewer: Viewer,
+    visible: number[] | null,
+  ): Promise<Prisma.EmployeeWhereInput> {
     const [branch, named] = await this.narrowings(query);
-    return this.whereOf(query, visible, branch, named);
+    return this.whereOf(query, viewer, visible, branch, named);
   }
 
   private narrowings(query: EmployeeFilterDto): Promise<[string[] | null, IdFilter | null]> {
@@ -886,6 +936,7 @@ export class EmployeesService implements OnModuleInit {
   /** The directory's one where-builder: the list, the export, the counts and a bulk selection all read it. */
   private whereOf(
     query: EmployeeFilterDto,
+    viewer: Viewer,
     visible: number[] | null,
     branch: string[] | null,
     named: IdFilter | null,
@@ -897,7 +948,7 @@ export class EmployeesService implements OnModuleInit {
       query.shift ? shiftWhere(query.shift, dayAsDate(this.today())) : null,
     ].filter((one): one is Prisma.EmployeeWhereInput => one !== null);
     return {
-      ...ScopeService.narrow("id", visible),
+      ...ScopeService.peopleWhere(viewer, visible),
       ...(branch ? { departmentId: { in: branch } } : {}),
       ...(query.active === undefined ? {} : { active: query.active }),
       ...(query.ending ? { active: true, contracts: { some: this.endingWindow(query) } } : {}),
@@ -911,7 +962,7 @@ export class EmployeesService implements OnModuleInit {
   async matchingIds(viewer: Viewer, query: EmployeeFilterDto, cap: number): Promise<number[]> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const rows = await this.db.employee.findMany({
-      where: await this.filterWhere(query, visible),
+      where: await this.filterWhere(query, viewer, visible),
       select: { id: true },
       orderBy: [{ code: "asc" }, { id: "asc" }],
       take: cap + 1,
@@ -925,7 +976,7 @@ export class EmployeesService implements OnModuleInit {
   /** How many people still work here and how many left, under every other filter sent. */
   async counts(query: EmployeeFilterDto, viewer: Viewer): Promise<{ active: number; left: number }> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const where = await this.filterWhere({ ...query, active: undefined }, visible);
+    const where = await this.filterWhere({ ...query, active: undefined }, viewer, visible);
     const [active, left] = await Promise.all([
       this.db.employee.count({ where: { AND: [where, { active: true }] } }),
       this.db.employee.count({ where: { AND: [where, { active: false }] } }),
@@ -942,7 +993,7 @@ export class EmployeesService implements OnModuleInit {
     const today = dayAsDate(this.today());
     const countOf = (without: keyof EmployeeFilterDto, option: Prisma.EmployeeWhereInput) =>
       this.db.employee.count({
-        where: { AND: [this.whereOf({ ...query, [without]: undefined }, visible, branch, named), option] },
+        where: { AND: [this.whereOf({ ...query, [without]: undefined }, viewer, visible, branch, named), option] },
       });
     const [account, face, shift, faceAll] = await Promise.all([
       countEach(ACCOUNT_FILTERS, (one) => countOf("account", ACCOUNT_WHERE[one])),
@@ -1004,7 +1055,7 @@ export class EmployeesService implements OnModuleInit {
 
   async list(query: ListEmployeesDto, viewer: Viewer): Promise<Page<Employee>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const where = await this.filterWhere(query, visible);
+    const where = await this.filterWhere(query, viewer, visible);
     if (query.ending) {
       return this.endingPage(query, viewer, visible, where);
     }
@@ -1034,7 +1085,7 @@ export class EmployeesService implements OnModuleInit {
   async get(id: number, viewer: Viewer): Promise<Employee> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     // Out of scope answers the same as absent: 403 would confirm they exist.
-    if (!ScopeService.sees(visible, id)) {
+    if (!(await this.scope.reaches(viewer, visible, id))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const found = await this.db.employee.findUnique({ where: { id }, include: EMPLOYEE_VIEW });
@@ -1076,7 +1127,7 @@ export class EmployeesService implements OnModuleInit {
   }
 
   async create(viewer: Viewer, body: CreateEmployeeDto): Promise<Employee> {
-    const placed = await this.placement(body, null);
+    const placed = await this.placement(body, null, viewer);
     let written: { made: Employee; flips: RoleFlip[] };
     try {
       written = await this.db.$transaction(async (tx) => {
@@ -1116,8 +1167,10 @@ export class EmployeesService implements OnModuleInit {
       managerId?: number | null;
     },
     held: HeldPlace | null,
+    viewer: Viewer,
   ): Promise<{ legalEntityId: string }> {
     const departmentId = asked.departmentId === undefined ? (held?.departmentId ?? null) : asked.departmentId;
+    const reached = viewer.entityIds === null ? {} : { id: { in: viewer.entityIds } };
     const [entity, department, title, manager, entities] = await Promise.all([
       asked.legalEntityId
         ? this.db.legalEntity.findUnique({ where: { id: asked.legalEntityId }, select: { active: true } })
@@ -1131,21 +1184,23 @@ export class EmployeesService implements OnModuleInit {
       asked.managerId
         ? this.db.employee.findUnique({ where: { id: asked.managerId }, select: { active: true, leaveDate: true } })
         : null,
-      held === null ? this.db.legalEntity.findMany({ where: { active: true }, select: { id: true }, take: 2 }) : [],
+      held === null ? this.db.legalEntity.findMany({ where: { active: true, ...reached }, select: { id: true }, take: 2 }) : [],
     ]);
-    if (asked.legalEntityId && !entity?.active) {
+    // Nobody is placed in an entity the account does not answer for (KEHOACH 9.4).
+    if (asked.legalEntityId && (!entity?.active || !ScopeService.reachesEntity(viewer, asked.legalEntityId))) {
       throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
     }
     if (asked.jobTitleId && !title?.active) {
       throw new NotFoundException("JOB_TITLE_NOT_FOUND");
     }
-    if (asked.managerId && !manager) {
+    if (asked.managerId && (!manager || !(await this.scope.reaches(viewer, null, asked.managerId)))) {
       throw new NotFoundException("MANAGER_NOT_FOUND");
     }
     if (manager && (!manager.active || manager.leaveDate !== null)) {
       throw new ConflictException("MANAGER_HAS_LEFT");
     }
-    if (departmentId && (!department || (asked.departmentId && !department.active))) {
+    const unreached = asked.departmentId && department && !ScopeService.reachesEntity(viewer, department.legalEntityId);
+    if (departmentId && (!department || (asked.departmentId && !department.active) || unreached)) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
     const entityId = asked.legalEntityId ?? held?.legalEntityId ?? null;
@@ -1179,7 +1234,7 @@ export class EmployeesService implements OnModuleInit {
         leaveDate: true,
       },
     });
-    if (!person) {
+    if (!person || !(await this.scope.reaches(viewer, await this.scope.visibleEmployeeIds(viewer), id))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     refuseOwn(viewer, person.id);
@@ -1559,7 +1614,7 @@ export class EmployeesService implements OnModuleInit {
    */
   async update(id: number, body: UpdateEmployeeDto, viewer: Viewer): Promise<Employee> {
     const held = await this.get(id, viewer);
-    const placed = await this.placement(body, held);
+    const placed = await this.placement(body, held, viewer);
     let written: { saved: Employee; flips: RoleFlip[] };
     try {
       written = await this.db.$transaction(async (tx) => {

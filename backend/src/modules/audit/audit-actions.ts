@@ -44,6 +44,7 @@ export const AUDIT_ACTIONS = {
   USER_UNLOCK: "user.unlock",
   USER_EMAIL: "user.email",
   USER_EMPLOYEE: "user.employee",
+  USER_ENTITIES: "user.entities",
   USER_MFA_ON: "user.mfaOn",
   USER_MFA_BACKUP: "user.mfaBackup",
   USER_MFA_CODES: "user.mfaCodes",

@@ -229,8 +229,9 @@ export class OnboardingService {
 
   /** Turn a template into work somebody owns, with dates it is due by. */
   async start(viewer: Viewer, body: StartRunDto): Promise<RunWithTasks> {
-    const person = await this.db.employee.findUnique({
-      where: { id: body.employeeId },
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const person = await this.db.employee.findFirst({
+      where: { AND: [{ id: body.employeeId }, ScopeService.peopleWhere(viewer, visible)] },
       select: { id: true, jobTitleId: true, departmentId: true, managerId: true },
     });
     if (!person) {
@@ -281,7 +282,7 @@ export class OnboardingService {
   /** One person's run, or null while none has been started: an empty tab, not a fault. */
   async run(viewer: Viewer, employeeId: number, kind: ChecklistKind): Promise<RunWithTasks | null> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
+    if (!(await this.scope.reaches(viewer, visible, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.db.checklistRun.findUnique({
@@ -301,9 +302,8 @@ export class OnboardingService {
     return {
       doneAt: null,
       run: {
-        ...(visible === null ? {} : { employeeId: { in: visible } }),
+        AND: [ScopeService.ownedWhere(viewer, visible), branch ? { employee: { departmentId: { in: branch } } } : {}],
         ...(query.kind ? { kind: query.kind } : {}),
-        ...(branch ? { employee: { departmentId: { in: branch } } } : {}),
       },
       ...(term
         ? { OR: [{ id: { in: titled.map((one) => one.id) } }, { run: { employeeId: await namedFilter(this.db, term) } }] }
@@ -355,7 +355,7 @@ export class OnboardingService {
       throw new NotFoundException("TASK_NOT_FOUND");
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, task.run.employeeId)) {
+    if (!(await this.scope.reaches(viewer, visible, task.run.employeeId))) {
       throw new NotFoundException("TASK_NOT_FOUND");
     }
     if (task.doneAt !== null) {

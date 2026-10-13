@@ -133,7 +133,8 @@ export class AttendanceService {
       throw new BadRequestException("DECISION_NOTE_REQUIRED");
     }
     const held = PUNCH_ID.test(id) ? await this.db.attendanceRecord.findUnique({ where: { id: BigInt(id) } }) : null;
-    if (held === null || held.review === null) {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (held === null || held.review === null || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("PUNCH_NOT_FOUND");
     }
     refuseOwn(viewer, held.employeeId);
@@ -186,10 +187,10 @@ export class AttendanceService {
   async list(query: ListAttendanceDto, viewer: Viewer): Promise<Page<Punch>> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const where: Prisma.AttendanceRecordWhereInput = {
-      ...ScopeService.narrow("employeeId", visible),
+      ...ScopeService.ownedWhere(viewer, visible),
     };
     // An explicit filter narrows further, it never widens past the scope.
-    if (query.employeeId !== undefined && ScopeService.sees(visible, query.employeeId)) {
+    if (query.employeeId !== undefined && (await this.scope.reaches(viewer, visible, query.employeeId))) {
       where.employeeId = query.employeeId;
     } else if (query.employeeId !== undefined) {
       return { rows: [], total: 0, totalIsExact: true, next: null };
@@ -238,11 +239,11 @@ export class AttendanceService {
   /** The counts a person's punch filter shows beside each choice, over the same range and scope. */
   async counts(query: ListAttendanceDto, viewer: Viewer): Promise<PunchCounts> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (query.employeeId !== undefined && !ScopeService.sees(visible, query.employeeId)) {
+    if (query.employeeId !== undefined && !(await this.scope.reaches(viewer, visible, query.employeeId))) {
       return { all: 0, capturedOffline: 0, clockUnsynced: 0, questionableTime: 0, held: 0 };
     }
     const whose: Prisma.AttendanceRecordWhereInput = {
-      ...ScopeService.narrow("employeeId", visible),
+      ...ScopeService.ownedWhere(viewer, visible),
       ...(query.employeeId !== undefined ? { employeeId: query.employeeId } : {}),
       ...(query.deviceId !== undefined ? { deviceId: query.deviceId } : {}),
     };

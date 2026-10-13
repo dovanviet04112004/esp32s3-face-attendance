@@ -20,6 +20,7 @@ import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
@@ -101,6 +102,7 @@ export class TimesheetController {
 
   @Get("build/:jobId")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Where a queued build stands, so a page stops waiting when it ends" })
   @ApiOkResponse({ type: BuildStateView })
   @ApiParam({ name: "jobId", description: "Job id from POST /timesheet/build", example: "1842" })
@@ -111,6 +113,7 @@ export class TimesheetController {
   @Patch(":id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Correct somebody else's day by hand, leaving the measurement and a trace" })
   @ApiOkResponse({ type: DayView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
@@ -127,6 +130,7 @@ export class TimesheetController {
   @Post("build")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Queue the fold from punches into days; asking twice queues twice" })
   @ApiCreatedResponse({ type: BuildQueued })
   build(@Body() body: BuildDaysDto): Promise<{ jobId: string }> {

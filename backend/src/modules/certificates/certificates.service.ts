@@ -17,7 +17,6 @@ import {
   personWhere,
   sortedBy,
   waitedDays,
-  whoseRows,
 } from "../leave/queue-filter.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
@@ -87,7 +86,8 @@ export class CertificatesService {
     // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
     const where = {
       AND: [
-        whoseRows(visible, query.employeeId),
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         await this.audience.inboxNarrowing(viewer, "CERTIFICATES", waiting, query.employeeId),
         query.state ? { state: query.state } : {},
         query.kind ? { kind: query.kind } : {},
@@ -121,7 +121,7 @@ export class CertificatesService {
   async one(viewer: Viewer, id: string): Promise<CertificateDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.certificate.findUnique({ where: { id }, include: { employee: PERSON_VIEW, issuedBy: NAMED } });
-    if (!held || !ScopeService.sees(visible, held.employeeId)) {
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     const { issuedBy, ...row } = held;
@@ -226,7 +226,7 @@ export class CertificatesService {
     }
     // It carries pay, a national id and a birth date, so a manager's tree does not reach it (KEHOACH 9.4).
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, held.employeeId)) {
+    if (!(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     if (held.state !== "ISSUED" || held.serial === null) {
@@ -280,14 +280,15 @@ export class CertificatesService {
     if (!DESK.includes(viewer.role)) {
       throw new ForbiddenException("HR_ONLY");
     }
-    const held = await this.waiting(id);
+    const held = await this.waiting(viewer, id);
     refuseOwn(viewer, held.employeeId);
     return held;
   }
 
-  private async waiting(id: string): Promise<Certificate> {
+  private async waiting(viewer: Viewer, id: string): Promise<Certificate> {
     const held = await this.db.certificate.findUnique({ where: { id } });
-    if (!held) {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
     }
     if (held.state !== "REQUESTED") {

@@ -66,8 +66,12 @@ export class SubjectsService {
   }
 
   /** The where clause that keeps a person search to subjects this viewer may still see. */
-  searchable(reach: { byTree: number[] | null; byDesk: number[] | null }, person: Prisma.EmployeeWhereInput): Prisma.NotificationWhereInput {
-    const within = (ids: number[] | null): Prisma.EmployeeWhereInput => (ids === null ? person : { AND: [person, { id: { in: ids } }] });
+  searchable(
+    viewer: Viewer,
+    reach: { byTree: number[] | null; byDesk: number[] | null },
+    person: Prisma.EmployeeWhereInput,
+  ): Prisma.NotificationWhereInput {
+    const within = (ids: number[] | null): Prisma.EmployeeWhereInput => ({ AND: [person, ScopeService.peopleWhere(viewer, ids)] });
     return {
       OR: [
         { subjectType: { in: [...BY_TREE] }, subjectEmployee: { is: within(reach.byTree) } },
@@ -77,13 +81,17 @@ export class SubjectsService {
   }
 
   /** Each row's subject, in the order given; a row with no subject reads null.
-   *  @ctx any | at most five reads whatever the number of rows
+   *  @ctx any | at most six reads whatever the number of rows
    */
   async describe(viewer: Viewer, rows: Subjected[]): Promise<(SubjectView | null)[]> {
     const reach = await this.reach(viewer);
+    const reached = await this.ofEntities(viewer, rows);
     const sees = (row: Subjected): boolean => {
       const ids = row.subjectType !== null && BY_TREE.has(row.subjectType) ? reach.byTree : reach.byDesk;
-      return row.subjectEmployeeId === null || ScopeService.sees(ids, row.subjectEmployeeId);
+      if (row.subjectEmployeeId === null || row.subjectEmployeeId === viewer.employeeId) {
+        return true;
+      }
+      return ids === null ? reached === null || reached.has(row.subjectEmployeeId) : ids.includes(row.subjectEmployeeId);
     };
     const shown = rows.filter((row) => row.subjectType !== null && sees(row));
     const people = [...new Set(shown.flatMap((row) => (row.subjectEmployeeId === null ? [] : [row.subjectEmployeeId])))];
@@ -127,5 +135,18 @@ export class SubjectsService {
         parent: parentOf.get(`${row.subjectType}:${row.subjectId}`) ?? null,
       };
     });
+  }
+
+  /** The subjects a desk held to some entities reaches, or null when it answers for the whole group. */
+  private async ofEntities(viewer: Viewer, rows: Subjected[]): Promise<Set<number> | null> {
+    const ids = [...new Set(rows.flatMap((row) => (row.subjectEmployeeId === null ? [] : [row.subjectEmployeeId])))];
+    if (viewer.entityIds === null || ids.length === 0) {
+      return null;
+    }
+    const found = await this.db.employee.findMany({
+      where: { id: { in: ids }, legalEntityId: { in: viewer.entityIds } },
+      select: { id: true },
+    });
+    return new Set(found.map((one) => one.id));
   }
 }

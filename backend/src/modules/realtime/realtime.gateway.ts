@@ -12,7 +12,7 @@ import {
 import { Server, Socket, type ServerOptions } from "socket.io";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
-import type { Viewer } from "../../common/scope/viewer.js";
+import { heldEntities, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { AuthService } from "../auth/auth.service.js";
 import { JWT_ALGORITHM, SESSIONS_CUT, type AccessClaims, type SessionsCut } from "../auth/auth.types.js";
@@ -37,12 +37,13 @@ const FLEET_FEEDS: ReadonlySet<FeedName> = new Set([FEED.device, FEED.event]);
 const MS_PER_SECOND = 1000;
 
 /** Who is listening, and which employees they are allowed to hear about.
- *  A null reach is everyone, the same answer visibleEmployeeIds gives.
+ *  A null reach is everyone; unowned marks a desk, which hears writes nobody owns (KEHOACH 9.4).
  */
 interface Watcher {
   viewer: Viewer;
   sessionId: string;
   reach: Set<number> | null;
+  unowned: boolean;
   goodUntilMs: number;
 }
 
@@ -93,6 +94,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
     const visible = await this.scope.visibleEmployeeIds(ticket.viewer);
+    const limited = ticket.viewer.entityIds;
+    const reach = visible ?? (limited === null ? null : await this.scope.peopleOf(limited, ticket.viewer.employeeId));
     // A socket gone during the awaits already ran handleDisconnect, so nothing would delete it.
     if (!client.connected) {
       return;
@@ -100,7 +103,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.watchers.set(client.id, {
       viewer: ticket.viewer,
       sessionId: ticket.claims.sid,
-      reach: visible === null ? null : new Set(visible),
+      reach: reach === null ? null : new Set(reach),
+      unowned: visible === null,
       goodUntilMs: ticket.goodUntilMs,
     });
     const held = this.socketsOf.get(ticket.viewer.userId) ?? new Set<string>();
@@ -134,7 +138,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       });
       return {
         claims,
-        viewer: { userId: claims.sub, role: claims.role, employeeId: claims.employeeId ?? null },
+        viewer: {
+          userId: claims.sub,
+          role: claims.role,
+          employeeId: claims.employeeId ?? null,
+          entityIds: heldEntities(claims.role, claims.ent),
+        },
         goodUntilMs: (claims.exp ?? 0) * MS_PER_SECOND,
       };
     } catch {
@@ -206,7 +215,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return true;
     }
     if (about === undefined || about === null) {
-      return false;
+      return watcher.unowned;
     }
     const owners = typeof about === "number" ? [about] : about;
     return owners.some((owner) => reach.has(owner));

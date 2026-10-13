@@ -4,6 +4,7 @@ import type { BiometricConsent, Device, DeviceEnrollment, FaceTemplate, Prisma }
 import pg from "pg";
 
 import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
+import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { isPrismaCode, PrismaService, RECORD_NOT_FOUND } from "../../database/prisma.service.js";
@@ -72,6 +73,7 @@ export class EnrollmentService {
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
     private readonly feed: RealtimeGateway,
+    private readonly scope: ScopeService,
   ) {}
 
   /** The kiosks a person can be put on, by name (KEHOACH 7.5). */
@@ -84,7 +86,10 @@ export class EnrollmentService {
   }
 
   /** Where a person stands on every kiosk still holding or awaiting them (KEHOACH 7.5). */
-  async standing(employeeId: number): Promise<KioskStanding[]> {
+  async standing(viewer: Viewer, employeeId: number): Promise<KioskStanding[]> {
+    if (!(await this.reaches(viewer, employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     const rows = await this.db.deviceEnrollment.findMany({
       where: { employeeId, state: { not: "REVOKED" } },
       include: { device: { select: { name: true, location: true } } },
@@ -96,6 +101,14 @@ export class EnrollmentService {
       location: row.device.location,
       state: row.state,
     }));
+  }
+
+  /** `assign` on a viewer's word; a person outside their reach answers EMPLOYEE_NOT_FOUND (KEHOACH 9.4). */
+  async assignAs(viewer: Viewer, deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
+    if (!(await this.reaches(viewer, employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    return this.assign(deviceId, employeeId);
   }
 
   /**
@@ -225,8 +238,11 @@ export class EnrollmentService {
   }
 
   /** Withdraw a person from a kiosk; the kiosk drops any template it holds. */
-  async revoke(deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
+  async revoke(viewer: Viewer, deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     await this.device(deviceId);
+    if (!(await this.reaches(viewer, employeeId))) {
+      throw new NotFoundException("ENROLLMENT_NOT_FOUND");
+    }
     return this.tell(deviceId, async (tx) => ({
       value: await tx.deviceEnrollment
         .update({
@@ -854,5 +870,9 @@ export class EnrollmentService {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return found;
+  }
+
+  private async reaches(viewer: Viewer, employeeId: number): Promise<boolean> {
+    return this.scope.reaches(viewer, await this.scope.visibleEmployeeIds(viewer), employeeId);
   }
 }

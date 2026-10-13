@@ -48,6 +48,7 @@ import {
   ShiftView,
   UpdateShiftDto,
 } from "./dto/shift.dto.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { BulkQueryDto } from "../employees/dto/employee.dto.js";
@@ -73,6 +74,7 @@ export class ShiftsController {
 
   @Get()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Every shift, retired ones included" })
   @ApiOkResponse({ type: [ShiftView] })
   list(): Promise<Shift[]> {
@@ -88,16 +90,21 @@ export class ShiftsController {
 
   @Get("people/:employeeId")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Every shift one person has been put on, the latest start first" })
   @ApiOkResponse({ type: [HeldShiftView] })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
   @ApiParam({ name: "employeeId", description: "Employee id", example: 42 })
-  heldBy(@Param("employeeId", ParseIntPipe) employeeId: number): Promise<HeldShift[]> {
-    return this.shifts.heldBy(employeeId);
+  heldBy(
+    @CurrentViewer() viewer: Viewer,
+    @Param("employeeId", ParseIntPipe) employeeId: number,
+  ): Promise<HeldShift[]> {
+    return this.shifts.heldBy(viewer, employeeId);
   }
 
   @Get(":id")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "One shift and the hours it keeps" })
   @ApiOkResponse({ type: ShiftView })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
@@ -107,6 +114,7 @@ export class ShiftsController {
 
   @Post()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add a shift" })
   @ApiCreatedResponse({ type: ShiftView })
   create(@Body() body: CreateShiftDto): Promise<Shift> {
@@ -115,6 +123,7 @@ export class ShiftsController {
 
   @Patch(":id")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Change a shift's hours or its grace" })
   @ApiOkResponse({ type: ShiftView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
@@ -126,6 +135,7 @@ export class ShiftsController {
 
   @Delete(":id")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Retire a shift; assignments already made stay readable" })
   @ApiOkResponse({ type: ShiftView, description: "The shift, now inactive" })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
@@ -135,31 +145,39 @@ export class ShiftsController {
 
   @Get(":id/assignments")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Who works this shift, and from when, newest first" })
   @ApiOkResponse({ type: RosterPageView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
   assignments(
+    @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
     @Query() query: ListAssignmentsDto,
   ): Promise<Page<RosteredAssignment>> {
-    return this.shifts.assignments(id, query);
+    return this.shifts.assignments(viewer, id, query);
   }
 
   @Post(":id/assignments")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Put somebody on this shift from a date" })
   @ApiCreatedResponse({ type: AssignmentView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_ALREADY_ASSIGNED" })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
-  assign(@Param("id") id: string, @Body() body: AssignShiftDto): Promise<ShiftAssignment> {
-    return this.shifts.assign(id, body);
+  assign(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Body() body: AssignShiftDto,
+  ): Promise<ShiftAssignment> {
+    return this.shifts.assign(viewer, id, body);
   }
 
   @Post(":id/assignments/bulk")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Preview putting many people on this shift from one date; apply=true writes (KEHOACH 9.20)",
@@ -181,6 +199,7 @@ export class ShiftsController {
 
   @Delete(":id/assignments/:assignmentId")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Take somebody off this shift" })
   @ApiNoContentResponse({ description: "The assignment is gone" })
@@ -191,9 +210,10 @@ export class ShiftsController {
     example: "cff6a5b9-52f0-4050-92ef-b929a9911dac",
   })
   unassign(
+    @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
     @Param("assignmentId") assignmentId: string,
   ): Promise<void> {
-    return this.shifts.unassign(id, assignmentId);
+    return this.shifts.unassign(viewer, id, assignmentId);
   }
 }

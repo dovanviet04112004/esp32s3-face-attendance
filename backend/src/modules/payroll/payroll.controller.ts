@@ -29,6 +29,7 @@ import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { THROTTLE } from "../auth/auth.types.js";
@@ -79,15 +80,17 @@ export class PayrollController {
 
   @Get("payroll-periods")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Every pay month and the state it is in" })
   @ApiOkResponse({ type: [PeriodView] })
-  periods(@Query() query: PeriodsQueryDto): Promise<PayrollPeriod[]> {
-    return this.payroll.periods(query.legalEntityId);
+  periods(@CurrentViewer() viewer: Viewer, @Query() query: PeriodsQueryDto): Promise<PayrollPeriod[]> {
+    return this.payroll.periods(viewer, query.legalEntityId);
   }
 
   @Post("payroll-periods")
   @Roles("ADMIN", "PAYROLL")
-  @ApiOperation({ summary: "Open a pay month; one per entity and month, company-wide counting as one" })
+  @Reach("entity")
+  @ApiOperation({ summary: "Open one entity's pay month; one open at a time, months only forward" })
   @ApiCreatedResponse({ type: PeriodView })
   @ApiErrors(HttpStatus.CONFLICT)
   createPeriod(
@@ -99,17 +102,19 @@ export class PayrollController {
 
   @Get("payroll-periods/:id/checklist")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "What is still unsettled in this period (KEHOACH 9.18)" })
   @ApiOkResponse({ type: [ChecklistItemView] })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
-  checklist(@Param("id") id: string): Promise<ChecklistItem[]> {
-    return this.payroll.checklist(id);
+  checklist(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<ChecklistItem[]> {
+    return this.payroll.checklistFor(viewer, id);
   }
 
   @Post("payroll-periods/:id/lock")
   @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({
     summary: "Freeze the inputs and issue the newest finished run per person; refused while a run is going",
   })
@@ -127,6 +132,7 @@ export class PayrollController {
   @Post("payroll-periods/:id/paid")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Mark a locked period paid" })
   @ApiCreatedResponse({ type: PeriodView })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
@@ -136,26 +142,29 @@ export class PayrollController {
 
   @Get("payroll-periods/:id/totals")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Headcount, gross, net and employer cost over what the period issues or will issue" })
   @ApiOkResponse({ type: PeriodTotalsView })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
-  totals(@Param("id") id: string): Promise<PeriodTotals> {
-    return this.payroll.periodTotals(id);
+  totals(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PeriodTotals> {
+    return this.payroll.periodTotals(viewer, id);
   }
 
   @Get("payroll-periods/:id/delivery")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "How many issued payslips have gone out to their owners" })
   @ApiOkResponse({ type: DeliveryView })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
-  delivery(@Param("id") id: string): Promise<Delivery> {
-    return this.payroll.delivery(id);
+  delivery(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<Delivery> {
+    return this.payroll.delivery(viewer, id);
   }
 
   @Post("payroll-periods/:id/deliver")
   @AuditedInService()
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Send every issued payslip as a link, not an attachment" })
   @ApiCreatedResponse({ type: QueuedCount })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
@@ -169,6 +178,7 @@ export class PayrollController {
   @Get("payroll-periods/:id/export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The payment file for a bank, or the ledger for accounting" })
@@ -184,16 +194,18 @@ export class PayrollController {
 
   @Get("payroll-periods/:id/runs")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Every attempt at calculating this period" })
   @ApiOkResponse({ type: [RunView] })
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
-  runs(@Param("id") id: string): Promise<PayrollRun[]> {
-    return this.payroll.runs(id);
+  runs(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<PayrollRun[]> {
+    return this.payroll.runs(viewer, id);
   }
 
   @Post("payroll-runs")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Start a run: regular, bonus or final settlement" })
   @ApiCreatedResponse({ type: RunView })
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
@@ -202,6 +214,7 @@ export class PayrollController {
 
   @Get("payroll-runs/:id/bonus")
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "The amounts a bonus run holds, as loaded" })
   @ApiOkResponse({ type: [BonusRowView], description: "By code, then employee" })
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
@@ -212,6 +225,7 @@ export class PayrollController {
   @Post("payroll-runs/:id/bonus")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Load the amounts a bonus run pays; nobody loads their own (SELF_DECISION)" })
   @ApiCreatedResponse({ type: ItemCount })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
@@ -226,6 +240,7 @@ export class PayrollController {
 
   @Get("payroll-runs/:id/settlement")
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Everything a leaver is owed that the system can derive" })
   @ApiOkResponse({ type: SettlementSheetView })
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
@@ -239,6 +254,7 @@ export class PayrollController {
   @Post("payroll-runs/:id/settlement")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "Load the severance and offsets somebody signed for; nobody loads their own (SELF_DECISION)" })
   @ApiCreatedResponse({ type: ItemCount })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
@@ -255,6 +271,7 @@ export class PayrollController {
   @AuditedInService()
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({
     summary: "Claim the run as RUNNING and queue it; refused for a second press and while another run of the period goes",
   })
@@ -268,6 +285,7 @@ export class PayrollController {
   @Post("payroll-runs/:id/discard")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({
     summary: "Take a run of an open period out for good; a finished regular run sends the others back to draft",
   })
@@ -303,6 +321,7 @@ export class PayrollController {
   @Get("payslips/export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "Every payslip the list filter reaches, as a file Excel opens" })

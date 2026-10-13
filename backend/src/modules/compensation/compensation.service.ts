@@ -6,12 +6,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type {
-  AllowanceType,
-  CompensationAllowance,
-  CompensationRecord,
-  Dependent,
+import {
   Prisma,
+  type AllowanceType,
+  type CompensationAllowance,
+  type CompensationRecord,
+  type Dependent,
 } from "@prisma/client";
 
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
@@ -39,7 +39,6 @@ import {
   filedBetween,
   personWhere,
   sortedBy,
-  whoseRows,
 } from "../leave/queue-filter.js";
 import { asDay } from "../timesheet/local-day.js";
 
@@ -186,7 +185,7 @@ export class CompensationService {
 
   private async mayRead(viewer: Viewer, employeeId: number): Promise<void> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
+    if (!(await this.scope.reaches(viewer, visible, employeeId))) {
       // Not 403: a viewer who cannot see somebody should not learn they exist.
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
@@ -220,6 +219,7 @@ export class CompensationService {
     this.mayWrite(viewer);
     // Setting one's own pay is the check the desk split exists for (KEHOACH 9.4).
     refuseOwn(viewer, body.employeeId);
+    await this.mayRead(viewer, body.employeeId);
     const allowances = await this.allowanceRows(body);
     const held = await this.atDate(body.employeeId, new Date(body.effectiveFrom));
     const made = await this.db.compensationRecord
@@ -331,6 +331,7 @@ export class CompensationService {
     const on = new Date(body.effectiveFrom);
     const chosen = body.employeeIds?.length ? body.employeeIds : null;
     const branch = body.departmentId ? await departmentSubtree(this.db, body.departmentId) : null;
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const self = viewer.employeeId ?? 0;
     // DISTINCT ON takes the latest record per person in one pass; asking per
     // employee is one query each, which stops working at a few thousand (KEHOACH 9.9).
@@ -344,6 +345,7 @@ export class CompensationService {
         JOIN "CompensationRecord" c ON c."employeeId" = e."id"
        WHERE e."active" = true
          AND e."id" <> ${self}
+         AND ${ScopeService.peopleSql(viewer, visible, Prisma.sql`e."id"`, Prisma.sql`e."legalEntityId"`)}
          AND c."effectiveFrom" <= ${on}
          AND (${branch}::text[] IS NULL OR e."departmentId" = ANY(${branch}::text[]))
          AND (${chosen}::int[] IS NULL OR e."id" = ANY(${chosen}::int[]))
@@ -448,7 +450,8 @@ export class CompensationService {
     const where: Prisma.DependentWhereInput = {
       AND: [
         { state },
-        whoseRows(visible, query.employeeId),
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         await this.audience.inboxNarrowing(viewer, "DEPENDENTS", state === "PENDING", query.employeeId),
         person ? { employee: person } : {},
         filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
@@ -470,7 +473,7 @@ export class CompensationService {
   async oneDependent(viewer: Viewer, id: string): Promise<DependentDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.dependent.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
-    if (!held || !ScopeService.sees(visible, held.employeeId)) {
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
     const decider = held.decidedById ? await this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null;
@@ -511,7 +514,8 @@ export class CompensationService {
       throw new ForbiddenException("PAY_WRITE_DENIED");
     }
     const held = await this.db.dependent.findUnique({ where: { id }, select: { employeeId: true } });
-    if (!held) {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
     // A dependent lowers the claimant's own tax, so the claimant never approves it (KEHOACH 9.4).

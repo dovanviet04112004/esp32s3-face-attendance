@@ -32,6 +32,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import {
@@ -69,6 +70,7 @@ export class CompensationController {
 
   @Get("allowance-types")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("catalogue")
   @ApiOperation({ summary: "The allowance catalogue a pay record picks from" })
   @ApiOkResponse({ type: [AllowanceTypeView] })
   allowanceTypes(@Query() query: ListAllowanceTypesDto): Promise<AllowanceType[]> {
@@ -78,6 +80,7 @@ export class CompensationController {
   @Post("allowance-types")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add an allowance type and the rules the law gives it" })
   @ApiCreatedResponse({ type: AllowanceTypeView })
   @ApiConflictResponse({ type: ErrorBody, description: "ALLOWANCE_CODE_TAKEN" })
@@ -91,6 +94,7 @@ export class CompensationController {
   @Patch("allowance-types/:id")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Edit, retire or restore an allowance type; past pay records keep their copy" })
   @ApiOkResponse({ type: AllowanceTypeView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "ALLOWANCE_TYPE_NOT_FOUND" })
@@ -119,6 +123,7 @@ export class CompensationController {
   @Post("compensation")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "A raise appends a record; nothing is overwritten" })
   @ApiCreatedResponse({ type: PayRecordView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "ALLOWANCE_TYPE_REPEATED" })
@@ -133,6 +138,7 @@ export class CompensationController {
   @RateBucket(THROTTLE.heavy)
   @NotAudited()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "What a bulk raise would write; the writer's own record is left out" })
   @ApiCreatedResponse({ type: [RaisePreviewView] })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
@@ -144,6 +150,7 @@ export class CompensationController {
   @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Write the raise the preview showed; allowances carry forward" })
   @ApiCreatedResponse({ type: RaiseWrittenView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
@@ -164,6 +171,7 @@ export class CompensationController {
 
   @Get("dependents")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @ApiOperation({ summary: "Registrations in a state, in this viewer's scope; the desk's own waiting ones left out" })
   @ApiOkResponse({ type: DependentPageView })
   queue(
@@ -197,6 +205,7 @@ export class CompensationController {
   @Post("dependents/:id/decide")
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
+  @Reach("person")
   @ApiOperation({ summary: "Accept or turn down a registration still waiting" })
   @ApiCreatedResponse({ type: DependentView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })

@@ -1,12 +1,14 @@
 import type { Role } from "@prisma/client";
 
-/** What a guarded handler sees; employeeId saves row scope a lookup, mfa marks a session that gave its code (KEHOACH 9.4). */
+/** What a guarded handler sees; employeeId saves row scope a lookup, mfa marks a session that gave its code,
+ *  ent lists the entities a desk answers for, none meaning the whole group (KEHOACH 9.4). */
 export interface AccessClaims {
   sub: string;
   role: Role;
   sid: string;
   employeeId?: number;
   mfa?: true;
+  ent?: string[];
 }
 
 /** What a refresh token carries; sid names the row, jti the token it accepts. */

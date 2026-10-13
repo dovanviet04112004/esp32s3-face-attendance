@@ -11,6 +11,7 @@ import type {
   Holiday,
   JobTitle,
   LegalEntity,
+  Prisma,
 } from "@prisma/client";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -119,8 +120,10 @@ export class OrgService {
     if (!body.toDepartmentId && !body.toManagerCode) {
       throw new BadRequestException("REORG_NEEDS_A_DESTINATION");
     }
+    const reached = await this.reached(viewer);
     const people = await this.db.employee.findMany({
       where: {
+        ...reached,
         active: true,
         ...(chosen ? { code: { in: chosen } } : {}),
         ...(body.fromDepartmentId ? { departmentId: body.fromDepartmentId } : {}),
@@ -140,8 +143,8 @@ export class OrgService {
     }
 
     const toDepartment = body.toDepartmentId
-      ? await this.db.department.findUnique({
-          where: { id: body.toDepartmentId },
+      ? await this.db.department.findFirst({
+          where: { id: body.toDepartmentId, ...ScopeService.entityWhere(viewer, false) },
           select: { id: true, code: true },
         })
       : null;
@@ -149,8 +152,8 @@ export class OrgService {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
     const toManager = body.toManagerCode
-      ? await this.db.employee.findUnique({
-          where: { code: body.toManagerCode },
+      ? await this.db.employee.findFirst({
+          where: { ...reached, code: body.toManagerCode },
           select: { id: true, code: true },
         })
       : null;
@@ -227,10 +230,13 @@ export class OrgService {
     return { ...plan, applied: true };
   }
 
-  holidays(year?: number): Promise<Holiday[]> {
+  holidays(viewer: Viewer, year?: number): Promise<Holiday[]> {
     const wanted = year ?? Number(localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true })).slice(0, 4));
     return this.db.holiday.findMany({
-      where: { date: { gte: new Date(Date.UTC(wanted, 0, 1)), lte: new Date(Date.UTC(wanted + 1, 0, 0)) } },
+      where: {
+        date: { gte: new Date(Date.UTC(wanted, 0, 1)), lte: new Date(Date.UTC(wanted + 1, 0, 0)) },
+        ...ScopeService.entityWhere(viewer, true),
+      },
       orderBy: { date: "asc" },
     });
   }
@@ -239,18 +245,24 @@ export class OrgService {
    * Without a row here a public holiday reads as absent and is docked from
    * pay, because the day build has nothing else to tell them apart.
    */
-  async addHoliday(body: CreateHolidayDto, actorId: string): Promise<Holiday> {
+  async addHoliday(body: CreateHolidayDto, viewer: Viewer): Promise<Holiday> {
+    const legalEntityId = body.legalEntityId ?? null;
+    if (legalEntityId === null) {
+      ScopeService.mustWriteGroup(viewer);
+    } else if (!ScopeService.reachesEntity(viewer, legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
     try {
       const made = await this.db.holiday.create({
         data: {
-          legalEntityId: body.legalEntityId ?? null,
+          legalEntityId,
           date: new Date(body.date),
           name: body.name,
           paid: body.paid ?? true,
         },
       });
       await this.audit.record({
-        actorId,
+        actorId: viewer.userId,
         action: AUDIT_ACTIONS.ORG_HOLIDAY_CREATE,
         subject: AUDIT_SUBJECTS.ORG,
         subjectId: made.id,
@@ -264,16 +276,13 @@ export class OrgService {
     }
   }
 
-  async updateHoliday(id: string, body: UpdateHolidayDto, actorId: string): Promise<Holiday> {
-    const held = await this.db.holiday.findUnique({ where: { id } });
-    if (!held) {
-      throw new NotFoundException("HOLIDAY_NOT_FOUND");
-    }
+  async updateHoliday(id: string, body: UpdateHolidayDto, viewer: Viewer): Promise<Holiday> {
+    const held = await this.writableHoliday(id, viewer);
     const saved = await this.db.holiday.update({ where: { id }, data: body }).catch((error: unknown) => {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_HOLIDAY_UPDATE,
       subject: AUDIT_SUBJECTS.ORG,
       subjectId: id,
@@ -282,12 +291,13 @@ export class OrgService {
     return saved;
   }
 
-  async removeHoliday(id: string, actorId: string): Promise<{ done: true }> {
+  async removeHoliday(id: string, viewer: Viewer): Promise<{ done: true }> {
+    await this.writableHoliday(id, viewer);
     await this.db.holiday.delete({ where: { id } }).catch((error: unknown) => {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_HOLIDAY_DELETE,
       subject: AUDIT_SUBJECTS.ORG,
       subjectId: id,
@@ -295,7 +305,22 @@ export class OrgService {
     return { done: true };
   }
 
-  contracts(employeeId: number): Promise<EmploymentContract[]> {
+  private async writableHoliday(id: string, viewer: Viewer): Promise<Holiday> {
+    const held = await this.db.holiday.findUnique({ where: { id } });
+    if (!held || !ScopeService.reachesEntity(viewer, held.legalEntityId)) {
+      throw new NotFoundException("HOLIDAY_NOT_FOUND");
+    }
+    if (held.legalEntityId === null) {
+      ScopeService.mustWriteGroup(viewer);
+    }
+    return held;
+  }
+
+  async contracts(viewer: Viewer, employeeId: number): Promise<EmploymentContract[]> {
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    if (!(await this.scope.reaches(viewer, visible, employeeId))) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
     return this.db.employmentContract.findMany({
       where: { employeeId },
       orderBy: { startDate: "desc" },
@@ -311,7 +336,7 @@ export class OrgService {
     viewer: Viewer,
   ): Promise<EmploymentContract> {
     refuseOwn(viewer, body.employeeId);
-    const signer = await this.db.employee.count({ where: { id: body.employeeId } });
+    const signer = await this.db.employee.count({ where: { AND: [{ id: body.employeeId }, await this.reached(viewer)] } });
     if (signer === 0) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
@@ -342,7 +367,8 @@ export class OrgService {
     body: DecideContractDto,
     viewer: Viewer,
   ): Promise<EmploymentContract> {
-    const held = await this.db.employmentContract.findUnique({ where: { id } });
+    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const held = await this.db.employmentContract.findFirst({ where: { id, ...ScopeService.ownedWhere(viewer, visible) } });
     if (!held) {
       throw new NotFoundException("CONTRACT_NOT_FOUND");
     }
@@ -375,12 +401,16 @@ export class OrgService {
     return moved;
   }
 
-  async entities(all = false): Promise<LegalEntityRow[]> {
+  async entities(viewer: Viewer, all = false): Promise<LegalEntityRow[]> {
+    const reached = await this.reached(viewer);
     const [rows, counts] = await Promise.all([
-      this.db.legalEntity.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } }),
+      this.db.legalEntity.findMany({
+        where: { ...(all ? {} : { active: true }), ...(viewer.entityIds === null ? {} : { id: { in: viewer.entityIds } }) },
+        orderBy: { code: "asc" },
+      }),
       this.db.employee.groupBy({
         by: ["legalEntityId"],
-        where: { active: true },
+        where: { ...reached, active: true },
         _count: { _all: true },
       }),
     ]);
@@ -438,12 +468,13 @@ export class OrgService {
     return saved;
   }
 
-  async jobTitles(all = false): Promise<JobTitleRow[]> {
+  async jobTitles(viewer: Viewer, all = false): Promise<JobTitleRow[]> {
+    const reached = await this.reached(viewer);
     const [rows, counts] = await Promise.all([
       this.db.jobTitle.findMany({ where: all ? {} : { active: true }, orderBy: { code: "asc" } }),
       this.db.employee.groupBy({
         by: ["jobTitleId"],
-        where: { active: true, jobTitleId: { not: null } },
+        where: { ...reached, active: true, jobTitleId: { not: null } },
         _count: { _all: true },
       }),
     ]);
@@ -500,16 +531,17 @@ export class OrgService {
    *  head count comes back with it: an org chart without it answers where
    *  somebody sits and never how many sit there (KEHOACH 9.18).
    */
-  async departments(query: ListDepartmentsDto): Promise<DepartmentNode[]> {
+  async departments(viewer: Viewer, query: ListDepartmentsDto): Promise<DepartmentNode[]> {
     const narrow = query.legalEntityId ? { legalEntityId: query.legalEntityId } : {};
+    const reach = ScopeService.entityWhere(viewer, false);
     const [rows, counts] = await Promise.all([
       this.db.department.findMany({
-        where: { ...(query.all ? {} : { active: true }), ...narrow },
+        where: { AND: [{ ...(query.all ? {} : { active: true }), ...narrow }, reach] },
         orderBy: [{ legalEntityId: "asc" }, { code: "asc" }],
       }),
       this.db.employee.groupBy({
         by: ["departmentId"],
-        where: { active: true, departmentId: { not: null }, ...narrow },
+        where: { AND: [{ active: true, departmentId: { not: null }, ...narrow }, reach] },
         _count: { _all: true },
       }),
     ]);
@@ -529,14 +561,17 @@ export class OrgService {
     }));
   }
 
-  async createDepartment(body: CreateDepartmentDto, actorId: string): Promise<Department> {
-    await this.mustBeParent(body.parentId, body.legalEntityId);
-    await this.mustBeHead(body.headId);
+  async createDepartment(body: CreateDepartmentDto, viewer: Viewer): Promise<Department> {
+    if (!ScopeService.reachesEntity(viewer, body.legalEntityId)) {
+      throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
+    }
+    await this.mustBeParent(viewer, body.parentId, body.legalEntityId);
+    await this.mustBeHead(viewer, body.headId);
     const made = await this.db.department.create({ data: body }).catch((error: unknown) => {
       throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("DEPARTMENT_CODE_TAKEN") : error;
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.DEPARTMENT_CREATE,
       subject: AUDIT_SUBJECTS.DEPARTMENT,
       subjectId: made.id,
@@ -548,16 +583,16 @@ export class OrgService {
   /** Rename, move, change head or cost centre, retire or restore. A retired
    *  department still holding people or live children is refused (KEHOACH 9.3).
    */
-  async updateDepartment(id: string, body: UpdateDepartmentDto, actorId: string): Promise<Department> {
+  async updateDepartment(id: string, body: UpdateDepartmentDto, viewer: Viewer): Promise<Department> {
     const held = await this.db.department.findUnique({ where: { id } });
-    if (!held) {
+    if (!held || !ScopeService.reachesEntity(viewer, held.legalEntityId)) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
     if (body.parentId !== undefined && body.parentId !== held.parentId) {
-      await this.mustBeParent(body.parentId, held.legalEntityId);
+      await this.mustBeParent(viewer, body.parentId, held.legalEntityId);
       await this.mustNotLoop(id, body.parentId);
     }
-    await this.mustBeHead(body.headId);
+    await this.mustBeHead(viewer, body.headId);
     if (body.active === false && held.active) {
       const [people, children] = await Promise.all([
         this.db.employee.count({ where: { departmentId: id, active: true } }),
@@ -574,7 +609,7 @@ export class OrgService {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
     });
     await this.audit.record({
-      actorId,
+      actorId: viewer.userId,
       action: AUDIT_ACTIONS.DEPARTMENT_UPDATE,
       subject: AUDIT_SUBJECTS.DEPARTMENT,
       subjectId: id,
@@ -584,12 +619,12 @@ export class OrgService {
   }
 
   // A tree that crosses entities files one branch's people under the wrong insurance return.
-  private async mustBeParent(parentId: string | null | undefined, legalEntityId: string): Promise<void> {
+  private async mustBeParent(viewer: Viewer, parentId: string | null | undefined, legalEntityId: string): Promise<void> {
     if (!parentId) {
       return;
     }
     const held = await this.db.department.findUnique({ where: { id: parentId } });
-    if (!held) {
+    if (!held || !ScopeService.reachesEntity(viewer, held.legalEntityId)) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
     if (held.legalEntityId !== legalEntityId) {
@@ -597,14 +632,18 @@ export class OrgService {
     }
   }
 
-  private async mustBeHead(headId: number | null | undefined): Promise<void> {
+  private async mustBeHead(viewer: Viewer, headId: number | null | undefined): Promise<void> {
     if (headId === null || headId === undefined) {
       return;
     }
-    const held = await this.db.employee.count({ where: { id: headId, active: true } });
+    const held = await this.db.employee.count({ where: { AND: [{ id: headId, active: true }, await this.reached(viewer)] } });
     if (held === 0) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
+  }
+
+  private async reached(viewer: Viewer): Promise<Prisma.EmployeeWhereInput> {
+    return ScopeService.peopleWhere(viewer, await this.scope.visibleEmployeeIds(viewer));
   }
 
   // A cycle is not caught by any constraint, and it hangs every walk of the tree.

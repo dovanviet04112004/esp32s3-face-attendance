@@ -41,6 +41,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { LoginOpenedView, LoginStateView } from "../users/dto/user.dto.js";
@@ -121,6 +122,7 @@ export class EmployeesController {
   @Post("bulk/placement")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Preview a job title, department, manager or legal entity for many people; apply=true writes (KEHOACH 9.20)",
@@ -147,6 +149,7 @@ export class EmployeesController {
   @Post("bulk/logins")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Preview opening logins, or mailing the link again to a login nobody used yet; apply=true does it",
@@ -166,6 +169,7 @@ export class EmployeesController {
   @Post("bulk/enrollments")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Preview putting many people up for capture on one kiosk; apply=true does it (KEHOACH 7.5)",
@@ -187,6 +191,7 @@ export class EmployeesController {
   @Post("bulk/offboard")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Preview one last day for many people; apply=true records it (KEHOACH 9.14)",
@@ -237,6 +242,7 @@ export class EmployeesController {
   @Post("import")
   @RateBucket(THROTTLE.heavy)
   @Roles(...IMPORT_ROLES)
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Dry run by default; apply=true writes when no fault is left, warnings or not (KEHOACH 9.20)",
@@ -263,6 +269,7 @@ export class EmployeesController {
 
   @Post(":id/onboard")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({ summary: "Take somebody on: contract, pay, leave, checklist and login (KEHOACH 9.14)" })
   @ApiParam(EMPLOYEE_ID)
@@ -280,6 +287,7 @@ export class EmployeesController {
 
   @Post(":id/offboard")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Record the last day and list what is still out (KEHOACH 9.14)",
@@ -302,6 +310,7 @@ export class EmployeesController {
 
   @Patch(":id/offboard")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({ summary: "Move a scheduled last day; one of today or earlier closes the record now" })
   @ApiParam(EMPLOYEE_ID)
@@ -319,6 +328,7 @@ export class EmployeesController {
 
   @Delete(":id/offboard")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({ summary: "Call off a scheduled leaving before the record closes" })
   @ApiParam(EMPLOYEE_ID)
@@ -333,6 +343,7 @@ export class EmployeesController {
   @Get("export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @ApiProduces(XLSX_MIME, "text/csv")
   @ApiOperation({
     summary: "The people the list filters show, in the import's own columns; importing it back changes nothing",
@@ -345,6 +356,7 @@ export class EmployeesController {
 
   @Get("import/template")
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiProduces(XLSX_MIME, "text/csv")
   @ApiOperation({
     summary: "The columns this import reads, built from the catalogues in use at the moment of download",
@@ -352,23 +364,26 @@ export class EmployeesController {
       "xlsx by default: drop-downs of `code · name` point into a catalogues sheet. format=csv gives the header and one example line.",
   })
   @ApiOkResponse({ schema: { type: "string", format: "binary" } })
-  async template(@Query() query: FileFormatDto): Promise<StreamableFile> {
-    return download(await this.employees.template(query.format ?? "xlsx"));
+  async template(@Query() query: FileFormatDto, @CurrentViewer() viewer: Viewer): Promise<StreamableFile> {
+    return download(await this.employees.template(viewer, query.format ?? "xlsx"));
   }
 
   @Get(":id/login")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Where this person's login stands: none, pending, active or locked" })
   @ApiParam(EMPLOYEE_ID)
   @ApiOkResponse({ type: LoginStateView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
-  loginOf(@Param("id", ParseIntPipe) id: number): Promise<LoginStateView> {
+  async loginOf(@Param("id", ParseIntPipe) id: number, @CurrentViewer() viewer: Viewer): Promise<LoginStateView> {
+    await this.employees.mustReach(viewer, id);
     return this.users.loginOf(id);
   }
 
   @Post(":id/login")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({ summary: "Open this person's login, or mail the setup link again when it is open" })
   @ApiParam(EMPLOYEE_ID)
@@ -379,13 +394,15 @@ export class EmployeesController {
     type: ErrorBody,
     description: "EMAIL_TAKEN, EMPLOYEE_HAS_LEFT, ACCOUNT_LOCKED, EMPLOYEE_HAS_ACCOUNT",
   })
-  openLogin(@Param("id", ParseIntPipe) id: number, @CurrentViewer() viewer: Viewer): Promise<LoginOpenedView> {
+  async openLogin(@Param("id", ParseIntPipe) id: number, @CurrentViewer() viewer: Viewer): Promise<LoginOpenedView> {
+    await this.employees.mustReach(viewer, id);
     return this.users.openOrResend(viewer.userId, id);
   }
 
   // Declared above :id, which would otherwise take "next-code" for an id.
   @Get("next-code")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Carry on the numbering the last hire used, or null if none reads as a series" })
   @ApiOkResponse({ type: NextCodeView, description: "A suggestion, not a reservation: the unique code settles a clash" })
   nextCode(): Promise<{ code: string | null }> {
@@ -406,6 +423,7 @@ export class EmployeesController {
 
   @Post()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Create an employee; the server owns the id (KEHOACH 7.5)",
@@ -424,6 +442,7 @@ export class EmployeesController {
 
   @Patch(":id")
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @AuditedInService()
   @ApiOperation({
     summary: "Correct an employee record; null clears the manager, department or job title",

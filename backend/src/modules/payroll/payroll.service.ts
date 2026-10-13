@@ -254,6 +254,12 @@ function paidElsewhere(periodId: string): Prisma.Sql {
   )`;
 }
 
+/** The slips a limited desk reaches: its people's and its own, and every slip its entities' periods issued (KEHOACH 9.4). */
+function slipsReached(viewer: Viewer): Prisma.PayslipWhereInput {
+  const ids = viewer.entityIds;
+  return ids === null ? {} : { OR: [ScopeService.ownedWhere(viewer, null), { period: { legalEntityId: { in: ids } } }] };
+}
+
 function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string): Dong {
   return lines
     .filter((line) => line.code === code)
@@ -294,9 +300,9 @@ export class PayrollService {
     }
   }
 
-  periods(legalEntityId?: string): Promise<PayrollPeriod[]> {
+  periods(viewer: Viewer, legalEntityId?: string): Promise<PayrollPeriod[]> {
     return this.db.payrollPeriod.findMany({
-      where: legalEntityId ? { legalEntityId } : {},
+      where: { ...(legalEntityId ? { legalEntityId } : {}), ...ScopeService.entityWhere(viewer, false) },
       orderBy: [{ year: "desc" }, { month: "desc" }],
     });
   }
@@ -304,7 +310,7 @@ export class PayrollService {
   /** Open one entity's month: one open period an entity at a time, months only forward (KEHOACH 9.6). */
   async createPeriod(viewer: Viewer, body: CreatePeriodDto): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
-    const legalEntityId = await this.entityToPay(body.legalEntityId);
+    const legalEntityId = await this.entityToPay(viewer, body.legalEntityId);
     const asked = monthIndex(body);
     try {
       return await this.db.$transaction(async (tx) => {
@@ -342,16 +348,17 @@ export class PayrollService {
     }
   }
 
-  /** The entity a new period pays: the one named, else the only one in use (KEHOACH 9.6). */
-  private async entityToPay(named?: string): Promise<string> {
+  /** The entity a new period pays: the one named, else the only one in use the viewer answers for (KEHOACH 9.4, 9.6). */
+  private async entityToPay(viewer: Viewer, named?: string): Promise<string> {
     if (named) {
       const entity = await this.db.legalEntity.findUnique({ where: { id: named }, select: { active: true } });
-      if (!entity?.active) {
+      if (!entity?.active || !ScopeService.reachesEntity(viewer, named)) {
         throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
       }
       return named;
     }
-    const inUse = await this.db.legalEntity.findMany({ where: { active: true }, select: { id: true }, take: 2 });
+    const reached = viewer.entityIds === null ? {} : { id: { in: viewer.entityIds } };
+    const inUse = await this.db.legalEntity.findMany({ where: { active: true, ...reached }, select: { id: true }, take: 2 });
     if (inUse.length !== 1) {
       throw new BadRequestException("LEGAL_ENTITY_REQUIRED");
     }
@@ -466,7 +473,7 @@ export class PayrollService {
 
   async lock(viewer: Viewer, periodId: string, body: LockPeriodDto): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
-    const period = await this.requirePeriod(periodId);
+    const period = await this.periodOf(viewer, periodId);
     if (period.state !== "OPEN") {
       throw new BadRequestException("PERIOD_NOT_OPEN");
     }
@@ -591,7 +598,7 @@ export class PayrollService {
 
   async markPaid(viewer: Viewer, periodId: string): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
-    const period = await this.requirePeriod(periodId);
+    const period = await this.periodOf(viewer, periodId);
     if (period.state !== "LOCKED") {
       throw new BadRequestException("PERIOD_NOT_LOCKED");
     }
@@ -607,13 +614,20 @@ export class PayrollService {
     });
   }
 
-  runs(periodId: string): Promise<PayrollRun[]> {
+  async runs(viewer: Viewer, periodId: string): Promise<PayrollRun[]> {
+    await this.periodOf(viewer, periodId);
     return this.db.payrollRun.findMany({ where: { periodId }, orderBy: { createdAt: "desc" } });
+  }
+
+  /** The checklist of a period the viewer answers for. */
+  async checklistFor(viewer: Viewer, periodId: string): Promise<ChecklistItem[]> {
+    await this.periodOf(viewer, periodId);
+    return this.checklist(periodId);
   }
 
   async createRun(viewer: Viewer, body: CreateRunDto): Promise<PayrollRun> {
     this.mayWrite(viewer);
-    await this.requirePeriod(body.periodId);
+    await this.periodOf(viewer, body.periodId);
     return this.db.payrollRun.create({
       data: {
         periodId: body.periodId,
@@ -633,7 +647,7 @@ export class PayrollService {
    */
   async execute(viewer: Viewer, runId: string): Promise<PayrollRun> {
     this.mayWrite(viewer);
-    const run = await this.requireRunnable(runId);
+    const run = await this.requireRunnable(viewer, runId);
     if (run.kind === "BONUS") {
       // Answer here rather than queueing a job that cannot succeed.
       await this.requireBonusReady(run.id, run.periodId);
@@ -687,14 +701,8 @@ export class PayrollService {
     return this.db.payrollRun.findUniqueOrThrow({ where: { id: run.id } });
   }
 
-  private async requireRunnable(runId: string): Promise<PayrollRun & { period: PayrollPeriod }> {
-    const run = await this.db.payrollRun.findUnique({
-      where: { id: runId },
-      include: { period: true },
-    });
-    if (!run) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+  private async requireRunnable(viewer: Viewer, runId: string): Promise<PayrollRun & { period: PayrollPeriod }> {
+    const run = await this.runOf(viewer, runId);
     if (run.period.state !== "OPEN") {
       throw new BadRequestException("PERIOD_NOT_OPEN");
     }
@@ -712,10 +720,7 @@ export class PayrollService {
    */
   async discard(viewer: Viewer, runId: string): Promise<PayrollRun> {
     this.mayWrite(viewer);
-    const found = await this.db.payrollRun.findUnique({ where: { id: runId }, select: { periodId: true } });
-    if (!found) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+    const found = await this.runOf(viewer, runId);
     const { run, was } = await this.db.$transaction(async (tx) => {
       const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
         SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${found.periodId} FOR NO KEY UPDATE
@@ -1174,12 +1179,14 @@ export class PayrollService {
     this.mayWrite(viewer);
     // Nobody sets their own pay (KEHOACH 9.4).
     refuseOwn(viewer, ...items.map((item) => item.employeeId));
-    const run = await this.db.payrollRun.findUnique({ where: { id: runId } });
-    if (!run) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+    const run = await this.runOf(viewer, runId);
     if (run.kind !== "BONUS") {
       throw new BadRequestException("RUN_IS_NOT_A_BONUS");
+    }
+    const named = [...new Set(items.map((item) => item.employeeId))];
+    const reached = await this.db.employee.count({ where: { id: { in: named }, ...ScopeService.peopleWhere(viewer, null) } });
+    if (reached !== named.length) {
+      throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     await this.db.$transaction([
       this.db.bonusItem.deleteMany({ where: { runId } }),
@@ -1206,10 +1213,7 @@ export class PayrollService {
 
   async bonus(viewer: Viewer, runId: string): Promise<BonusRow[]> {
     this.mayWrite(viewer);
-    const run = await this.db.payrollRun.findUnique({ where: { id: runId }, select: { kind: true } });
-    if (!run) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+    const run = await this.runOf(viewer, runId);
     if (run.kind !== "BONUS") {
       throw new BadRequestException("RUN_IS_NOT_A_BONUS");
     }
@@ -1395,7 +1399,7 @@ export class PayrollService {
    */
   async taxYear(viewer: Viewer, employeeId: number, year: number): Promise<TaxYearStatement> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, employeeId)) {
+    if (!(await this.scope.reaches(viewer, visible, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     const who = await this.db.employee.findUnique({
@@ -1463,10 +1467,10 @@ export class PayrollService {
 
   async payslips(viewer: Viewer, query: ListPayslipsDto): Promise<Page<PayslipRow>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (query.employeeId !== undefined && !ScopeService.sees(visible, query.employeeId)) {
+    if (query.employeeId !== undefined && !(await this.scope.reaches(viewer, visible, query.employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    const where = await this.payslipWhere(query, visible);
+    const where = await this.payslipWhere(query, viewer, visible);
     const [rows, found] = await Promise.all([
       this.db.payslip.findMany({
         where,
@@ -1496,7 +1500,7 @@ export class PayrollService {
   async payslipsCsv(viewer: Viewer, query: ListPayslipsDto): Promise<string> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const rows = await this.db.payslip.findMany({
-      where: await this.payslipWhere(query, visible),
+      where: await this.payslipWhere(query, viewer, visible),
       include: PAYSLIP_ROW,
       orderBy: [{ employee: { code: "asc" } }, { id: "asc" }],
     });
@@ -1525,7 +1529,11 @@ export class PayrollService {
   }
 
   // Both clauses write the same key, so a spread would let the scope overwrite the asked-for employee.
-  private async payslipWhere(query: ListPayslipsDto, visible: number[] | null): Promise<Prisma.PayslipWhereInput> {
+  private async payslipWhere(
+    query: ListPayslipsDto,
+    viewer: Viewer,
+    visible: number[] | null,
+  ): Promise<Prisma.PayslipWhereInput> {
     const term = query.search?.trim();
     return {
       AND: [
@@ -1533,7 +1541,7 @@ export class PayrollService {
         query.runId ? { runId: query.runId } : {},
         query.employeeId === undefined ? {} : { employeeId: query.employeeId },
         // A draft is a number nobody has stood behind yet, so only the desk reads one.
-        visible === null ? {} : { employeeId: { in: visible }, state: { not: "DRAFT" } },
+        visible === null ? slipsReached(viewer) : { employeeId: { in: visible }, state: { not: "DRAFT" } },
         query.issued ? { state: { not: "DRAFT" } } : {},
         term ? { employeeId: await namedFilter(this.db, term) } : {},
       ],
@@ -1541,8 +1549,8 @@ export class PayrollService {
   }
 
   /** What a period costs over the payslips it issues, or the ones a lock would issue while it is open. */
-  async periodTotals(periodId: string): Promise<PeriodTotals> {
-    const period = await this.requirePeriod(periodId);
+  async periodTotals(viewer: Viewer, periodId: string): Promise<PeriodTotals> {
+    const period = await this.periodOf(viewer, periodId);
     const counted =
       period.state === "OPEN"
         ? this.chosenSlips(periodId)
@@ -1563,9 +1571,11 @@ export class PayrollService {
 
   /** What one person may read about themselves, with every component. */
   async payslip(viewer: Viewer, id: string): Promise<PayslipDetail> {
-    const found = await this.db.payslip.findUnique({ where: { id }, include: { lines: { orderBy: { ordinal: "asc" } } } });
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    if (!found || (visible !== null && (!visible.includes(found.employeeId) || found.state === "DRAFT"))) {
+    const where: Prisma.PayslipWhereInput =
+      visible === null ? { id, ...slipsReached(viewer) } : { id, employeeId: { in: visible }, state: { not: "DRAFT" } };
+    const found = await this.db.payslip.findFirst({ where, include: { lines: { orderBy: { ordinal: "asc" } } } });
+    if (!found) {
       throw new NotFoundException("PAYSLIP_NOT_FOUND");
     }
     if (found.employeeId === viewer.employeeId && found.viewedAt === null && found.state !== "DRAFT") {
@@ -1619,8 +1629,8 @@ export class PayrollService {
     return deltas;
   }
 
-  async delivery(periodId: string): Promise<Delivery> {
-    await this.requirePeriod(periodId);
+  async delivery(viewer: Viewer, periodId: string): Promise<Delivery> {
+    await this.periodOf(viewer, periodId);
     const issued = { periodId, state: { not: "DRAFT" as const } };
     const [all, sent] = await Promise.all([
       this.db.payslip.count({ where: issued }),
@@ -1635,7 +1645,7 @@ export class PayrollService {
    */
   async deliver(viewer: Viewer, periodId: string): Promise<{ queued: number }> {
     this.mayWrite(viewer);
-    const period = await this.requirePeriod(periodId);
+    const period = await this.periodOf(viewer, periodId);
     if (period.state === "OPEN") {
       throw new BadRequestException("PERIOD_NOT_LOCKED");
     }
@@ -1667,7 +1677,7 @@ export class PayrollService {
    */
   async exportRows(viewer: Viewer, periodId: string, kind: ExportKind): Promise<string> {
     this.mayWrite(viewer);
-    const period = await this.requirePeriod(periodId);
+    const period = await this.periodOf(viewer, periodId);
     if (period.state === "OPEN") {
       throw new BadRequestException("PERIOD_NOT_LOCKED");
     }
@@ -1738,13 +1748,7 @@ export class PayrollService {
    */
   async settlementSheet(viewer: Viewer, runId: string): Promise<SettlementSheet> {
     this.mayWrite(viewer);
-    const run = await this.db.payrollRun.findUnique({
-      where: { id: runId },
-      include: { period: true },
-    });
-    if (!run) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+    const run = await this.runOf(viewer, runId);
     if (run.kind !== "FINAL_SETTLEMENT") {
       throw new BadRequestException("RUN_IS_NOT_A_SETTLEMENT");
     }
@@ -1809,13 +1813,7 @@ export class PayrollService {
   ): Promise<{ items: number }> {
     this.mayWrite(viewer);
     refuseOwn(viewer, ...items.map((item) => item.employeeId));
-    const run = await this.db.payrollRun.findUnique({
-      where: { id: runId },
-      include: { period: true },
-    });
-    if (!run) {
-      throw new NotFoundException("RUN_NOT_FOUND");
-    }
+    const run = await this.runOf(viewer, runId);
     if (run.kind !== "FINAL_SETTLEMENT") {
       throw new BadRequestException("RUN_IS_NOT_A_SETTLEMENT");
     }
@@ -2058,6 +2056,24 @@ export class PayrollService {
         netTotal: net.toString(),
       },
     });
+  }
+
+  /** A period the viewer answers for; one of another entity answers as absent (KEHOACH 9.4). */
+  private async periodOf(viewer: Viewer, periodId: string): Promise<PayrollPeriod> {
+    const period = await this.requirePeriod(periodId);
+    if (!ScopeService.reachesEntity(viewer, period.legalEntityId)) {
+      throw new NotFoundException("PERIOD_NOT_FOUND");
+    }
+    return period;
+  }
+
+  /** A run of a period the viewer answers for, with that period. */
+  private async runOf(viewer: Viewer, runId: string): Promise<PayrollRun & { period: PayrollPeriod }> {
+    const run = await this.db.payrollRun.findUnique({ where: { id: runId }, include: { period: true } });
+    if (!run || !ScopeService.reachesEntity(viewer, run.period.legalEntityId)) {
+      throw new NotFoundException("RUN_NOT_FOUND");
+    }
+    return run;
   }
 
   private async requirePeriod(periodId: string): Promise<PayrollPeriod> {

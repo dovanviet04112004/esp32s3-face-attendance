@@ -5,6 +5,7 @@ import { Worker } from "bullmq";
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
+import { NoticeItemsService } from "../../modules/notifications/notice-items.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
 import { mfaMail, passwordChangedMail, setupMail } from "../../modules/payroll/mail-text.js";
 import { ProfileService } from "../../modules/profile/profile.service.js";
@@ -51,6 +52,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly documents: DocumentsSweep,
     private readonly attendance: AttendanceSweep,
     private readonly notices: NotificationsService,
+    private readonly items: NoticeItemsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
   ) {}
@@ -98,6 +100,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === JOB.noticeDocuments) {
           await this.documents.fanOut(body.versionId);
+          return;
+        }
+        if (body.type === JOB.noticeRescope) {
+          await this.items.regroupRescoped(body.from, body.to);
           return;
         }
         if (body.type === JOB.attendanceDue) {

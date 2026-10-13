@@ -285,7 +285,10 @@ export class BulkService {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const reach = visible === null ? null : new Set(visible);
     const found = await this.db.employee.findMany({
-      where: { id: { in: asked.filter((id) => reach === null || reach.has(id)) } },
+      where: {
+        id: { in: asked.filter((id) => reach === null || reach.has(id)) },
+        ...(visible === null ? ScopeService.peopleWhere(viewer, null) : {}),
+      },
       select: { id: true },
     });
     const here = new Set(found.map((one) => one.id));
@@ -302,7 +305,7 @@ export class BulkService {
     if (!body.jobTitleId && !body.departmentId && !body.managerId && !body.legalEntityId) {
       throw new BadRequestException("BULK_NOTHING_TO_CHANGE");
     }
-    const target = await this.target(body);
+    const target = await this.target(viewer, body);
     const chosen = await this.resolve(viewer, body);
     const people = await this.db.employee.findMany({
       where: { id: { in: chosen.ids } },
@@ -616,7 +619,7 @@ export class BulkService {
   }
 
   /** The catalogue rows a placement names, each checked the way PATCH /employees/:id checks it. */
-  private async target(body: BulkPlacementDto): Promise<Target> {
+  private async target(viewer: Viewer, body: BulkPlacementDto): Promise<Target> {
     const [entity, department, title, manager] = await Promise.all([
       body.legalEntityId
         ? this.db.legalEntity.findUnique({ where: { id: body.legalEntityId }, select: { id: true, name: true, active: true } })
@@ -637,16 +640,17 @@ export class BulkService {
           })
         : null,
     ]);
-    if (body.legalEntityId && !entity?.active) {
+    // Nobody is moved into an entity the account does not answer for (KEHOACH 9.4).
+    if (body.legalEntityId && (!entity?.active || !ScopeService.reachesEntity(viewer, entity.id))) {
       throw new NotFoundException("LEGAL_ENTITY_NOT_FOUND");
     }
-    if (body.departmentId && !department?.active) {
+    if (body.departmentId && (!department?.active || !ScopeService.reachesEntity(viewer, department.legalEntityId))) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
     if (body.jobTitleId && !title?.active) {
       throw new NotFoundException("JOB_TITLE_NOT_FOUND");
     }
-    if (body.managerId && !manager) {
+    if (body.managerId && (!manager || !(await this.scope.reaches(viewer, null, body.managerId)))) {
       throw new NotFoundException("MANAGER_NOT_FOUND");
     }
     if (manager && (!manager.active || manager.leaveDate !== null)) {

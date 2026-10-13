@@ -264,7 +264,7 @@ export class LeaveService {
       return [];
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    if (!ScopeService.sees(visible, whose)) {
+    if (!(await this.scope.reaches(viewer, visible, whose))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
     return this.balancesAsOf(whose, asOf);
@@ -499,7 +499,7 @@ export class LeaveService {
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const refusal = held.state === "PENDING" ? await this.refusal(viewer, held) : "NOT_PENDING";
-    if (!ScopeService.sees(visible, held.employeeId) && refusal !== null) {
+    if (!(await this.scope.reaches(viewer, visible, held.employeeId)) && refusal !== null) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
     const balanceOn = (asOf: Date): Promise<BalanceAsOf | null> =>
@@ -524,10 +524,13 @@ export class LeaveService {
     if (!held) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
+    const refusal = await this.refusal(viewer, held);
+    if (refusal === "REQUEST_NOT_FOUND") {
+      throw new NotFoundException("REQUEST_NOT_FOUND");
+    }
     if (held.state !== "PENDING") {
       throw new ConflictException("REQUEST_ALREADY_DECIDED");
     }
-    const refusal = await this.refusal(viewer, held);
     if (refusal === "SELF_DECISION") {
       throw new ForbiddenException("SELF_DECISION");
     }
@@ -720,13 +723,13 @@ export class LeaveService {
 
   private async ledgerWhere(viewer: Viewer, query: ListRequestsDto): Promise<Prisma.RequestWhereInput> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    const asked = query.employeeId;
-    const whose =
-      asked === undefined
-        ? ScopeService.narrow("employeeId", visible)
-        : { employeeId: ScopeService.sees(visible, asked) ? asked : { in: [] } };
     return {
-      AND: [whose, query.state ? { state: query.state } : {}, ...(await this.filters(query))],
+      AND: [
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        query.state ? { state: query.state } : {},
+        ...(await this.filters(query)),
+      ],
     };
   }
 
@@ -873,7 +876,7 @@ export class LeaveService {
   private async refusal(
     viewer: Viewer,
     held: Pick<LeaveRequest, "employeeId" | "approverId">,
-  ): Promise<"SELF_DECISION" | "DESK_NEEDS_EMPLOYEE" | "NOT_YOUR_REQUEST" | null> {
+  ): Promise<"SELF_DECISION" | "DESK_NEEDS_EMPLOYEE" | "NOT_YOUR_REQUEST" | "REQUEST_NOT_FOUND" | null> {
     // No role decides its own request, the desk included (KEHOACH 9.4).
     if (held.employeeId === viewer.employeeId) {
       return "SELF_DECISION";
@@ -881,7 +884,9 @@ export class LeaveService {
     if (isUnlinkedDesk(viewer)) {
       return "DESK_NEEDS_EMPLOYEE";
     }
-    if (THE_DESK.includes(viewer.role)) {
+    // Asked with no list, so only a desk held to some entities can miss the owner (KEHOACH 9.4).
+    const inEntities = await this.scope.reaches(viewer, null, held.employeeId);
+    if (THE_DESK.includes(viewer.role) && inEntities) {
       return null;
     }
     if (viewer.employeeId !== null && held.approverId !== null) {
@@ -891,6 +896,9 @@ export class LeaveService {
       if ((await this.standingInFor(viewer.employeeId)).includes(held.approverId)) {
         return null;
       }
+    }
+    if (!inEntities) {
+      return "REQUEST_NOT_FOUND";
     }
     const visible = await this.scope.visibleEmployeeIds(viewer);
     return visible !== null && visible.includes(held.employeeId) ? null : "NOT_YOUR_REQUEST";

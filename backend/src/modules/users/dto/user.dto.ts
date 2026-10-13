@@ -1,13 +1,28 @@
 import { ApiProperty, ApiPropertyOptional, IntersectionType } from "@nestjs/swagger";
 import { Role } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
 const EMAIL_MAX = 128;
 const SEARCH_MAX = 64;
 const ID_MAX = 64;
+const ENTITY_MAX = 100;
+
+const ENTITY_EXAMPLE = ["0e9a7b6c-5d4e-4f3a-8b2c-1d0e9f8a7b6c"];
 
 export const ACCOUNT_STATUSES = ["active", "locked", "pending"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
@@ -32,6 +47,20 @@ export class CreateUserDto {
   @Type(() => Number)
   @IsInt()
   employeeId?: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: ENTITY_MAX,
+    description: "Legal entities an HR or PAYROLL account answers for; none is the whole group (KEHOACH 9.4)",
+    example: ENTITY_EXAMPLE,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ENTITY_MAX)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(ID_MAX, { each: true })
+  entityIds?: string[];
 }
 
 export class UpdateUserDto {
@@ -61,6 +90,20 @@ export class UpdateUserDto {
   @Type(() => Number)
   @IsInt()
   employeeId?: number | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: ENTITY_MAX,
+    description: "The whole new list of legal entities an HR or PAYROLL account answers for; [] is the whole group. Changing it signs the account out",
+    example: ENTITY_EXAMPLE,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ENTITY_MAX)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(ID_MAX, { each: true })
+  entityIds?: string[];
 }
 
 export class UserFilterDto {
@@ -111,6 +154,17 @@ export class AccountEmployeeView {
   department!: AccountDepartmentView | null;
 }
 
+export class AccountEntityView {
+  @ApiProperty({ description: "Legal entity id", example: ENTITY_EXAMPLE[0] })
+  id!: string;
+
+  @ApiProperty({ description: "Short code of the entity", example: "HN01" })
+  code!: string;
+
+  @ApiProperty({ description: "Registered company name", example: "Công ty TNHH Một thành viên" })
+  name!: string;
+}
+
 export class AccountView {
   @ApiProperty({ description: "Account id", example: "b5f0c3d2-8a41-4e6b-9c2d-7f1e3a5b9c04" })
   id!: string;
@@ -154,6 +208,12 @@ export class AccountView {
     description: "The employee record it acts as; null for an account linked to nobody",
   })
   employee!: AccountEmployeeView | null;
+
+  @ApiProperty({
+    type: [AccountEntityView],
+    description: "Legal entities an HR or PAYROLL account answers for, by code; empty is the whole group (KEHOACH 9.4)",
+  })
+  entities!: AccountEntityView[];
 }
 
 export class AccountPage {

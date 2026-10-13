@@ -22,6 +22,7 @@ import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { CreateLeaveTypeDto, LeaveTypeView, UpdateLeaveTypeDto } from "./dto/leave-type.dto.js";
@@ -70,6 +71,7 @@ export class LeaveController {
 
   @Get("leave-types/all")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Every kind including retired ones, for the desk that edits them" })
   @ApiOkResponse({ type: [LeaveTypeView], description: "Active kinds first, then by code" })
   allTypes(): Promise<LeaveType[]> {
@@ -79,6 +81,7 @@ export class LeaveController {
   @Post("leave-types")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add a kind of leave and what a full year of it earns" })
   @ApiCreatedResponse({ type: LeaveTypeView })
   createType(
@@ -91,6 +94,7 @@ export class LeaveController {
   @Patch("leave-types/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Change what a kind grants, or retire it from the filing form" })
   @ApiOkResponse({ type: LeaveTypeView })
   @ApiParam({ name: "id", description: "Leave type id (UUID)", example: "99f79587-ad8b-41a8-8b53-f502c36fe29b" })
@@ -149,6 +153,7 @@ export class LeaveController {
   @Get("requests/export")
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "MANAGER")
+  @Reach("person")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @ApiProduces("text/csv")
   @ApiOperation({ summary: "The ledger under the same filter, as a file Excel opens" })

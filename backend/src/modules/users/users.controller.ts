@@ -100,9 +100,10 @@ export class UsersController {
   @ApiCreatedResponse({ type: AccountView })
   @ApiBadRequestResponse({
     type: ErrorBody,
-    description: "ROLE_NEEDS_EMPLOYEE: EMPLOYEE and MANAGER need employeeId; DESK_NEEDS_EMPLOYEE: so do HR and PAYROLL",
+    description:
+      "ROLE_NEEDS_EMPLOYEE: EMPLOYEE and MANAGER need employeeId; DESK_NEEDS_EMPLOYEE: so do HR and PAYROLL; ENTITIES_NEED_DESK: only HR and PAYROLL answer for some entities",
   })
-  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND, LEGAL_ENTITY_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT, EMPLOYEE_HAS_LEFT" })
   create(@Body() body: CreateUserDto, @CurrentViewer() viewer: Viewer): Promise<AccountView> {
     return this.users.create(viewer.userId, body);
@@ -125,14 +126,14 @@ export class UsersController {
   @Roles("ADMIN")
   @AuditedInService()
   @ApiOperation({
-    summary: "Change role, lock or unlock, address or linked employee (KEHOACH 9.4)",
+    summary: "Change role, lock or unlock, address, linked employee or the entities a desk answers for (KEHOACH 9.4)",
     description:
-      "Locking, a new role or a new employee link signs the account out everywhere. Unlocking gives the old role back.",
+      "Locking, a new role, a new employee link or a new list of entities signs the account out everywhere. Unlocking gives the old role back.",
   })
   @ApiParam(ACCOUNT_ID)
   @ApiOkResponse({ type: AccountView })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE, DESK_NEEDS_EMPLOYEE" })
-  @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, EMPLOYEE_NOT_FOUND" })
+  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE, DESK_NEEDS_EMPLOYEE, ENTITIES_NEED_DESK" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, EMPLOYEE_NOT_FOUND, LEGAL_ENTITY_NOT_FOUND" })
   @ApiConflictResponse({
     type: ErrorBody,
     description: "LAST_ADMIN, EMPLOYEE_HAS_LEFT, EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT",

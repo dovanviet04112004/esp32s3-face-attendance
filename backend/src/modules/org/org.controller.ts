@@ -31,6 +31,7 @@ import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
 import { DoneView } from "../notifications/dto/notifications.dto.js";
@@ -77,25 +78,29 @@ export class OrgController {
 
   @Get("holidays")
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Public holidays in a year; the day build reads these" })
   @ApiOkResponse({ type: [HolidayView] })
-  holidays(@Query() query: HolidayQueryDto): Promise<Holiday[]> {
-    return this.org.holidays(query.year);
+  holidays(@CurrentViewer() viewer: Viewer, @Query() query: HolidayQueryDto): Promise<Holiday[]> {
+    return this.org.holidays(viewer, query.year);
   }
 
   @Post("holidays")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Without one, a public holiday is docked as absent" })
   @ApiCreatedResponse({ type: HolidayView })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "LEGAL_ENTITY_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "HOLIDAY_ALREADY_SET" })
   addHoliday(@CurrentViewer() viewer: Viewer, @Body() body: CreateHolidayDto): Promise<Holiday> {
-    return this.org.addHoliday(body, viewer.userId);
+    return this.org.addHoliday(body, viewer);
   }
 
   @Patch("holidays/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Rename a holiday or change whether it is paid" })
   @ApiParam(HOLIDAY_ID)
   @ApiOkResponse({ type: HolidayView })
@@ -105,12 +110,13 @@ export class OrgController {
     @Param("id") id: string,
     @Body() body: UpdateHolidayDto,
   ): Promise<Holiday> {
-    return this.org.updateHoliday(id, body, viewer.userId);
+    return this.org.updateHoliday(id, body, viewer);
   }
 
   @Delete("holidays/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Take a day off the calendar, which rebuilds it for everybody" })
   @ApiParam(HOLIDAY_ID)
   @ApiOkResponse({ type: DoneView })
@@ -119,21 +125,24 @@ export class OrgController {
     @CurrentViewer() viewer: Viewer,
     @Param("id") id: string,
   ): Promise<{ done: true }> {
-    return this.org.removeHoliday(id, viewer.userId);
+    return this.org.removeHoliday(id, viewer);
   }
 
   @Get("employees/:id/contracts")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("person")
   @ApiOperation({ summary: "Every contract this person has signed, newest first" })
   @ApiParam({ name: "id", description: "Employee id", example: 42 })
   @ApiOkResponse({ type: [ContractView], description: "Latest start first; empty for an id with no contracts" })
-  contracts(@Param("id", ParseIntPipe) id: number): Promise<EmploymentContract[]> {
-    return this.org.contracts(id);
+  @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND" })
+  contracts(@CurrentViewer() viewer: Viewer, @Param("id", ParseIntPipe) id: number): Promise<EmploymentContract[]> {
+    return this.org.contracts(viewer, id);
   }
 
   @Post("contracts")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Re-signing is a new contract, never an edit" })
   @ApiCreatedResponse({ type: ContractView, description: "Starts as DRAFT" })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
@@ -148,6 +157,7 @@ export class OrgController {
   @Patch("contracts/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Move a contract on; activating one ends the rest" })
   @ApiParam({ name: "id", description: "Contract id", example: "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f" })
   @ApiOkResponse({ type: ContractView })
@@ -163,10 +173,11 @@ export class OrgController {
 
   @Get("legal-entities")
   @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
   @ApiOperation({ summary: "The entities payroll and insurance report against" })
   @ApiOkResponse({ type: [LegalEntityView] })
-  entities(@Query() query: ListCatalogueDto): Promise<LegalEntityRow[]> {
-    return this.org.entities(query.all);
+  entities(@CurrentViewer() viewer: Viewer, @Query() query: ListCatalogueDto): Promise<LegalEntityRow[]> {
+    return this.org.entities(viewer, query.all);
   }
 
   @Post("legal-entities")
@@ -197,15 +208,17 @@ export class OrgController {
 
   @Get("job-titles")
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "The grade ladder a hire is placed on" })
   @ApiOkResponse({ type: [JobTitleView] })
-  jobTitles(@Query() query: ListCatalogueDto): Promise<JobTitleRow[]> {
-    return this.org.jobTitles(query.all);
+  jobTitles(@CurrentViewer() viewer: Viewer, @Query() query: ListCatalogueDto): Promise<JobTitleRow[]> {
+    return this.org.jobTitles(viewer, query.all);
   }
 
   @Post("job-titles")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Add a job title" })
   @ApiCreatedResponse({ type: JobTitleView })
   @ApiConflictResponse({ type: ErrorBody, description: "JOB_TITLE_CODE_TAKEN" })
@@ -216,6 +229,7 @@ export class OrgController {
   @Patch("job-titles/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("catalogue")
   @ApiOperation({ summary: "Edit, retire or restore a job title; holders keep it" })
   @ApiParam({ name: "id", description: "Job title id", example: "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d" })
   @ApiOkResponse({ type: JobTitleView })
@@ -233,6 +247,7 @@ export class OrgController {
   @RateBucket(THROTTLE.heavy)
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("person")
   @ApiOperation({ summary: "Preview a move by default; apply=true carries it out" })
   @ApiCreatedResponse({ type: ReorgPlanView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "REORG_MOVES_NOBODY | DEPARTMENT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
@@ -247,26 +262,29 @@ export class OrgController {
 
   @Get("departments")
   @Roles("ADMIN", "HR", "PAYROLL", "MANAGER")
+  @Reach("entity")
   @ApiOperation({ summary: "The tree flat, with parentId, so a caller shapes it once" })
   @ApiOkResponse({ type: [DepartmentView] })
-  departments(@Query() query: ListDepartmentsDto): Promise<DepartmentNode[]> {
-    return this.org.departments(query);
+  departments(@CurrentViewer() viewer: Viewer, @Query() query: ListDepartmentsDto): Promise<DepartmentNode[]> {
+    return this.org.departments(viewer, query);
   }
 
   @Post("departments")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Open a department under a parent, or at the top" })
   @ApiCreatedResponse({ type: DepartmentView })
-  @ApiNotFoundResponse({ type: ErrorBody, description: "DEPARTMENT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "LEGAL_ENTITY_NOT_FOUND | DEPARTMENT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "DEPARTMENT_CODE_TAKEN | DEPARTMENT_ENTITY_MISMATCH" })
   create(@CurrentViewer() viewer: Viewer, @Body() body: CreateDepartmentDto): Promise<Department> {
-    return this.org.createDepartment(body, viewer.userId);
+    return this.org.createDepartment(body, viewer);
   }
 
   @Patch("departments/:id")
   @AuditedInService()
   @Roles("ADMIN", "HR")
+  @Reach("entity")
   @ApiOperation({ summary: "Rename, move, set the head or cost centre, retire or restore" })
   @ApiParam({ name: "id", description: "Department id", example: "6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f" })
   @ApiOkResponse({ type: DepartmentView })
@@ -280,6 +298,6 @@ export class OrgController {
     @Param("id") id: string,
     @Body() body: UpdateDepartmentDto,
   ): Promise<Department> {
-    return this.org.updateDepartment(id, body, viewer.userId);
+    return this.org.updateDepartment(id, body, viewer);
   }
 }

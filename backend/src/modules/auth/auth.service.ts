@@ -8,6 +8,7 @@ import { ThrottlerException } from "@nestjs/throttler";
 import type { User } from "@prisma/client";
 
 import { DOCS, GUARD } from "../../common/cache/cache-keys.js";
+import { LINKED_DESKS } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { RedisService } from "../../database/redis.service.js";
@@ -493,13 +494,17 @@ export class AuthService {
     return this.sign(user, session.id, jti, mfaAt !== null);
   }
 
-  private sign(user: User, sessionId: string, jti: string, mfa: boolean): IssuedTokens {
+  private async sign(user: User, sessionId: string, jti: string, mfa: boolean): Promise<IssuedTokens> {
+    const held = LINKED_DESKS.has(user.role)
+      ? await this.db.userEntity.findMany({ where: { userId: user.id }, select: { legalEntityId: true } })
+      : [];
     const access: AccessClaims = {
       sub: user.id,
       role: user.role,
       sid: sessionId,
       ...(user.employeeId !== null ? { employeeId: user.employeeId } : {}),
       ...(mfa ? { mfa: true as const } : {}),
+      ...(held.length > 0 ? { ent: held.map((one) => one.legalEntityId).sort() } : {}),
     };
     const refresh: RefreshClaims = { sub: user.id, sid: sessionId, jti };
     const accessToken = this.jwt.sign(access, {
