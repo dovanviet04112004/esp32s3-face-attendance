@@ -48,6 +48,7 @@ import {
   type CalcAllowance,
   type CalcDeduction,
   type CalcExtra,
+  type CalcPolicy,
 } from "./calculate.js";
 import type {
   BonusItemDto,
@@ -72,6 +73,18 @@ interface Leaver {
   leaveDate: Date | null;
   baseSalary: string;
   tenureMonths: number;
+  legalEntityId: string | null;
+}
+
+/** Someone a run prices, with the entity whose policy prices them (KEHOACH 9.7). */
+interface Priced {
+  id: number;
+  legalEntityId: string | null;
+}
+
+interface RunPolicy {
+  id: string;
+  calc: CalcPolicy;
 }
 
 export interface SettlementRow {
@@ -529,6 +542,8 @@ export class PayrollService {
     if (run.kind === "FINAL_SETTLEMENT") {
       await this.requireSettlementReady(run.period);
     }
+    // Someone priced with no policy in force stops the whole run, so the press says so (KEHOACH 9.6).
+    await this.policiesFor(run.period, await this.pricedBy(run));
     // RUNNING is claimed in one statement ahead of the queue, so a second press finds it taken.
     const claimed = await this.db.$transaction(async (tx) => {
       const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
@@ -626,26 +641,15 @@ export class PayrollService {
     }
 
     const period = run.period;
-    const policy = await this.policy.effectiveAt(period.endDate, period.legalEntityId);
-    const calcPolicy = asCalcPolicy(policy);
     if (run.kind === "BONUS") {
-      return this.runBonus(run.id, period, policy.id, calcPolicy);
+      return this.runBonus(run.id, period);
     }
     if (run.kind === "FINAL_SETTLEMENT") {
-      return this.runSettlement(run.id, period, policy.id, calcPolicy);
+      return this.runSettlement(run.id, period);
     }
 
-    const people = await this.db.employee.findMany({
-      where: {
-        // A closed record has `active` off, so filtering on it alone drops a
-        // mid-month leaver and the days they worked (KEHOACH 9.18.8).
-        OR: [{ active: true }, { leaveDate: { gte: period.startDate } }],
-        ...(period.legalEntityId ? { legalEntityId: period.legalEntityId } : {}),
-        ...(run.departmentId ? { departmentId: run.departmentId } : {}),
-      },
-      select: { id: true },
-      orderBy: { id: "asc" },
-    });
+    const people = await this.pricedBy(run);
+    const policyOf = await this.policiesFor(period, people);
     const ids = people.map((person) => person.id);
 
     await this.db.payrollRun.update({
@@ -664,7 +668,7 @@ export class PayrollService {
 
     for (let at = 0; at < ids.length; at += kChunk) {
       const slice = ids.slice(at, at + kChunk);
-      const result = await this.runChunk(runId, period, policy.id, calcPolicy, slice);
+      const result = await this.runChunk(runId, period, policyOf, slice);
       grossTotal += result.gross;
       netTotal += result.net;
       done += result.done;
@@ -700,8 +704,7 @@ export class PayrollService {
   private async runChunk(
     runId: string,
     period: PayrollPeriod,
-    policyId: string,
-    calcPolicy: ReturnType<typeof asCalcPolicy>,
+    policyOf: ReadonlyMap<number, RunPolicy>,
     ids: number[],
   ): Promise<{ gross: Dong; net: Dong; done: number; retroIds: string[]; advanceIds: string[] }> {
     const [pay, allowances, days, leave, dependents, retros, advances] = await Promise.all([
@@ -832,8 +835,9 @@ export class PayrollService {
       const paidLeave = off?.paidLeave ?? 0;
       const unpaid = (off?.unpaidLeave ?? 0) + (day?.absentDays ?? 0);
       const paidDays = (day?.workedDays ?? 0) + (day?.holidayDays ?? 0) + paidLeave;
+      const priced = policyOf.get(employeeId) as RunPolicy;
       const result = calculate({
-        policy: calcPolicy,
+        policy: priced.calc,
         baseSalary: BigInt(record.baseSalary.split(".")[0]),
         insuranceSalary: BigInt(record.insuranceSalary.split(".")[0]),
         allowances: allowanceOf.get(record.recordId) ?? [],
@@ -856,7 +860,7 @@ export class PayrollService {
         runId,
         periodId: period.id,
         employeeId,
-        policyId,
+        policyId: priced.id,
         workedDays: day?.workedDays ?? 0,
         paidLeaveDays: paidLeave,
         unpaidDays: unpaid,
@@ -1017,14 +1021,10 @@ export class PayrollService {
    * A bonus owes the difference between the tax on the period with it and the
    * tax without it, so it reads the regular payslip as its base (KEHOACH 9.18).
    */
-  private async runBonus(
-    runId: string,
-    period: PayrollPeriod,
-    policyId: string,
-    calcPolicy: ReturnType<typeof asCalcPolicy>,
-  ): Promise<PayrollRun> {
+  private async runBonus(runId: string, period: PayrollPeriod): Promise<PayrollRun> {
     const items = await this.db.bonusItem.findMany({ where: { runId }, orderBy: { code: "asc" } });
     const ids = [...new Set(items.map((item) => item.employeeId))];
+    const policyOf = await this.policiesFor(period, await this.pricedAmong(ids));
     const [baseOf, dependents] = await Promise.all([
       this.taxBases(period.id, ids, runId),
       this.db.$queryRaw<{ employeeId: number; count: number }[]>`
@@ -1058,12 +1058,11 @@ export class PayrollService {
       const taxablePart = own
         .filter((item) => item.taxable)
         .reduce((sum, item) => sum + toDong(item.amount), 0n);
-      const relief =
-        calcPolicy.selfDeduction +
-        calcPolicy.dependentDeduction * BigInt(dependentOf.get(employeeId) ?? 0);
+      const { id: policyId, calc } = policyOf.get(employeeId) as RunPolicy;
+      const relief = calc.selfDeduction + calc.dependentDeduction * BigInt(dependentOf.get(employeeId) ?? 0);
       const without = atLeastZero(base.taxable - base.insurance - relief);
       const withBonus = atLeastZero(without + taxablePart);
-      const tax = taxOn(withBonus, calcPolicy.brackets) - taxOn(without, calcPolicy.brackets);
+      const tax = taxOn(withBonus, calc.brackets) - taxOn(without, calc.brackets);
 
       const rows: Prisma.PayslipLineCreateManyInput[] = own.map((item, index) => ({
         payslipId: "",
@@ -1557,13 +1556,13 @@ export class PayrollService {
       }),
       this.db.settlementItem.findMany({ where: { runId }, orderBy: { kind: "asc" } }),
     ]);
-    const policy = await this.policy.effectiveAt(period.endDate, period.legalEntityId);
-    const standardDays = asCalcPolicy(policy).standardDayHundredths;
+    const policyOf = await this.policiesFor(period, leavers);
 
     return {
       runId,
       periodId: period.id,
       rows: leavers.map((one) => {
+        const standardDays = (policyOf.get(one.id) as RunPolicy).calc.standardDayHundredths;
         const daily = mulDiv(toDong(one.baseSalary), kHundred, standardDays);
         const unused = balances
           .filter((row) => row.employeeId === one.id)
@@ -1651,7 +1650,7 @@ export class PayrollService {
    */
   private leaversOf(period: PayrollPeriod): Promise<Leaver[]> {
     return this.db.$queryRaw<Leaver[]>`
-      SELECT e."id", e."code", e."fullName", e."leaveDate",
+      SELECT e."id", e."code", e."fullName", e."leaveDate", e."legalEntityId",
              COALESCE(c."baseSalary", 0) AS "baseSalary",
              COALESCE(
                EXTRACT(YEAR FROM age(e."leaveDate", e."hireDate")) * 12
@@ -1668,6 +1667,42 @@ export class PayrollService {
          ${period.legalEntityId ? Prisma.sql`AND e."legalEntityId" = ${period.legalEntityId}` : Prisma.empty}
        ORDER BY e."id"
     `;
+  }
+
+  /** The people a run prices: its bonus lines' people, the period's leavers, or everyone the period covers. */
+  private async pricedBy(run: PayrollRun & { period: PayrollPeriod }): Promise<Priced[]> {
+    if (run.kind === "BONUS") {
+      const items = await this.db.bonusItem.findMany({ where: { runId: run.id }, select: { employeeId: true } });
+      return this.pricedAmong([...new Set(items.map((item) => item.employeeId))]);
+    }
+    if (run.kind === "FINAL_SETTLEMENT") {
+      return this.leaversOf(run.period);
+    }
+    return this.db.employee.findMany({
+      where: {
+        // A closed record has `active` off, so filtering on it alone drops a
+        // mid-month leaver and the days they worked (KEHOACH 9.18.8).
+        OR: [{ active: true }, { leaveDate: { gte: run.period.startDate } }],
+        ...(run.period.legalEntityId ? { legalEntityId: run.period.legalEntityId } : {}),
+        ...(run.departmentId ? { departmentId: run.departmentId } : {}),
+      },
+      select: { id: true, legalEntityId: true },
+      orderBy: { id: "asc" },
+    });
+  }
+
+  private pricedAmong(ids: number[]): Promise<Priced[]> {
+    return this.db.employee.findMany({ where: { id: { in: ids } }, select: { id: true, legalEntityId: true } });
+  }
+
+  /** Each priced person's policy in force at the period's end, chosen by their own entity (KEHOACH 9.7). */
+  private async policiesFor(period: PayrollPeriod, people: readonly Priced[]): Promise<Map<number, RunPolicy>> {
+    const byEntity = await this.policy.inForce(period.endDate, people.map((one) => one.legalEntityId));
+    const priced = new Map<string | null, RunPolicy>();
+    for (const [entity, policy] of byEntity) {
+      priced.set(entity, { id: policy.id, calc: asCalcPolicy(policy) });
+    }
+    return new Map(people.map((one) => [one.id, priced.get(one.legalEntityId) as RunPolicy]));
   }
 
   private async requireSettlementReady(period: PayrollPeriod): Promise<void> {
@@ -1694,13 +1729,9 @@ export class PayrollService {
    * nobody took, the figures somebody signed for, and tax on the part that is
    * not exempt, charged as the increment over the period (KEHOACH 9.18.8).
    */
-  private async runSettlement(
-    runId: string,
-    period: PayrollPeriod,
-    policyId: string,
-    calcPolicy: ReturnType<typeof asCalcPolicy>,
-  ): Promise<PayrollRun> {
+  private async runSettlement(runId: string, period: PayrollPeriod): Promise<PayrollRun> {
     const leavers = await this.leaversOf(period);
+    const policyOf = await this.policiesFor(period, leavers);
     const ids = leavers.map((one) => one.id);
     const [items, balances, baseOf, dependents] = await Promise.all([
       this.db.settlementItem.findMany({ where: { runId }, orderBy: { kind: "asc" } }),
@@ -1730,7 +1761,8 @@ export class PayrollService {
       if (!base) {
         continue;
       }
-      const daily = mulDiv(toDong(one.baseSalary), kHundred, calcPolicy.standardDayHundredths);
+      const { id: policyId, calc } = policyOf.get(one.id) as RunPolicy;
+      const daily = mulDiv(toDong(one.baseSalary), kHundred, calc.standardDayHundredths);
       const unusedHundredths = balances
         .filter((row) => row.employeeId === one.id)
         .reduce((sum, row) => sum + BigInt(Math.round(freeDays(row) * 100)), 0n);
@@ -1771,10 +1803,9 @@ export class PayrollService {
       }
 
       const relief =
-        calcPolicy.selfDeduction +
-        calcPolicy.dependentDeduction * BigInt(dependentOf.get(one.id) ?? 0);
+        calc.selfDeduction + calc.dependentDeduction * BigInt(dependentOf.get(one.id) ?? 0);
       const without = atLeastZero(base.taxable - base.insurance - relief);
-      const tax = taxOn(without + taxablePart, calcPolicy.brackets) - taxOn(without, calcPolicy.brackets);
+      const tax = taxOn(without + taxablePart, calc.brackets) - taxOn(without, calc.brackets);
       if (tax > 0n) {
         rows.push({
           payslipId: "",

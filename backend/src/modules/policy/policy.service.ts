@@ -42,17 +42,32 @@ export class PolicyService {
    * period must ask for so it returns the old figure (KEHOACH 9.7).
    */
   async effectiveAt(on: Date, legalEntityId: string | null): Promise<PolicyWithBrackets> {
-    const found = await this.db.payrollPolicy.findFirst({
+    return (await this.inForce(on, [legalEntityId])).get(legalEntityId) as PolicyWithBrackets;
+  }
+
+  /**
+   * The policy in force on a date for each entity asked about: the entity's own
+   * row, else the company-wide one (KEHOACH 9.7). One entity without either
+   * refuses them all, so no run prices a part of its people.
+   */
+  async inForce(on: Date, legalEntityIds: readonly (string | null)[]): Promise<Map<string | null, PolicyWithBrackets>> {
+    const wanted = [...new Set(legalEntityIds)];
+    const rows = await this.db.payrollPolicy.findMany({
       where: {
         effectiveFrom: { lte: on },
-        OR: [{ legalEntityId }, { legalEntityId: null }],
+        OR: [{ legalEntityId: { in: wanted.filter((one) => one !== null) } }, { legalEntityId: null }],
       },
       include: { brackets: { orderBy: { ordinal: "asc" } } },
-      // An entity's own row outranks the company-wide one, which Postgres sorts first when descending.
-      orderBy: [{ legalEntityId: { sort: "desc", nulls: "last" } }, { effectiveFrom: "desc" }],
+      orderBy: { effectiveFrom: "desc" },
     });
-    if (!found) {
-      throw new NotFoundException("POLICY_MISSING");
+    const companyWide = rows.find((row) => row.legalEntityId === null);
+    const found = new Map<string | null, PolicyWithBrackets>();
+    for (const entity of wanted) {
+      const policy = rows.find((row) => entity !== null && row.legalEntityId === entity) ?? companyWide;
+      if (!policy) {
+        throw new NotFoundException("POLICY_MISSING");
+      }
+      found.set(entity, policy);
     }
     return found;
   }
