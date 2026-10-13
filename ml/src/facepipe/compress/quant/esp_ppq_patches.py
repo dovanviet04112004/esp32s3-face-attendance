@@ -464,8 +464,31 @@ def gated(graph, add) -> tuple | None:
     return None
 
 
+def regridded(graph, residual, add) -> tuple | None:
+    """The per-tensor RequantizeLinear ESP-PPQ put before add's residual and the residual's own
+    config, when add alone reads it and an int8 per-tensor op makes the residual; None otherwise.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    requant = residual.source_op
+    if requant is None or requant.type != "RequantizeLinear" or residual.dest_ops != [add]:
+        return None
+    source = requant.inputs[0]
+    maker = source.source_op
+    if residual.name in graph.outputs or requant.attributes.get("axis") is not None:
+        return None
+    if not isinstance(maker, QuantableOperation):
+        return None
+    config = maker.output_quant_config[maker.outputs.index(source)]
+    if config.num_of_bits != 8 or config.scale.numel() != 1:
+        return None
+    return requant, config
+
+
 def mul_add_from(graph, add) -> bool:
-    """add and its gated Mul replaced by one MulAdd reading x, the gate and the residual."""
+    """add and its gated Mul replaced by one MulAdd reading x, the gate and the residual, taking the
+    residual from before the RequantizeLinear onto add's grid when there is one: MulAdd regrids it.
+    """
     from esp_ppq.core import OperationQuantizationConfig
 
     found = gated(graph, add)
@@ -473,17 +496,22 @@ def mul_add_from(graph, add) -> bool:
         return False
     mul, x, gate, residual = found
     product = mul.outputs[0]
+    regrid = regridded(graph, residual, add)
+    source = regrid[0].inputs[0] if regrid else residual
     configs = [
         mul.input_quant_config[mul.inputs.index(x)],
         mul.input_quant_config[mul.inputs.index(gate)],
-        add.input_quant_config[add.inputs.index(residual)],
+        regrid[1] if regrid else add.input_quant_config[add.inputs.index(residual)],
     ]
     graph.remove_operation(mul)
     for var in add.inputs:
         var.dest_ops.remove(add)
     add.inputs.clear()
     graph.remove_variable(product)
-    for var in (x, gate, residual):
+    if regrid:
+        graph.remove_operation(regrid[0])
+        graph.remove_variable(residual)
+    for var in (x, gate, source):
         add.inputs.append(var)
         var.dest_ops.append(add)
     add.config = OperationQuantizationConfig(configs, add.output_quant_config)

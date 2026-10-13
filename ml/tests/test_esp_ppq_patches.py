@@ -602,6 +602,43 @@ def test_mul_add_joins_a_gated_residual_on_one_grid_and_refuses_another(
     assert {"Mul", "Add"} <= {op for op, _, _ in espdl_graph(apart_file)[0].values()}
 
 
+class TwoGatedResiduals(nn.Module):
+    """Two gated residual blocks, the second eight times as loud: its Add takes the first block's
+    output on a coarser grid, through the RequantizeLinear ESP-PPQ puts before it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.blocks = nn.ModuleList(GatedResidual() for _ in range(2))
+        with torch.no_grad():
+            self.blocks[1].conv.weight.mul_(8.0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for block in self.blocks:
+            x = block(x)
+        return x
+
+
+def test_mul_add_takes_the_residual_from_before_its_requantize(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(23)
+    calib = [torch.rand(1, 16, 8, 8) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("recognition")
+    graph = quantise_ladder_net(TwoGatedResiduals().eval(), tmp_path, calib, rungs, ("out",))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))[0]
+    with esp_ppq_patches.applied(["mul_add"]):
+        joined = espdl_graph(export_espdl.export(graph, tmp_path / "joined.espdl", test_input))[0]
+    requants = {outs[0]: ins[0] for op, ins, outs in plain.values() if op == "RequantizeLinear"}
+    second = next(ins for op, ins, _ in plain.values() if op == "Add" and set(ins) & set(requants))
+    (regridded,) = set(second) & set(requants)
+    assert [op for op, _, _ in joined.values()].count("RequantizeLinear") == len(requants) - 1
+    muladds = [ins for op, ins, _ in joined.values() if op == espdl_shapes.MUL_ADD]
+    assert len(muladds) == 2
+    assert requants[regridded] in [ins[2] for ins in muladds]
+
+
 def test_ai_engine_registers_every_module_the_patches_export() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     found = espdl_op_check.own_modules(core)
