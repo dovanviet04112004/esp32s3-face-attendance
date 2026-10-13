@@ -20,6 +20,7 @@
 extern "C" void ai_engine_clamp_s8_esp32s3(int8_t *values, int32_t vectors, const int8_t *top);
 extern "C" void ai_engine_conv_row_s8_esp32s3(int8_t *out, const int8_t *patches, const int8_t *filter,
                                               const int32_t *run);
+extern "C" void ai_engine_max_pool_s8_esp32s3(int8_t *out, const int8_t *rows, const int32_t *run);
 
 namespace ai {
 
@@ -32,6 +33,7 @@ constexpr int kChannelStep = 16;
 constexpr size_t kVectorAlign = 16;
 constexpr int kNoClamp = INT8_MAX;
 constexpr size_t kRowRunWords = 9;
+constexpr int kPool = 2;
 // A wider band contends for the data cache with the rows it reads and writes (KEHOACH 3.7).
 constexpr size_t kBandBytes = CONFIG_ESP32S3_DATA_CACHE_SIZE / 8;
 
@@ -100,7 +102,7 @@ class PointwiseDepthwise final : public dl::module::Module {
 public:
     PointwiseDepthwise(const char *name, std::vector<int> kernel, std::vector<int> pads, std::vector<int> strides,
                        Part pointwise, Part depthwise, Part project, int middle_exponent, int depthwise_exponent,
-                       int clip_max) :
+                       int clip_max, bool pooled) :
         Module(name, dl::MODULE_NON_INPLACE, dl::QUANT_TYPE_SYMM_8BIT),
         kernel_(std::move(kernel)),
         pads_(std::move(pads)),
@@ -110,7 +112,8 @@ public:
         project_(project),
         middle_exponent_(middle_exponent),
         depthwise_exponent_(depthwise_exponent),
-        top_(static_cast<int8_t>(clip_max))
+        top_(static_cast<int8_t>(clip_max)),
+        pooled_(pooled)
     {
         ++band_users;
     }
@@ -130,12 +133,14 @@ public:
     {
         const std::vector<int> &x = input_shapes[0];
         channels_ = input_shapes[pointwise_.filter][3];
+        depthwise_h_ = (x[1] + pads_[0] + pads_[1] - kernel_[0]) / strides_[0] + 1;
+        depthwise_w_ = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
         std::vector<int> y = x;
-        y[1] = (x[1] + pads_[0] + pads_[1] - kernel_[0]) / strides_[0] + 1;
-        y[2] = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
+        y[1] = pooled_ ? depthwise_h_ / kPool : depthwise_h_;
+        y[2] = pooled_ ? depthwise_w_ / kPool : depthwise_w_;
         y[3] = projected() ? input_shapes[project_.filter][3] : channels_;
         // esp-dl's planner asks for shapes while the model is built, so the bands are reserved then.
-        reserve_bands(x[1], x[2], y[1], y[2]);
+        reserve_bands(x[1], x[2]);
         return {y};
     }
 
@@ -144,11 +149,11 @@ public:
         dl::TensorBase *x = context->get_tensor(m_inputs_index[0]);
         dl::TensorBase *y = context->get_tensor(m_outputs_index[0]);
         const size_t row_bytes = static_cast<size_t>(x->shape[2]) * channels_;
-        const size_t depthwise_row_bytes = static_cast<size_t>(y->shape[2]) * channels_;
+        const size_t depthwise_row_bytes = static_cast<size_t>(depthwise_w_) * channels_;
         int8_t *band = middle_band.rows;
         int8_t *staged = depthwise_band.rows;
         if (band == nullptr || row_bytes * band_rows_ > middle_band.bytes ||
-            (projected() && (staged == nullptr || depthwise_row_bytes * out_band_ > depthwise_band.bytes))) {
+            (staging() && (staged == nullptr || depthwise_row_bytes * out_band_ > depthwise_band.bytes))) {
             ESP_LOGE(TAG, "%s: %d rows of %u bytes do not fit the bands", name, band_rows_,
                      static_cast<unsigned>(row_bytes));
             return;
@@ -157,7 +162,7 @@ public:
             return;
         }
         const int in_h = x->shape[1];
-        const int out_h = y->shape[1];
+        const int out_h = depthwise_h_;
         const size_t in_row_bytes = static_cast<size_t>(x->shape[2]) * x->shape[3];
         const size_t out_row_bytes = static_cast<size_t>(y->shape[2]) * y->shape[3];
         int8_t *xs = x->get_element_ptr<int8_t>();
@@ -183,7 +188,7 @@ public:
             }
             held_lo = lo;
             held_hi = hi;
-            int8_t *rows_out = projected() ? staged : ys + oy0 * out_row_bytes;
+            int8_t *rows_out = staging() ? staged : ys + oy0 * out_row_bytes;
             // esp-dl's shell rewrites the filter size in its args around the padding, so each band runs a copy.
             dl::base::ArgsType<int8_t> depthwise = depthwise_once_;
             depthwise.input_element = band;
@@ -202,14 +207,20 @@ public:
                                               static_cast<const int8_t *>(project_once_.filter_element),
                                               project_run_.data());
             }
+            if (pooled_ && oy1 - oy0 >= kPool) {
+                pool_run_[0] = (oy1 - oy0) / kPool;
+                ai_engine_max_pool_s8_esp32s3(ys + oy0 / kPool * out_row_bytes, staged, pool_run_.data());
+            }
         }
     }
 
     void print() override
     {
-        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, band rows: %d, projected: %d, clip max: %d, quant_type: %s.",
+        ESP_LOGI(TAG,
+                 "kernel: %s, pads: %s, strides: %s, band rows: %d, projected: %d, clip max: %d, pooled: %d, "
+                 "quant_type: %s.",
                  dl::vector_to_string(kernel_).c_str(), dl::vector_to_string(pads_).c_str(),
-                 dl::vector_to_string(strides_).c_str(), band_rows_, projected(), top_,
+                 dl::vector_to_string(strides_).c_str(), band_rows_, projected(), top_, pooled_,
                  dl::quant_type_to_string(quant_type));
     }
 
@@ -219,6 +230,7 @@ public:
         std::vector<int> pads;
         std::vector<int> strides;
         std::vector<int> dilations;
+        std::vector<int> pool;
         std::string activation;
         std::string pointwise_activation;
         std::string project_activation;
@@ -242,6 +254,7 @@ public:
         fbs_model->get_operation_attribute(node_name, "middle_exponent", middle_exponent);
         fbs_model->get_operation_attribute(node_name, "depthwise_exponent", depthwise_exponent);
         fbs_model->get_operation_attribute(node_name, "clip_max", clip_max);
+        fbs_model->get_operation_attribute(node_name, "max_pool", pool);
         fbs_model->get_operation_attribute(node_name, "quant_type", quant_type);
         if (pads.empty()) {
             pads.assign(2 * kSpatialDims, 0);
@@ -250,7 +263,8 @@ public:
         if (quant_type != dl::QUANT_TYPE_SYMM_8BIT || kernel.size() != kSpatialDims ||
             pads.size() != 2 * kSpatialDims || strides.size() != kSpatialDims ||
             (!dilations.empty() && dilations != unit) || pointwise_inputs < 1 || depthwise_inputs < 1 ||
-            project_inputs < 0 || clip_max < 0 || clip_max > kNoClamp) {
+            project_inputs < 0 || clip_max < 0 || clip_max > kNoClamp ||
+            (!pool.empty() && (pool != std::vector<int>(kSpatialDims, kPool) || project_inputs > 0))) {
             ESP_LOGE(TAG, "%s: only an int8 1x1 convolution and its depthwise reader run joined", node_name.c_str());
             return nullptr;
         }
@@ -262,11 +276,14 @@ public:
         // ONNX orders pads [top, left, bottom, right]; esp-dl's kernels read [top, bottom, left, right].
         return new PointwiseDepthwise(node_name.c_str(), std::move(kernel), {pads[0], pads[2], pads[1], pads[3]},
                                       std::move(strides), pointwise, depthwise, project, middle_exponent,
-                                      depthwise_exponent, clip_max);
+                                      depthwise_exponent, clip_max, !pool.empty());
     }
 
 private:
     bool projected() const noexcept { return project_.filter >= 0; }
+
+    // The depthwise writes its band to the second band when a projection or a max pool reads it there.
+    bool staging() const noexcept { return projected() || pooled_; }
 
     dl::TensorBase *tensor(dl::ModelContext *context, int input) const
     {
@@ -287,7 +304,7 @@ private:
     bool build(dl::ModelContext *context, dl::TensorBase *x, dl::TensorBase *y, int8_t *band, int8_t *staged)
     {
         if (channels_ % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || y->shape[3] % kChannelStep != 0 ||
-            !aligned(x) || ((top_ != kNoClamp || projected()) && !aligned(y))) {
+            !aligned(x) || ((top_ != kNoClamp || staging()) && !aligned(y))) {
             ESP_LOGE(TAG, "%s: %d channels in, %d between, %d out, not on 16-byte vectors", name, x->shape[3],
                      channels_, y->shape[3]);
             return false;
@@ -304,11 +321,14 @@ private:
         dl::TensorBase middle({1, band_rows_, x->shape[2], channels_}, band, middle_exponent_, x->get_dtype(), false,
                               MALLOC_CAP_SPIRAM);
         pointwise_once_ = pointwise_args(context, pointwise_, &middle, x);
-        if (projected()) {
-            dl::TensorBase rows_out({1, out_band_, y->shape[2], channels_}, staged, depthwise_exponent_,
-                                    y->get_dtype(), false, MALLOC_CAP_SPIRAM);
+        if (staging()) {
+            const int exponent = projected() ? depthwise_exponent_ : y->get_exponent();
+            dl::TensorBase rows_out({1, out_band_, depthwise_w_, channels_}, staged, exponent, y->get_dtype(), false,
+                                    MALLOC_CAP_SPIRAM);
             depthwise_once_ = depthwise_args(context, &rows_out, &middle);
-            project_once_ = pointwise_args(context, project_, y, &rows_out);
+            if (projected()) {
+                project_once_ = pointwise_args(context, project_, y, &rows_out);
+            }
         } else {
             depthwise_once_ = depthwise_args(context, y, &middle);
         }
@@ -325,6 +345,7 @@ private:
         if (projected()) {
             project_run_ = row_run(project_once_, project_.activation, y->shape[3], channels_);
         }
+        pool_run_ = {0, y->shape[2], channels_ / kChannelStep, depthwise_w_ * channels_};
         built_ = true;
         return true;
     }
@@ -373,15 +394,20 @@ private:
         }
     }
 
-    void reserve_bands(int in_h, int in_w, int out_h, int out_w) noexcept
+    void reserve_bands(int in_h, int in_w) noexcept
     {
         const size_t row_bytes = static_cast<size_t>(in_w) * channels_;
         const int fitting = static_cast<int>(kBandBytes / std::max<size_t>(row_bytes, 1));
         band_rows_ = std::min(in_h, std::max(kernel_[0], fitting));
-        out_band_ = band_rows_ >= in_h ? out_h : (band_rows_ - kernel_[0]) / strides_[0] + 1;
+        out_band_ = band_rows_ >= in_h ? depthwise_h_ : (band_rows_ - kernel_[0]) / strides_[0] + 1;
+        // A max pool takes its output rows two at a time from each band.
+        if (pooled_ && out_band_ < depthwise_h_ && out_band_ % kPool != 0) {
+            out_band_ = out_band_ > 1 ? out_band_ - 1 : kPool;
+            band_rows_ = std::min(in_h, std::max(band_rows_, (out_band_ - 1) * strides_[0] + kernel_[0]));
+        }
         middle_band.reserve(row_bytes * band_rows_);
-        if (projected()) {
-            depthwise_band.reserve(static_cast<size_t>(out_w) * channels_ * out_band_);
+        if (staging()) {
+            depthwise_band.reserve(static_cast<size_t>(depthwise_w_) * channels_ * out_band_);
         }
     }
 
@@ -394,9 +420,12 @@ private:
     const int middle_exponent_;
     const int depthwise_exponent_;
     const int8_t top_;
+    const bool pooled_;
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
     int channels_ = 0;
+    int depthwise_h_ = 0;
+    int depthwise_w_ = 0;
     int band_rows_ = 0;
     int out_band_ = 0;
     dl::base::ArgsType<int8_t> pointwise_once_ = {};
@@ -404,6 +433,7 @@ private:
     dl::base::ArgsType<int8_t> project_once_ = {};
     RowRun pointwise_run_ = {};
     RowRun project_run_ = {};
+    std::array<int32_t, 4> pool_run_ = {};
     bool built_ = false;
 };
 

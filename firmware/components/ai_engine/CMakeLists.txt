@@ -10,7 +10,8 @@ if(CONFIG_AI_RUNTIME_ESPDL)
                      src/core/espdl_conv_slices.cpp src/core/espdl_channel_conv.cpp
                      src/core/espdl_conv_im2col.cpp src/core/espdl_mul_add.cpp
                      src/core/espdl_pointwise_depthwise.cpp src/core/clamp_s8_esp32s3.S
-                     src/core/mul_add_s8_esp32s3.S src/core/conv_row_s8_esp32s3.S)
+                     src/core/max_pool_s8_esp32s3.S src/core/mul_add_s8_esp32s3.S
+                     src/core/conv_row_s8_esp32s3.S)
 else()
     list(APPEND srcs src/ai_engine.cpp src/core/arena.cpp src/core/model_base.cpp src/core/model_store.cpp
                      src/core/profiler.cpp
