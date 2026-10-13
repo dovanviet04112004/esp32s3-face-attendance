@@ -827,3 +827,19 @@ Một khuôn mặt qua cả ba nhánh: **444,8 ms** lúc đầu (12/10); **391,1
 nguyên; **316,1 ms** với cả các nấc làm tròn, nhanh hơn 28,9%. Ba nấc làm tròn đổi số nguyên, nên chất lượng
 của chúng chưa có ở đây: thước của từng nhánh chấm các hàng biến thể của thang, và `make quant-choose` giữ
 nấc nào trong một bước phân giải của hàng tốt nhất.
+
+### 14.6 Lát tích chập ghi thẳng vào tensor ra — đo 13/10
+
+`cache_sized_convolutions` giữ các lát trong một op `ConvSlices` của `ai_engine`: mỗi lát chạy đúng nhân esp-dl
+của nó trên khung nhìn vào phần kênh của mình, bước nhảy điểm ảnh bằng tổng số kênh, nên không còn op `Concat`
+chép lại các lát (recog 3,6 ms ở ba chỗ, spoof 0,2 ms).
+
+| Hàng | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | Trước |
+|---|---|---:|---:|
+| recog `timing` | 24 khung, **0 / 12.288** | **263,0** / 265,7 ms | 266,2 ms |
+| recog `timing+fused_prelu+prelu_on_input_grid` | 24 khung, **0 / 12.288** | **213,9** / 216,5 ms | 217,5 ms |
+| spoof `timing+fused_prelu+prelu_on_input_grid` | 40 khung, **0 / 120** | **51,0** / 53,1 ms | 51,2 ms |
+
+Cả ba qua `model->test()` ở đồ thị và 4 bản cắt; lát mang PReLU đã gộp (`conv_45/conv_expand` ở nấc cuối) cũng
+khớp từng bit. Một khuôn mặt qua cả ba nhánh: **312,3 ms** với các nấc làm tròn (từ 444,8, −29,8%), **387,9 ms**
+với riêng bản vá giữ nguyên số nguyên (spoof đo trước `ConvSlices`, 62,4 ms).
