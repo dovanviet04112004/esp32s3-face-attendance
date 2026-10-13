@@ -2201,6 +2201,7 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 | `cache_sized_convolutions` | tích chập 1×1 mà trọng số lấp đầy cache dữ liệu 64 KB | cắt theo kênh ra thành từng lát nửa cache, giữ trong một op `ConvSlices`: mỗi lát chạy đúng nhân esp-dl của nó và ghi thẳng vào phần kênh của mình trong tensor ra, nên không còn `Concat` chép lại; mỗi kênh ra vẫn là đúng phép tính ấy |
 | `padded_channels` | tích chập nhóm 1 có số kênh ra không chia hết cho 16, mà kênh ấy chỉ đi qua op giữ 0 thành 0 theo từng kênh (depthwise, `PRelu`, `Relu`, `LeakyRelu`, `Clip` có 0 trong khoảng) rồi vào tích chập nhóm 1, và không tensor nào trên đường là đầu ra đồ thị | đệm số kênh ấy lên bội 16: kênh thêm có bộ lọc, bias và alpha bằng 0, depthwise nhận thêm nhóm, tích chập cuối nhận cột trọng số 0. Kênh thêm luôn bằng 0 nên không góp vào tổng nào, và số mũ theo tensor không đổi vì 0 không đổi giá trị lớn nhất |
 | `channel_conv` | khối ECA: `Squeeze → Transpose → Conv` 1-D không bias trên một kênh `→ Transpose → Unsqueeze`, chạy trên vector C kênh ra từ `GlobalAveragePool` | cả chuỗi thành một op `ChannelConv` của `ai_engine`: tích chập 1-D dọc trục kênh, cùng trọng số, cùng lưới và cùng phép làm tròn half-up của nhân esp-dl. Tensor 1×1×C có cùng thứ tự byte ở NCHW lẫn NHWC, nên bước bố trí xếp op ấy như op thụ động và không chèn `Transpose` nào |
+| `im2col_convolutions` | tích chập nhóm 1, nhân lớn hơn 1×1, dilation 1, số kênh vào không chia hết cho 16 còn số kênh ra chia hết cho 16: tích chập đầu 3×3 bước 2 trên ảnh RGB của cả ba nhánh, chạy đường không căn của esp-dl ở 0,8–1,0 chu kỳ một phép nhân-cộng | trọng số `[N, C, kh, kw]` xếp lại thành `[N, P, 1, 1]` theo thứ tự hàng, cột, kênh của ô kh×kw, với P là kh·kw·C đệm 0 lên bội 16 (27 → 32), trong một op `ConvIm2col`: module gom ô kh×kw×C của từng điểm ra thành một vector P kênh (điểm ngoài ảnh là 0, đúng như pad) rồi chạy nhân 1×1 căn 16 của esp-dl. Mỗi tổng vẫn là đúng các tích cũ cộng thêm các tích với 0, cùng bias, cùng phép làm tròn và cùng kích hoạt đã gộp |
 
 | Bản vá làm tròn | Nhận đồ thị chỗ nào | Chip tính khác chỗ nào, mô phỏng theo thế nào |
 |---|---|---|
@@ -2214,8 +2215,10 @@ dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.
 `ConvSlices` cũng là module của `ai_engine`: với mỗi lát nó dựng `ConvOpArgs` trên một khung nhìn vào tensor
 ra (con trỏ dời tới kênh đầu của lát, bước nhảy giữa hai điểm ảnh bằng tổng số kênh), nhận cả alpha của
 từng lát khi lát đã gộp PReLU. `ChannelConv` chạy tích chập 1-D của ECA trên C giá trị liền nhau bằng C
-thuần, tối đa vài trăm phép nhân-cộng, làm tròn half-up rồi bão hoà int8 như nhân esp-dl. Cả ba module chỉ
-chạy đơn lõi (§5).
+thuần, tối đa vài trăm phép nhân-cộng, làm tròn half-up rồi bão hoà int8 như nhân esp-dl. `ConvIm2col`
+dựng `ConvOpArgs` một lần mỗi lượt cho tích chập 1×1 từ một hàng đệm P kênh sang một hàng của tensor ra,
+rồi với mỗi hàng ra chép các ô kh×kw×C vào hàng đệm và gọi nhân; hàng đệm căn 16 byte ở PSRAM, vừa trong
+cache dữ liệu, xin một lần khi esp-dl tính shape lúc dựng model. Cả bốn module chỉ chạy đơn lõi (§5).
 `espdl_model.cpp` đăng ký các module ấy sau module của esp-dl, trước model đầu tiên; mỗi module chỉ lộ hàm
 dựng của nó qua header riêng. Bản dò dựng `dl::Model` trực tiếp nên gọi cùng hàm đăng ký. `espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh
 các op của `dl_module_creator.hpp`.
@@ -4423,7 +4426,7 @@ components/ai_engine/
 ├── priv_include/{tensor_view.hpp,         # ★ view int8 NHWC + scale + zero point, runtime nào cũng dựng được
 │                 tflite_model.hpp, arena.hpp, model_store.hpp,   # TFLM
 │                 espdl_model.hpp, espdl_conv_prelu.hpp, espdl_conv_slices.hpp,   # ESP-DL
-│                 espdl_channel_conv.hpp,
+│                 espdl_channel_conv.hpp, espdl_conv_im2col.hpp,
 │                 pixels.hpp}
 ├── src/
 │   ├── ai_engine.cpp                      # mặt tiền TFLM: dựng 2 arena, mở model store, nối 3 model
@@ -4438,6 +4441,7 @@ components/ai_engine/
 │   │   ├── espdl_conv_prelu.cpp           # ESP-DL — module ConvPRelu: Conv + PReLU trong một nhân (§3.7)
 │   │   ├── espdl_conv_slices.cpp          # ESP-DL — module ConvSlices: các lát 1×1 ghi thẳng vào tensor ra (§3.7)
 │   │   ├── espdl_channel_conv.cpp         # ESP-DL — module ChannelConv: tích chập 1-D của ECA dọc trục kênh (§3.7)
+│   │   ├── espdl_conv_im2col.cpp          # ESP-DL — module ConvIm2col: ô k×k gom thành kênh, chạy nhân 1×1 căn 16 (§3.7)
 │   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
