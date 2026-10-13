@@ -250,3 +250,41 @@ tầng torch còn trial gập trên ONNX; phán quyết ở 500‰ không đổi
 Trên split test của CelebA-Spoof (39.072 ảnh), `0118` ESP-DL đạt AUC 0,8193, EER 0,2649 — trọng
 số minivision không train trên pool này, và §43 đã chỉ ra pool ấy đo phong cách ảnh chứ không đo
 sống/giả trên OV5640, nên số này không vào quyết định.
+
+## 10. Thang bốn bậc ESP-DL trên đồ thị cuối — 14/10 (E9-T35, E9-T36, E9-T38)
+
+`make quant-ptq`, `quant-int16`, `quant-qat ALLOW_TRAIN=1`, `quant-variants` rồi `quant-choose` trên run
+`20260918-0118_c1d09c8_5d7b35` (V1SE PReLU), sau mọi bản vá tốc độ của `latency.md` §14.8–14.18. Thước là mô phỏng
+ESP-PPQ của chính đồ thị xuất: AUC trên CelebA-Spoof `test:10:` (39.072 mặt, cắt bằng nhánh detect như kiosk), và 87
+khung OV5640 của `test_device` ở ngưỡng `live_min` 500‰. Cửa: AUC sụt dưới 1% so với Q0, chặn đủ mọi khung giả, giữ
+không ít mặt thật hơn Q0 (59/62). APCER, BPCER đọc ở cùng ngưỡng; LCC-FASD, SynthASpoof, NUAA (AUC ≈ 1 ở mọi hàng)
+và Axon chỉ ghi để đọc. Giờ trên chip là `make ai-unit` của chính hàng, chỉ đo các hàng mà luật chọn cần.
+
+| Bậc | Hàng | AUC CelebA | APCER / BPCER CelebA | Mặt thật giữ | Khung giả chặn | AUC LCC-FASD | AUC SynthASpoof | AUC Axon | Cửa | Giờ trên chip |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| 0 | `float` | 0,8208 | 0,409 / 0,153 | 59/62 | 25/25 | 0,8720 | 0,9136 | 0,7713 | — | — |
+| 2 | `minmax` | 0,8198 | 0,400 / 0,161 | 59/62 | 25/25 | 0,8639 | 0,8977 | 0,7871 | đạt | — |
+| 2 | `percentile` | 0,8247 | 0,373 / 0,171 | 58/62 | 25/25 | 0,8736 | 0,9083 | 0,7642 | **trượt** | — |
+| 2 | `mse` | 0,8207 | 0,392 / 0,165 | 60/62 | 25/25 | 0,8721 | 0,9041 | 0,7712 | đạt | — |
+| 2 | `kl` | 0,8222 | 0,362 / 0,181 | 59/62 | 25/25 | 0,8657 | 0,9083 | 0,7677 | đạt | — |
+| 3 | **`int16_top1`** | 0,8242 | 0,377 / 0,169 | 59/62 | 25/25 | 0,8762 | 0,9080 | 0,7654 | đạt | **72,63 ms** |
+| 3 | `int16_top2` | 0,8238 | 0,375 / 0,170 | 59/62 | 25/25 | 0,8704 | 0,9099 | 0,7608 | đạt | 79,64 ms |
+| 3 | `int16_top4` | 0,8224 | 0,372 / 0,176 | 59/62 | 25/25 | 0,8755 | 0,9091 | 0,7661 | đạt | — |
+| 4 | `qat` | 0,8223 | 0,405 / 0,152 | 60/62 | 25/25 | 0,8739 | 0,9127 | 0,7801 | đạt | — |
+| 3 | `int16_top1+fused_prelu` | 0,8217 | 0,276 / 0,254 | 49/62 | 25/25 | 0,8783 | 0,9038 | 0,7538 | **trượt** | — |
+| 3 | `int16_top1+fused_prelu+prelu_on_input_grid` | 0,8249 | 0,302 / 0,221 | 50/62 | 25/25 | 0,8748 | 0,9055 | 0,7604 | **trượt** | — |
+
+- Bậc 2: `percentile` có AUC cao nhất nhưng trượt cửa vì chỉ giữ 58/62 mặt thật; `kl` là hàng đạt cửa cao nhất.
+- Bậc 3 được dựng trên `percentile`, trước khi `best_row` biết bỏ qua hàng trượt cửa (14a3fcdc). Lớp int16 đầu tiên
+  là tích chập mở rộng của `conv_23`; với lớp ấy ở 16 bit, hàng giữ lại 59/62 và đạt cửa với AUC 0,8242. Hàng
+  không gộp PReLU nên không có cặp `PointwiseDepthwise` nào, như hàng `timing`; lớp int16 và op sau nó (2 op S16)
+  chạy nhân 16 bit của esp-dl, nên hàng chậm hơn hàng `timing` (56,81 ms, `latency.md` §14.18) khoảng 16 ms; hai
+  lớp int16 thêm 7 ms nữa.
+- Bậc 4 dựng trên `int16_top1` (hàng nền đạt cửa tốt nhất): giữ 60/62, AUC 0,8223, thấp hơn nền.
+- Hai biến thể làm tròn trên `int16_top1` giữ AUC (0,8217 và 0,8249) nhưng chỉ giữ 49/62 và 50/62 mặt thật: PReLU
+  gộp làm tròn xuống ở nhánh âm, kéo điểm "sống" của mặt thật xuống dưới 500‰ (điểm thấp nhất của mặt thật 0,034
+  thay vì 0,196). Đó là các hàng đưa spoof xuống 39,6 ms; ở thước này chúng không qua cửa.
+
+**Chọn `int16_top1`** theo luật của KẾ HOẠCH §3.7: hàng đạt cửa có AUC cao nhất (0,8242). Hàng duy nhất trong một bước
+0,001 AUC của nó là `int16_top2` (0,8238), chậm hơn 7 ms. Hàng int8 `kl` (0,8222) có cấu trúc của hàng `timing`,
+nên ước nhanh hơn chừng 16 ms 🔬, nhưng cách hai bước, nên luật không lấy. ADR-0006 ghi quyết định cho cả ba nhánh.
