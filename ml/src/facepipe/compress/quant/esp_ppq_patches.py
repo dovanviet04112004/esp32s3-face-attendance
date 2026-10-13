@@ -14,7 +14,14 @@ from collections.abc import Callable, Iterator, Sequence
 import torch
 
 from .espdl_profile import CHANNEL_STEP, chip
-from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, IM2COL_CONV, MUL_ADD, SLICED_CONV
+from .espdl_shapes import (
+    CHANNEL_CONV,
+    FUSED_PRELU,
+    IM2COL_CONV,
+    MUL_ADD,
+    POINTWISE_DEPTHWISE,
+    SLICED_CONV,
+)
 
 
 def laid_shape(var, info) -> list[int]:
@@ -544,6 +551,111 @@ def mul_add() -> Iterator[None]:
         espdl_exporter.EspdlExporter.prepare_graph = prepare
 
 
+def banded_pair(graph, dw):
+    """dw's 1x1 feeder when a prepared graph can run the pair as PointwiseDepthwise, None otherwise.
+
+    The feeder is an int8 per-tensor ungrouped Conv, 1x1 at stride 1 with no pad and claimed by no
+    other patch; dw, an int8 per-tensor depthwise Conv, alone reads it, on aligned channels.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
+
+    if not isinstance(dw, QuantableOperation) or dw.type != "Conv" or len(dw.inputs) < 2:
+        return None
+    middle = dw.inputs[0]
+    pw = middle.source_op
+    if not isinstance(pw, QuantableOperation) or pw.type != "Conv" or len(pw.inputs) < 2:
+        return None
+    info = ExporterPatternInfo()
+    x_shape, middle_shape = laid_shape(pw.inputs[0], info), laid_shape(middle, info)
+    channels = middle_shape[-1] if len(middle_shape) == 4 else 0
+    kernel = list(dw.attributes.get("kernel_shape", [1, 1]))
+    grids = [*pw.input_quant_config[:2], *pw.output_quant_config]
+    grids += [*dw.input_quant_config[:2], *dw.output_quant_config]
+    if (
+        middle.dest_ops != [dw]
+        or middle.name in graph.outputs
+        or len(x_shape) != 4
+        or any(mark in op.attributes for op in (pw, dw) for mark in (SLICES_MARK, IM2COL_MARK))
+        or pw.attributes.get("group", 1) != 1
+        or list(pw.attributes.get("kernel_shape", [])) != [1, 1]
+        or list(pw.attributes.get("strides", [1, 1])) != [1, 1]
+        or any(pw.attributes.get("pads", [0]))
+        or dw.attributes.get("group", 1) != channels
+        or channels % CHANNEL_STEP
+        or x_shape[-1] % CHANNEL_STEP
+        or len(kernel) != 2
+        or kernel == [1, 1]
+        or any(d != 1 for d in dw.attributes.get("dilations", [1]))
+        or not (per_tensor(pw) and per_tensor(dw))
+        or not int8(grids)
+    ):
+        return None
+    return pw
+
+
+def pointwise_depthwise_from(graph, dw) -> bool:
+    """dw and its banded_pair feeder replaced by one PointwiseDepthwise reading x, the 1x1
+    parameters then dw's own; the middle tensor's exponent rides on as an attribute.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+
+    pw = banded_pair(graph, dw)
+    if pw is None:
+        return False
+    middle = dw.inputs[0]
+    x, pw_params, dw_params = pw.inputs[0], list(pw.inputs[1:]), list(dw.inputs[1:])
+    configs = [*pw.input_quant_config, *dw.input_quant_config[1:]]
+    exponent = round(math.log2(float(pw.output_quant_config[0].scale)))
+    pw_activation = pw.attributes.get("activation", "Linear")
+    # remove_operation drops every parameter still attached, so they move off pw first.
+    for var in pw.inputs:
+        var.dest_ops.remove(pw)
+    pw.inputs.clear()
+    graph.remove_operation(pw)
+    for var in dw.inputs:
+        var.dest_ops.remove(dw)
+    dw.inputs.clear()
+    graph.remove_variable(middle)
+    for var in (x, *pw_params, *dw_params):
+        dw.inputs.append(var)
+        var.dest_ops.append(dw)
+    dw.config = OperationQuantizationConfig(configs, dw.output_quant_config)
+    dw.attributes.update(
+        pointwise_inputs=len(pw_params),
+        depthwise_inputs=len(dw_params),
+        pointwise_activation=pw_activation,
+        middle_exponent=exponent,
+    )
+    dw.type = POINTWISE_DEPTHWISE
+    return True
+
+
+@contextlib.contextmanager
+def pointwise_depthwise() -> Iterator[None]:
+    """Each 1x1 Conv exported with the depthwise Conv reading it as one PointwiseDepthwise.
+
+    The joined op keeps the middle rows in a band the data cache holds instead of a whole tensor
+    the depthwise reads back from PSRAM (KEHOACH 3.7, latency.md 14.8).
+    """
+    from esp_ppq.parser import espdl_exporter
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+
+    def joining(self, graph, *args, **kwargs):
+        graph = prepare(self, graph, *args, **kwargs)
+        for op in list(graph.topological_sort()):
+            if op.name in graph.operations:
+                pointwise_depthwise_from(graph, op)
+        return graph
+
+    espdl_exporter.EspdlExporter.prepare_graph = joining
+    try:
+        yield
+    finally:
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
+
+
 def relu_ready(clip) -> bool:
     """clip, a Clip from 0 that a Relu fused into its Conv can stand for: an int8 Conv's lone
     reader, the Conv's output grid kept through it.
@@ -786,6 +898,7 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "channel_conv": channel_conv,
     "im2col_convolutions": im2col_convolutions,
     "mul_add": mul_add,
+    "pointwise_depthwise": pointwise_depthwise,
     "clip_as_relu": clip_as_relu,
     "prelu_on_input_grid": contextlib.nullcontext,
 }

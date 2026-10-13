@@ -68,6 +68,14 @@ def test_a_convolution_over_patches_shapes_by_its_kernel_not_its_filter() -> Non
     assert got == [1, 56, 56, 64]
 
 
+def test_a_banded_pair_reads_onnx_pads_as_its_module_reorders_them() -> None:
+    x, w = [1, 8, 6, 16], [1, 1, 16, 32]
+    attrs = "kernel_shape = [3, 3], pads = [0, 0, 1, 1], strides = [2, 2]"
+    shapes = [x, w, [32], [3, 3, 32, 1], [32]]
+    got = espdl_shapes.output_shape(espdl_shapes.POINTWISE_DEPTHWISE, attrs, shapes, [None] * 5)
+    assert got == [1, 4, 3, 32]
+
+
 def test_a_gated_residual_keeps_its_input_s_shape() -> None:
     x, gate = [1, 28, 28, 64], [1, 1, 1, 64]
     got = espdl_shapes.output_shape(espdl_shapes.MUL_ADD, "", [x, gate, x], [None] * 3)

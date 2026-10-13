@@ -639,8 +639,112 @@ def test_mul_add_takes_the_residual_from_before_its_requantize(tmp_path: Path) -
     assert requants[regridded] in [ins[2] for ins in muladds]
 
 
+class ExpandDepthwise(nn.Module):
+    """A 1x1 expansion that only a 3x3 depthwise reads, then a 1x1 projection, as in MobileFaceNet;
+    shared adds the expansion back after the depthwise, so the middle tensor has a second reader.
+    """
+
+    def __init__(self, stride: int, shared: bool = False) -> None:
+        super().__init__()
+        self.expand = nn.Conv2d(16, 32, 1)
+        self.depthwise = nn.Conv2d(32, 32, 3, stride=stride, padding=1, groups=32)
+        self.project = nn.Conv2d(32, 16, 1)
+        self.shared = shared
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        middle = torch.relu(self.expand(x))
+        y = torch.relu(self.depthwise(middle))
+        return self.project(y + middle if self.shared else y)
+
+
+def exported_pair(tmp_path: Path, model: nn.Module, patches: list[str]) -> Path:
+    torch.manual_seed(29)
+    calib = [torch.rand(1, 16, 10, 10) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("recognition")
+    graph = quantise_ladder_net(model.eval(), tmp_path, calib, rungs, ("out",))
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    with esp_ppq_patches.applied(patches):
+        return export_espdl.export(
+            graph, tmp_path / f"{'_'.join(patches) or 'plain'}.espdl", test_input
+        )
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+def test_pointwise_depthwise_joins_an_expansion_with_its_depthwise(
+    tmp_path: Path, stride: int
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(31)
+    model = ExpandDepthwise(stride)
+    plain_file = exported_pair(tmp_path / "plain", model, [])
+    joined_file = exported_pair(tmp_path / "joined", model, ["pointwise_depthwise"])
+    (plain, plain_tensors, plain_exps) = espdl_graph(plain_file)
+    (joined, joined_tensors, joined_exps) = espdl_graph(joined_file)
+    convs = {outs[0]: ins for op, ins, outs in plain.values() if op == "Conv"}
+    read = [ins[0] for ins in convs.values()]
+    (dw_out,) = [out for out, ins in convs.items() if ins[0] in convs and out in read]
+    middle, dw_params = convs[dw_out][0], convs[dw_out][1:]
+    expand_ins = convs[middle]
+    ((_, inputs, outputs),) = [
+        n for n in joined.values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
+    ]
+    assert (inputs, outputs) == ([*expand_ins, *dw_params], [dw_out])
+    assert [op for op, _, _ in joined.values()].count("Conv") == 1
+    for name in [*expand_ins[1:], *dw_params]:
+        assert np.array_equal(joined_tensors[name], plain_tensors[name]), name
+        assert joined_exps[name] == plain_exps[name], name
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    plain_text = plain_file.with_suffix(".info").read_text(encoding="utf-8")
+    line = next(line for line in plain_text.splitlines() if line.startswith(f"%{middle}["))
+    assert espdl_shapes.attribute(attrs, "middle_exponent") == int(line.split()[-1].strip("[]"))
+    assert espdl_shapes.attribute(attrs, "pointwise_inputs") == len(expand_ins) - 1
+    assert espdl_shapes.attribute(attrs, "depthwise_inputs") == len(dw_params)
+    assert espdl_shapes.attribute(attrs, "pointwise_activation") == "Relu"
+
+
+def test_pointwise_depthwise_joins_a_pair_whose_prelus_are_fused(sloped, tmp_path: Path) -> None:
+    graph, calib, _fusable = sloped
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    with esp_ppq_patches.applied(["fused_prelu"]):
+        fused = espdl_graph(export_espdl.export(graph, tmp_path / "fused.espdl", test_input))
+    with esp_ppq_patches.applied(["fused_prelu", "pointwise_depthwise"]):
+        joined_file = export_espdl.export(graph, tmp_path / "joined.espdl", test_input)
+    joined = espdl_graph(joined_file)
+    _op, pw_inputs, (middle,) = fused[0]["/pointwise/Conv"]
+    _op, dw_inputs, dw_outputs = fused[0]["/depthwise/Conv"]
+    assert dw_inputs[0] == middle
+    ((_, inputs, outputs),) = [
+        n for n in joined[0].values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
+    ]
+    assert (inputs, outputs) == ([*pw_inputs, *dw_inputs[1:]], dw_outputs)
+    for name in [*pw_inputs[1:], *dw_inputs[1:]]:
+        assert np.array_equal(joined[1][name], fused[1][name]), name
+        assert joined[2][name] == fused[2][name], name
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    assert espdl_shapes.attribute(attrs, "pointwise_activation") == "PRelu"
+    assert espdl_shapes.attribute(attrs, "activation") == "PRelu"
+    assert espdl_shapes.attribute(attrs, "pointwise_inputs") == 3
+    assert espdl_shapes.attribute(attrs, "depthwise_inputs") == 3
+
+
+def test_pointwise_depthwise_leaves_a_middle_tensor_another_op_reads(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    shared = ExpandDepthwise(1, shared=True)
+    joined_file = exported_pair(tmp_path, shared, ["pointwise_depthwise"])
+    ops = [op for op, _, _ in espdl_graph(joined_file)[0].values()]
+    assert espdl_shapes.POINTWISE_DEPTHWISE not in ops
+    assert ops.count("Conv") == 3
+
+
 def test_ai_engine_registers_every_module_the_patches_export() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     found = espdl_op_check.own_modules(core)
     own = {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV}
-    assert own | {espdl_shapes.IM2COL_CONV, espdl_shapes.MUL_ADD} <= found
+    joined = {espdl_shapes.IM2COL_CONV, espdl_shapes.MUL_ADD, espdl_shapes.POINTWISE_DEPTHWISE}
+    assert own | joined <= found

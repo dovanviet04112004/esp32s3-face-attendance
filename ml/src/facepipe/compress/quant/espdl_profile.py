@@ -169,6 +169,16 @@ def conv_tags(
     return tags, module.us * cpu_mhz / max(macs, 1)
 
 
+def banded_rate(module: Module, laid: dict[str, list[int]], cpu_mhz: int) -> float | None:
+    """A PointwiseDepthwise's cycles a multiply-add over both its convolutions."""
+    x, w, y = (laid.get(name) for name in (*module.inputs[:2], module.outputs[0]))
+    if x is None or w is None or y is None:
+        return None
+    kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1, 1])
+    macs = math.prod(x) * w[-1] + math.prod(y) * math.prod(kernel)
+    return module.us * cpu_mhz / max(macs, 1)
+
+
 def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes: int):
     """The slow paths module takes on esp-dl's S3 kernels, each with the patch that handles it.
 
@@ -176,6 +186,8 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
     """
     if module.op in espdl_shapes.CONV_OPS:
         return conv_tags(module, laid, cpu_mhz, cache_bytes, readers)
+    if module.op == espdl_shapes.POINTWISE_DEPTHWISE:
+        return [], banded_rate(module, laid, cpu_mhz)
     tags = []
     if "quant_type = 'F32'" in module.attrs:
         tags.append("runs in float")
@@ -208,6 +220,10 @@ def tags_of(module: Module, laid: dict, readers: dict, cpu_mhz: int, cache_bytes
 
 def kernel_class(module: Module, laid: dict[str, list[int]]) -> str:
     """The esp-dl kernel family module runs on, the unit the inventory sums time by."""
+    if module.op == espdl_shapes.POINTWISE_DEPTHWISE:
+        kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1, 1])
+        stride = espdl_shapes.attribute(module.attrs, "strides", [1])[0]
+        return f"pointwise + depthwise {'x'.join(str(k) for k in kernel)} s{stride} in bands"
     if module.op not in espdl_shapes.CONV_OPS:
         return f"{module.op} (table lookup)" if LUT_MARK in module.attrs else module.op
     x, y = laid.get(module.inputs[0]), laid.get(module.outputs[0])

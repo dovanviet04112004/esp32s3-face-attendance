@@ -128,6 +128,18 @@ def test_each_module_falls_in_one_kernel_class() -> None:
     assert unknown == "convolution, shapes unknown"
 
 
+def test_a_banded_pair_counts_both_convolutions_and_names_its_kernel_and_stride() -> None:
+    attrs = "kernel_shape = [3, 3], pads = [1, 1, 1, 1], strides = [2, 2]"
+    laid = {"x": [1, 8, 8, 16], "w": [1, 1, 16, 32], "y": [1, 4, 4, 32]}
+    pair = module(espdl_shapes.POINTWISE_DEPTHWISE, ["x", "w"], ["y"], attrs=attrs)
+    assert espdl_profile.tags_of(pair, laid, {}, 240, 65536) == (
+        [],
+        pytest.approx(1200 * 240 / (8 * 8 * 16 * 32 + 4 * 4 * 32 * 9)),
+    )
+    assert espdl_profile.kernel_class(pair, laid) == "pointwise + depthwise 3x3 s2 in bands"
+    assert espdl_profile.tags_of(pair, {}, {}, 240, 65536) == ([], None)
+
+
 def test_a_class_saves_what_its_fastest_module_s_rate_would_save() -> None:
     entries = [("pointwise", 100, 0.2), ("pointwise", 300, 0.6), ("Add", 50, None)]
     found = espdl_profile.classes(entries)

@@ -47,6 +47,7 @@ SLICED_CONV = "ConvSlices"
 CHANNEL_CONV = "ChannelConv"
 IM2COL_CONV = "ConvIm2col"
 MUL_ADD = "MulAdd"
+POINTWISE_DEPTHWISE = "PointwiseDepthwise"
 CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV, IM2COL_CONV)
 
 
@@ -131,6 +132,15 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
     if op == "Concat" and None not in shapes:
         axis = attribute(attrs, "axis") % len(x)
         return [sum(s[axis] for s in shapes) if i == axis else d for i, d in enumerate(x)]
+    if op == POINTWISE_DEPTHWISE and shapes[1] is not None:
+        kernel, (top, left, bottom, right), strides = (
+            attribute(attrs, key) for key in ("kernel_shape", "pads", "strides")
+        )
+        out = list(x)
+        out[1] = (x[1] + top + bottom - kernel[0]) // strides[0] + 1
+        out[2] = (x[2] + left + right - kernel[1]) // strides[1] + 1
+        out[-1] = shapes[1][-1]
+        return out
     if op in CONV_OPS and shapes[1] is not None:
         w, pads, strides = shapes[1], attribute(attrs, "pads"), attribute(attrs, "strides")
         dilations, group = attribute(attrs, "dilations"), attribute(attrs, "group")
