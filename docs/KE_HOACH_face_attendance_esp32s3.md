@@ -7443,7 +7443,7 @@ Nhóm theo việc, không theo bảng. Mọi bảng dưới đây nằm ở `bac
 
 | Bảng | Giữ gì | Ghi chú thiết kế |
 |---|---|---|
-| `LegalEntity` | mã, tên, mã số thuế, địa chỉ, đang dùng | đơn vị nộp BHXH và chạy lương; một nhóm công ty có nhiều pháp nhân |
+| `LegalEntity` | mã, tên, mã số thuế, địa chỉ, đang dùng | đơn vị nộp BHXH và chạy lương; một nhóm công ty có nhiều pháp nhân; mỗi nhân viên và mỗi kỳ lương thuộc đúng một pháp nhân |
 | `Department` | mã, tên, `parentId`, trung tâm chi phí, trưởng đơn vị, đang dùng | cây tự tham chiếu; truy vấn con cháu bằng CTE đệ quy; mã duy nhất trong một pháp nhân |
 | `JobTitle` | mã, tên, bậc, nhóm lao động của D02-LT, đang dùng | tách khỏi phòng ban: một chức danh tồn tại ở nhiều phòng |
 | `EmploymentContract` | loại, ngày bắt đầu, ngày kết thúc, trạng thái | **nhiều bản một người**, vì tái ký là hợp đồng mới chứ không phải sửa hợp đồng cũ |
@@ -7470,6 +7470,12 @@ thái. Danh sách nghiệp vụ mà công ty này khác công ty kia là bảng.
 **Nhân sự** — `Employee` mở rộng: `departmentId`, `jobTitleId`, `managerId` (tự tham chiếu),
 `hireDate`, `dateOfBirth`, `personalEmail`, `phone`, `taxCode`, `bankAccount`, `photoUrl`,
 `locale`. `department` dạng chuỗi **bỏ đi**, dữ liệu cũ đổ sang `Department` theo tên.
+
+**Mỗi người thuộc đúng một pháp nhân** — bên đứng tên hợp đồng với họ — nên
+`Employee.legalEntityId` không được trống. Hồ sơ mới không nêu pháp nhân thì lấy pháp nhân của
+phòng ban; không có phòng ban thì lấy pháp nhân duy nhất đang dùng; công ty có từ hai pháp nhân trở
+lên mà không nêu thì trả `LEGAL_ENTITY_REQUIRED`. Kiosk, ca, loại phép, chức danh và tài khoản dùng
+chung cả hệ: lượt chấm công đi theo người, và pháp nhân của một lượt là pháp nhân trên hồ sơ người ấy.
 
 `locale` mặc định `vi` và tồn tại vì **thư hệ thống gửi đi không có chỗ nào để hỏi người nhận
 muốn đọc thứ tiếng gì**. Dashboard lấy ngôn ngữ từ URL, kiosk lấy từ NVS; một job chạy lúc hai
@@ -7936,9 +7942,56 @@ trên màn `Phụ cấp` (§9.15). Ghi một mốc lương thì mỗi khoản ph
 không được lặng lẽ đổi lương của những tháng đã tính. D02-LT xếp phụ cấp vào cột theo đúng cột
 khai trên loại, không theo thứ tự mã.
 
-**Kỳ lương và lượt chạy tách nhau.** `PayrollPeriod` là tháng lương, có trạng thái
-`OPEN → LOCKED → PAID`. `PayrollRun` là **một lần tính**, và một kỳ có thể có nhiều lượt: chạy
-nháp, xem, sửa, chạy lại. Chỉ khi kỳ `LOCKED` thì phiếu mới là bản chính thức.
+**Kỳ lương và lượt chạy tách nhau.** `PayrollPeriod` là tháng lương của **một pháp nhân**, có
+trạng thái `OPEN → LOCKED → PAID`. `PayrollRun` là **một lần tính**, và một kỳ có thể có nhiều
+lượt: chạy nháp, xem, sửa, chạy lại, bỏ. Chỉ khi kỳ `LOCKED` thì phiếu mới là bản chính thức.
+
+**Mỗi kỳ là một pháp nhân trong một tháng; không có kỳ chung cả công ty.** Lương, BHXH, thuế TNCN
+và chuyển khoản đều đi theo bên đứng tên hợp đồng. Một kỳ gộp hai pháp nhân là một file ngân hàng
+trộn hai tài khoản trả và một lần chốt khoá chung hai bên; một kỳ chung chồng lên kỳ riêng của cùng
+tháng thì một người có hai phiếu. Công ty một pháp nhân thì trang kỳ lương không hỏi, kỳ nhận pháp
+nhân duy nhất đang dùng; từ hai pháp nhân trở lên thì phải chọn, thiếu thì `LEGAL_ENTITY_REQUIRED`.
+
+**Mỗi pháp nhân mỗi lúc một kỳ mở, và tháng chỉ đi tới.** Mở kỳ bị từ chối khi pháp nhân ấy còn
+một kỳ `OPEN` (`PERIOD_STILL_OPEN`), hoặc khi tháng xin mở không đứng sau tháng của kỳ mới nhất
+(`PERIOD_OUT_OF_ORDER`). Lượt nào chạy cũng mang vào phiếu các khoản truy lĩnh và tạm ứng đang
+chờ, nên hai kỳ cùng mở là hai phiếu cùng mang một khoản, và lần chốt thứ hai trả hoặc trừ nó
+thêm một lần. Phép kiểm khoá dòng pháp nhân trong chính giao dịch tạo kỳ, nên hai người bấm cùng
+lúc không cùng lọt.
+
+**Mỗi kỳ mỗi lúc một lượt chạy.** Bấm chạy khi kỳ đang có lượt chạy trả `PERIOD_RUN_IN_PROGRESS`.
+Lượt thưởng và lượt chốt cuối lấy phiếu thường làm nền thuế (§9.18 mục 8, 9); chạy song song với
+một lượt thường là tính trên một nền đang bị thay.
+
+**Lượt thường đổi thì lượt đứng trên nó cũ.** Một lượt thường xong thì mọi lượt thưởng và chốt
+cuối đã `DONE` của kỳ quay về `DRAFT`: phiếu bỏ, đầu vào giữ, `PayrollRun.failure` ghi
+`RUN_BASE_CHANGED`, và trang kỳ hiện câu ấy ngay dưới lượt.
+
+**Bỏ một lượt.** *Huỷ lượt* đưa một lượt `DRAFT`, `DONE` hay `FAILED` của kỳ còn mở sang
+`DISCARDED` và xoá phiếu của nó; lượt đang chạy hay kỳ đã chốt thì từ chối. `DISCARDED` là trạng
+thái cuối: không chạy lại được (`RUN_DISCARDED`), và chọn phiếu, tổng kỳ, chốt đều bỏ qua nó. Bỏ
+một lượt thường đã `DONE` thì mọi lượt `DONE` khác của kỳ quay về `DRAFT` với `RUN_BASE_CHANGED`:
+tạm ứng và truy lĩnh của kỳ trỏ vào phiếu của lượt thường xong sau cùng, phiếu ấy mất thì chỉ một
+lượt thường chạy lại mới trỏ được cho đúng.
+
+**Chốt khi mọi lượt đã xong.** Chốt bị từ chối khi lượt thường mới nhất chưa bỏ mà chưa `DONE`,
+hoặc còn lượt thưởng hay chốt cuối chưa `DONE` mà chưa bỏ: `RUN_BASE_CHANGED` khi lượt ấy quay về
+nháp vì nền đổi, `PERIOD_RUNS_UNFINISHED` cho mọi trường hợp khác. Thiếu luật này thì chốt lặng lẽ
+phát một lượt cũ hơn lượt vừa hỏng, và một lượt thưởng còn nháp thì không ai được trả mà không ai
+hay.
+
+**Mỗi người mỗi tháng đúng một phiếu thường.** Đổi pháp nhân giữa tháng đặt được một người vào
+lượt thường của cả hai pháp nhân. Chốt bỏ qua người đã có phiếu thường phát ra cho cùng tháng ở
+một kỳ khác, và danh sách kiểm báo trước số người ấy (`PAID_ELSEWHERE`). Chiều ngược lại cũng báo:
+người kỳ này phải tính, đã có mức lương, mà chưa có phiếu trong lượt thường nào đã xong — vào làm
+hay chuyển tới sau lượt cuối (`NOT_IN_RUN`). Chia lương tháng chuyển theo số ngày ở từng pháp nhân
+cần lịch sử pháp nhân theo ngày và nằm ngoài phạm vi: người ấy nhận đủ tháng ở kỳ chốt trước.
+
+**Chống trùng nằm trên dòng dữ liệu, không trên tài khoản.** Mọi khoá đặt trên dòng pháp nhân, dòng
+kỳ và dòng lượt, nên `ADMIN` với `PAYROLL`, hay hai tài khoản `PAYROLL`, bấm cùng lúc đều gặp đúng
+một luật: lượt đã có người nhận thì người sau nhận `RUN_ALREADY_RUNNING`, kỳ đã chốt thì
+`PERIOD_NOT_OPEN`, chốt khi đang chạy thì `PERIOD_RUN_IN_PROGRESS`, hai người mở cùng một tháng thì
+`PERIOD_TAKEN`.
 
 **Lượt không chạy được thì nói vì sao, ngay lúc bấm.** Bấm chạy thì hệ kiểm trước những gì chắc chắn
 làm lượt hỏng — kỳ không còn mở, một người sẽ được tính mà pháp nhân của họ thiếu chính sách hiệu
@@ -8002,14 +8055,12 @@ vào hằng số sẽ trả sai bảo hiểm cho nửa sau của năm. Ở đây
 một hiệu lực 01/01 và một hiệu lực 01/07, và phép tính hỏi chính sách tại **ngày cuối kỳ** —
 nên kỳ tháng Sáu tự lấy trần 46,8 triệu còn kỳ tháng Bảy tự lấy 50,6 triệu, không ai phải nhớ.
 
-**Chính sách đi theo pháp nhân của người được tính, không theo kỳ.** Mỗi dòng `PayrollPolicy` gắn
-một pháp nhân hoặc để trống cho cả công ty. Mỗi người được tính bằng dòng hiệu lực tại ngày cuối kỳ
-của pháp nhân mình, không có mới tới dòng chung, và `Payslip.policyId` ghi dòng đã dùng. Kỳ mở cho
-cả công ty vì thế tính mỗi người theo pháp nhân của họ. Đó là kỳ duy nhất một công ty một pháp nhân
-có được: trang kỳ lương chỉ hỏi pháp nhân khi có từ hai trở lên, còn dòng chính sách mới đi theo
-pháp nhân của dòng đang hiệu lực. Lượt thưởng, lượt quyết toán và bảng quyết toán dùng cùng luật.
-Một người mà cả pháp nhân của họ lẫn dòng chung đều không có dòng hiệu lực thì cả lượt không chạy
-(§9.6): tính thiếu một người là phát một bảng lương sai.
+**Chính sách đi theo pháp nhân của người được tính.** Mỗi dòng `PayrollPolicy` gắn một pháp nhân
+hoặc để trống cho cả công ty. Mỗi người được tính bằng dòng hiệu lực tại ngày cuối kỳ của pháp nhân
+mình, không có mới tới dòng chung, và `Payslip.policyId` ghi dòng đã dùng. Trang chính sách tạo dòng
+mới theo pháp nhân của dòng đang hiệu lực. Lượt thưởng, lượt chốt cuối và bảng quyết toán dùng cùng
+luật. Một người mà cả pháp nhân của họ lẫn dòng chung đều không có dòng hiệu lực thì cả lượt không
+chạy (§9.6): tính thiếu một người là phát một bảng lương sai.
 
 **Cách kiểm một biểu thuế mà không cần tin ai.** Cơ quan thuế công bố kèm **công thức rút gọn**
 cho từng bậc — bậc 5 là `35% × TNTT − 14,5 triệu`. Hai phép kiểm độc lập rơi ra từ đó, và bộ
@@ -8093,7 +8144,7 @@ và trạng thái duyệt `PENDING`:
 | `hold` | Khi nào | Vì sao |
 |---|---|---|
 | `LATE` | giờ của lượt sớm hơn lúc nhận quá `PUNCH_REVIEW_AFTER_DAYS` (7) ngày | một tuần là mốc §7.5 lấy cho máy mất mạng rồi tự hội tụ, nên một tuần mất mạng vẫn tự vào bảng công; lượt cũ hơn thế hiếm khi thật và đắt nhất khi giả |
-| `CLOSED_PERIOD` | ngày của lượt nằm trong một kỳ lương `LOCKED` hay `PAID` của pháp nhân người ấy, hay kỳ chung cả công ty | chốt kỳ đóng băng đầu vào (§9.6) |
+| `CLOSED_PERIOD` | ngày của lượt nằm trong một kỳ lương `LOCKED` hay `PAID` của pháp nhân người ấy | chốt kỳ đóng băng đầu vào (§9.6) |
 
 Lượt đang chờ đứng ngoài **mọi** thứ đọc lượt để tính, đúng như lượt giờ nghi vấn: dựng ngày, số
 đếm hôm nay, báo cáo, thông báo đã chấm công cho người ấy. Nó vào hộp chờ duyệt của bàn nhân sự
@@ -9172,7 +9223,8 @@ quẹt một lần rồi biến mất, nghỉ không đơn, và lượt quẹt m
 
 **4. Danh sách kiểm trước khi chốt lương.** Trước khi `LOCKED` (§9.6), hệ phải tự liệt kê cái
 gì còn treo: đơn nghỉ chưa duyệt, giải trình chưa xử, ngày công thiếu, người chưa có mức lương
-hiệu lực, và **mức lương bắt đầu có hiệu lực trong kỳ** — mức đầu tiên của người mới lẫn mọi lần
+hiệu lực, người chưa có trong lượt thường nào đã xong, người đã nhận phiếu tháng này ở pháp nhân
+khác (§9.6), và **mức lương bắt đầu có hiệu lực trong kỳ** — mức đầu tiên của người mới lẫn mọi lần
 tăng. Mục cuối không phải lỗi mà là chỗ hai bàn gặp nhau: nhân sự ghi lương, bàn lương chạy lương
 (§9.4), và một lần tăng lương bàn lương không nhìn thấy là một lần tăng không ai đối chiếu. **Chốt
 kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận.**
@@ -9249,7 +9301,7 @@ công thức thuế trong một hệ thì sớm muộn chúng lệch nhau.
 thu nhập tính thuế để cộng thêm vào, và một phiếu chốt cuối tính thuế độc lập sẽ rơi vào bậc
 thấp nhất. Đây cũng là lý do luật "trả xong lương tháng cuối" ở trên **chặn** luật này: sửa bộ
 lọc của lượt chạy thường không phải việc dọn dẹp bên lề, nó là điều kiện để lượt chốt cuối tồn
-tại được.
+tại được. Nền đổi thì lượt chốt cuối đã xong quay về nháp, y như lượt thưởng (§9.6).
 
 **Tiền thực nhận âm được, và không được làm tròn lên số không.** Một người tạm ứng mười triệu
 rồi nghỉ có thể còn nợ công ty. `Payslip_net_within_gross` đã cố ý thả `netPay` xuống dưới không
@@ -9268,7 +9320,8 @@ thuế thưởng = thuế(thu nhập tính thuế kỳ + thưởng) − thuế(t
 ```
 
 Nên lượt thưởng **bắt buộc chạy sau lượt lương tháng của cùng kỳ** và đọc phiếu thường của người
-đó làm nền. Không có phiếu nền thì từ chối, chứ không lặng lẽ coi nền bằng không.
+đó làm nền. Không có phiếu nền thì từ chối, chứ không lặng lẽ coi nền bằng không. Lượt thường chạy
+lại sau đó là nền đổi: lượt thưởng đã xong quay về nháp và phải chạy lại trước khi chốt (§9.6).
 
 **Thưởng không vào nền đóng bảo hiểm.** Nền đóng là mức lương theo hợp đồng cộng phụ cấp có
 tính chất lương, và một khoản thưởng một lần không phải thứ đó — nên phiếu thưởng không có dòng
