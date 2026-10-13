@@ -1061,3 +1061,30 @@ với riêng bản vá giữ nguyên số nguyên (từ 356,0).
 
 Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
 cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.13 Tích chập đầu nạp thẳng vào dải của `PointwiseDepthwise` — đo 13/10 (E9-T45), bỏ
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` nhận tích chập mà `im2col_convolutions` đã đánh dấu làm đầu sinh:
+mỗi hàng tensor giữa gom ô từ ảnh rồi chạy `conv_row_s8_esp32s3.S` thẳng vào dải, nên tích chập đầu không còn ghi
+tensor ra PSRAM. Ở nấc làm tròn cuối, recog và spoof mỗi nhánh có một cặp như thế (tích chập đầu → `conv2_dw`); hàng
+`timing` không có cặp nào vì `PRelu` đứng giữa, nên ba hàng ấy là đối chứng. Mọi hàng qua `model->test()` ở đồ thị
+và 4 bản cắt và khớp từng bit trên khung thật.
+
+| Hàng | Một khung, mean / đỉnh | §14.12 |
+|---|---:|---:|
+| recog nấc cuối | 188,29 / 191,95 ms | 187,41 ms |
+| spoof nấc cuối | 44,23 / 47,45 ms | 44,07 ms |
+| detect `timing` | 43,69 / 45,80 ms | 43,69 ms |
+| spoof `timing` | 60,12 / 62,33 ms | 60,07 ms |
+| recog `timing` | 247,97 / 250,67 ms | 247,92 ms |
+
+**Chậm hơn, nên bỏ theo KẾ HOẠCH §3.7.** Ở recog, op gộp tốn 13,3 ms thay cho tích chập đầu 8,2 ms và `conv2_dw`
+7,0 ms, nhưng `conv_23` chậm thêm 2,0 ms (23,0 → 25,0) và `conv_34` 1,0 ms (9,2 → 10,2) dù đồ thị và nhân của hai op
+ấy không đổi. Bỏ tensor giữa 200 KB làm planner dời mọi tensor sau nó (PSRAM 1.685 → 1.540 KB), và vùng đệm giữa
+xin lại theo thứ tự khác. Giả thuyết: hai op ấy có tập làm việc ~51 KB, sát cỡ cache 64 KB, nên va tập cache nhiều
+hơn ở bố cục mới 🔬. Ở spoof, tensor giữa 40×40×32 chỉ 51 KB, vừa cache, nên op gộp không bớt được lượt PSRAM nào.
+Autoload 4 dòng khi trượt cũng không đổi chiều: recog 187,83 ms, spoof 44,18 ms, so với 187,31 và 44,11 ms ở lần
+dò của §14.12.
+
+Một khuôn mặt giữ **274,9 ms** ở nấc làm tròn cuối, như §14.12. Code của lần thử không nằm trong repo; cách làm ở
+commit 519ac011.
