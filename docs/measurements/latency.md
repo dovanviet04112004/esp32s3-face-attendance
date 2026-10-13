@@ -1172,3 +1172,26 @@ với riêng bản vá giữ nguyên số nguyên (từ 340,6).
 
 Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
 `ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.17 Cặp đầu ra không căn 16 của detect chạy như cặp căn 16 — đo 14/10 (E9-T49)
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` nhận cả cặp có kênh giữa không chia hết cho 16: 9 cặp `cls`, `bbox`,
+`kps` của detect (64 → 1, 4, 10 rồi depthwise ra thẳng đầu ra đồ thị). `PointwiseDepthwise` chép trọng số và bias
+của hai tích chập sang bản 16 kênh có kênh thêm bằng 0 ở lượt chạy đầu, chạy như cặp căn 16 với dải ra ở vùng đệm
+thứ hai, rồi chỉ chép N kênh thật ra (KẾ HOẠCH §3.7). Cả hai hàng qua `model->test()` ở đồ thị và 4 bản cắt, và
+khớp từng bit trên khung thật.
+
+| Hàng | Một khung, mean / đỉnh | §14.16 |
+|---|---:|---:|
+| detect `timing` | **32,03** / 36,56 ms | 33,74 ms |
+| detect `timing+clip_as_relu` | **31,80** / 36,31 ms | 33,50 ms |
+
+Ở mức 8 của nấc `clip_as_relu`, cặp `kps` từ 1,0 + 0,3 ms xuống 0,4 ms, `bbox` 0,5 + 0,3 → 0,4 ms, `cls` 0,2 + 0,4 →
+0,4 ms; cả 9 cặp từ ~3,6 xuống ~1,9 ms. Đỉnh khung đầu cao hơn ~0,5 ms vì bản đệm dựng ở lượt chạy đầu. PSRAM của
+detect 313,7 → 324,6 KB cho bản đệm trọng số, RAM nội 25,1 → 23,6 KB.
+
+Một khuôn mặt qua cả ba nhánh: **253,3 ms** ở nấc làm tròn cuối (từ 255,0; từ 444,8 lúc đầu, −43,1%), **335,5 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 337,2).
+
+Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
+`ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
