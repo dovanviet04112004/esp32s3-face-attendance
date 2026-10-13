@@ -21,6 +21,7 @@ from .espdl_shapes import (
     MUL_ADD,
     POINTWISE_DEPTHWISE,
     SLICED_CONV,
+    SPATIAL_MEAN,
 )
 
 
@@ -547,6 +548,67 @@ def mul_add() -> Iterator[None]:
         for op in list(graph.topological_sort()):
             if op.name in graph.operations:
                 mul_add_from(graph, op)
+        return graph
+
+    espdl_exporter.EspdlExporter.prepare_graph = joining
+    try:
+        yield
+    finally:
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
+
+
+SPATIAL_AXES = {1, 2}
+# 128 * pixels must stay inside the 20-bit QACC lanes esp-dl's avg_pool2d sum kernel fills.
+MAX_SUMMED_PIXELS = 4095
+
+
+def spatial_mean_from(graph, op) -> bool:
+    """op, an int8 per-tensor ReduceMean kept 4-D over both spatial axes of whole 16-channel steps
+    and at most MAX_SUMMED_PIXELS pixels, as one SpatialMean reading x alone.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+    from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
+
+    if not isinstance(op, QuantableOperation) or op.type != "ReduceMean" or len(op.inputs) != 2:
+        return False
+    x, axes = op.inputs
+    shape = laid_shape(x, ExporterPatternInfo())
+    if (
+        axes.value is None
+        or len(shape) != 4
+        or {int(a) % 4 for a in axes.value.reshape(-1).tolist()} != SPATIAL_AXES
+        or not op.attributes.get("keepdims", 1)
+        or shape[-1] % CHANNEL_STEP
+        or shape[1] * shape[2] > MAX_SUMMED_PIXELS
+        or not per_tensor(op)
+        or not int8([op.input_quant_config[0], *op.output_quant_config])
+    ):
+        return False
+    axes.dest_ops.remove(op)
+    op.inputs.remove(axes)
+    if not axes.dest_ops:
+        graph.remove_variable(axes)
+    op.config = OperationQuantizationConfig(op.input_quant_config[:1], op.output_quant_config)
+    op.type = SPATIAL_MEAN
+    return True
+
+
+@contextlib.contextmanager
+def spatial_mean() -> Iterator[None]:
+    """Each spatial ReduceMean exported as one SpatialMean, its sums taken in QACC (KEHOACH 3.7).
+
+    esp-dl's ReduceMean sums in a generic C loop with strides; SpatialMean scales the sums by the
+    very float expression it uses, so no integer changes.
+    """
+    from esp_ppq.parser import espdl_exporter
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+
+    def joining(self, graph, *args, **kwargs):
+        graph = prepare(self, graph, *args, **kwargs)
+        for op in list(graph.topological_sort()):
+            spatial_mean_from(graph, op)
         return graph
 
     espdl_exporter.EspdlExporter.prepare_graph = joining
@@ -1108,6 +1170,7 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "im2col_convolutions": im2col_convolutions,
     "mul_add": mul_add,
     "pointwise_depthwise": pointwise_depthwise,
+    "spatial_mean": spatial_mean,
     "clip_as_relu": clip_as_relu,
     "prelu_on_input_grid": contextlib.nullcontext,
 }

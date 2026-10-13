@@ -920,6 +920,43 @@ def test_pointwise_depthwise_joins_a_head_whose_middle_channels_are_not_a_multip
     assert espdl_shapes.problems(info) == []
 
 
+class Squeezed(nn.Module):
+    """A MiniFASNet SE gate on a 1x1 convolution's channels: their spatial mean, squeezed then
+    excited, scales them back.
+    """
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.widen = nn.Conv2d(16, channels, 1)
+        self.squeeze = nn.Conv2d(channels, 16, 1)
+        self.excite = nn.Conv2d(16, channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.widen(x)
+        mean = x.mean(dim=(2, 3), keepdim=True)
+        return x * torch.sigmoid(self.excite(torch.relu(self.squeeze(mean))))
+
+
+@pytest.mark.parametrize(("channels", "summed"), [(16, True), (10, False)])
+def test_spatial_mean_takes_a_spatial_reduce_mean_on_whole_channel_steps(
+    tmp_path: Path, channels: int, summed: bool
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(59)
+    model = Squeezed(channels)
+    plain_file = exported_pair(tmp_path / "plain", model, [])
+    joined_file = exported_pair(tmp_path / "joined", model, ["spatial_mean"])
+    plain, joined = espdl_graph(plain_file)[0], espdl_graph(joined_file)[0]
+    ((name, (_, (x, _axes), (mean,))),) = [
+        (n, node) for n, node in plain.items() if node[0] == "ReduceMean"
+    ]
+    want = (espdl_shapes.SPATIAL_MEAN, [x], [mean]) if summed else plain[name]
+    assert joined[name] == want
+    assert exponent_of(joined_file, mean) == exponent_of(plain_file, mean)
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+
+
 class ChainedUnits(nn.Module):
     """Two YuNet units in a row: each 1x1 convolution feeds a 3x3 depthwise, and the first unit's
     output is the second one's 1x1 input.
@@ -960,4 +997,5 @@ def test_ai_engine_registers_every_module_the_patches_export() -> None:
     found = espdl_op_check.own_modules(core)
     own = {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV}
     joined = {espdl_shapes.IM2COL_CONV, espdl_shapes.MUL_ADD, espdl_shapes.POINTWISE_DEPTHWISE}
+    joined |= {espdl_shapes.SPATIAL_MEAN}
     assert own | joined <= found

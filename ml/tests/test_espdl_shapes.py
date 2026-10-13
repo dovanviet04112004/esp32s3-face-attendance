@@ -93,6 +93,11 @@ def test_a_banded_pair_with_its_max_pool_halves_the_depthwise_s_output() -> None
     assert got == [1, 15, 20, 64]
 
 
+def test_a_spatial_mean_keeps_one_pixel_of_every_channel() -> None:
+    got = espdl_shapes.output_shape(espdl_shapes.SPATIAL_MEAN, "", [[1, 20, 20, 64]], [None])
+    assert got == [1, 1, 1, 64]
+
+
 def test_a_gated_residual_keeps_its_input_s_shape() -> None:
     x, gate = [1, 28, 28, 64], [1, 1, 1, 64]
     got = espdl_shapes.output_shape(espdl_shapes.MUL_ADD, "", [x, gate, x], [None] * 3)

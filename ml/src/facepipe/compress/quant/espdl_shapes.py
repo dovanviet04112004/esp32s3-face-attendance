@@ -48,6 +48,7 @@ CHANNEL_CONV = "ChannelConv"
 IM2COL_CONV = "ConvIm2col"
 MUL_ADD = "MulAdd"
 POINTWISE_DEPTHWISE = "PointwiseDepthwise"
+SPATIAL_MEAN = "SpatialMean"
 CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV, IM2COL_CONV)
 
 
@@ -120,7 +121,7 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
         if attribute(attrs, "keepdims", 1):
             return [1 if i in axes else d for i, d in enumerate(x)]
         return [d for i, d in enumerate(x) if i not in axes] or [1]
-    if op == "GlobalAveragePool":
+    if op in ("GlobalAveragePool", SPATIAL_MEAN):
         return [x[0], *([1] * (len(x) - 2)), x[-1]]
     if op == "Unsqueeze" and values[1] is not None:
         axes = {a + len(x) + 1 if a < 0 else a for a in values[1]}
