@@ -31,24 +31,32 @@ constexpr int kNoClamp = INT8_MAX;
 // A wider band contends for the data cache with the rows it reads and writes (KEHOACH 3.7).
 constexpr size_t kBandBytes = CONFIG_ESP32S3_DATA_CACHE_SIZE / 8;
 
-// One band serves every PointwiseDepthwise: esp-dl runs one module at a time and only ai_task runs models.
 struct Band {
     int8_t *rows = nullptr;
     size_t bytes = 0;
-    int users = 0;
+
+    void reserve(size_t wanted) noexcept
+    {
+        if (wanted <= bytes) {
+            return;
+        }
+        heap_caps_free(rows);
+        rows = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, wanted, MALLOC_CAP_SPIRAM));
+        bytes = rows != nullptr ? wanted : 0;
+    }
+
+    void release() noexcept
+    {
+        heap_caps_free(rows);
+        rows = nullptr;
+        bytes = 0;
+    }
 };
 
-Band shared_band;
-
-void reserve_shared_band(size_t bytes) noexcept
-{
-    if (bytes <= shared_band.bytes) {
-        return;
-    }
-    heap_caps_free(shared_band.rows);
-    shared_band.rows = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, bytes, MALLOC_CAP_SPIRAM));
-    shared_band.bytes = shared_band.rows != nullptr ? bytes : 0;
-}
+// The bands serve every PointwiseDepthwise: esp-dl runs one module at a time and only ai_task runs models.
+Band middle_band;
+Band depthwise_band;
+int band_users = 0;
 
 dl::activation_type_t activation_of(const std::string &name)
 {
@@ -66,6 +74,8 @@ struct Part {
     dl::activation_type_t activation;
 };
 
+constexpr Part kNoPart = {-1, -1, -1, dl::Linear};
+
 Part part_at(int first, int count, dl::activation_type_t activation)
 {
     const bool sloped = activation == dl::PReLU;
@@ -73,29 +83,32 @@ Part part_at(int first, int count, dl::activation_type_t activation)
     return {first, biased ? first + 1 : -1, sloped ? first + count - 1 : -1, activation};
 }
 
-// Inputs as esp_ppq_patches.pointwise_depthwise_from writes them: x, the 1x1 convolution's parameters,
-// then the depthwise one's; the middle tensor between them is never written out, its exponent rides along.
+// Inputs as esp_ppq_patches.pointwise_depthwise_from writes them: x, the 1x1 convolution's parameters, the
+// depthwise one's, then the projection's when it joined; the tensors between them are never written out.
 class PointwiseDepthwise final : public dl::module::Module {
 public:
     PointwiseDepthwise(const char *name, std::vector<int> kernel, std::vector<int> pads, std::vector<int> strides,
-                       Part pointwise, Part depthwise, int middle_exponent, int clip_max) :
+                       Part pointwise, Part depthwise, Part project, int middle_exponent, int depthwise_exponent,
+                       int clip_max) :
         Module(name, dl::MODULE_NON_INPLACE, dl::QUANT_TYPE_SYMM_8BIT),
         kernel_(std::move(kernel)),
         pads_(std::move(pads)),
         strides_(std::move(strides)),
         pointwise_(pointwise),
         depthwise_(depthwise),
+        project_(project),
         middle_exponent_(middle_exponent),
+        depthwise_exponent_(depthwise_exponent),
         top_(static_cast<int8_t>(clip_max))
     {
-        ++shared_band.users;
+        ++band_users;
     }
 
     ~PointwiseDepthwise() override
     {
-        if (--shared_band.users == 0) {
-            heap_caps_free(shared_band.rows);
-            shared_band = {};
+        if (--band_users == 0) {
+            middle_band.release();
+            depthwise_band.release();
         }
     }
 
@@ -105,13 +118,13 @@ public:
     std::vector<std::vector<int>> get_output_shape(std::vector<std::vector<int>> &input_shapes) override
     {
         const std::vector<int> &x = input_shapes[0];
-        const std::vector<int> &w = input_shapes[pointwise_.filter];
+        channels_ = input_shapes[pointwise_.filter][3];
         std::vector<int> y = x;
         y[1] = (x[1] + pads_[0] + pads_[1] - kernel_[0]) / strides_[0] + 1;
         y[2] = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
-        y[3] = w[3];
-        // esp-dl's planner asks for shapes while the model is built, so the band is reserved then.
-        reserve_band(static_cast<size_t>(x[2]) * w[3], x[1]);
+        y[3] = projected() ? input_shapes[project_.filter][3] : channels_;
+        // esp-dl's planner asks for shapes while the model is built, so the bands are reserved then.
+        reserve_bands(x[1], x[2], y[1], y[2]);
         return {y};
     }
 
@@ -119,27 +132,29 @@ public:
     {
         dl::TensorBase *x = context->get_tensor(m_inputs_index[0]);
         dl::TensorBase *y = context->get_tensor(m_outputs_index[0]);
-        const size_t row_bytes = static_cast<size_t>(x->shape[2]) * y->shape[3];
-        int8_t *band = shared_band.rows;
-        if (band == nullptr || row_bytes * band_rows_ > shared_band.bytes) {
-            ESP_LOGE(TAG, "%s: %d rows of %u bytes do not fit the band", name, band_rows_,
+        const size_t row_bytes = static_cast<size_t>(x->shape[2]) * channels_;
+        const size_t depthwise_row_bytes = static_cast<size_t>(y->shape[2]) * channels_;
+        int8_t *band = middle_band.rows;
+        int8_t *staged = depthwise_band.rows;
+        if (band == nullptr || row_bytes * band_rows_ > middle_band.bytes ||
+            (projected() && (staged == nullptr || depthwise_row_bytes * out_band_ > depthwise_band.bytes))) {
+            ESP_LOGE(TAG, "%s: %d rows of %u bytes do not fit the bands", name, band_rows_,
                      static_cast<unsigned>(row_bytes));
             return;
         }
-        if (!built_ && !build(context, x, y, band)) {
+        if (!built_ && !build(context, x, y, band, staged)) {
             return;
         }
         const int in_h = x->shape[1];
         const int out_h = y->shape[1];
         const size_t in_row_bytes = static_cast<size_t>(x->shape[2]) * x->shape[3];
         const size_t out_row_bytes = static_cast<size_t>(y->shape[2]) * y->shape[3];
-        const int out_band = band_rows_ >= in_h ? out_h : (band_rows_ - kernel_[0]) / strides_[0] + 1;
         int8_t *xs = x->get_element_ptr<int8_t>();
         int8_t *ys = y->get_element_ptr<int8_t>();
         int held_lo = 0;
         int held_hi = 0;
-        for (int oy0 = 0; oy0 < out_h; oy0 += out_band) {
-            const int oy1 = std::min(out_h, oy0 + out_band);
+        for (int oy0 = 0; oy0 < out_h; oy0 += out_band_) {
+            const int oy1 = std::min(out_h, oy0 + out_band_);
             const int want_lo = oy0 * strides_[0] - pads_[0];
             const int want_hi = (oy1 - 1) * strides_[0] - pads_[0] + kernel_[0];
             const int lo = std::max(0, want_lo);
@@ -159,27 +174,36 @@ public:
             }
             held_lo = lo;
             held_hi = hi;
+            int8_t *rows_out = projected() ? staged : ys + oy0 * out_row_bytes;
             // esp-dl's shell rewrites the filter size in its args around the padding, so each band runs a copy.
             dl::base::ArgsType<int8_t> depthwise = depthwise_once_;
             depthwise.input_element = band;
             depthwise.input_height = hi - lo;
             depthwise.padding_h_head = lo - want_lo;
             depthwise.padding_h_tail = want_hi - hi;
-            depthwise.output_element = ys + oy0 * out_row_bytes;
+            depthwise.output_element = rows_out;
             depthwise.output_height = oy1 - oy0;
             dl::base::depthwise_conv2d<int8_t, int32_t, int32_t>(&depthwise);
             if (top_ != kNoClamp) {
-                ai_engine_clamp_s8_esp32s3(ys + oy0 * out_row_bytes, (oy1 - oy0) * out_row_bytes / kVectorAlign,
-                                           &top_);
+                ai_engine_clamp_s8_esp32s3(rows_out, (oy1 - oy0) * depthwise_row_bytes / kVectorAlign, &top_);
+            }
+            if (projected()) {
+                dl::base::ArgsType<int8_t> project = project_once_;
+                project.input_element = staged;
+                project.output_element = ys + oy0 * out_row_bytes;
+                project.input_height = oy1 - oy0;
+                project.output_height = oy1 - oy0;
+                dl::base::conv2d<int8_t, int32_t, int32_t>(&project);
             }
         }
     }
 
     void print() override
     {
-        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, band rows: %d, clip max: %d, quant_type: %s.",
+        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, band rows: %d, projected: %d, clip max: %d, quant_type: %s.",
                  dl::vector_to_string(kernel_).c_str(), dl::vector_to_string(pads_).c_str(),
-                 dl::vector_to_string(strides_).c_str(), band_rows_, top_, dl::quant_type_to_string(quant_type));
+                 dl::vector_to_string(strides_).c_str(), band_rows_, projected(), top_,
+                 dl::quant_type_to_string(quant_type));
     }
 
     static dl::module::Module *deserialize(fbs::FbsModel *fbs_model, std::string node_name)
@@ -190,9 +214,12 @@ public:
         std::vector<int> dilations;
         std::string activation;
         std::string pointwise_activation;
+        std::string project_activation;
         int pointwise_inputs = 0;
-        int middle_exponent = 0;
         int depthwise_inputs = 0;
+        int project_inputs = 0;
+        int middle_exponent = 0;
+        int depthwise_exponent = 0;
         int clip_max = kNoClamp;
         dl::quant_type_t quant_type = dl::QUANT_TYPE_NONE;
         fbs_model->get_operation_attribute(node_name, "kernel_shape", kernel);
@@ -201,9 +228,12 @@ public:
         fbs_model->get_operation_attribute(node_name, "dilations", dilations);
         fbs_model->get_operation_attribute(node_name, "activation", activation);
         fbs_model->get_operation_attribute(node_name, "pointwise_activation", pointwise_activation);
+        fbs_model->get_operation_attribute(node_name, "project_activation", project_activation);
         fbs_model->get_operation_attribute(node_name, "pointwise_inputs", pointwise_inputs);
-        fbs_model->get_operation_attribute(node_name, "middle_exponent", middle_exponent);
         fbs_model->get_operation_attribute(node_name, "depthwise_inputs", depthwise_inputs);
+        fbs_model->get_operation_attribute(node_name, "project_inputs", project_inputs);
+        fbs_model->get_operation_attribute(node_name, "middle_exponent", middle_exponent);
+        fbs_model->get_operation_attribute(node_name, "depthwise_exponent", depthwise_exponent);
         fbs_model->get_operation_attribute(node_name, "clip_max", clip_max);
         fbs_model->get_operation_attribute(node_name, "quant_type", quant_type);
         if (pads.empty()) {
@@ -213,18 +243,24 @@ public:
         if (quant_type != dl::QUANT_TYPE_SYMM_8BIT || kernel.size() != kSpatialDims ||
             pads.size() != 2 * kSpatialDims || strides.size() != kSpatialDims ||
             (!dilations.empty() && dilations != unit) || pointwise_inputs < 1 || depthwise_inputs < 1 ||
-            clip_max < 0 || clip_max > kNoClamp) {
+            project_inputs < 0 || clip_max < 0 || clip_max > kNoClamp) {
             ESP_LOGE(TAG, "%s: only an int8 1x1 convolution and its depthwise reader run joined", node_name.c_str());
             return nullptr;
         }
         const Part pointwise = part_at(1, pointwise_inputs, activation_of(pointwise_activation));
         const Part depthwise = part_at(1 + pointwise_inputs, depthwise_inputs, activation_of(activation));
+        const Part project = project_inputs == 0 ?
+            kNoPart :
+            part_at(1 + pointwise_inputs + depthwise_inputs, project_inputs, activation_of(project_activation));
         // ONNX orders pads [top, left, bottom, right]; esp-dl's kernels read [top, bottom, left, right].
         return new PointwiseDepthwise(node_name.c_str(), std::move(kernel), {pads[0], pads[2], pads[1], pads[3]},
-                                      std::move(strides), pointwise, depthwise, middle_exponent, clip_max);
+                                      std::move(strides), pointwise, depthwise, project, middle_exponent,
+                                      depthwise_exponent, clip_max);
     }
 
 private:
+    bool projected() const noexcept { return project_.filter >= 0; }
+
     dl::TensorBase *tensor(dl::ModelContext *context, int input) const
     {
         return input < 0 ? nullptr : context->get_tensor(m_inputs_index[input]);
@@ -241,13 +277,13 @@ private:
         args->activation_shift = -slope->get_exponent();
     }
 
-    bool build(dl::ModelContext *context, dl::TensorBase *x, dl::TensorBase *y, int8_t *band)
+    bool build(dl::ModelContext *context, dl::TensorBase *x, dl::TensorBase *y, int8_t *band, int8_t *staged)
     {
-        const int width = x->shape[2];
-        const int channels = y->shape[3];
         const bool misaligned = reinterpret_cast<uintptr_t>(y->get_element_ptr()) % kVectorAlign != 0;
-        if (channels % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || (top_ != kNoClamp && misaligned)) {
-            ESP_LOGE(TAG, "%s: %d channels in, %d out, not on 16-byte vectors", name, x->shape[3], channels);
+        if (channels_ % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || y->shape[3] % kChannelStep != 0 ||
+            (top_ != kNoClamp && !projected() && misaligned)) {
+            ESP_LOGE(TAG, "%s: %d channels in, %d between, %d out, not on 16-byte vectors", name, x->shape[3],
+                     channels_, y->shape[3]);
             return false;
         }
         if (dl::TensorBase *bias = tensor(context, pointwise_.bias)) {
@@ -256,25 +292,48 @@ private:
         if (dl::TensorBase *bias = tensor(context, depthwise_.bias)) {
             bias->reset_bias_layout(quant_type, true);
         }
-        dl::TensorBase middle({1, band_rows_, width, channels}, band, middle_exponent_, x->get_dtype(), false,
+        if (dl::TensorBase *bias = tensor(context, project_.bias)) {
+            bias->reset_bias_layout(quant_type, false);
+        }
+        dl::TensorBase middle({1, band_rows_, x->shape[2], channels_}, band, middle_exponent_, x->get_dtype(), false,
                               MALLOC_CAP_SPIRAM);
-        dl::base::ConvOpArgs<int8_t> pointwise_args(&middle, x, no_pads_, tensor(context, pointwise_.filter), ones_,
-                                                    ones_, 1, tensor(context, pointwise_.bias), pointwise_.activation,
-                                                    nullptr, dl::RUNTIME_MODE_SINGLE_CORE);
-        dl::base::ConvOpArgs<int8_t> depthwise_args(y, &middle, pads_, tensor(context, depthwise_.filter), strides_,
-                                                    ones_, channels, tensor(context, depthwise_.bias),
-                                                    depthwise_.activation, nullptr, dl::RUNTIME_MODE_SINGLE_CORE);
-        pointwise_once_ = pointwise_args.get_args(0);
-        depthwise_once_ = depthwise_args.get_args(0);
+        pointwise_once_ = pointwise_args(context, pointwise_, &middle, x);
+        if (projected()) {
+            dl::TensorBase rows_out({1, out_band_, y->shape[2], channels_}, staged, depthwise_exponent_,
+                                    y->get_dtype(), false, MALLOC_CAP_SPIRAM);
+            depthwise_once_ = depthwise_args(context, &rows_out, &middle);
+            project_once_ = pointwise_args(context, project_, y, &rows_out);
+        } else {
+            depthwise_once_ = depthwise_args(context, y, &middle);
+        }
         // The args outlive their ConvOpArgs, which frees the per-channel shift table it owns.
-        if (pointwise_once_.mac_shift == INT_MIN || depthwise_once_.mac_shift == INT_MIN) {
+        if (pointwise_once_.mac_shift == INT_MIN || depthwise_once_.mac_shift == INT_MIN ||
+            (projected() && project_once_.mac_shift == INT_MIN)) {
             ESP_LOGE(TAG, "%s: only per-tensor exponents run joined", name);
             return false;
         }
         slope_into(context, pointwise_, &pointwise_once_);
         slope_into(context, depthwise_, &depthwise_once_);
+        slope_into(context, project_, &project_once_);
         built_ = true;
         return true;
+    }
+
+    dl::base::ArgsType<int8_t> pointwise_args(dl::ModelContext *context, const Part &part, dl::TensorBase *out,
+                                              dl::TensorBase *in)
+    {
+        dl::base::ConvOpArgs<int8_t> args(out, in, no_pads_, tensor(context, part.filter), ones_, ones_, 1,
+                                          tensor(context, part.bias), part.activation, nullptr,
+                                          dl::RUNTIME_MODE_SINGLE_CORE);
+        return args.get_args(0);
+    }
+
+    dl::base::ArgsType<int8_t> depthwise_args(dl::ModelContext *context, dl::TensorBase *out, dl::TensorBase *in)
+    {
+        dl::base::ConvOpArgs<int8_t> args(out, in, pads_, tensor(context, depthwise_.filter), strides_, ones_,
+                                          channels_, tensor(context, depthwise_.bias), depthwise_.activation, nullptr,
+                                          dl::RUNTIME_MODE_SINGLE_CORE);
+        return args.get_args(0);
     }
 
     // Each copy moves at most `by` rows, so its source and destination never overlap.
@@ -286,11 +345,16 @@ private:
         }
     }
 
-    void reserve_band(size_t row_bytes, int height) noexcept
+    void reserve_bands(int in_h, int in_w, int out_h, int out_w) noexcept
     {
+        const size_t row_bytes = static_cast<size_t>(in_w) * channels_;
         const int fitting = static_cast<int>(kBandBytes / std::max<size_t>(row_bytes, 1));
-        band_rows_ = std::min(height, std::max(kernel_[0], fitting));
-        reserve_shared_band(row_bytes * band_rows_);
+        band_rows_ = std::min(in_h, std::max(kernel_[0], fitting));
+        out_band_ = band_rows_ >= in_h ? out_h : (band_rows_ - kernel_[0]) / strides_[0] + 1;
+        middle_band.reserve(row_bytes * band_rows_);
+        if (projected()) {
+            depthwise_band.reserve(static_cast<size_t>(out_w) * channels_ * out_band_);
+        }
     }
 
     const std::vector<int> kernel_;
@@ -298,13 +362,18 @@ private:
     const std::vector<int> strides_;
     const Part pointwise_;
     const Part depthwise_;
+    const Part project_;
     const int middle_exponent_;
+    const int depthwise_exponent_;
     const int8_t top_;
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
+    int channels_ = 0;
     int band_rows_ = 0;
+    int out_band_ = 0;
     dl::base::ArgsType<int8_t> pointwise_once_ = {};
     dl::base::ArgsType<int8_t> depthwise_once_ = {};
+    dl::base::ArgsType<int8_t> project_once_ = {};
     bool built_ = false;
 };
 
