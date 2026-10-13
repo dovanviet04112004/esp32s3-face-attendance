@@ -2509,7 +2509,7 @@ esp32s3-face-attendance/
     ├── DU_LIEU.md                               # dữ liệu đã tải và xử lí — số đo trên đĩa
     ├── FREERTOS.md                              # sổ kiểm lỗi đồng thời, soát lại mỗi khi thêm task
     ├── DPIA.md                                  # ★ đánh giá tác động Điều 24 — hồ sơ nộp được
-    ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md, 0005-espdl-thay-tflm.md}
+    ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md, 0005-espdl-thay-tflm.md, 0006-hang-luong-tu-espdl.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
     │                 ├ notifications.md                          # số dòng trước và sau đổi lược đồ, thời gian
     │                 │                                           #   chốt kỳ, đối soát — §9.21.4
