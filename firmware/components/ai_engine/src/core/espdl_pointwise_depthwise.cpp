@@ -4,6 +4,8 @@
 #include <array>
 #include <climits>
 #include <cstdint>
+#include <cstring>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -120,6 +122,8 @@ public:
 
     ~PointwiseDepthwise() override
     {
+        heap_caps_free(pointwise_filter_);
+        heap_caps_free(depthwise_filter_);
         if (--band_users == 0) {
             middle_band.release();
             depthwise_band.release();
@@ -132,13 +136,14 @@ public:
     std::vector<std::vector<int>> get_output_shape(std::vector<std::vector<int>> &input_shapes) override
     {
         const std::vector<int> &x = input_shapes[0];
-        channels_ = input_shapes[pointwise_.filter][3];
+        kept_ = input_shapes[pointwise_.filter][3];
+        channels_ = (kept_ + kChannelStep - 1) / kChannelStep * kChannelStep;
         depthwise_h_ = (x[1] + pads_[0] + pads_[1] - kernel_[0]) / strides_[0] + 1;
         depthwise_w_ = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
         std::vector<int> y = x;
         y[1] = pooled_ ? depthwise_h_ / kPool : depthwise_h_;
         y[2] = pooled_ ? depthwise_w_ / kPool : depthwise_w_;
-        y[3] = projected() ? input_shapes[project_.filter][3] : channels_;
+        y[3] = projected() ? input_shapes[project_.filter][3] : kept_;
         // esp-dl's planner asks for shapes while the model is built, so the bands are reserved then.
         reserve_bands(x[1], x[2]);
         return {y};
@@ -211,6 +216,9 @@ public:
                 pool_run_[0] = (oy1 - oy0) / kPool;
                 ai_engine_max_pool_s8_esp32s3(ys + oy0 / kPool * out_row_bytes, staged, pool_run_.data());
             }
+            if (narrowed()) {
+                keep_channels(ys + oy0 * out_row_bytes, staged, (oy1 - oy0) * depthwise_w_, kept_, channels_);
+            }
         }
     }
 
@@ -282,8 +290,11 @@ public:
 private:
     bool projected() const noexcept { return project_.filter >= 0; }
 
-    // The depthwise writes its band to the second band when a projection or a max pool reads it there.
-    bool staging() const noexcept { return projected() || pooled_; }
+    // The middle runs on whole 16-channel vectors; the zero channels past kept_ never leave the bands.
+    bool narrowed() const noexcept { return kept_ != channels_; }
+
+    // The depthwise writes its band to the second band when a projection, a max pool or a narrowing reads it.
+    bool staging() const noexcept { return projected() || pooled_ || narrowed(); }
 
     dl::TensorBase *tensor(dl::ModelContext *context, int input) const
     {
@@ -303,34 +314,60 @@ private:
 
     bool build(dl::ModelContext *context, dl::TensorBase *x, dl::TensorBase *y, int8_t *band, int8_t *staged)
     {
-        if (channels_ % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || y->shape[3] % kChannelStep != 0 ||
-            !aligned(x) || ((top_ != kNoClamp || staging()) && !aligned(y))) {
-            ESP_LOGE(TAG, "%s: %d channels in, %d between, %d out, not on 16-byte vectors", name, x->shape[3],
-                     channels_, y->shape[3]);
+        const bool vectors_out = !narrowed();
+        if (x->shape[3] % kChannelStep != 0 || (vectors_out && y->shape[3] % kChannelStep != 0) || !aligned(x) ||
+            (vectors_out && (top_ != kNoClamp || staging()) && !aligned(y)) ||
+            (narrowed() && (projected() || pooled_ || pointwise_.activation == dl::PReLU ||
+                            depthwise_.activation == dl::PReLU))) {
+            ESP_LOGE(TAG, "%s: %d channels in, %d between, %d out, not on 16-byte vectors", name, x->shape[3], kept_,
+                     y->shape[3]);
             return false;
         }
-        if (dl::TensorBase *bias = tensor(context, pointwise_.bias)) {
-            bias->reset_bias_layout(quant_type, false);
+        dl::TensorBase *pointwise_filter = tensor(context, pointwise_.filter);
+        dl::TensorBase *depthwise_filter = tensor(context, depthwise_.filter);
+        dl::TensorBase *pointwise_bias = tensor(context, pointwise_.bias);
+        dl::TensorBase *depthwise_bias = tensor(context, depthwise_.bias);
+        if (narrowed() && !widen(pointwise_filter, depthwise_filter, pointwise_bias, depthwise_bias, x->shape[3])) {
+            ESP_LOGE(TAG, "%s: no memory for the 16-channel copies of %d channels", name, kept_);
+            return false;
         }
-        if (dl::TensorBase *bias = tensor(context, depthwise_.bias)) {
-            bias->reset_bias_layout(quant_type, true);
+        std::optional<dl::TensorBase> wide_pointwise;
+        std::optional<dl::TensorBase> wide_depthwise;
+        if (narrowed()) {
+            wide_pointwise.emplace(std::vector<int>{1, 1, x->shape[3], channels_}, pointwise_filter_,
+                                   pointwise_filter->get_exponent(), pointwise_filter->get_dtype(), false,
+                                   MALLOC_CAP_SPIRAM);
+            wide_depthwise.emplace(std::vector<int>{kernel_[0], kernel_[1], channels_, 1}, depthwise_filter_,
+                                   depthwise_filter->get_exponent(), depthwise_filter->get_dtype(), false,
+                                   MALLOC_CAP_SPIRAM);
+            pointwise_filter = &*wide_pointwise;
+            depthwise_filter = &*wide_depthwise;
+            pointwise_bias = pointwise_bias_ ? &*pointwise_bias_ : nullptr;
+            depthwise_bias = depthwise_bias_ ? &*depthwise_bias_ : nullptr;
+        }
+        if (pointwise_bias != nullptr) {
+            pointwise_bias->reset_bias_layout(quant_type, false);
+        }
+        if (depthwise_bias != nullptr) {
+            depthwise_bias->reset_bias_layout(quant_type, true);
         }
         if (dl::TensorBase *bias = tensor(context, project_.bias)) {
             bias->reset_bias_layout(quant_type, false);
         }
         dl::TensorBase middle({1, band_rows_, x->shape[2], channels_}, band, middle_exponent_, x->get_dtype(), false,
                               MALLOC_CAP_SPIRAM);
-        pointwise_once_ = pointwise_args(context, pointwise_, &middle, x);
+        pointwise_once_ = pointwise_args(&middle, x, pointwise_filter, pointwise_bias, pointwise_.activation);
         if (staging()) {
             const int exponent = projected() ? depthwise_exponent_ : y->get_exponent();
             dl::TensorBase rows_out({1, out_band_, depthwise_w_, channels_}, staged, exponent, y->get_dtype(), false,
                                     MALLOC_CAP_SPIRAM);
-            depthwise_once_ = depthwise_args(context, &rows_out, &middle);
+            depthwise_once_ = depthwise_args(&rows_out, &middle, depthwise_filter, depthwise_bias);
             if (projected()) {
-                project_once_ = pointwise_args(context, project_, y, &rows_out);
+                project_once_ = pointwise_args(y, &rows_out, tensor(context, project_.filter),
+                                               tensor(context, project_.bias), project_.activation);
             }
         } else {
-            depthwise_once_ = depthwise_args(context, y, &middle);
+            depthwise_once_ = depthwise_args(y, &middle, depthwise_filter, depthwise_bias);
         }
         // The args outlive their ConvOpArgs, which frees the per-channel shift table it owns.
         if (pointwise_once_.mac_shift == INT_MIN || depthwise_once_.mac_shift == INT_MIN ||
@@ -368,21 +405,76 @@ private:
                 kNoClamp};
     }
 
-    dl::base::ArgsType<int8_t> pointwise_args(dl::ModelContext *context, const Part &part, dl::TensorBase *out,
-                                              dl::TensorBase *in)
+    dl::base::ArgsType<int8_t> pointwise_args(dl::TensorBase *out, dl::TensorBase *in, dl::TensorBase *filter,
+                                              dl::TensorBase *bias, dl::activation_type_t activation)
     {
-        dl::base::ConvOpArgs<int8_t> args(out, in, no_pads_, tensor(context, part.filter), ones_, ones_, 1,
-                                          tensor(context, part.bias), part.activation, nullptr,
+        dl::base::ConvOpArgs<int8_t> args(out, in, no_pads_, filter, ones_, ones_, 1, bias, activation, nullptr,
                                           dl::RUNTIME_MODE_SINGLE_CORE);
         return args.get_args(0);
     }
 
-    dl::base::ArgsType<int8_t> depthwise_args(dl::ModelContext *context, dl::TensorBase *out, dl::TensorBase *in)
+    dl::base::ArgsType<int8_t> depthwise_args(dl::TensorBase *out, dl::TensorBase *in, dl::TensorBase *filter,
+                                              dl::TensorBase *bias)
     {
-        dl::base::ConvOpArgs<int8_t> args(out, in, pads_, tensor(context, depthwise_.filter), strides_, ones_,
-                                          channels_, tensor(context, depthwise_.bias), depthwise_.activation, nullptr,
-                                          dl::RUNTIME_MODE_SINGLE_CORE);
+        dl::base::ConvOpArgs<int8_t> args(out, in, pads_, filter, strides_, ones_, channels_, bias,
+                                          depthwise_.activation, nullptr, dl::RUNTIME_MODE_SINGLE_CORE);
         return args.get_args(0);
+    }
+
+    // ESP-PPQ stores the channels past the last whole 16 as [channel][input] for a 1x1 filter and as
+    // [tap][channel] for a depthwise one, and both biases as plain int32; the copies run 16 channels wide.
+    bool widen(dl::TensorBase *pointwise_filter, dl::TensorBase *depthwise_filter, dl::TensorBase *pointwise_bias,
+               dl::TensorBase *depthwise_bias, int inputs) noexcept
+    {
+        const int whole = kept_ / kChannelStep * kChannelStep;
+        const int rest = kept_ - whole;
+        const int taps = kernel_[0] * kernel_[1];
+        heap_caps_free(pointwise_filter_);
+        heap_caps_free(depthwise_filter_);
+        pointwise_filter_ = static_cast<int8_t *>(
+            heap_caps_aligned_calloc(kVectorAlign, 1, static_cast<size_t>(inputs) * channels_, MALLOC_CAP_SPIRAM));
+        depthwise_filter_ = static_cast<int8_t *>(
+            heap_caps_aligned_calloc(kVectorAlign, 1, static_cast<size_t>(taps) * channels_, MALLOC_CAP_SPIRAM));
+        if (pointwise_filter_ == nullptr || depthwise_filter_ == nullptr) {
+            return false;
+        }
+        const int8_t *pointwise = pointwise_filter->get_element_ptr<int8_t>();
+        const int8_t *depthwise = depthwise_filter->get_element_ptr<int8_t>();
+        std::memcpy(pointwise_filter_, pointwise, static_cast<size_t>(whole) * inputs);
+        std::memcpy(depthwise_filter_, depthwise, static_cast<size_t>(whole) * taps);
+        for (int lane = 0; lane < rest; ++lane) {
+            for (int c = 0; c < inputs; ++c) {
+                pointwise_filter_[whole * inputs + c * kChannelStep + lane] = pointwise[(whole + lane) * inputs + c];
+            }
+            for (int t = 0; t < taps; ++t) {
+                depthwise_filter_[whole * taps + t * kChannelStep + lane] = depthwise[whole * taps + t * rest + lane];
+            }
+        }
+        pointwise_bias_.reset();
+        depthwise_bias_.reset();
+        widen_bias(pointwise_bias, &pointwise_bias_);
+        widen_bias(depthwise_bias, &depthwise_bias_);
+        return true;
+    }
+
+    void widen_bias(dl::TensorBase *bias, std::optional<dl::TensorBase> *wide) const
+    {
+        if (bias == nullptr) {
+            return;
+        }
+        std::vector<int32_t> values(channels_, 0);
+        std::memcpy(values.data(), bias->get_element_ptr<int32_t>(), static_cast<size_t>(kept_) * sizeof(int32_t));
+        wide->emplace(std::vector<int>{channels_}, values.data(), bias->get_exponent(), bias->get_dtype(), true,
+                      MALLOC_CAP_SPIRAM);
+    }
+
+    static void keep_channels(int8_t *out, const int8_t *rows, int pixels, int kept, int channels) noexcept
+    {
+        for (int p = 0; p < pixels; ++p) {
+            for (int c = 0; c < kept; ++c) {
+                out[p * kept + c] = rows[p * channels + c];
+            }
+        }
     }
 
     // Each copy moves at most `by` rows, so its source and destination never overlap.
@@ -424,6 +516,7 @@ private:
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
     int channels_ = 0;
+    int kept_ = 0;
     int depthwise_h_ = 0;
     int depthwise_w_ = 0;
     int band_rows_ = 0;
@@ -434,6 +527,10 @@ private:
     RowRun pointwise_run_ = {};
     RowRun project_run_ = {};
     std::array<int32_t, 4> pool_run_ = {};
+    int8_t *pointwise_filter_ = nullptr;
+    int8_t *depthwise_filter_ = nullptr;
+    std::optional<dl::TensorBase> pointwise_bias_;
+    std::optional<dl::TensorBase> depthwise_bias_;
     bool built_ = false;
 };
 
