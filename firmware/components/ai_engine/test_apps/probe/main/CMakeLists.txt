@@ -5,7 +5,7 @@ endif()
 
 idf_component_register(
     SRCS test_probe.cpp
-    REQUIRES common sys_storage ai_engine unity esp_timer esp_driver_usb_serial_jtag espressif__esp-dl
+    REQUIRES common sys_storage ai_engine unity esp_timer esp_driver_usb_serial_jtag esp_psram heap espressif__esp-dl
     EMBED_FILES "${frames}"
     WHOLE_ARCHIVE
 )

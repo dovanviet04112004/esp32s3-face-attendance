@@ -10,9 +10,10 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp32s3/rom/cache.h"
+#include "esp_heap_caps.h"
+#include "esp_private/esp_psram_extram.h"
 #include "esp_timer.h"
 #include "espdl_model.hpp"
-#include "soc/soc.h"
 #include "sys_storage.h"
 #include "unity.h"
 
@@ -26,6 +27,7 @@ constexpr size_t kMaxDims = 4;
 constexpr size_t kFileHead = 12;
 constexpr size_t kRecordHead = kNameBytes + 4 * (3 + kMaxDims);
 constexpr uint32_t kInt32 = 2;
+constexpr uintptr_t kMmuPageBytes = 0x10000;
 
 struct Record {
     std::string name;
@@ -157,12 +159,28 @@ long long mean_us(const Pass &pass)
     return static_cast<long long>(pass.total_us / static_cast<int64_t>(pass.frames));
 }
 
+// Autoload stays on the mapped PSRAM: the whole 32 MB data window panics with a Dcache preload configuration error.
+autoload_region_config mapped_psram()
+{
+    void *inside = heap_caps_malloc(1, MALLOC_CAP_SPIRAM);
+    TEST_ASSERT_NOT_NULL(inside);
+    uintptr_t low = reinterpret_cast<uintptr_t>(inside) & ~(kMmuPageBytes - 1);
+    uintptr_t high = low;
+    heap_caps_free(inside);
+    while (esp_psram_check_ptr_addr(reinterpret_cast<const void *>(low - kMmuPageBytes))) {
+        low -= kMmuPageBytes;
+    }
+    while (esp_psram_check_ptr_addr(reinterpret_cast<const void *>(high))) {
+        high += kMmuPageBytes;
+    }
+    return {CACHE_AUTOLOAD_REGION0, 1, static_cast<uint32_t>(low), static_cast<uint32_t>(high - low)};
+}
+
 // Measurement only: ESP-IDF resumes the data cache with autoload off and forbids apps these calls.
 void autoload_psram(uint8_t trigger, int lines)
 {
-    const autoload_region_config psram = {CACHE_AUTOLOAD_REGION0, 1, SOC_EXTRAM_DATA_LOW,
-                                          SOC_EXTRAM_DATA_HIGH - SOC_EXTRAM_DATA_LOW};
-    Cache_Config_DCache_Region_Autoload(&psram);
+    const autoload_region_config psram = mapped_psram();
+    TEST_ASSERT_EQUAL(0, Cache_Config_DCache_Region_Autoload(&psram));
     const autoload_config load = {1, CACHE_AUTOLOAD_POSITIVE, trigger, static_cast<uint8_t>(CACHE_AUTOLOAD_STEP(lines))};
     Cache_Config_DCache_Autoload(&load);
     Cache_Enable_DCache_Autoload();
