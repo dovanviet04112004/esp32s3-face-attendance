@@ -1115,3 +1115,37 @@ với riêng bản vá giữ nguyên số nguyên (từ 351,7).
 
 Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
 cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.15 Hai tích chập 1×1 của `PointwiseDepthwise` chạy cả dải trong một lần gọi nhân — đo 13/10 (E9-T47)
+
+Cùng kiosk, cùng app dò, cùng file `.espdl` của §14.14. Tích chập 1×1 sinh dải và tích chập chiếu của mỗi
+`PointwiseDepthwise` gọi một lần `conv_row_s8_esp32s3.S` cho cả dải thay vì để shell của esp-dl gọi nhân 1×1 cho
+từng điểm (KẾ HOẠCH §3.7). Mọi hàng dưới đây qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit trên
+khung thật.
+
+| Hàng | Một khung, mean / đỉnh | §14.14 |
+|---|---:|---:|
+| detect `timing` | **37,13** / 39,33 ms | 39,53 ms |
+| detect `timing+clip_as_relu` | **36,90** / 39,09 ms | 39,29 ms |
+| spoof nấc cuối | **41,35** / 44,65 ms | 42,27 ms |
+| spoof `timing` | 58,37 / 60,70 ms | 58,37 ms |
+| recog nấc cuối | **180,15** / 183,66 ms | 184,38 ms |
+| recog `timing` | 245,11 / 247,80 ms | 244,98 ms |
+
+**Lần dò đầu chậm hơn ở spoof.** Vòng nhân-cộng của nhân hàng khi ấy nạp lại hai vector trọng số và vector vào ở
+đầu mỗi 16 kênh vào, rồi lặp bằng `addi`/`bnez`: 21 lệnh cho 16 phép nhân-cộng vector, trong khi
+`tie728_s8_conv2d_11c16` của esp-dl chạy 17 lệnh trong vòng `loopgtz` không tốn lệnh nào, lệnh nhân thứ 16 nạp
+luôn vector vào kế tiếp. Ở cặp hẹp của detect (16 kênh vào) phần bớt nhờ gọi một lần vẫn thắng: `timing` 37,73 ms,
+nấc `clip_as_relu` 37,50 ms. Ở cặp rộng của spoof (64 → 256 kênh), `conv_34` và `conv_45` chậm thêm 0,3 ms mỗi cái,
+nấc cuối 42,27 → 42,73 ms; hàng `timing` không có cặp nào nên giữ 58,37 ms. Vòng ấy giờ làm đúng các lệnh của
+esp-dl, theo cùng thứ tự, nên cùng số nguyên; bảng trên là lần dò thứ hai.
+
+Hàng `timing` của spoof và recog không có cặp `PointwiseDepthwise` nào vì `PRelu` đứng giữa, nên giữ như
+§14.14 (chênh 0,13 ms ở recog). Ở recog nấc cuối, `PointwiseDepthwise` từ 107 xuống 103 ms, `conv_23`
+23,1 → 21,7 ms.
+
+Một khuôn mặt qua cả ba nhánh: **258,4 ms** ở nấc làm tròn cuối (từ 265,9; từ 444,8 lúc đầu, −41,9%), **340,6 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 342,9).
+
+Tái lập: mỗi nhánh `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc cuối; `make ai-profile LOG=… ESPDL=…` trên
+`models_0.log`. Lần dò đầu cần vòng nhân-cộng của `conv_row_s8_esp32s3.S` ở d8587c95.
