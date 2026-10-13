@@ -4643,7 +4643,7 @@ backend/
 │                                     #   notice-reconcile.e2e-alone-spec.ts
 ├── test/teardown.ts                  # ★ dọn thứ không cascade theo dữ liệu suite tạo ra
 ├── test/fixtures.ts                  # ★ dựng thứ suite cần mà seed tối thiểu không có: loại phép, publish thay kiosk;
-│                                     #   một cách đăng nhập (postLogin, signIn) và tách ô CSV cho mọi suite
+│                                     #   một cách đăng nhập (postLogin, signIn), tách ô CSV, pháp nhân của seed
 └── src/
     ├── main.ts                       # chỉ mở cổng; mọi cấu hình nằm ở bootstrap.ts
     ├── bootstrap.ts                  # ★ helmet, CORS, cookie, ValidationPipe, Swagger
@@ -4659,6 +4659,7 @@ backend/
     │   ├── interceptors/{audit.interceptor.ts, change.interceptor.ts}   # ★ §9.24 · §9.4 — mỗi lần ghi: một dòng sổ, một tin feed
     │   ├── scope/{scope.module.ts, scope.service.ts, viewer.ts,
     │   │          department-subtree.ts}   # ★ §9.4 — ai thấy ai; một phòng ban kéo theo cả nhánh dưới nó
+    │   │   reach.ts                  # ★ §9.4 — route bàn giấy khai loại phạm vi; danh mục chung chỉ đọc khi bị giới hạn
     │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
@@ -7483,7 +7484,8 @@ giờ sáng thì không có cả hai. Không có cột này thì hoặc mọi ng
 gửi phải đoán.
 
 **Đăng nhập** — `User` thêm `employeeId` (tuỳ chọn, duy nhất). Tài khoản quản trị thuần vẫn để
-trống ô ấy; tài khoản của người lao động trỏ về hồ sơ của họ. **Không gộp hai bảng**: một người
+trống ô ấy; tài khoản của người lao động trỏ về hồ sơ của họ. `UserEntity` giữ các pháp nhân
+một tài khoản bàn giấy phụ trách, không dòng nào là toàn hệ (§9.4). **Không gộp hai bảng**: một người
 nghỉ việc thì hồ sơ phải ở lại vĩnh viễn cho bảng lương năm cũ, còn tài khoản thì tắt đúng lúc
 hồ sơ đóng (§9.14).
 Hai vòng đời khác nhau là hai bảng.
@@ -7563,8 +7565,8 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 | `VIEWER` | **chỉ chính mình** — vai mặc định của một tài khoản chưa ai giao việc | không gì |
 | `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
 | `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** ở những gì cần để quản việc: tên, mã, phòng ban, chức danh, liên lạc, ca, chấm công, nghỉ phép, đơn từ. **Không** thấy của cấp dưới: CCCD, mã số thuế, số BHXH, ngày sinh, tài khoản ngân hàng, lương, phiếu lương, quyết toán thuế, người phụ thuộc, tạm ứng, đơn đổi hồ sơ | duyệt hoặc từ chối đơn của cấp dưới, trừ tạm ứng lương |
-| `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép | hồ sơ, hợp đồng, phép, phân ca |
-| `PAYROLL` | như `HR`, cộng **lương và phiếu lương** | chạy kỳ lương, chốt kỳ |
+| `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép — hoặc chỉ của **các pháp nhân được giao** | hồ sơ, hợp đồng, phép, phân ca |
+| `PAYROLL` | như `HR`, cộng **lương và phiếu lương**, cùng phạm vi pháp nhân | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
 
 **Quản lý thấy người, không thấy giấy tờ và tiền của người.** Duyệt phép và xếp ca không cần số
@@ -7576,6 +7578,47 @@ bị chép ra ngoài bàn nhân sự. Hai cách thu hẹp, theo loại dữ li�
 - **Hồ sơ nhân viên** vẫn mở theo cây, nhưng khi người xem là quản lý và dòng không phải của
   chính họ thì các cột `dateOfBirth`, `nationalId`, `taxCode`, `socialInsuranceNo`,
   `bankAccount`, `bankName` trả về rỗng. Xuất Excel chỉ dành cho `ADMIN`, `HR`, `PAYROLL`.
+
+**Bàn giấy có thể chỉ phụ trách vài pháp nhân.** Nhóm công ty có người làm lương riêng cho từng
+công ty con thì người làm lương của công ty A không được đọc lương, giấy tờ hay đơn từ của công ty
+B. Nên tài khoản `HR` và `PAYROLL` mang một **danh sách pháp nhân phụ trách** (`UserEntity`), do
+`ADMIN` đặt trên màn `Tài khoản` cùng chỗ giao vai; danh sách trống là **toàn hệ**, đúng như mọi
+tài khoản bàn giấy có từ trước. `ADMIN` luôn toàn hệ. Quản lý, nhân viên và `VIEWER` không mang
+danh sách: họ vốn thu hẹp theo cây hay theo chính mình, và cây báo cáo vắt qua hai pháp nhân vẫn
+duyệt bình thường. Danh sách **không suy ra từ hồ sơ được gắn**: người làm lương ở công ty mẹ vẫn
+làm được cho công ty con. Pháp nhân còn tài khoản phụ trách thì không xoá được.
+
+- **Quyền đi theo vai, người đi theo pháp nhân.** Bàn giấy bị giới hạn vẫn là bàn giấy — xem đủ
+  giấy tờ, đọc phiếu nháp, duyệt hàng chờ của vai mình — chỉ là trên người thuộc các pháp nhân nó
+  phụ trách. Nên phạm vi trả hai thứ tách nhau: vai ấy có quyền bàn giấy không, và tập pháp nhân
+  nó chạm tới (`null` là toàn hệ). Gộp làm một danh sách người thì `HR` bị giới hạn mất quyền đọc
+  giấy tờ, còn `PAYROLL` bị giới hạn bỗng duyệt được đơn nghỉ.
+- **Ngoài phạm vi là không có.** Hồ sơ, đơn, phiếu, kỳ lương hay báo cáo của pháp nhân khác trả
+  đúng mã không-tìm-thấy của loại ấy, như quản lý hỏi người ngoài cây; danh sách và số đếm chỉ đếm
+  trong phạm vi. Ghi cũng vậy, kể cả **đích** của một lần chuyển: sửa hồ sơ, chuyển phòng ban,
+  nhập Excel hay thao tác hàng loạt không đưa được ai sang pháp nhân mà tài khoản không phụ trách.
+- **Danh mục chung chỉ đọc.** Loại phép, ca, chức danh, loại phụ cấp, mẫu nhận việc, loại hồ sơ
+  giấy, văn bản phải ký, cùng ngày lễ và chính sách lương để trống pháp nhân là của cả nhóm công
+  ty; sửa chúng là sửa cho mọi pháp nhân. Tài khoản bị giới hạn đọc được, ghi thì nhận
+  `403 GROUP_WIDE_ONLY`. Ngày lễ và chính sách gắn đúng pháp nhân nó phụ trách thì nó ghi được.
+- **Tài sản theo người giữ.** `Asset` không gắn pháp nhân. Tài khoản bị giới hạn thấy tài sản
+  người trong phạm vi đang giữ và tài sản còn trong kho, để còn cấp phát.
+- **Đổi phạm vi là đổi vé.** Vé access mang danh sách (`ent`), nên đổi danh sách đóng mọi phiên
+  của tài khoản ấy như đổi vai (§9.23), cắt luôn ổ cắm realtime, và xếp lại người nhận của mọi
+  việc chung đang mở (§9.21.4).
+
+Phạm vi ấy đi tới **mọi** đường đọc của bàn giấy, không riêng REST: hộp chờ duyệt và chuông —
+hàng chờ của bàn giấy, nhắc hạn hợp đồng và thử việc, việc nhận việc chỉ tới tài khoản phụ trách
+pháp nhân của người ấy hoặc tài khoản toàn hệ, tóm tắt chấm công đầu ngày chỉ đếm trong phạm vi —;
+tin realtime có chủ; tìm kiếm toàn cục; báo cáo và bảng công; file xuất (danh bạ, phiếu lương, ngân
+hàng, sổ lương, D02-LT, biến động BHXH, tài sản); nhập Excel và thao tác hàng loạt. Trên dashboard,
+ô chọn pháp nhân chỉ liệt kê pháp nhân trong phạm vi.
+
+**Luật ấy có công cụ giữ, vì nó chạm hơn trăm route.** Mỗi route mà `HR` hay `PAYROLL` gọi được
+khai mình thuộc loại nào bằng `@Reach(...)`: `person` (dòng của từng người, thu hẹp trong service),
+`entity` (dòng của một pháp nhân, thu hẹp trong service), `catalogue` (danh mục chung — guard trả
+`GROUP_WIDE_ONLY` cho lượt ghi của tài khoản bị giới hạn). `tools/check_routes.py` fail khi một
+route như thế chưa khai. Mỗi loại có e2e "tài khoản của A không đọc được B".
 
 **Không ai duyệt việc của chính mình.** Luật 2 của §9.17 mục 6 áp cho **mọi** thứ duyệt được,
 không riêng đơn đổi hồ sơ: đơn phép và đơn sửa công, sửa ngày công, khiếu nại lương, người phụ
@@ -7626,7 +7669,7 @@ mọi người cho bất kỳ ai nối được tới cổng**. Nên:
 | Tin | Mang gì | Tới ai |
 |---|---|---|
 | `device`, `event` | tin của kiosk | chỉ `ADMIN` — §9.15 xếp `Kiosk` vào riêng vai đó |
-| `attendance` | một lượt chấm công | người thấy được **chính dòng ấy**: `HR`, `PAYROLL`, `ADMIN` thấy tất, quản lý thấy cây dưới quyền mình, còn lại thấy mình |
+| `attendance` | một lượt chấm công | người thấy được **chính dòng ấy**: `ADMIN` và bàn giấy toàn hệ thấy tất, bàn giấy bị giới hạn thấy người của pháp nhân nó phụ trách, quản lý thấy cây dưới quyền mình, còn lại thấy mình |
 | `change` | tên tài nguyên vừa bị ghi, không id, không giá trị | như `attendance`, tính theo nhân viên sở hữu dòng vừa ghi |
 | `notice` | chỉ tham chiếu, ba dạng: `new` (id dòng, `kind`, nhóm), `item` (khoá việc, trạng thái, kết quả, người làm, lúc), `read` (id hoặc tất cả) — không tên, không câu, không tiền (§9.21.4) | `new`, `read`: đúng một tài khoản đăng nhập, trên mọi máy của nó; `item`: mọi tài khoản đang giữ một dòng của việc ấy |
 
@@ -7646,7 +7689,7 @@ có tin mà không ai phải thêm dòng nào.
   không cho chính người ấy đọc.
 - **Chủ dòng quyết định ai nghe.** Chủ là tham số `:employeeId`, hoặc `:id` ngay sau
   `employees`, hoặc `employeeId` trên dòng trả về; lô trả về nhiều dòng — một mảng, hoặc mảng
-  `rows` đứng cạnh các con số về chúng — thì mỗi dòng một chủ; route `me/…` thuộc chính người gọi. Không tìm ra chủ thì chỉ ba vai không bị thu hẹp nghe —
+  `rows` đứng cạnh các con số về chúng — thì mỗi dòng một chủ; route `me/…` thuộc chính người gọi. Có chủ thì bàn giấy bị giới hạn chỉ nghe khi chủ thuộc pháp nhân nó phụ trách. Không tìm ra chủ thì chỉ ba vai bàn giấy nghe, kể cả tài khoản bị giới hạn vì tin không chở gì —
   trừ **bảng mọi người cùng đọc** (ngày lễ, loại phép, phòng ban, chức danh, pháp nhân, cây tổ
   chức, tài liệu, ca), những bảng ấy tới mọi người. `auth` không phát gì; `notifications`
   chỉ tới các máy khác của chính tài khoản ấy.
@@ -7712,7 +7755,7 @@ gắn với, tìm được theo email, mã và tên, lọc được theo vai, ph
 được gọi đường này không"; câu hỏi "được thấy dòng nào" phải đi vào chính mệnh đề `where`. Đặt
 nó ở controller là sớm muộn có một endpoint quên lọc và trả cả bảng lương công ty cho một người.
 Nên mọi service của §9 nhận một **`Viewer`** (id người gọi, vai, id nhân viên, tập phòng ban
-dưới quyền) và tự thu hẹp truy vấn.
+dưới quyền, tập pháp nhân phụ trách) và tự thu hẹp truy vấn.
 
 Cây dưới quyền tính bằng **CTE đệ quy trên `managerId`**, có nhớ đệm, vì một trưởng bộ phận ở
 công ty mười nghìn người có thể có vài nghìn cấp dưới và hỏi lại mỗi request là tự phạt.
@@ -10487,8 +10530,8 @@ trông khác** — cùng lý do §9.16 mục 11 bắt lịch sử tài sản là
 `Session` vì thế giữ một dòng mỗi thiết bị, và token gia hạn mang **hai** thứ: `sid` chỉ dòng,
 `jti` chỉ token mà dòng ấy còn nhận. Tách ra như vậy thì phát hiện dùng lại mới **khu trú được**
 — lượt gia hạn cầm `jti` đã tiêu chỉ đóng đúng dòng của nó, các thiết bị khác chưa chứng tỏ điều
-gì nên giữ nguyên phiên. Bốn việc đóng **tất cả**: hồ sơ nghỉ việc đóng (§9.14), đổi mật khẩu,
-tài khoản bị tắt, và đổi vai. Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
+gì nên giữ nguyên phiên. Năm việc đóng **tất cả**: hồ sơ nghỉ việc đóng (§9.14), đổi mật khẩu,
+tài khoản bị tắt, đổi vai, và đổi danh sách pháp nhân phụ trách của bàn giấy (§9.4). Đóng phiên chỉ giết refresh token, nên cùng lúc ấy `api` ghi mốc "vé cấp trước giờ này
 là chết" của tài khoản vào Redis; `JwtStrategy` từ chối access token có `iat` sớm hơn mốc. Đăng
 xuất một máy đóng đúng dòng của nó và ghi một mốc theo `sid` (`GUARD.sessionCut`): vé access
 của phiên ấy chết ngay và ổ cắm của nó đóng lại, các máy khác giữ nguyên. `iat`
