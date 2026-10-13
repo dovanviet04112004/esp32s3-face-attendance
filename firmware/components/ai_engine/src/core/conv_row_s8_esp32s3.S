@@ -75,12 +75,32 @@
 3:
     ee.zero.qacc
 4:
+    // The patch vectors run as esp-dl's tie728_s8_conv2d_11c16: the 16th MAC loads the next one.
     mov     a11, a3
-    l32i    a12, a5, 8
-5:
+    l32i    a15, a5, 8
+    addi    a15, a15, -1
     ee.vld.128.ip   q0, a11, 16
     ee.vld.128.ip   q1, a8, 16
     ee.vld.128.ip   q2, a8, 16
+    loopgtz a15, 5f
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 0
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 1
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 2
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 3
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 4
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 5
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 6
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 7
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 8
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 9
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 10
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 11
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 12
+    ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 13
+    ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 14
+    ee.vsmulas.s8.qacc.ld.incp  q0, a11, q2, q0, 15
+    ee.vld.128.ip   q2, a8, 16
+5:
     ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 0
     ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 1
     ee.vsmulas.s8.qacc.ld.incp  q1, a8, q1, q0, 2
@@ -97,8 +117,6 @@
     ee.vsmulas.s8.qacc.ld.incp  q2, a8, q2, q0, 13
     ee.vsmulas.s8.qacc  q1, q0, 14
     ee.vsmulas.s8.qacc  q2, q0, 15
-    addi    a12, a12, -1
-    bnez    a12, 5b
     round_to    q3, a13, a15
   .if \act == 1
     ee.vrelu.s8     q3, a10, a14
