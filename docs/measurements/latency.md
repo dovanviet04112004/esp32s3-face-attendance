@@ -1088,3 +1088,30 @@ dò của §14.12.
 
 Một khuôn mặt giữ **274,9 ms** ở nấc làm tròn cuối, như §14.12. Code của lần thử không nằm trong repo; cách làm ở
 commit 519ac011.
+
+### 14.14 Tích chập đầu 3×3 trên 3 kênh đọc thẳng ba hàng ảnh — đo 13/10 (E9-T46)
+
+Cùng kiosk, cùng app dò; các hàng dựng lại từ đúng mã xuất của §14.12, nên file `.espdl` như cũ. `ConvIm2col` của
+tích chập đầu không gom ô nữa: các hàng ảnh mà hàng ra cần được chép vào ba hàng đệm có viền 0, rồi hàm 3×3×3 của
+`conv_row_s8_esp32s3.S` nạp lệch thẳng từng hàng của ô và chạy 27 làn có ảnh (KẾ HOẠCH §3.7). Mọi hàng dưới đây qua
+`model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit trên khung thật.
+
+| Hàng | Một khung, mean / đỉnh | §14.12 | Tích chập đầu, bảng theo op |
+|---|---:|---:|---:|
+| detect `timing` | **39,53** / 41,71 ms | 43,69 ms | |
+| detect `timing+clip_as_relu` | **39,29** / 41,46 ms | 43,45 ms | 3,0 ms (trước 7,4) |
+| spoof nấc cuối | **42,27** / 45,33 ms | 44,07 ms | 1,6 ms (trước 3,2) |
+| spoof `timing` | **58,37** / 60,72 ms | 60,07 ms | |
+| recog nấc cuối | **184,38** / 187,97 ms | 187,41 ms | 5,1 ms (trước 8,2) |
+| recog `timing` | **244,98** / 247,73 ms | 247,92 ms | |
+
+Tích chập đầu của detect còn ~150 chu kỳ một điểm ra, từ ~370: phần bớt là bước gom ô bằng C. Hàng đệm ba hàng
+(1,6 KB ở detect) thay cho hàng ô 2,5 KB, ở PSRAM; RAM nội không đổi. Ở recog, `conv_23` và `conv_34` về lại 23,1 và
+9,2 ms như trước lần thử của §14.13. Bảng theo op của detect nấc `clip_as_relu` còn hai `MaxPool` 1,6 và 1,5 ms,
+mỗi cái đọc lại 77 KB mà op trước vừa ghi ra PSRAM, và `stages.0/unit` 5,8 ms ở 0,72 chu kỳ một phép nhân-cộng.
+
+Một khuôn mặt qua cả ba nhánh: **265,9 ms** ở nấc làm tròn cuối (từ 274,9; từ 444,8 lúc đầu, −40,2%), **342,9 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 351,7).
+
+Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
+cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
