@@ -1036,3 +1036,28 @@ với riêng bản vá giữ nguyên số nguyên.
 
 Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
 cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
+
+### 14.12 `ConvIm2col` chạy cả hàng trong một nhân PIE — đo 13/10 (E9-T44)
+
+Cùng kiosk, cùng app dò. `ConvIm2col` gọi một lần `conv_row_s8_esp32s3.S` cho mỗi hàng ra thay vì để shell của
+esp-dl gọi nhân 1×1 cho từng điểm; `im2col_convolutions` bật lại ở detect và nuốt `Clip` sau tích chập đầu (KẾ
+HOẠCH §3.7). Mọi hàng dưới đây qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit trên khung thật.
+
+| Hàng | Một khung, mean / đỉnh | Trước (§14.9–14.11) | Tích chập đầu, bảng theo op |
+|---|---:|---:|---:|
+| detect `timing` | **43,69** / 45,93 ms | 47,23 ms | 7,4 ms (trước 8,3 + `Clip` 2,4) |
+| detect `timing+clip_as_relu` | **43,45** / 45,69 ms | 44,71 ms | |
+| spoof nấc cuối | **44,07** / 47,15 ms | 44,43 ms | 3,2 ms (trước 3,6) |
+| spoof `timing` | **60,07** / 62,39 ms | 60,39 ms | |
+| recog nấc cuối | **187,41** / 190,93 ms | 187,86 ms | 8,2 ms (trước 8,7) |
+| recog `timing` | **247,92** / 250,72 ms | 248,33 ms | |
+
+Detect không còn `Clip` nào ở hàng `timing`, nên hàng chính xác chỉ chậm hơn nấc `clip_as_relu` 0,24 ms. Tích chập
+đầu của detect vẫn tốn khoảng 370 chu kỳ một điểm ra, trong khi nhân hàng chỉ cần khoảng 50: phần còn lại là bước
+gom ô 3×3 bằng C và lượt ghi tensor ra PSRAM. Bộ nhớ không đổi so với §14.9 và §14.11.
+
+Một khuôn mặt qua cả ba nhánh: **274,9 ms** ở nấc làm tròn cuối (từ 277,0; từ 444,8 lúc đầu, −38,2%), **351,7 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 356,0).
+
+Tái lập: mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc
+cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
