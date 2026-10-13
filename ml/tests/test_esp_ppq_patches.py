@@ -733,6 +733,56 @@ def test_pointwise_depthwise_joins_a_pair_whose_prelus_are_fused(sloped, tmp_pat
     assert espdl_shapes.attribute(attrs, "depthwise_inputs") == 3
 
 
+class ClippedUnit(nn.Module):
+    """A 1x1 convolution, the 3x3 depthwise reading it and a Clip up to 6, as in YuNet's units;
+    a Clip from 0 is the ReLU6, one from -1 is not.
+    """
+
+    def __init__(self, low: float) -> None:
+        super().__init__()
+        self.pointwise = nn.Conv2d(16, 16, 1)
+        self.depthwise = nn.Conv2d(16, 16, 3, padding=1, groups=16)
+        self.mix = nn.Conv2d(16, 16, 1)
+        self.low = low
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mix(torch.clamp(self.depthwise(self.pointwise(x)), self.low, 6.0))
+
+
+def test_pointwise_depthwise_takes_the_relu6_after_its_depthwise(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(37)
+    model = ClippedUnit(0.0)
+    plain_file = exported_pair(tmp_path / "plain", model, [])
+    joined_file = exported_pair(tmp_path / "joined", model, ["pointwise_depthwise"])
+    plain, joined = espdl_graph(plain_file)[0], espdl_graph(joined_file)[0]
+    ((_, (dw_out, *_bounds), (clipped,)),) = [n for n in plain.values() if n[0] == "Clip"]
+    assert "Clip" not in {op for op, _, _ in joined.values()}
+    ((_, _inputs, outputs),) = [
+        n for n in joined.values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
+    ]
+    assert outputs == [clipped]
+    assert dw_out not in {name for _, ins, _ in joined.values() for name in ins}
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    plain_text = plain_file.with_suffix(".info").read_text(encoding="utf-8")
+    line = next(line for line in plain_text.splitlines() if line.startswith(f"%{clipped}["))
+    step = 2.0 ** int(line.split()[-1].strip("[]"))
+    assert espdl_shapes.attribute(attrs, "activation") == "Relu"
+    assert espdl_shapes.attribute(attrs, "clip_max") == min(127, round(6.0 / step))
+
+
+def test_pointwise_depthwise_leaves_a_clip_whose_table_is_not_a_relu6(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    joined_file = exported_pair(tmp_path, ClippedUnit(-1.0), ["pointwise_depthwise"])
+    ops = [op for op, _, _ in espdl_graph(joined_file)[0].values()]
+    assert ops.count("Clip") == 1 and espdl_shapes.POINTWISE_DEPTHWISE in ops
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    assert espdl_shapes.attribute(attrs, "clip_max") is None
+
+
 def test_pointwise_depthwise_leaves_a_middle_tensor_another_op_reads(tmp_path: Path) -> None:
     pytest.importorskip("esp_ppq")
     shared = ExpandDepthwise(1, shared=True)

@@ -628,6 +628,63 @@ def pointwise_depthwise_from(graph, dw) -> bool:
         middle_exponent=exponent,
     )
     dw.type = POINTWISE_DEPTHWISE
+    take_clip(graph, dw)
+    return True
+
+
+def clamp_top(graph, joined) -> int | None:
+    """The int8 top of the Clip that alone reads joined, a PointwiseDepthwise with no activation
+    or a Relu, when that Clip's table is max(0, min(x, top)) at all 256 inputs on joined's grid.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
+
+    out = joined.outputs[0]
+    if out.name in graph.outputs or len(out.dest_ops) != 1:
+        return None
+    clip = out.dest_ops[0]
+    if not isinstance(clip, QuantableOperation) or clip.type != "Clip":
+        return None
+    grid = [joined.output_quant_config[0], *clip.input_quant_config[:1], *clip.output_quant_config]
+    table = ExporterPatternInfo().get_lut(clip.attributes.get("lut", ""))
+    if table is None or joined.attributes.get("activation", "Linear") not in ("Linear", "Relu"):
+        return None
+    if not (int8(grid) and one_grid(*grid)):
+        return None
+    values = table.reshape(-1).to(torch.int64).cpu()
+    top = int(values[-1])
+    return top if torch.equal(values, torch.arange(-128, 128).clamp(0, top)) else None
+
+
+def take_clip(graph, joined) -> bool:
+    """joined, a PointwiseDepthwise, runs its depthwise with Relu and clamps at clamp_top, writing
+    the output of the Clip that alone read it; the Clip and its table leave the graph.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+
+    top = clamp_top(graph, joined)
+    if top is None:
+        return False
+    out = joined.outputs[0]
+    clip = out.dest_ops[0]
+    clipped = clip.outputs[0]
+    bounds = [var for var in clip.inputs[1:] if var is not None]
+    for var in clip.inputs:
+        var.dest_ops.remove(clip)
+    clip.inputs.clear()
+    clip.outputs.clear()
+    clipped.source_op = None
+    configs = clip.output_quant_config
+    graph.remove_operation(clip)
+    for var in bounds:
+        if not var.dest_ops:
+            graph.remove_variable(var)
+    out.source_op = None
+    graph.remove_variable(out)
+    joined.outputs[0] = clipped
+    clipped.source_op = joined
+    joined.config = OperationQuantizationConfig(joined.input_quant_config, configs)
+    joined.attributes.update(activation="Relu", clip_max=top)
     return True
 
 
