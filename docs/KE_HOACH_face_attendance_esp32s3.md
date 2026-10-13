@@ -2198,7 +2198,7 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 
 | Bản vá xuất | Nhận đồ thị chỗ nào | Vì sao số nguyên không đổi |
 |---|---|---|
-| `cache_sized_convolutions` | tích chập 1×1 mà trọng số lấp đầy cache dữ liệu 64 KB | cắt theo kênh ra thành từng lát nửa cache rồi `Concat`; mỗi kênh ra vẫn là đúng phép tính ấy |
+| `cache_sized_convolutions` | tích chập 1×1 mà trọng số lấp đầy cache dữ liệu 64 KB | cắt theo kênh ra thành từng lát nửa cache, giữ trong một op `ConvSlices`: mỗi lát chạy đúng nhân esp-dl của nó và ghi thẳng vào phần kênh của mình trong tensor ra, nên không còn `Concat` chép lại; mỗi kênh ra vẫn là đúng phép tính ấy |
 | `padded_channels` | tích chập nhóm 1 có số kênh ra không chia hết cho 16, mà kênh ấy chỉ đi qua op giữ 0 thành 0 theo từng kênh (depthwise, `PRelu`, `Relu`, `LeakyRelu`, `Clip` có 0 trong khoảng) rồi vào tích chập nhóm 1, và không tensor nào trên đường là đầu ra đồ thị | đệm số kênh ấy lên bội 16: kênh thêm có bộ lọc, bias và alpha bằng 0, depthwise nhận thêm nhóm, tích chập cuối nhận cột trọng số 0. Kênh thêm luôn bằng 0 nên không góp vào tổng nào, và số mũ theo tensor không đổi vì 0 không đổi giá trị lớn nhất |
 
 | Bản vá làm tròn | Nhận đồ thị chỗ nào | Chip tính khác chỗ nào, mô phỏng theo thế nào |
@@ -2210,8 +2210,11 @@ nhân-cộng và đổi phép chia thành nhân nghịch đảo.
 Module `Conv` của esp-dl 3.3.11 dựng tham số nhân với con trỏ alpha để trống ("Do not support PReLU"),
 dù nhân S3 có PReLU. `ConvPRelu` vì thế là module của `ai_engine` (§4.5.6): nó dựng tham số qua
 `ConvOpArgs` công khai rồi điền con trỏ alpha và số mũ của nó, chạy cả tích chập thường lẫn depthwise.
-`espdl_model.cpp` đăng ký nó sau các module của esp-dl, trước model đầu tiên; bản dò dựng `dl::Model`
-trực tiếp nên gọi cùng hàm đăng ký. `espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh
+`ConvSlices` cũng là module của `ai_engine`: với mỗi lát nó dựng `ConvOpArgs` trên một khung nhìn vào tensor
+ra (con trỏ dời tới kênh đầu của lát, bước nhảy giữa hai điểm ảnh bằng tổng số kênh), nhận cả alpha của
+từng lát khi lát đã gộp PReLU. Hai module chỉ chạy đơn lõi (§5).
+`espdl_model.cpp` đăng ký các module ấy sau module của esp-dl, trước model đầu tiên; mỗi module chỉ lộ hàm
+dựng của nó qua header riêng. Bản dò dựng `dl::Model` trực tiếp nên gọi cùng hàm đăng ký. `espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh
 các op của `dl_module_creator.hpp`.
 
 **Quy trình đưa một model lên chip**, nhánh nào cũng vậy. Mỗi bước là một lệnh make có điều kiện qua;
@@ -4416,7 +4419,7 @@ components/ai_engine/
 ├── idf_component.yml                      # espressif/esp-dl ==3.3.11 (§4.5.1)
 ├── priv_include/{tensor_view.hpp,         # ★ view int8 NHWC + scale + zero point, runtime nào cũng dựng được
 │                 tflite_model.hpp, arena.hpp, model_store.hpp,   # TFLM
-│                 espdl_model.hpp, espdl_conv_prelu.hpp,   # ESP-DL
+│                 espdl_model.hpp, espdl_conv_prelu.hpp, espdl_conv_slices.hpp,   # ESP-DL
 │                 pixels.hpp}
 ├── src/
 │   ├── ai_engine.cpp                      # mặt tiền TFLM: dựng 2 arena, mở model store, nối 3 model
@@ -4429,6 +4432,7 @@ components/ai_engine/
 │   │   ├── espdl_model.cpp                # ESP-DL — dl::Model trên con trỏ mmap, param_copy, TensorView;
 │   │   │                                  #   đăng ký op riêng của ai_engine trước model đầu tiên
 │   │   ├── espdl_conv_prelu.cpp           # ESP-DL — module ConvPRelu: Conv + PReLU trong một nhân (§3.7)
+│   │   ├── espdl_conv_slices.cpp          # ESP-DL — module ConvSlices: các lát 1×1 ghi thẳng vào tensor ra (§3.7)
 │   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
