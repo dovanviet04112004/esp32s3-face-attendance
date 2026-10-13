@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator, Sequence
 import torch
 
 from .espdl_profile import CHANNEL_STEP, chip
-from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, SLICED_CONV
+from .espdl_shapes import CHANNEL_CONV, FUSED_PRELU, IM2COL_CONV, SLICED_CONV
 
 
 def laid_shape(var, info) -> list[int]:
@@ -348,6 +348,84 @@ def padded_channels() -> Iterator[None]:
         espdl_exporter.EspdlExporter.prepare_graph = prepare
 
 
+IM2COL_MARK = "im2col"
+
+
+def patch_weight(weight: torch.Tensor) -> torch.Tensor:
+    """A [N, C, kh, kw] filter as the [N, P, 1, 1] one ConvIm2col runs over output pixels' patches.
+
+    A patch runs kernel row, then column, then channel; P pads kh*kw*C with zero columns to 16.
+    """
+    outputs = weight.shape[0]
+    patches = weight.permute(0, 2, 3, 1).reshape(outputs, -1)
+    columns = patches.new_zeros(outputs, padded(patches.shape[1]) - patches.shape[1])
+    return torch.cat([patches, columns], dim=1).reshape(outputs, -1, 1, 1)
+
+
+def im2col_ready(op) -> bool:
+    """op, an int8 per-tensor ungrouped kxk Conv, owns its weight and has input channels esp-dl's
+    S3 kernels cannot take sixteen at a time, but output channels they can.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    if not isinstance(op, QuantableOperation) or op.type != "Conv" or len(op.inputs) < 2:
+        return False
+    weight = op.inputs[1]
+    if not weight.is_parameter or weight.value.dim() != 4 or len(weight.dest_ops) != 1:
+        return False
+    outputs, channels, *kernel = weight.value.shape
+    return (
+        op.attributes.get("group", 1) == 1
+        and channels % CHANNEL_STEP != 0
+        and outputs % CHANNEL_STEP == 0
+        and kernel != [1, 1]
+        and all(d == 1 for d in op.attributes.get("dilations", [1]))
+        and per_tensor(op)
+        and int8([*op.input_quant_config[:2], *op.output_quant_config])
+    )
+
+
+def im2col_from(graph, op) -> bool:
+    """op's weight laid out by patch_weight when op is im2col_ready; export_graph renames op."""
+    if not im2col_ready(op):
+        return False
+    op.inputs[1].value = patch_weight(op.inputs[1].value)
+    op.attributes[IM2COL_MARK] = True
+    return True
+
+
+@contextlib.contextmanager
+def im2col_convolutions() -> Iterator[None]:
+    """Each convolution over too few input channels run by esp-dl's aligned 1x1 kernel on patches.
+
+    An RGB stem's 3 channels send esp-dl down its unaligned path (latency.md 14.2). ConvIm2col
+    gathers each output pixel's patch into channels, so every sum keeps its products plus zeros.
+    """
+    from esp_ppq.parser import espdl_exporter
+
+    prepare = espdl_exporter.EspdlExporter.prepare_graph
+    write = espdl_exporter.EspdlExporter.export_graph
+
+    def rewriting(self, graph, *args, **kwargs):
+        for op in list(graph.topological_sort()):
+            im2col_from(graph, op)
+        return prepare(self, graph, *args, **kwargs)
+
+    def writing(self, graph, *args, **kwargs):
+        for op in graph.operations.values():
+            if op.attributes.pop(IM2COL_MARK, False):
+                op.type = IM2COL_CONV
+        return write(self, graph, *args, **kwargs)
+
+    espdl_exporter.EspdlExporter.prepare_graph = rewriting
+    espdl_exporter.EspdlExporter.export_graph = writing
+    try:
+        yield
+    finally:
+        espdl_exporter.EspdlExporter.prepare_graph = prepare
+        espdl_exporter.EspdlExporter.export_graph = write
+
+
 def relu_ready(clip) -> bool:
     """clip, a Clip from 0 that a Relu fused into its Conv can stand for: an int8 Conv's lone
     reader, the Conv's output grid kept through it.
@@ -567,7 +645,8 @@ def fused_prelu() -> Iterator[None]:
     def writing(self, graph, *args, **kwargs):
         for op in graph.operations.values():
             fused = op.attributes.get("activation") == PRELU_MARK
-            if op.type == "Conv" and fused and SLICES_MARK not in op.attributes:
+            claimed = SLICES_MARK in op.attributes or IM2COL_MARK in op.attributes
+            if op.type == "Conv" and fused and not claimed:
                 op.type = FUSED_PRELU
         return write(self, graph, *args, **kwargs)
 
@@ -587,6 +666,7 @@ PATCHES: dict[str, Callable[[], contextlib.AbstractContextManager[None]]] = {
     "fused_prelu": fused_prelu,
     "padded_channels": padded_channels,
     "channel_conv": channel_conv,
+    "im2col_convolutions": im2col_convolutions,
     "clip_as_relu": clip_as_relu,
     "prelu_on_input_grid": contextlib.nullcontext,
 }

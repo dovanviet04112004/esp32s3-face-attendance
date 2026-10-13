@@ -469,7 +469,90 @@ def test_channel_conv_replaces_the_eca_chain_with_its_own_integers(tmp_path: Pat
     assert np.array_equal(joined[1][weight].reshape(-1), plain[1][weight].reshape(-1))
 
 
+def patches_reference(x: np.ndarray, kernel: int, stride: int, pad: int, depth: int) -> np.ndarray:
+    """Each output pixel's window of an NCHW x as depth channels: kernel row, column, channel."""
+    _n, c, h, w = x.shape
+    padded = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)))
+    rows, cols = (h + 2 * pad - kernel) // stride + 1, (w + 2 * pad - kernel) // stride + 1
+    out = np.zeros((1, depth, rows, cols), x.dtype)
+    for oy in range(rows):
+        for ox in range(cols):
+            top, left = oy * stride, ox * stride
+            window = padded[0, :, top : top + kernel, left : left + kernel]
+            out[0, : kernel * kernel * c, oy, ox] = window.transpose(1, 2, 0).reshape(-1)
+    return out
+
+
+def test_patch_weight_turns_a_strided_convolution_into_a_pointwise_one_over_patches() -> None:
+    torch.manual_seed(3)
+    x, w = torch.randn(1, 3, 12, 16), torch.randn(16, 3, 3, 3)
+    pointwise = esp_ppq_patches.patch_weight(w)
+    assert list(pointwise.shape) == [16, 32, 1, 1]
+    assert not pointwise[:, 27:].any()
+    patches = torch.from_numpy(patches_reference(x.numpy(), 3, 2, 1, 32))
+    want = nn.functional.conv2d(x, w, stride=2, padding=1)
+    assert torch.allclose(nn.functional.conv2d(patches, pointwise), want, atol=1e-5)
+
+
+class RgbStem(nn.Module):
+    """A 3x3 stride-2 convolution on an RGB image, its PReLU, then a pointwise convolution."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stem = nn.Conv2d(3, 16, 3, stride=2, padding=1)
+        self.slope = nn.PReLU(16)
+        self.mix = nn.Conv2d(16, 16, 1)
+        with torch.no_grad():
+            self.slope.weight.uniform_(0.05, 0.3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mix(self.slope(self.stem(x)))
+
+
+@pytest.mark.parametrize("rounding", [[], ["fused_prelu"]])
+def test_im2col_convolutions_carry_the_stem_s_integers_into_patches(
+    tmp_path: Path, rounding: list[str]
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(13)
+    calib = [torch.rand(1, 3, 12, 16) for _ in range(4)]
+    rungs = ptq_espdl.timing_rungs("antispoof")
+    graph = quantise_ladder_net(RgbStem().eval(), tmp_path, calib, rungs, ("out",))
+    assert [op.name for op in graph.operations.values() if esp_ppq_patches.im2col_ready(op)] == [
+        "/stem/Conv"
+    ]
+    (port, *_), _outputs = ptq_espdl.ports_of(graph)
+    test_input = ladder.on_grid(calib[0].numpy(), port.exponent)
+    with esp_ppq_patches.applied(rounding):
+        plain_file = export_espdl.export(graph, tmp_path / "plain.espdl", test_input)
+    with esp_ppq_patches.applied(["im2col_convolutions", *rounding]):
+        patched_file = export_espdl.export(graph, tmp_path / "patched.espdl", test_input)
+    plain, patched = espdl_graph(plain_file), espdl_graph(patched_file)
+    op, inputs, outputs = patched[0]["/stem/Conv"]
+    plain_op, plain_inputs, plain_outputs = plain[0]["/stem/Conv"]
+    assert op == espdl_shapes.IM2COL_CONV and outputs == plain_outputs
+    assert plain_op == (espdl_shapes.FUSED_PRELU if rounding else "Conv")
+    assert inputs[0] == plain_inputs[0] and len(inputs) == len(plain_inputs)
+    weight, plain_weight = patched[1][inputs[1]], plain[1][plain_inputs[1]]
+    assert weight.shape == (1, 1, 32, 16) and patched[2][inputs[1]] == plain[2][plain_inputs[1]]
+    assert np.array_equal(filters(weight)[:, :27], filters(plain_weight))
+    assert not filters(weight)[:, 27:].any()
+    for param, plain_param in zip(inputs[2:], plain_inputs[2:], strict=True):
+        assert np.array_equal(patched[1][param], plain[1][plain_param])
+    info = espdl_shapes.parse(patched_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    ((attrs, ins),) = [(a, i) for o, a, i, _outs in info.nodes if o == espdl_shapes.IM2COL_CONV]
+    shapes = [info.inputs.get(name, info.declared.get(name)) for name in ins]
+    assert espdl_shapes.output_shape(espdl_shapes.IM2COL_CONV, attrs, shapes, [None] * 4)[1:] == [
+        6,
+        8,
+        16,
+    ]
+    assert esp_ppq_patches.IM2COL_MARK not in attrs
+
+
 def test_ai_engine_registers_every_module_the_patches_export() -> None:
     core = REPO_ROOT / espdl_op_check.AI_ENGINE_CORE
     found = espdl_op_check.own_modules(core)
-    assert {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV} <= found
+    own = {espdl_shapes.FUSED_PRELU, espdl_shapes.SLICED_CONV, espdl_shapes.CHANNEL_CONV}
+    assert own | {espdl_shapes.IM2COL_CONV} <= found

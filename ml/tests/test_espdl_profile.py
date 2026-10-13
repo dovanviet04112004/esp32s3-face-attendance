@@ -58,6 +58,14 @@ def test_a_convolution_is_tagged_for_channels_and_for_the_data_cache() -> None:
     tags, rate = espdl_profile.conv_tags(stem, laid, 240, 65536)
     assert tags == ["unaligned 3 -> 24 channels (no export patch)"]
     assert rate == pytest.approx(1200 * 240 / (8 * 8 * 24 * 3 * 9))
+    laid = {"x": [1, 16, 16, 3], "w": [3, 3, 3, 32], "y": [1, 8, 8, 32]}
+    tags, _rate = espdl_profile.conv_tags(stem, laid, 240, 65536)
+    assert tags == ["unaligned 3 -> 32 channels (im2col_convolutions)"]
+    laid = {"x": [1, 16, 16, 3], "w": [1, 1, 32, 32], "y": [1, 8, 8, 32]}
+    patches = module(espdl_shapes.IM2COL_CONV, ["x", "w"], ["y"], attrs=three)
+    tags, rate = espdl_profile.conv_tags(patches, laid, 240, 65536)
+    assert tags == []
+    assert rate == pytest.approx(1200 * 240 / (8 * 8 * 32 * 32))
 
     laid = {"x": [1, 8, 8, 24], "w": [1, 1, 24, 24], "y": [1, 8, 8, 24]}
     tags, _rate = espdl_profile.conv_tags(module("Conv", ["x", "w"], ["y"]), laid, 240, 65536)
@@ -106,6 +114,9 @@ def test_each_module_falls_in_one_kernel_class() -> None:
     assert kind("ConvPRelu", [1, 8, 8, 32], [1, 8, 8, 103]) == "pointwise unaligned"
     assert kind("Conv", [1, 16, 16, 3], [1, 8, 8, 32], stride_two) == (
         "convolution 3x3 s2 from 3 channels"
+    )
+    assert kind(espdl_shapes.IM2COL_CONV, [1, 16, 16, 3], [1, 8, 8, 32], stride_two) == (
+        "convolution 3x3 s2 over gathered patches"
     )
     assert kind("Conv", [1, 16, 16, 24], [1, 8, 8, 24], depthwise) == "depthwise 3x3 s2 unaligned"
     assert kind("Conv", [1, 8, 8, 32], [1, 8, 8, 32], three) == "convolution 3x3 s1 aligned"

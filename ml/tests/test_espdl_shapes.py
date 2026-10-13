@@ -61,6 +61,13 @@ def test_a_sliced_convolution_lays_out_every_slice_s_channels() -> None:
     assert got == [1, 14, 14, 512]
 
 
+def test_a_convolution_over_patches_shapes_by_its_kernel_not_its_filter() -> None:
+    x, w = [1, 112, 112, 3], [1, 1, 32, 64]
+    attrs = conv_attrs([1, 1, 1, 1], 2)
+    got = espdl_shapes.output_shape(espdl_shapes.IM2COL_CONV, attrs, [x, w, [64]], [None] * 3)
+    assert got == [1, 56, 56, 64]
+
+
 def test_pooling_flattening_and_unknown_ops() -> None:
     x = [1, 4, 4, 32]
     assert espdl_shapes.output_shape("GlobalAveragePool", "", [x], [None]) == [1, 1, 1, 32]

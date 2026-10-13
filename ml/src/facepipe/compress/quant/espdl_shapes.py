@@ -22,7 +22,8 @@ SAME_SHAPE = {
 REDUCE = {"ReduceMean", "ReduceSum", "ReduceMax", "ReduceMin"}
 SHAPE_PARAMS_MAX = 8  # longer values are weights, never shapes or axes
 NODE = re.compile(
-    r"^  %(?P<outs>[^ ]+(?:, %[^ ]+)*) = (?P<op>[A-Za-z]+)\[(?P<attrs>.*?)\]\((?P<ins>.*)\)$"
+    r"^  %(?P<outs>[^ ]+(?:, %[^ ]+)*) = (?P<op>[A-Za-z][A-Za-z0-9]*)"
+    r"\[(?P<attrs>.*?)\]\((?P<ins>.*)\)$"
 )
 DECLARED = re.compile(r"^  %(?P<name>[^\[]+)\[(?P<dtype>[A-Z0-9]+), (?P<shape>[0-9x]*)\]")
 VALUE_HEAD = re.compile(r"^%(?P<name>[^,]+), shape: \[(?P<shape>[^\]]*)\]")
@@ -39,12 +40,13 @@ class Info:
     nodes: list[tuple[str, str, list[str], list[str]]] = field(default_factory=list)
 
 
-# esp-dl's Conv, and the modules ai_engine registers for a Conv with its PReLU joined and for a
-# Conv run as slices of its outputs (KEHOACH 3.7).
+# esp-dl's Conv, and the modules ai_engine registers for a Conv with its PReLU joined, a Conv run
+# as slices of its outputs and one run over patches gathered into channels (KEHOACH 3.7).
 FUSED_PRELU = "ConvPRelu"
 SLICED_CONV = "ConvSlices"
 CHANNEL_CONV = "ChannelConv"
-CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV)
+IM2COL_CONV = "ConvIm2col"
+CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV, IM2COL_CONV)
 
 
 def dims(text: str, sep: str) -> list[int]:
@@ -129,10 +131,11 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
     if op in CONV_OPS and shapes[1] is not None:
         w, pads, strides = shapes[1], attribute(attrs, "pads"), attribute(attrs, "strides")
         dilations, group = attribute(attrs, "dilations"), attribute(attrs, "group")
+        kh, kw = (attribute(attrs, "kernel_shape") if op == IM2COL_CONV else w)[:2]
         out = list(x)
-        out[1] = (x[1] + pads[0] + pads[1] - dilations[0] * (w[0] - 1) - 1) // strides[0] + 1
+        out[1] = (x[1] + pads[0] + pads[1] - dilations[0] * (kh - 1) - 1) // strides[0] + 1
         if len(x) == 4:
-            out[2] = (x[2] + pads[2] + pads[3] - dilations[1] * (w[1] - 1) - 1) // strides[1] + 1
+            out[2] = (x[2] + pads[2] + pads[3] - dilations[1] * (kw - 1) - 1) // strides[1] + 1
         out[-1] = w[-1] if group == 1 else x[-1]
         if op == SLICED_CONV:
             out[-1] = sum(attribute(attrs, "slices"))

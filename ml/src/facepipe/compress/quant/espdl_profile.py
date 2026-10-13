@@ -137,6 +137,10 @@ def unaligned_fix(
         return "padded_channels"
     if x[-1] % CHANNEL_STEP and x[-1] != 3 and not y[-1] % CHANNEL_STEP:
         return "padded_channels, from the convolution that makes them"
+    kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1])
+    group = espdl_shapes.attribute(module.attrs, "group", 1)
+    if x[-1] % CHANNEL_STEP and not y[-1] % CHANNEL_STEP and group == 1 and set(kernel) != {1}:
+        return "im2col_convolutions"
     k = column_merge(x, y, module.attrs, cache_bytes)
     return f"aligned_pointwise, {k} columns" if k else "no export patch"
 
@@ -150,7 +154,7 @@ def conv_tags(
         return [], None
     group = espdl_shapes.attribute(module.attrs, "group", 1)
     taps = math.prod(w[:-2])
-    c_in, c_out = x[-1], y[-1]
+    c_in, c_out = (w[-2], y[-1]) if module.op == espdl_shapes.IM2COL_CONV else (x[-1], y[-1])
     macs = math.prod(y) * (c_in // group) * taps
     tags = []
     if c_in % CHANNEL_STEP or c_out % CHANNEL_STEP:
@@ -214,6 +218,8 @@ def kernel_class(module: Module, laid: dict[str, list[int]]) -> str:
     group = espdl_shapes.attribute(module.attrs, "group", 1)
     aligned = "unaligned" if x[-1] % CHANNEL_STEP or y[-1] % CHANNEL_STEP else "aligned"
     size = "x".join(str(k) for k in kernel)
+    if module.op == espdl_shapes.IM2COL_CONV:
+        return f"convolution {size} s{stride} over gathered patches"
     if x[-1] == 3:
         return f"convolution {size} s{stride} from 3 channels"
     if group > 1 and group == x[-1]:
