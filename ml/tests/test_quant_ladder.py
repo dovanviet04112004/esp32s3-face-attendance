@@ -223,12 +223,13 @@ def test_a_variant_carries_its_patches_and_a_plain_row_the_branch_s(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr(tasks, "branch_of", lambda _run: "recognition")
+    branch = ptq_espdl.block("recognition")["esp_ppq_patches"]
     ladder.write_row(tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.9}})
-    patches = ["cache_sized_convolutions", "fused_prelu"]
+    patches = [*branch, "fused_prelu"]
     ladder.write_row(tmp_path, "kl+fused_prelu", {"rung": 2, "patches": patches})
     assert ladder.row_patches(tmp_path, "kl+fused_prelu") == patches
-    assert ladder.row_patches(tmp_path, "kl") == ["cache_sized_convolutions"]
-    assert ladder.row_patches(tmp_path, "timing") == ["cache_sized_convolutions"]
+    assert ladder.row_patches(tmp_path, "kl") == branch
+    assert ladder.row_patches(tmp_path, "timing") == branch
 
 
 def test_variants_score_the_best_row_under_each_rounding_patch(tmp_path: Path, monkeypatch) -> None:
