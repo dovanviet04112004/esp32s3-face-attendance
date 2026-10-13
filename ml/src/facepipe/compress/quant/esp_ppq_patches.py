@@ -14,25 +14,13 @@ from collections.abc import Callable, Iterator, Sequence
 import torch
 
 from .espdl_profile import CHANNEL_STEP, chip
-from .espdl_shapes import FUSED_PRELU
+from .espdl_shapes import FUSED_PRELU, SLICED_CONV
 
 
 def laid_shape(var, info) -> list[int]:
     """var's shape as the export lays it in the chip's memory."""
     perm = info.get_var_permute(var.name)
     return [var.shape[i] for i in perm] if perm else list(var.shape)
-
-
-def linked(graph, op, inputs: list, outputs: list):
-    """op, quantised and with no variables yet, registered in graph and linked to its variables."""
-    graph.operations[op.name] = op
-    for var in inputs:
-        op.inputs.append(var)
-        var.dest_ops.append(op)
-    for var in outputs:
-        op.outputs.append(var)
-        var.source_op = op
-    return op
 
 
 def output_sizes(outputs: int, weight_bytes: int, weight_bytes_max: int) -> list[int]:
@@ -48,55 +36,46 @@ def output_sizes(outputs: int, weight_bytes: int, weight_bytes_max: int) -> list
     return [size] * (outputs // size) + ([outputs % size] if outputs % size else [])
 
 
-def slice_outputs(graph, op, sizes: list[int], info) -> None:
-    """op, an ungrouped pointwise convolution, as one convolution per slice of its outputs.
+SLICES_MARK = "slices"
 
-    Each slice takes its rows of the weights and bias on op's grids, and a Concat on op's output
-    grid lays the slices back along the channels into op's output.
+
+def slice_into(graph, op, sizes: list[int]) -> None:
+    """op, an ungrouped pointwise convolution, carrying one set of parameters per slice of outputs.
+
+    Each slice takes its rows of every parameter on op's grids, for ConvSlices to run them.
     """
     from esp_ppq.core import OperationQuantizationConfig
-    from esp_ppq.IR.quantize import QuantableOperation
-    from esp_ppq.parser.espdl.espdl_graph_utils import get_default_perm
 
-    (x, *params), y, platform = op.inputs, op.outputs[0], op.platform
-    configs, out_config, laid = (
-        op.input_quant_config,
-        op.output_quant_config[0],
-        laid_shape(y, info),
-    )
-    values = [p.value for p in params]
-    attributes = dict(op.attributes)
-    graph.remove_operation(op)
-    parts, start = [], 0
+    params, configs = op.inputs[1:], op.input_quant_config
+    sliced, start = [], 0
     for size in sizes:
-        sliced = []
-        for value, config in zip(values, configs[1:], strict=True):
-            param = graph.create_variable(
-                value=value[start : start + size].clone(), is_parameter=True
+        for var, config in zip(params, configs[1:], strict=True):
+            part = graph.create_variable(
+                value=var.value[start : start + size].clone(), is_parameter=True
             )
             config = config.copy()
             if config.scale is not None and config.scale.dim() > 0:
                 config.scale = config.scale[start : start + size]
                 config.offset = config.offset[start : start + size]
-            sliced.append((param, config))
-        part = graph.create_variable()
-        part.shape, part.dtype = [*laid[:-1], size], y.dtype
-        info.add_var_permute(part.name, get_default_perm(part))
-        conv = graph.create_operation(op_type="Conv", attributes=dict(attributes))
-        config = OperationQuantizationConfig([configs[0], *(c for _, c in sliced)], [out_config])
-        quantised = QuantableOperation(conv, config, platform)
-        linked(graph, quantised, [x, *(p for p, _ in sliced)], [part])
-        parts.append(part)
+            sliced.append((part, config))
         start += size
-    concat = graph.create_operation(op_type="Concat", attributes={"axis": len(laid) - 1})
-    config = OperationQuantizationConfig([out_config] * len(parts), [out_config])
-    linked(graph, QuantableOperation(concat, config, platform), parts, [y])
+    for var in params:
+        var.dest_ops.remove(op)
+        graph.remove_variable(var)
+    del op.inputs[1:]
+    for part, _config in sliced:
+        op.inputs.append(part)
+        part.dest_ops.append(op)
+    op.config = OperationQuantizationConfig(
+        [configs[0], *(config for _part, config in sliced)], op.output_quant_config
+    )
+    op.attributes[SLICES_MARK] = list(sizes)
 
 
 def slice_wide_convolutions(graph, cache_bytes: int) -> int:
     """Each ungrouped pointwise convolution over several positions whose weights fill cache_bytes.
 
-    slice_outputs lays each by output_sizes into slices of at most half of it; returns how many.
+    slice_into lays each by output_sizes into slices of at most half of it; returns how many.
     """
     from esp_ppq.IR.quantize import QuantableOperation
     from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
@@ -111,7 +90,7 @@ def slice_wide_convolutions(graph, cache_bytes: int) -> int:
         if any(k != 1 for k in op.attributes["kernel_shape"]) or math.prod(laid[:-1]) < 2:
             continue
         if w.numel() >= cache_bytes:
-            slice_outputs(graph, op, output_sizes(laid[-1], w.numel(), cache_bytes // 2), info)
+            slice_into(graph, op, output_sizes(laid[-1], w.numel(), cache_bytes // 2))
             done += 1
     return done
 
@@ -120,24 +99,33 @@ def slice_wide_convolutions(graph, cache_bytes: int) -> int:
 def cache_sized_convolutions() -> Iterator[None]:
     """Pointwise convolutions whose weights fill the data cache, run as slices within half of it.
 
-    esp-dl reads all of a pointwise convolution's weights again at each position, so 64 KB of them
-    come from PSRAM each time: recognition's 128 -> 512 ran 0.64-0.75 cycles a multiply-add against
-    0.13-0.25 for 38 KB or less (latency.md 14). The slices give the same integers.
+    esp-dl reads a pointwise convolution's weights again at each position, so 64 KB of them come
+    from PSRAM each time (latency.md 14.2). ConvSlices writes each slice into its channels of the
+    output, so the integers are the same and no Concat copies them.
     """
     from esp_ppq.parser import espdl_exporter
 
     cache_bytes = chip()[1]
     reset = espdl_exporter.reset_graph_layout
+    write = espdl_exporter.EspdlExporter.export_graph
 
     def sliced(graph):
         reset(graph)
         slice_wide_convolutions(graph, cache_bytes)
 
+    def writing(self, graph, *args, **kwargs):
+        for op in graph.operations.values():
+            if op.type == "Conv" and SLICES_MARK in op.attributes:
+                op.type = SLICED_CONV
+        return write(self, graph, *args, **kwargs)
+
     espdl_exporter.reset_graph_layout = sliced
+    espdl_exporter.EspdlExporter.export_graph = writing
     try:
         yield
     finally:
         espdl_exporter.reset_graph_layout = reset
+        espdl_exporter.EspdlExporter.export_graph = write
 
 
 ZERO_KEEPING = frozenset({"PRelu", "Relu", "LeakyRelu", "Clip"})
@@ -484,7 +472,8 @@ def fused_prelu() -> Iterator[None]:
 
     def writing(self, graph, *args, **kwargs):
         for op in graph.operations.values():
-            if op.type == "Conv" and op.attributes.get("activation") == PRELU_MARK:
+            fused = op.attributes.get("activation") == PRELU_MARK
+            if op.type == "Conv" and fused and SLICES_MARK not in op.attributes:
                 op.type = FUSED_PRELU
         return write(self, graph, *args, **kwargs)
 

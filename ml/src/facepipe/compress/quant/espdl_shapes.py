@@ -38,9 +38,11 @@ class Info:
     nodes: list[tuple[str, str, list[str], list[str]]] = field(default_factory=list)
 
 
-# esp-dl's Conv, and the module ai_engine registers for a Conv with its PReLU joined (KEHOACH 3.7).
+# esp-dl's Conv, and the modules ai_engine registers for a Conv with its PReLU joined and for a
+# Conv run as slices of its outputs (KEHOACH 3.7).
 FUSED_PRELU = "ConvPRelu"
-CONV_OPS = ("Conv", FUSED_PRELU)
+SLICED_CONV = "ConvSlices"
+CONV_OPS = ("Conv", FUSED_PRELU, SLICED_CONV)
 
 
 def dims(text: str, sep: str) -> list[int]:
@@ -130,6 +132,8 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
         if len(x) == 4:
             out[2] = (x[2] + pads[2] + pads[3] - dilations[1] * (w[1] - 1) - 1) // strides[1] + 1
         out[-1] = w[-1] if group == 1 else x[-1]
+        if op == SLICED_CONV:
+            out[-1] = sum(attribute(attrs, "slices"))
         return out
     if op == "MaxPool":
         kernel, pads, strides = (

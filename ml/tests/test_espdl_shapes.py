@@ -52,6 +52,15 @@ def test_a_convolution_with_its_prelu_joined_shapes_as_the_convolution() -> None
     assert got == [1, 8, 8, 16]
 
 
+def test_a_sliced_convolution_lays_out_every_slice_s_channels() -> None:
+    x, w = [1, 14, 14, 128], [1, 1, 128, 256]
+    attrs = "dilations = [1, 1], group = 1, kernel_shape = [1, 1], pads = [0, 0, 0, 0], "
+    attrs += "slices = [256, 256], strides = [1, 1]"
+    shapes = [x, w, [256], w, [256]]
+    got = espdl_shapes.output_shape(espdl_shapes.SLICED_CONV, attrs, shapes, [None] * 5)
+    assert got == [1, 14, 14, 512]
+
+
 def test_pooling_flattening_and_unknown_ops() -> None:
     x = [1, 4, 4, 32]
     assert espdl_shapes.output_shape("GlobalAveragePool", "", [x], [None]) == [1, 1, 1, 32]

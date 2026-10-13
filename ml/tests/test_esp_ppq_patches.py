@@ -141,17 +141,19 @@ def test_cache_sized_convolutions_slice_only_what_fills_the_cache(tmp_path: Path
     plain = espdl_graph(export_espdl.export(graph, tmp_path / "plain.espdl", test_input))
     with esp_ppq_patches.applied(["cache_sized_convolutions"]):
         sliced = espdl_graph(export_espdl.export(graph, tmp_path / "sliced.espdl", test_input))
-    convs = {name: ins for name, (op, ins, _) in plain[0].items() if op == "Conv"}
-    kept = {name: ins for name, (op, ins, _) in sliced[0].items() if op == "Conv" and name in convs}
-    parts = [ins for name, (op, ins, _) in sliced[0].items() if op == "Conv" and name not in convs]
-    assert [op for op, _, _ in sliced[0].values()].count("Concat") == 1
-    assert list(kept) == ["/narrow/Conv"]
-    assert np.array_equal(plain[1][convs["/narrow/Conv"][1]], sliced[1][kept["/narrow/Conv"][1]])
-    assert [sliced[1][ins[1]].shape[-1] for ins in parts] == [256, 256]
-    weights = np.concatenate([filters(sliced[1][ins[1]]) for ins in parts])
-    assert np.array_equal(weights, filters(plain[1][convs["/expand/Conv"][1]]))
-    biases = np.concatenate([sliced[1][ins[2]] for ins in parts])
-    assert np.array_equal(biases, plain[1][convs["/expand/Conv"][2]])
+    assert [op for op, _, _ in sliced[0].values()].count("Concat") == 0
+    narrow = sliced[0]["/narrow/Conv"]
+    assert narrow[0] == "Conv"
+    assert np.array_equal(sliced[1][narrow[1][1]], plain[1][plain[0]["/narrow/Conv"][1][1]])
+    op, inputs, outputs = sliced[0]["/expand/Conv"]
+    assert (op, outputs) == (espdl_shapes.SLICED_CONV, plain[0]["/expand/Conv"][2])
+    weights, biases = inputs[1::2], inputs[2::2]
+    assert [sliced[1][w].shape[-1] for w in weights] == [256, 256]
+    whole = plain[0]["/expand/Conv"][1]
+    assert np.array_equal(
+        np.concatenate([filters(sliced[1][w]) for w in weights]), filters(plain[1][whole[1]])
+    )
+    assert np.array_equal(np.concatenate([sliced[1][b] for b in biases]), plain[1][whole[2]])
 
 
 def test_the_export_hooks_are_put_back_after_the_patches() -> None:
