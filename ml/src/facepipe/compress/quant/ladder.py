@@ -206,7 +206,9 @@ def verdict(entry: dict) -> str:
 
 
 def best_row(run: Path, rungs_wanted: set[int]) -> str:
-    """The row of the rungs wanted that ranks first by the branch's ruler, variants left out."""
+    """The base of KEHOACH 3.7: of the rungs wanted, variants left out, the row that passes its gate
+    and ranks first by the branch's ruler; while none passes, the first of them all.
+    """
     hooks, rows = hooks_of(run), read_ladder(run)
     found = [
         name
@@ -215,7 +217,8 @@ def best_row(run: Path, rungs_wanted: set[int]) -> str:
     ]
     if not found:
         raise ValueError(f"{run.name}: no row of rung {sorted(rungs_wanted)} yet")
-    return max(found, key=lambda name: hooks.rank(rows[name]["metrics"]))
+    passing = [name for name in found if rows[name].get("passes")]
+    return max(passing or found, key=lambda name: hooks.rank(rows[name]["metrics"]))
 
 
 def step_ptq(run: Path) -> None:

@@ -57,6 +57,18 @@ def test_the_best_row_is_first_by_the_branch_ruler(tmp_path: Path, monkeypatch) 
         ladder.best_row(tmp_path, {4})
 
 
+def test_the_best_row_passes_its_gate_while_one_does(tmp_path: Path, monkeypatch) -> None:
+    hooks = SimpleNamespace(rank=lambda metrics: (metrics["m"],))
+    monkeypatch.setattr(ladder, "hooks_of", lambda _run: hooks)
+    ladder.write_row(tmp_path, "percentile", {"rung": 2, "metrics": {"m": 0.95}, "passes": False})
+    ladder.write_row(tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.9}, "passes": True})
+    ladder.write_row(tmp_path, "mse", {"rung": 2, "metrics": {"m": 0.8}, "passes": True})
+    assert ladder.best_row(tmp_path, {2}) == "kl"
+    ladder.write_row(tmp_path, "kl", {"rung": 2, "metrics": {"m": 0.9}, "passes": False})
+    ladder.write_row(tmp_path, "mse", {"rung": 2, "metrics": {"m": 0.8}, "passes": False})
+    assert ladder.best_row(tmp_path, {2}) == "percentile"
+
+
 def test_inputs_are_moved_onto_the_grid_the_chip_receives() -> None:
     x = np.array([0.1, 0.26, -5.0, 1.0, 100.0], dtype=np.float32)
     assert ladder.on_grid(x, -2).tolist() == [0.0, 0.25, -5.0, 1.0, 127 * 0.25]
