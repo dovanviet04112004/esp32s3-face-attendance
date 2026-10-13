@@ -2231,16 +2231,18 @@ của `ai_engine` cho cả tensor. Gọi `elemwise_mul`, `requantize_linear` và
 thì chậm hơn ba op rời (`latency.md` §14.7): vòng elementwise của esp-dl gọi nhân một lần cho mỗi điểm ảnh.
 `PointwiseDepthwise` dựng tham số nhân của tích chập 1×1 và của depthwise một lần ở lượt chạy đầu, rồi với mỗi dải
 chỉ dời con trỏ và số hàng: 1×1 từ các hàng vào sang vùng đệm, depthwise từ vùng đệm sang các hàng ra, pad trên và
-dưới chỉ ở dải chạm mép. Khi op mang phần chiếu, depthwise ghi các hàng ra của dải vào vùng đệm thứ hai, rồi tích
-chập 1×1 chiếu chạy từ đó sang các hàng của tensor ra. Khi op mang `clip_max`, các hàng ra của dải vừa ghi được kẹp
-ở đó bằng `EE.VMIN.S8`, 16 byte một lệnh, trong `clamp_s8_esp32s3.S` của `ai_engine`: esp-dl 3.3.11 không có phép
-min int8 PIE nào cho S3 gọi được từ ngoài. k − s hàng chung của hai dải liền nhau chép lên đầu vùng đệm bằng nhân
-chép 16 byte của esp-dl, từng khúc không chồng nhau: `memmove` của ROM chép 12 chu kỳ một byte. Mỗi dải giữ đủ hàng
-cho số hàng ra trong một phần tám cache dữ liệu, tối thiểu k hàng: dải nửa cache tranh cache với chính các hàng vào
-và ra nó đọc ghi, nên tích chập 1×1 chậm hơn op rời (`latency.md` §14.8). Hai vùng đệm căn 16 byte ở PSRAM, một cho
-tensor giữa và một cho hàng ra depthwise trước tích chập chiếu, dùng chung cho mọi op ấy của mọi model, xin lúc
-tính shape và lớn theo dải lớn nhất: esp-dl chạy từng module một, và chỉ `ai_task` gọi model (§5.2). Cả sáu module
-chỉ chạy đơn lõi (§5).
+dưới chỉ ở dải chạm mép. Hai tích chập 1×1 của op, cái sinh dải và cái chiếu, chạy cả dải trong một lần gọi
+`conv_row_s8_esp32s3.S`, mỗi điểm ảnh của dải là một hàng ô C kênh: cùng các lệnh của nhân 1×1 căn 16 của esp-dl,
+mà shell của esp-dl gọi một lần cho mỗi điểm (`latency.md` §14.12). Khi op mang phần chiếu, depthwise ghi các hàng
+ra của dải vào vùng đệm thứ hai, rồi tích chập chiếu chạy từ đó sang các hàng của tensor ra. Khi op mang
+`clip_max`, các hàng ra của dải vừa ghi được kẹp ở đó bằng `EE.VMIN.S8`, 16 byte một lệnh, trong
+`clamp_s8_esp32s3.S` của `ai_engine`: esp-dl 3.3.11 không có phép min int8 PIE nào cho S3 gọi được từ ngoài. k − s
+hàng chung của hai dải liền nhau chép lên đầu vùng đệm bằng nhân chép 16 byte của esp-dl, từng khúc không chồng
+nhau: `memmove` của ROM chép 12 chu kỳ một byte. Mỗi dải giữ đủ hàng cho số hàng ra trong một phần tám cache dữ
+liệu, tối thiểu k hàng: dải nửa cache tranh cache với chính các hàng vào và ra nó đọc ghi, nên tích chập 1×1 chậm
+hơn op rời (`latency.md` §14.8). Hai vùng đệm căn 16 byte ở PSRAM, một cho tensor giữa và một cho hàng ra depthwise
+trước tích chập chiếu, dùng chung cho mọi op ấy của mọi model, xin lúc tính shape và lớn theo dải lớn nhất: esp-dl
+chạy từng module một, và chỉ `ai_task` gọi model (§5.2). Cả sáu module chỉ chạy đơn lõi (§5).
 `espdl_model.cpp` đăng ký các module ấy sau module của esp-dl, trước model đầu tiên; mỗi module chỉ lộ hàm
 dựng của nó qua header riêng. Bản dò dựng `dl::Model` trực tiếp nên gọi cùng hàm đăng ký. `espdl_op_check.py` nhận op ấy vì `ai_engine` tự đăng ký nó, cạnh
 các op của `dl_module_creator.hpp`.
@@ -4473,8 +4475,8 @@ components/ai_engine/
 │   │   ├── espdl_pointwise_depthwise.cpp  # ESP-DL — module PointwiseDepthwise: 1×1 rồi depthwise theo dải hàng (§3.7)
 │   │   ├── clamp_s8_esp32s3.S             # ESP-DL — kẹp int8 ở một đỉnh bằng EE.VMIN.S8, cho PointwiseDepthwise (§3.7)
 │   │   ├── mul_add_s8_esp32s3.S           # ESP-DL — cổng nhân, đổi lưới residual và cộng trong một vòng PIE, cho MulAdd (§3.7)
-│   │   ├── conv_row_s8_esp32s3.S          # ESP-DL — một hàng điểm của ConvIm2col: 1×1 căn 16 trên hàng ô, và 3×3
-│   │   │                                  #   trên 3 kênh nạp lệch thẳng từ ba hàng đệm (§3.7)
+│   │   ├── conv_row_s8_esp32s3.S          # ESP-DL — tích chập cho cả một dãy điểm: 1×1 căn 16 (hàng ô của ConvIm2col,
+│   │   │                                  #   dải của PointwiseDepthwise), 3×3 trên 3 kênh nạp lệch từ ba hàng đệm (§3.7)
 │   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
 │   ├── detection/
 │   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
