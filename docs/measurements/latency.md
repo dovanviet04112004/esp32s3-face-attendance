@@ -920,3 +920,49 @@ recog chậm đi. Autoload là cấu hình cache của cả chip, camera, LCD v�
 
 Tái lập: `make board-save DIR=…`; mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>`
 với `ROW=timing` và nấc cuối; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`; `make board-restore DIR=…`.
+
+### 14.8 Tích chập 1×1 và depthwise đọc nó, chạy theo dải — đo 13/10 (E9-T40)
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` ghép mỗi tích chập 1×1 với depthwise duy nhất đọc nó thành một op
+`PointwiseDepthwise` (KẾ HOẠCH §3.7). Ở spoof và recog, hàng `timing` không có cặp nào vì `PRelu` đứng giữa hai
+tích chập, nên đồ thị và giờ của hàng ấy giữ như §14.7; cặp chỉ có từ nấc `fused_prelu`. Mọi hàng dưới đây qua
+`model->test()` ở đồ thị và 4 bản cắt.
+
+| Hàng | Cặp | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | Trước (§14.7) | RAM nội | PSRAM | flash |
+|---|---:|---|---:|---:|---:|---:|---:|
+| detect `timing` | 17 | 8 khung, **0 / 46.200** | **59,71** / 61,91 ms | 62,85 ms | 31,8 KB | 322,7 KB | 215,5 KB |
+| detect `timing+clip_as_relu` | 17 | 8 khung, **0 / 46.200** | **44,74** / 46,93 ms | 47,36 ms | 25,6 KB | 317,2 KB | 200,6 KB |
+| spoof nấc cuối | 15 | 40 khung, **0 / 120** | **44,53** / 47,56 ms | 49,47 ms | 29,6 KB | 623,3 KB | 549,4 KB |
+| recog nấc cuối | 14 | 24 khung, **0 / 12.288** | **195,92** / 199,52 ms | 201,83 ms | 39,7 KB | 1.680,7 KB | 1.328,6 KB |
+
+Detect nhanh hơn 5,0–5,5%, spoof 10,0%, recog 2,9%. Ở recog, tích chập 1×1 mở rộng chiếm gần hết giờ của cặp và
+đã chạy ở 0,13–0,17 chu kỳ một phép nhân-cộng, nên phần bớt được chỉ là depthwise. Tensor giữa không còn trong bộ
+nhớ của model: PSRAM của recog giảm 366 KB, của spoof 155 KB; của detect tăng 14 KB. Một khuôn mặt qua cả ba nhánh: **285,2 ms** với các nấc làm tròn (từ 298,7; từ 444,8 lúc
+đầu, −35,9%), **372,3 ms** với riêng bản vá giữ nguyên số nguyên (từ 375,5). Autoload 4 dòng, trượt và trúng:
+detect `timing` 56,05 ms, nấc `clip_as_relu` 41,61 ms, spoof 44,80 ms, recog 193,29 ms.
+
+**Lần dò đầu chậm hơn op rời.** Với vùng đệm nửa cache cho mỗi op, detect `timing` chạy 65,34 ms. Bộ đếm chu kỳ
+gắn tạm vào module (không nằm trong repo), mỗi cấu hình chạy luân phiên 2 khung của cùng một lượt, chỉ ra ba chỗ:
+
+- `memmove` của ROM chép khoảng 12 chu kỳ một byte, ở PSRAM lẫn RAM nội: hai hàng chung giữa hai dải tốn tới
+  430 nghìn chu kỳ một khung ở stage 2. Nhân chép 16 byte của esp-dl chép cùng chỗ ấy ở khoảng 0,2 chu kỳ một byte.
+- Dựng `ConvOpArgs` và các `TensorBase` mỗi lượt tốn khoảng 30 nghìn chu kỳ một op; tham số giờ dựng một lần.
+- Vùng đệm 32 KB tranh cache dữ liệu với chính các hàng vào và ra: tích chập 1×1 ghi vào nó chậm hơn op rời.
+
+Cỡ vùng đệm, sau hai sửa đầu, cộng trên 17 cặp của detect `timing` (op rời theo bảng theo op của §14.7: khoảng
+30,4 ms):
+
+| Vùng đệm ở PSRAM | Tích chập 1×1 | Depthwise | Chép hàng chung | Cộng |
+|---|---:|---:|---:|---:|
+| 32 KB, nửa cache | 16,97 ms | 12,40 ms | 0,28 ms | 29,65 ms |
+| 16 KB | 16,15 ms | 11,76 ms | 0,23 ms | 28,14 ms |
+| **8 KB** | 15,85 ms | 11,44 ms | 0,47 ms | **27,76 ms** |
+| đúng k hàng | 16,03 ms | 11,79 ms | 0,71 ms | 28,53 ms |
+
+Vùng đệm 8 KB là một phần tám cache; một hàng tensor giữa rộng hơn thì giữ đúng k hàng. Vùng đệm 16 KB ở RAM nội
+còn nhanh hơn (depthwise stage 2: 389 nghìn chu kỳ, so với 459 nghìn ở PSRAM 8 KB), nhưng bản `fleet` chỉ còn
+8,4 KB RAM nội trống (ram.md §12), nên vùng đệm ở PSRAM, một vùng dùng chung cho mọi op.
+
+Tái lập: `make board-save DIR=…`; mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>`
+với hàng ở bảng đầu; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`; `make board-restore DIR=…`. Bảng cỡ vùng
+đệm cần bộ đếm gắn tạm, nên không tái lập bằng một lệnh make.
