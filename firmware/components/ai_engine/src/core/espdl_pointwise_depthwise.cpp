@@ -1,6 +1,7 @@
 #include "espdl_pointwise_depthwise.hpp"
 
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <cstdint>
 #include <string>
@@ -17,6 +18,8 @@
 #include "sdkconfig.h"
 
 extern "C" void ai_engine_clamp_s8_esp32s3(int8_t *values, int32_t vectors, const int8_t *top);
+extern "C" void ai_engine_conv_row_s8_esp32s3(int8_t *out, const int8_t *patches, const int8_t *filter,
+                                              const int32_t *run);
 
 namespace ai {
 
@@ -28,8 +31,16 @@ constexpr int kSpatialDims = 2;
 constexpr int kChannelStep = 16;
 constexpr size_t kVectorAlign = 16;
 constexpr int kNoClamp = INT8_MAX;
+constexpr size_t kRowRunWords = 9;
 // A wider band contends for the data cache with the rows it reads and writes (KEHOACH 3.7).
 constexpr size_t kBandBytes = CONFIG_ESP32S3_DATA_CACHE_SIZE / 8;
+
+using RowRun = std::array<int32_t, kRowRunWords>;
+
+bool aligned(dl::TensorBase *tensor) noexcept
+{
+    return reinterpret_cast<uintptr_t>(tensor->get_element_ptr()) % kVectorAlign == 0;
+}
 
 struct Band {
     int8_t *rows = nullptr;
@@ -165,12 +176,10 @@ public:
                 from = held_hi;
             }
             if (from < hi) {
-                dl::base::ArgsType<int8_t> pointwise = pointwise_once_;
-                pointwise.input_element = xs + from * in_row_bytes;
-                pointwise.output_element = band + (from - lo) * row_bytes;
-                pointwise.input_height = hi - from;
-                pointwise.output_height = hi - from;
-                dl::base::conv2d<int8_t, int32_t, int32_t>(&pointwise);
+                pointwise_run_[0] = (hi - from) * x->shape[2];
+                ai_engine_conv_row_s8_esp32s3(band + (from - lo) * row_bytes, xs + from * in_row_bytes,
+                                              static_cast<const int8_t *>(pointwise_once_.filter_element),
+                                              pointwise_run_.data());
             }
             held_lo = lo;
             held_hi = hi;
@@ -188,12 +197,10 @@ public:
                 ai_engine_clamp_s8_esp32s3(rows_out, (oy1 - oy0) * depthwise_row_bytes / kVectorAlign, &top_);
             }
             if (projected()) {
-                dl::base::ArgsType<int8_t> project = project_once_;
-                project.input_element = staged;
-                project.output_element = ys + oy0 * out_row_bytes;
-                project.input_height = oy1 - oy0;
-                project.output_height = oy1 - oy0;
-                dl::base::conv2d<int8_t, int32_t, int32_t>(&project);
+                project_run_[0] = (oy1 - oy0) * y->shape[2];
+                ai_engine_conv_row_s8_esp32s3(ys + oy0 * out_row_bytes, staged,
+                                              static_cast<const int8_t *>(project_once_.filter_element),
+                                              project_run_.data());
             }
         }
     }
@@ -279,9 +286,8 @@ private:
 
     bool build(dl::ModelContext *context, dl::TensorBase *x, dl::TensorBase *y, int8_t *band, int8_t *staged)
     {
-        const bool misaligned = reinterpret_cast<uintptr_t>(y->get_element_ptr()) % kVectorAlign != 0;
         if (channels_ % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || y->shape[3] % kChannelStep != 0 ||
-            (top_ != kNoClamp && !projected() && misaligned)) {
+            !aligned(x) || ((top_ != kNoClamp || projected()) && !aligned(y))) {
             ESP_LOGE(TAG, "%s: %d channels in, %d between, %d out, not on 16-byte vectors", name, x->shape[3],
                      channels_, y->shape[3]);
             return false;
@@ -315,8 +321,30 @@ private:
         slope_into(context, pointwise_, &pointwise_once_);
         slope_into(context, depthwise_, &depthwise_once_);
         slope_into(context, project_, &project_once_);
+        pointwise_run_ = row_run(pointwise_once_, pointwise_.activation, channels_, x->shape[3]);
+        if (projected()) {
+            project_run_ = row_run(project_once_, project_.activation, y->shape[3], channels_);
+        }
         built_ = true;
         return true;
+    }
+
+    // The run of conv_row_s8_esp32s3.S for one 1x1 convolution; forward sets its pixel count a band at a time.
+    static RowRun row_run(const dl::base::ArgsType<int8_t> &args, dl::activation_type_t activation, int outputs,
+                          int inputs) noexcept
+    {
+        const bool sloped = activation == dl::PReLU;
+        const int32_t alpha = sloped ? static_cast<int32_t>(reinterpret_cast<uintptr_t>(args.activation_alpha_ptr))
+                                     : args.activation_alpha;
+        return {0,
+                outputs / kChannelStep,
+                inputs / kChannelStep,
+                args.mac_shift,
+                static_cast<int32_t>(reinterpret_cast<uintptr_t>(args.bias_element)),
+                sloped ? 2 : (activation == dl::ReLU ? 1 : 0),
+                alpha,
+                args.activation_shift,
+                kNoClamp};
     }
 
     dl::base::ArgsType<int8_t> pointwise_args(dl::ModelContext *context, const Part &part, dl::TensorBase *out,
@@ -374,6 +402,8 @@ private:
     dl::base::ArgsType<int8_t> pointwise_once_ = {};
     dl::base::ArgsType<int8_t> depthwise_once_ = {};
     dl::base::ArgsType<int8_t> project_once_ = {};
+    RowRun pointwise_run_ = {};
+    RowRun project_run_ = {};
     bool built_ = false;
 };
 
