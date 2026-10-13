@@ -175,7 +175,8 @@ def banded_rate(module: Module, laid: dict[str, list[int]], cpu_mhz: int) -> flo
     if x is None or w is None or y is None:
         return None
     kernel = espdl_shapes.attribute(module.attrs, "kernel_shape", [1, 1])
-    middle, spots = w[-1], math.prod(y[:-1])
+    pool = espdl_shapes.attribute(module.attrs, "max_pool", [1, 1])
+    middle, spots = w[-1], math.prod(y[:-1]) * math.prod(pool)
     macs = math.prod(x) * middle + spots * middle * math.prod(kernel)
     if espdl_shapes.attribute(module.attrs, "project_inputs", 0):
         macs += spots * middle * y[-1]
@@ -227,6 +228,8 @@ def kernel_class(module: Module, laid: dict[str, list[int]]) -> str:
         kernel = "x".join(str(k) for k in espdl_shapes.attribute(module.attrs, "kernel_shape", [1]))
         stride = espdl_shapes.attribute(module.attrs, "strides", [1])[0]
         tail = " + pointwise" if espdl_shapes.attribute(module.attrs, "project_inputs", 0) else ""
+        if espdl_shapes.attribute(module.attrs, "max_pool", None):
+            tail = " + max pool"
         return f"pointwise + depthwise {kernel} s{stride}{tail} in bands"
     if module.op not in espdl_shapes.CONV_OPS:
         return f"{module.op} (table lookup)" if LUT_MARK in module.attrs else module.op

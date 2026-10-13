@@ -767,6 +767,59 @@ def take_clip(graph, op) -> bool:
     return True
 
 
+def pool_of(graph, joined):
+    """The MaxPool that alone reads joined, a PointwiseDepthwise with no projection, when joined can
+    take its max over the depthwise's band: 2x2 at stride 2, no pad, no ceil, int8 on one grid.
+    """
+    from esp_ppq.IR.quantize import QuantableOperation
+
+    out = joined.outputs[0]
+    if out.name in graph.outputs or len(out.dest_ops) != 1 or "project_inputs" in joined.attributes:
+        return None
+    pool = out.dest_ops[0]
+    if not isinstance(pool, QuantableOperation) or pool.type != "MaxPool":
+        return None
+    grid = [joined.output_quant_config[0], *pool.input_quant_config[:1], *pool.output_quant_config]
+    if (
+        list(pool.attributes.get("kernel_shape", [])) != [2, 2]
+        or list(pool.attributes.get("strides", [1, 1])) != [2, 2]
+        or any(pool.attributes.get("pads", [0]))
+        or pool.attributes.get("auto_pad", "NOTSET") != "NOTSET"
+        or pool.attributes.get("ceil_mode", 0)
+        or any(d != 1 for d in pool.attributes.get("dilations", [1]))
+        or not (int8(grid) and one_grid(*grid))
+    ):
+        return None
+    return pool
+
+
+def take_pool(graph, joined) -> bool:
+    """joined takes the max of pool_of over its depthwise's band and writes the pool's output; the
+    MaxPool and the full-size tensor leave the graph.
+    """
+    from esp_ppq.core import OperationQuantizationConfig
+
+    pool = pool_of(graph, joined)
+    if pool is None:
+        return False
+    out = joined.outputs[0]
+    pooled = pool.outputs[0]
+    configs = pool.output_quant_config
+    for var in pool.inputs:
+        var.dest_ops.remove(pool)
+    pool.inputs.clear()
+    pool.outputs.clear()
+    pooled.source_op = None
+    graph.remove_operation(pool)
+    out.source_op = None
+    graph.remove_variable(out)
+    joined.outputs[0] = pooled
+    pooled.source_op = joined
+    joined.config = OperationQuantizationConfig(joined.input_quant_config, configs)
+    joined.attributes.update(max_pool=[2, 2])
+    return True
+
+
 @contextlib.contextmanager
 def pointwise_depthwise() -> Iterator[None]:
     """Each 1x1 Conv exported with the depthwise Conv reading it as one PointwiseDepthwise.
@@ -788,6 +841,7 @@ def pointwise_depthwise() -> Iterator[None]:
         for op in joined:
             if not take_clip(graph, op):
                 take_projection(graph, op)
+            take_pool(graph, op)
         return graph
 
     espdl_exporter.EspdlExporter.prepare_graph = joining

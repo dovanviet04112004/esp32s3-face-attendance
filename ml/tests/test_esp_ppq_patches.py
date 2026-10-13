@@ -835,6 +835,56 @@ def test_pointwise_depthwise_leaves_a_clip_whose_table_is_not_a_relu6(tmp_path: 
     assert espdl_shapes.attribute(attrs, "clip_max") is None
 
 
+class PooledUnit(nn.Module):
+    """A YuNet unit, its ReLU6 and the 2x2 max pool after it; a pad or stride 1 is no YuNet pool."""
+
+    def __init__(self, padding: int = 0, stride: int = 2) -> None:
+        super().__init__()
+        self.pointwise = nn.Conv2d(16, 16, 1)
+        self.depthwise = nn.Conv2d(16, 16, 3, padding=1, groups=16)
+        self.pool = nn.MaxPool2d(2, stride=stride, padding=padding)
+        self.mix = nn.Conv2d(16, 16, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mix(self.pool(torch.clamp(self.depthwise(self.pointwise(x)), 0.0, 6.0)))
+
+
+def test_pointwise_depthwise_takes_the_max_pool_after_its_relu6(tmp_path: Path) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(43)
+    model = PooledUnit()
+    plain_file = exported_pair(tmp_path / "plain", model, [])
+    joined_file = exported_pair(tmp_path / "joined", model, ["pointwise_depthwise"])
+    plain, joined = espdl_graph(plain_file)[0], espdl_graph(joined_file)[0]
+    ((_, (clipped,), (pooled,)),) = [n for n in plain.values() if n[0] == "MaxPool"]
+    assert {"Clip", "MaxPool"}.isdisjoint(op for op, _, _ in joined.values())
+    ((_, _inputs, outputs),) = [
+        n for n in joined.values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
+    ]
+    assert outputs == [pooled]
+    assert clipped not in {name for _, ins, _ in joined.values() for name in ins}
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    assert espdl_shapes.attribute(attrs, "max_pool") == [2, 2]
+    assert espdl_shapes.attribute(attrs, "clip_max") is not None
+    assert exponent_of(joined_file, pooled) == exponent_of(plain_file, pooled)
+
+
+@pytest.mark.parametrize(("padding", "stride"), [(1, 2), (0, 1)])
+def test_pointwise_depthwise_leaves_a_max_pool_with_a_pad_or_another_stride(
+    tmp_path: Path, padding: int, stride: int
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(47)
+    joined_file = exported_pair(tmp_path, PooledUnit(padding, stride), ["pointwise_depthwise"])
+    ops = [op for op, _, _ in espdl_graph(joined_file)[0].values()]
+    assert ops.count("MaxPool") == 1 and espdl_shapes.POINTWISE_DEPTHWISE in ops
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    (attrs,) = [a for op, a, _ins, _outs in info.nodes if op == espdl_shapes.POINTWISE_DEPTHWISE]
+    assert espdl_shapes.attribute(attrs, "max_pool") is None
+
+
 class ChainedUnits(nn.Module):
     """Two YuNet units in a row: each 1x1 convolution feeds a 3x3 depthwise, and the first unit's
     output is the second one's 1x1 input.

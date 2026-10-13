@@ -140,9 +140,10 @@ def output_shape(op: str, attrs: str, shapes: list, values: list) -> list[int] |
         last_filter = shapes[1 + sum(parts)] if attribute(attrs, "project_inputs", 0) else shapes[1]
         if last_filter is None:
             return None
+        pool = attribute(attrs, "max_pool", [1, 1])
         out = list(x)
-        out[1] = (x[1] + top + bottom - kernel[0]) // strides[0] + 1
-        out[2] = (x[2] + left + right - kernel[1]) // strides[1] + 1
+        out[1] = ((x[1] + top + bottom - kernel[0]) // strides[0] + 1) // pool[0]
+        out[2] = ((x[2] + left + right - kernel[1]) // strides[1] + 1) // pool[1]
         out[-1] = last_filter[-1]
         return out
     if op in CONV_OPS and shapes[1] is not None:

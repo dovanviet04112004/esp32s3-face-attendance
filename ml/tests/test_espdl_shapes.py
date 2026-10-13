@@ -85,6 +85,14 @@ def test_a_banded_block_takes_its_projection_s_channels() -> None:
     assert got == [1, 28, 28, 48]
 
 
+def test_a_banded_pair_with_its_max_pool_halves_the_depthwise_s_output() -> None:
+    x = [1, 30, 41, 16]
+    attrs = "kernel_shape = [3, 3], pads = [1, 1, 1, 1], strides = [1, 1], max_pool = [2, 2]"
+    shapes = [x, [1, 1, 16, 64], [64], [3, 3, 64, 1], [64]]
+    got = espdl_shapes.output_shape(espdl_shapes.POINTWISE_DEPTHWISE, attrs, shapes, [None] * 5)
+    assert got == [1, 15, 20, 64]
+
+
 def test_a_gated_residual_keeps_its_input_s_shape() -> None:
     x, gate = [1, 28, 28, 64], [1, 1, 1, 64]
     got = espdl_shapes.output_shape(espdl_shapes.MUL_ADD, "", [x, gate, x], [None] * 3)

@@ -148,6 +148,16 @@ def test_a_banded_pair_counts_both_convolutions_and_names_its_kernel_and_stride(
     assert espdl_profile.kernel_class(block, laid) == (
         "pointwise + depthwise 3x3 s2 + pointwise in bands"
     )
+    pooled = module(
+        espdl_shapes.POINTWISE_DEPTHWISE, ["x", "w"], ["y"], attrs=f"{attrs}, max_pool = [2, 2]"
+    )
+    laid["y"] = [1, 2, 2, 32]
+    assert espdl_profile.tags_of(pooled, laid, {}, 240, 65536)[1] == pytest.approx(
+        1200 * 240 / (8 * 8 * 16 * 32 + 4 * 4 * 32 * 9)
+    )
+    assert espdl_profile.kernel_class(pooled, laid) == (
+        "pointwise + depthwise 3x3 s2 + max pool in bands"
+    )
 
 
 def test_a_class_saves_what_its_fastest_module_s_rate_would_save() -> None:
