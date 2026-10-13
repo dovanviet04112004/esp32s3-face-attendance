@@ -1,5 +1,6 @@
 #include "espdl_conv_im2col.hpp"
 
+#include <climits>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -12,6 +13,9 @@
 #include "esp_log.h"
 #include "fbs_model.hpp"
 
+extern "C" void ai_engine_conv_row_s8_esp32s3(int8_t *out, const int8_t *patches, const int8_t *filter,
+                                              const int32_t *run);
+
 namespace ai {
 
 namespace {
@@ -23,6 +27,7 @@ constexpr int kChannelStep = 16;
 constexpr size_t kVectorAlign = 16;
 constexpr int kRgbChannels = 3;
 constexpr int kRgbRowOf3x3Bytes = 3 * kRgbChannels;
+constexpr int kNoClamp = INT8_MAX;
 
 template <int kBytes>
 inline void copy_bytes(int8_t *dst, const int8_t *src) noexcept
@@ -47,12 +52,13 @@ void copy_run(int8_t *dst, const int8_t *src, int bytes) noexcept
 class ConvIm2col final : public dl::module::Module {
 public:
     ConvIm2col(const char *name, std::vector<int> kernel, std::vector<int> pads, std::vector<int> strides,
-               dl::activation_type_t activation) :
+               dl::activation_type_t activation, int clip_max) :
         Module(name, dl::MODULE_NON_INPLACE, dl::QUANT_TYPE_SYMM_8BIT),
         kernel_(std::move(kernel)),
         pads_(std::move(pads)),
         strides_(std::move(strides)),
-        activation_(activation)
+        activation_(activation),
+        top_(clip_max)
     {
     }
 
@@ -100,26 +106,42 @@ public:
                             output->caps);
         dl::base::ConvOpArgs<int8_t> args(&line, &row, no_pads_, filter, ones_, ones_, 1, bias, activation_, nullptr,
                                           dl::RUNTIME_MODE_SINGLE_CORE);
-        dl::base::ArgsType<int8_t> &run = args.get_args(0);
+        const dl::base::ArgsType<int8_t> &run = args.get_args(0);
+        if (run.mac_shift == INT_MIN) {
+            ESP_LOGE(TAG, "%s: only a per-tensor exponent runs over patches", name);
+            return;
+        }
+        int32_t alpha = run.activation_alpha;
+        int activation_shift = run.activation_shift;
         if (activation_ == dl::PReLU) {
             dl::TensorBase *slope = context->get_tensor(m_inputs_index.back());
-            run.activation_alpha_ptr = slope->get_element_ptr();
-            run.activation_shift = -slope->get_exponent();
+            alpha = static_cast<int32_t>(reinterpret_cast<uintptr_t>(slope->get_element_ptr()));
+            activation_shift = -slope->get_exponent();
         }
+        const int kind = activation_ == dl::PReLU ? 2 : (activation_ == dl::ReLU ? 1 : 0);
+        const int32_t row_run[] = {out_w,
+                                   output->shape[3] / kChannelStep,
+                                   depth / kChannelStep,
+                                   run.mac_shift,
+                                   static_cast<int32_t>(reinterpret_cast<uintptr_t>(run.bias_element)),
+                                   kind,
+                                   alpha,
+                                   activation_shift,
+                                   top_};
+        const int8_t *weights = static_cast<const int8_t *>(run.filter_element);
         const int8_t *x = input->get_element_ptr<int8_t>();
         const int row_bytes = out_w * output->shape[3];
         for (int oy = 0; oy < out_h; ++oy) {
             gather(x, input->shape, oy, out_w, depth);
-            run.output_element = out + oy * row_bytes;
-            dl::base::conv2d<int8_t, int32_t, int32_t>(&run);
+            ai_engine_conv_row_s8_esp32s3(out + oy * row_bytes, patches_, weights, row_run);
         }
     }
 
     void print() override
     {
-        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, activation: %s, quant_type: %s.",
+        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, activation: %s, clip max: %d, quant_type: %s.",
                  dl::vector_to_string(kernel_).c_str(), dl::vector_to_string(pads_).c_str(),
-                 dl::vector_to_string(strides_).c_str(), dl::activation_type_to_string(activation_),
+                 dl::vector_to_string(strides_).c_str(), dl::activation_type_to_string(activation_), top_,
                  dl::quant_type_to_string(quant_type));
     }
 
@@ -131,6 +153,7 @@ public:
         std::vector<int> dilations;
         std::string activation;
         int group = 1;
+        int clip_max = kNoClamp;
         dl::quant_type_t quant_type = dl::QUANT_TYPE_NONE;
         fbs_model->get_operation_attribute(node_name, "kernel_shape", kernel);
         fbs_model->get_operation_attribute(node_name, "pads", pads);
@@ -138,6 +161,7 @@ public:
         fbs_model->get_operation_attribute(node_name, "dilations", dilations);
         fbs_model->get_operation_attribute(node_name, "activation", activation);
         fbs_model->get_operation_attribute(node_name, "group", group);
+        fbs_model->get_operation_attribute(node_name, "clip_max", clip_max);
         fbs_model->get_operation_attribute(node_name, "quant_type", quant_type);
         if (pads.empty()) {
             pads.assign(2 * kSpatialDims, 0);
@@ -145,7 +169,7 @@ public:
         const std::vector<int> unit(kSpatialDims, 1);
         if (quant_type != dl::QUANT_TYPE_SYMM_8BIT || group != 1 || kernel.size() != kSpatialDims ||
             pads.size() != 2 * kSpatialDims || strides.size() != kSpatialDims ||
-            (!dilations.empty() && dilations != unit)) {
+            (!dilations.empty() && dilations != unit) || clip_max < 0 || clip_max > kNoClamp) {
             ESP_LOGE(TAG, "%s: only an int8 2-D ungrouped convolution runs over patches", node_name.c_str());
             return nullptr;
         }
@@ -157,7 +181,7 @@ public:
         }
         // ONNX orders pads [top, left, bottom, right]; esp-dl's kernels read [top, bottom, left, right].
         return new ConvIm2col(node_name.c_str(), std::move(kernel), {pads[0], pads[2], pads[1], pads[3]},
-                              std::move(strides), type);
+                              std::move(strides), type, clip_max);
     }
 
 private:
@@ -216,6 +240,7 @@ private:
     const std::vector<int> pads_;
     const std::vector<int> strides_;
     const dl::activation_type_t activation_;
+    const int top_;
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
     int8_t *patches_ = nullptr;
