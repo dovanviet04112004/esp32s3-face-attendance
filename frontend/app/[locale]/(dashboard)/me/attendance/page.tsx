@@ -5,7 +5,7 @@ import { CheckIcon, ClockCounterClockwiseIcon, UserCircleIcon } from "@phosphor-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import type { Notice } from "@/components/notifications/kinds";
 import { NOTICES_KEY, useNoticeWords, useReadSubject } from "@/components/notifications/notice-row";
@@ -110,7 +110,7 @@ function MyAttendance() {
   const say = useNoticeWords();
   const { employeeId, role } = useSession();
   const [url, setUrl] = useUrlState({ month: "", day: "" });
-  const [picked, setPicked] = useState<Day | null>(null);
+  const [openDate, setOpenDate] = useState<string | null>(null);
   const [fixSeed, setFixSeed] = useState(0);
   const [fixing, setFixing] = useState(false);
   const [fixDate, setFixDate] = useState<string | undefined>(undefined);
@@ -121,6 +121,16 @@ function MyAttendance() {
   const month = monthOf(url.month || linkedDay.slice(0, 7));
   const span = monthSpan(month);
   const today = todayIso();
+
+  // A notice's ?day= only opens the sheet, so closing it never waits for the router to drop the param.
+  useEffect(() => {
+    if (!linkedDay) {
+      return;
+    }
+    setOpenDate(linkedDay);
+    const linkedMonth = linkedDay.slice(0, 7);
+    setUrl({ day: "", month: linkedMonth === monthKey(thisMonth()) ? "" : linkedMonth });
+  }, [linkedDay, setUrl]);
 
   const roster = useQuery({
     queryKey: ["me", "roster", month.year, month.month],
@@ -197,17 +207,10 @@ function MyAttendance() {
     }).reverse();
   }, [punches.data, roster.data, span.from, span.to, today]);
 
-  const open = picked ?? (linkedDay ? (days.find((one) => one.date === linkedDay) ?? null) : null);
+  const open = openDate ? (days.find((one) => one.date === openDate) ?? null) : null;
   const openPast = open !== null && open.date < today;
   const workKey = open && employeeId !== null ? `attendance:${employeeId}:${open.date}` : "";
   useReadSubject("PERSON_DAY", open && employeeId !== null ? `${employeeId}:${open.date}` : null);
-
-  function setOpen(next: Day | null): void {
-    setPicked(next);
-    if (next === null && url.day) {
-      setUrl({ day: "" });
-    }
-  }
 
   const built = useQuery({
     queryKey: ["timesheet", "mine", "day", open?.date],
@@ -358,7 +361,7 @@ function MyAttendance() {
           }}
           cardLead="day"
           cardTrailing="mark"
-          onRowClick={setOpen}
+          onRowClick={(day) => setOpenDate(day.date)}
           rowActions={(day) =>
             fixable(day)
               ? [{ key: "fix", label: t("fixThisDay"), icon: ClockCounterClockwiseIcon, onSelect: () => fix(day.date) }]
@@ -376,7 +379,7 @@ function MyAttendance() {
           }
           // The day stays drawn while its sheet slides away; only then does the form rise.
           setLeaving(false);
-          setOpen(null);
+          setOpenDate(null);
           if (handOff) {
             fix(handOff);
             setHandOff(null);
