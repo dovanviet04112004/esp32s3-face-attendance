@@ -9,8 +9,10 @@
 #include "dl_model_base.hpp"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
+#include "esp32s3/rom/cache.h"
 #include "esp_timer.h"
 #include "espdl_model.hpp"
+#include "soc/soc.h"
 #include "sys_storage.h"
 #include "unity.h"
 
@@ -109,6 +111,63 @@ const char *blob_of(const std::string &name, size_t *size)
     return static_cast<const char *>(data);
 }
 
+struct Pass {
+    size_t frames = 0;
+    size_t off = 0;
+    size_t values = 0;
+    int worst = 0;
+    int64_t total_us = 0;
+    int64_t peak_us = 0;
+};
+
+Pass run_frames(dl::Model &model, const std::vector<Record> &records, dl::TensorBase *input)
+{
+    Pass pass;
+    std::map<std::string, dl::TensorBase *> &outputs = model.get_outputs();
+    for (const Record *x = find(records, "x0"); x != nullptr; x = find(records, "x" + std::to_string(pass.frames))) {
+        TEST_ASSERT_EQUAL(elements(input), x->nbytes);
+        memcpy(input->data, x->data, x->nbytes);
+        const int64_t started = esp_timer_get_time();
+        model.run();
+        const int64_t took = esp_timer_get_time() - started;
+        pass.total_us += took;
+        pass.peak_us = took > pass.peak_us ? took : pass.peak_us;
+        for (auto &[out_name, tensor] : outputs) {
+            const std::string key = "y" + std::to_string(pass.frames) + "." + out_name;
+            const Record *want = find(records, key);
+            TEST_ASSERT_NOT_NULL_MESSAGE(want, key.c_str());
+            TEST_ASSERT_EQUAL_MESSAGE(elements(tensor), want->nbytes, key.c_str());
+            const int8_t *got = static_cast<const int8_t *>(tensor->data);
+            const int8_t *expected = reinterpret_cast<const int8_t *>(want->data);
+            for (size_t k = 0; k < want->nbytes; ++k) {
+                const int delta = abs(got[k] - expected[k]);
+                pass.off += delta != 0 ? 1 : 0;
+                pass.worst = delta > pass.worst ? delta : pass.worst;
+            }
+            pass.values += want->nbytes;
+        }
+        ++pass.frames;
+    }
+    TEST_ASSERT_GREATER_THAN(0, pass.frames);
+    return pass;
+}
+
+long long mean_us(const Pass &pass)
+{
+    return static_cast<long long>(pass.total_us / static_cast<int64_t>(pass.frames));
+}
+
+// Measurement only: ESP-IDF resumes the data cache with autoload off and forbids apps these calls.
+void autoload_psram(uint8_t trigger, int lines)
+{
+    const autoload_region_config psram = {CACHE_AUTOLOAD_REGION0, 1, SOC_EXTRAM_DATA_LOW,
+                                          SOC_EXTRAM_DATA_HIGH - SOC_EXTRAM_DATA_LOW};
+    Cache_Config_DCache_Region_Autoload(&psram);
+    const autoload_config load = {1, CACHE_AUTOLOAD_POSITIVE, trigger, static_cast<uint8_t>(CACHE_AUTOLOAD_STEP(lines))};
+    Cache_Config_DCache_Autoload(&load);
+    Cache_Enable_DCache_Autoload();
+}
+
 }  // namespace
 
 TEST_CASE("every graph of the probe image passes model->test()", "[probe]")
@@ -145,47 +204,31 @@ TEST_CASE("the whole graph matches the simulation on every real frame", "[probe]
     TEST_ASSERT_EQUAL(1, inputs.size());
     dl::TensorBase *input = inputs.begin()->second;
     TEST_ASSERT_EQUAL(exponent_in(records, "in_exp"), input->get_exponent());
-    std::map<std::string, dl::TensorBase *> &outputs = model.get_outputs();
-    for (auto &[out_name, tensor] : outputs) {
+    for (auto &[out_name, tensor] : model.get_outputs()) {
         TEST_ASSERT_EQUAL_MESSAGE(exponent_in(records, "exp." + out_name), tensor->get_exponent(), out_name.c_str());
     }
-    size_t frames = 0;
-    size_t off = 0;
-    size_t values = 0;
-    int worst = 0;
-    int64_t total_us = 0;
-    int64_t peak_us = 0;
-    for (const Record *x = find(records, "x0"); x != nullptr; x = find(records, "x" + std::to_string(frames))) {
-        TEST_ASSERT_EQUAL(elements(input), x->nbytes);
-        memcpy(input->data, x->data, x->nbytes);
-        const int64_t started = esp_timer_get_time();
-        model.run();
-        const int64_t took = esp_timer_get_time() - started;
-        total_us += took;
-        peak_us = took > peak_us ? took : peak_us;
-        for (auto &[out_name, tensor] : outputs) {
-            const std::string key = "y" + std::to_string(frames) + "." + out_name;
-            const Record *want = find(records, key);
-            TEST_ASSERT_NOT_NULL_MESSAGE(want, key.c_str());
-            TEST_ASSERT_EQUAL_MESSAGE(elements(tensor), want->nbytes, key.c_str());
-            const int8_t *got = static_cast<const int8_t *>(tensor->data);
-            const int8_t *expected = reinterpret_cast<const int8_t *>(want->data);
-            for (size_t k = 0; k < want->nbytes; ++k) {
-                const int delta = abs(got[k] - expected[k]);
-                off += delta != 0 ? 1 : 0;
-                worst = delta > worst ? delta : worst;
-            }
-            values += want->nbytes;
-        }
-        ++frames;
-    }
-    TEST_ASSERT_GREATER_THAN(0, frames);
+    const Pass pass = run_frames(model, records, input);
     printf("probe %s: %u frames, %u of %u values off the simulation, worst |board - simulation| %d, "
            "%lld us mean, %lld us peak a frame\n",
-           name.c_str(), static_cast<unsigned>(frames), static_cast<unsigned>(off), static_cast<unsigned>(values),
-           worst, static_cast<long long>(total_us / static_cast<int64_t>(frames)), static_cast<long long>(peak_us));
+           name.c_str(), static_cast<unsigned>(pass.frames), static_cast<unsigned>(pass.off),
+           static_cast<unsigned>(pass.values), pass.worst, mean_us(pass), static_cast<long long>(pass.peak_us));
     model.profile(false);
-    TEST_ASSERT_EQUAL(0, off);
+    const struct {
+        uint8_t trigger;
+        const char *on;
+    } triggers[] = {{CACHE_AUTOLOAD_MISS_TRIGGER, "miss"}, {CACHE_AUTOLOAD_BOTH_TRIGGER, "miss and hit"}};
+    for (const auto &trigger : triggers) {
+        for (const int lines : {1, 2, 4}) {
+            autoload_psram(trigger.trigger, lines);
+            const Pass ahead = run_frames(model, records, input);
+            Cache_Disable_DCache_Autoload();
+            printf("probe %s autoload %d lines on %s: %u of %u values off the simulation, %lld us mean, "
+                   "%lld us peak a frame\n",
+                   name.c_str(), lines, trigger.on, static_cast<unsigned>(ahead.off),
+                   static_cast<unsigned>(ahead.values), mean_us(ahead), static_cast<long long>(ahead.peak_us));
+        }
+    }
+    TEST_ASSERT_EQUAL(0, pass.off);
 }
 
 extern "C" void app_main(void)
