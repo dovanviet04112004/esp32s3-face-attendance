@@ -7,7 +7,7 @@
 #include "dl_base_conv2d.hpp"
 #include "dl_base_depthwise_conv2d.hpp"
 #include "dl_module_base.hpp"
-#include "dl_module_creator.hpp"
+#include "fbs_model.hpp"
 #include "esp_log.h"
 
 namespace ai {
@@ -121,12 +121,9 @@ private:
 
 }  // namespace
 
-void register_espdl_modules() noexcept
+dl::module::Module *conv_prelu_from(fbs::FbsModel *fbs_model, std::string node_name)
 {
-    dl::module::ModuleCreator *creator = dl::module::ModuleCreator::get_instance();
-    // esp-dl fills its own table only while the table is empty, so it goes first.
-    creator->register_dl_modules();
-    creator->register_module("ConvPRelu", ConvPRelu::deserialize);
+    return ConvPRelu::deserialize(fbs_model, std::move(node_name));
 }
 
 }  // namespace ai

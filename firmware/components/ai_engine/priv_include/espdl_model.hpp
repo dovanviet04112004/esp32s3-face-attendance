@@ -17,6 +17,11 @@ class TensorBase;
 
 namespace ai {
 
+/** Register ai_engine's own modules with esp-dl's creator, after esp-dl's built-in ones.
+ *  @ctx task | non-blocking | idempotent; the first dl::Model needs it called already
+ */
+void register_espdl_modules() noexcept;
+
 /** A TensorBase seen through TensorView: scale 2^exponent, zero point 0, NHWC.
  *  @ctx any | non-blocking | invalid unless int8 of rank 4 or less
  */

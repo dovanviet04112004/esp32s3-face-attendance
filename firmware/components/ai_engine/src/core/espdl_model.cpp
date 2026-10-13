@@ -4,6 +4,7 @@
 #include <new>
 
 #include "dl_model_base.hpp"
+#include "dl_module_creator.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -27,6 +28,14 @@ public:
 };
 
 }  // namespace
+
+void register_espdl_modules() noexcept
+{
+    dl::module::ModuleCreator *creator = dl::module::ModuleCreator::get_instance();
+    // esp-dl fills its own table only while the table is empty, so it goes first.
+    creator->register_dl_modules();
+    creator->register_module("ConvPRelu", conv_prelu_from);
+}
 
 TensorView view_of(dl::TensorBase *tensor) noexcept
 {

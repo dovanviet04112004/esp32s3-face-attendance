@@ -10,7 +10,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_timer.h"
-#include "espdl_conv_prelu.hpp"
+#include "espdl_model.hpp"
 #include "sys_storage.h"
 #include "unity.h"
 
