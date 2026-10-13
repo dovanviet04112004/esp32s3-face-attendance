@@ -13,6 +13,7 @@
 #include "espdl_conv_prelu.hpp"
 #include "espdl_conv_slices.hpp"
 #include "espdl_mul_add.hpp"
+#include "espdl_pointwise_depthwise.hpp"
 #include "sdkconfig.h"
 
 namespace ai {
@@ -43,6 +44,7 @@ void register_espdl_modules() noexcept
     creator->register_module("ChannelConv", channel_conv_from);
     creator->register_module("ConvIm2col", conv_im2col_from);
     creator->register_module("MulAdd", mul_add_from);
+    creator->register_module("PointwiseDepthwise", pointwise_depthwise_from);
 }
 
 TensorView view_of(dl::TensorBase *tensor) noexcept

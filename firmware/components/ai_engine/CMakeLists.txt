@@ -8,7 +8,8 @@ set(srcs src/core/pixels.cpp
 if(CONFIG_AI_RUNTIME_ESPDL)
     list(APPEND srcs src/ai_engine_espdl.cpp src/core/espdl_model.cpp src/core/espdl_conv_prelu.cpp
                      src/core/espdl_conv_slices.cpp src/core/espdl_channel_conv.cpp
-                     src/core/espdl_conv_im2col.cpp src/core/espdl_mul_add.cpp)
+                     src/core/espdl_conv_im2col.cpp src/core/espdl_mul_add.cpp
+                     src/core/espdl_pointwise_depthwise.cpp)
 else()
     list(APPEND srcs src/ai_engine.cpp src/core/arena.cpp src/core/model_base.cpp src/core/model_store.cpp
                      src/core/profiler.cpp
