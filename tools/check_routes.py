@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Every route carries @Roles or takes @CurrentViewer (KEHOACH 9.4).
+"""Every route carries @Roles or takes @CurrentViewer, and every desk route @Reach (KEHOACH 9.4).
 
 One without either knows neither who is asking nor who to refuse, so it hands
 a whole table to any account that can log in. OPEN lists the ones that are
-meant for everybody, with the reason each is there.
+meant for everybody, with the reason each is there. A route HR or PAYROLL may
+call says how it narrows for a desk held to some entities.
 """
 
 from __future__ import annotations
@@ -37,18 +38,23 @@ OPEN: dict[str, str] = {
 }
 
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')
-ROLES = re.compile(r"@Roles\(")
+ROLES = re.compile(r"@Roles\(([^)]*)\)")
+REACH = re.compile(r"@Reach\(")
+# The desk roles, by name or through the role list the import route spreads.
+DESK = re.compile(r'"HR"|"PAYROLL"|IMPORT_ROLES')
 SIGNATURE_END = re.compile(r"\)\s*:")
 
 
-def routes(path: Path) -> list[tuple[str, bool]]:
+def routes(path: Path) -> list[tuple[str, bool, bool]]:
+    """Each route: its name, whether it knows who asks, and whether it is a desk route missing @Reach."""
     text = path.read_text(encoding="utf-8")
     head = text.split("export class", 1)[0]
-    guarded_class = bool(ROLES.search(head))
+    class_roles = ROLES.search(head)
+    class_reach = bool(REACH.search(head))
     base = re.search(r'@Controller\(\s*"?([^"),]*)"?', text)
     prefix = (base.group(1) if base else "").strip("/")
     lines = text.splitlines()
-    found: list[tuple[str, bool]] = []
+    found: list[tuple[str, bool, bool]] = []
 
     for i, line in enumerate(lines):
         verb = VERBS.match(line)
@@ -56,18 +62,23 @@ def routes(path: Path) -> list[tuple[str, bool]]:
             continue
         tail = (verb.group(2) or "").strip("/")
         name = f"/{prefix}/{tail}".replace("//", "/").rstrip("/") or "/"
-        guarded = guarded_class
+        roles = class_roles.group(1) if class_roles else None
+        reach = class_reach
         sees = False
         for j in range(i + 1, len(lines)):
-            if ROLES.search(lines[j]):
-                guarded = True
+            own = ROLES.search(lines[j])
+            if own:
+                roles = own.group(1)
+            if REACH.search(lines[j]):
+                reach = True
             if "CurrentViewer" in lines[j]:
                 sees = True
             if SIGNATURE_END.search(lines[j]):
                 break
             if VERBS.match(lines[j]):
                 break
-        found.append((f"{verb.group(1).upper()} {name}", guarded or sees))
+        desk = roles is not None and bool(DESK.search(roles))
+        found.append((f"{verb.group(1).upper()} {name}", roles is not None or sees, desk and not reach))
     return found
 
 
@@ -80,8 +91,11 @@ def main() -> int:
     counted = 0
     claimed = set()
     for path in sorted(CONTROLLERS.rglob("*.controller.ts")):
-        for name, guarded in routes(path):
+        for name, guarded, unreached in routes(path):
             counted += 1
+            if unreached:
+                print(f"{path}: {name} is a desk route without @Reach")
+                faults += 1
             if name in OPEN:
                 claimed.add(name)
                 continue
