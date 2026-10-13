@@ -13,7 +13,7 @@
   },
   "recognition": {
     "file": "mobilefacenet_s8.espdl",
-    "sha256": "0191f29670ae5865d9e382aea06027a31c2f7db2f28ee5a199482f472f0f191a",
+    "sha256": "5af1965fd06144772ad03bc25208bf35cda0c45e8c912d4ab832d53ed7639084",
     "run_id": "recognition/20260923-2106_59828c4_9a6954",
     "arena_bytes": 0
   }
