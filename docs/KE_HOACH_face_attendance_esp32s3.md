@@ -10027,8 +10027,10 @@ lần chuyển là thứ khiến người ta coi nó là một trang web tạm b
 | 200 ms | đổi tab, thêm hoặc bớt một dòng — dòng vừa duyệt mờ đi rồi khép lại để danh sách không nhảy; skeleton mờ dần thành nội dung |
 | 250 ms | chuyển trang bằng View Transitions, chỉ vùng nội dung động, khung đứng yên: máy tính mờ chéo; điện thoại đi sâu thì trượt 24 px kèm mờ, quay lại thì trượt ngược; đổi tab đáy chỉ mờ chéo |
 
-Tấm trượt giữ nhịp 450 ms và cử chỉ vuốt đóng của chính Kumo. Người dùng bật *giảm chuyển động*
-thì mọi thứ trên đây tắt, kể cả cuộn mượt.
+Mở một tin — từ chuông, trang thông báo hay thông báo đẩy — thì trang đích hiện ngay, không chuyển
+động: đích của tin thường mở sẵn một tấm trượt, mà tấm mở giữa lúc vùng nội dung đang chuyển thì bị
+nhóm của vùng ấy vẽ đè lên. Tấm trượt giữ nhịp 450 ms và cử chỉ vuốt đóng của chính Kumo. Người dùng
+bật *giảm chuyển động* thì mọi thứ trên đây tắt, kể cả cuộn mượt.
 
 #### 9.21.7 Trên Android, hệ là một app thật bọc đúng trang web
 
