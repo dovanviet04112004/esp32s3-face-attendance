@@ -24,10 +24,19 @@ constexpr size_t kVectorAlign = 16;
 constexpr int kRgbChannels = 3;
 constexpr int kRgbRowOf3x3Bytes = 3 * kRgbChannels;
 
+template <int kBytes>
+inline void copy_bytes(int8_t *dst, const int8_t *src) noexcept
+{
+    if constexpr (kBytes > 0) {
+        dst[0] = src[0];
+        copy_bytes<kBytes - 1>(dst + 1, src + 1);
+    }
+}
+
 void copy_run(int8_t *dst, const int8_t *src, int bytes) noexcept
 {
     if (bytes == kRgbRowOf3x3Bytes) {
-        std::memcpy(dst, src, kRgbRowOf3x3Bytes);
+        copy_bytes<kRgbRowOf3x3Bytes>(dst, src);
     } else {
         std::memcpy(dst, src, bytes);
     }
