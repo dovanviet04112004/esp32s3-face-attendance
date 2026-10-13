@@ -11,7 +11,7 @@ import { Failed } from "@/components/ui/failed";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { NOTICE_LOOK, useReader, type Notice } from "./kinds";
+import { NOTICE_LOOK, NOTICE_TRANSITION, useReader, type Notice } from "./kinds";
 import { NOTICES_KEY, NoticeLine, useNoticeActions, useNoticeMarks, type NoticeStatus } from "./notice-row";
 
 const kBellTake = 20;
@@ -38,6 +38,7 @@ function Opener({ notice, onRead, onGo, children }: { notice: Notice; onRead: ()
   return (
     <Link
       href={where}
+      transitionTypes={[NOTICE_TRANSITION]}
       className={look}
       onClick={() => {
         onRead();

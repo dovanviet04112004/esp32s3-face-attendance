@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { useNoticeCounts } from "@/components/notifications/bell";
-import { NOTICE_CATEGORIES, NOTICE_LOOK, useReader, type Notice } from "@/components/notifications/kinds";
+import { NOTICE_CATEGORIES, NOTICE_LOOK, NOTICE_TRANSITION, useReader, type Notice } from "@/components/notifications/kinds";
 import {
   NOTICES_KEY,
   NoticeLine,
@@ -101,7 +101,7 @@ function Notifications() {
     }
     const where = NOTICE_LOOK[notice.kind].path(notice, reader);
     if (where !== null) {
-      router.push(where);
+      router.push(where, { transitionTypes: [NOTICE_TRANSITION] });
     }
   }
 

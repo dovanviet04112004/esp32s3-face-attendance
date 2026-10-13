@@ -53,6 +53,9 @@ type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
 export const NOTICE_CATEGORIES: readonly NoticeCategory[] = ["REQUESTS", "PAY", "PEOPLE", "ATTENDANCE", "SYSTEM"];
 
+/** The transition type every notice opens its page with: the content stands still for it (KEHOACH 9.21.6). */
+export const NOTICE_TRANSITION = "notice";
+
 type NoticeOutcome = "APPROVED" | "REJECTED" | "ISSUED" | "UPHELD" | "PAID" | "RENEWED" | "RESOLVED" | "COMPLETED" | "SIGNED";
 
 /** The shared state of a row of work, the same for every holder (KEHOACH 9.21.4). */

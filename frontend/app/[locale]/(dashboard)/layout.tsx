@@ -18,6 +18,7 @@ import { SectionBar, SectionBarLoading } from "@/components/nav/section-bar";
 import { kRailLogo, Sidebar } from "@/components/nav/sidebar";
 import { TabBar, TabBarLoading } from "@/components/nav/tab-bar";
 import { TopBar, TopBarLoading } from "@/components/nav/top-bar";
+import { NOTICE_TRANSITION } from "@/components/notifications/kinds";
 import { PageFoot } from "@/components/ui/bottom-bar";
 import { toasts } from "@/components/ui/notify";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -245,7 +246,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <SectionBar />
         <PageFoot>
           <main id="main" className="flex-1">
-            <ViewTransition default={move ? `page-${move}` : "none"}>
+            <ViewTransition default={{ [NOTICE_TRANSITION]: "none", default: move ? `page-${move}` : "none" }}>
               <div className={kBlock}>{children}</div>
             </ViewTransition>
           </main>
