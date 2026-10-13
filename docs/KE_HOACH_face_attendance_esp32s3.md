@@ -2135,13 +2135,16 @@ FP32, trần để so; Q1 PTQ per-channel + fold BN + bias correction, CLE chỉ
 trên chính nhánh đó (Lớp 4). ESP-DL là runtime deploy: kernel S3 nhận **một số mũ luỹ thừa 2 cho cả
 tensor**, đối xứng, zero point 0, ở cả trọng số lẫn activation, nên một nhánh có dải kênh lệch nhau
 mất độ chính xác đúng ở luật ấy. Mỗi nhánh ESP-DL đi **trọn** thang dưới đây — bậc nào cũng dựng và
-chấm, kể cả khi bậc trước đã đạt cửa — rồi chọn **một** hàng theo luật chọn ở dưới bảng cửa.
+chấm, kể cả khi bậc trước đã đạt cửa — rồi chọn **một** hàng theo luật chọn ở dưới bảng cửa. Bậc 3, bậc 4 và
+các hàng biến thể dựng trên **hàng nền**: trong các hàng của những bậc trước, hàng đạt cửa có thước chính cao nhất;
+chỉ khi chưa hàng nào đạt cửa mới lấy hàng thước cao nhất. Một hàng trượt cửa mà làm nền thì các hàng dựng trên nó,
+nhất là hàng biến thể nhanh hơn, dễ trượt theo.
 
 | Bậc | Làm gì | Code | Khi nào |
 |---|---|---|---|
 | 1 | PTQ ESP-PPQ `esp32s3` w8a8, gập BN (cả `Linear` + `BatchNorm1d`), **layerwise equalization** (4 vòng, ngưỡng 0,4, `opt_level` 2), bias correction | `ptq_espdl.py` | luôn |
 | 2 | Bốn thuật toán hiệu chuẩn — min-max, percentile, MSE, KL — trên cùng tập hiệu chuẩn | `ptq_espdl.py` | luôn, bảng bốn cột |
-| 3 | int16 cho các lớp nhạy nhất, xếp theo SNR từng lớp của ESP-PPQ trên đồ thị của cách hiệu chuẩn thắng ở bậc 2; mỗi dòng `int16_top{k}` cho k lớp đứng đầu, cả trọng số lẫn activation của lớp ấy ở 16 bit | `mixed_espdl.py` | luôn |
+| 3 | int16 cho các lớp nhạy nhất, xếp theo SNR từng lớp của ESP-PPQ trên đồ thị của hàng nền bậc 2 (dưới bảng); mỗi dòng `int16_top{k}` cho k lớp đứng đầu, cả trọng số lẫn activation của lớp ấy ở 16 bit | `mixed_espdl.py` | luôn |
 | 4 | QAT: học tiếp tham số float của chính đồ thị int8 qua lượng tử giả của ESP-PPQ, gradient đi thẳng qua phép làm tròn, số mũ giữ như lúc hiệu chuẩn, nên đồ thị học xong là đồ thị xuất ra chip | `qat_espdl.py` | luôn, sau cùng: đây là một lượt train trên GPU, mỗi nhánh một lượt trên hàng int8 thắng ở bậc 2 |
 
 **Cửa của từng nhánh**, chấm bằng mô phỏng ESP-PPQ của chính đồ thị sẽ xuất. Mô phỏng ấy được bản dò
