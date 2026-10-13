@@ -559,8 +559,9 @@ def mul_add() -> Iterator[None]:
 def banded_pair(graph, dw):
     """dw's 1x1 feeder when a prepared graph can run the pair as PointwiseDepthwise, None otherwise.
 
-    The feeder is an int8 per-tensor ungrouped Conv, 1x1 at stride 1 with no pad and claimed by no
-    other patch; dw, an int8 per-tensor depthwise Conv, alone reads it, on aligned channels.
+    The feeder is an int8 per-tensor ungrouped Conv, 1x1 at stride 1 with no pad on aligned input
+    channels and claimed by no other patch; dw, an int8 per-tensor depthwise Conv, alone reads it.
+    Middle channels off the 16 step run padded in the module, which then takes no PRelu.
     """
     from esp_ppq.IR.quantize import QuantableOperation
     from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
@@ -587,8 +588,11 @@ def banded_pair(graph, dw):
         or list(pw.attributes.get("strides", [1, 1])) != [1, 1]
         or any(pw.attributes.get("pads", [0]))
         or dw.attributes.get("group", 1) != channels
-        or channels % CHANNEL_STEP
         or x_shape[-1] % CHANNEL_STEP
+        or (
+            channels % CHANNEL_STEP
+            and PRELU_MARK in (pw.attributes.get("activation"), dw.attributes.get("activation"))
+        )
         or len(kernel) != 2
         or kernel == [1, 1]
         or any(d != 1 for d in dw.attributes.get("dilations", [1]))
@@ -645,14 +649,18 @@ def projection_of(graph, joined):
     from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
 
     out = joined.outputs[0]
-    if out.name in graph.outputs or len(out.dest_ops) != 1:
+    info = ExporterPatternInfo()
+    if (
+        out.name in graph.outputs
+        or len(out.dest_ops) != 1
+        or laid_shape(out, info)[-1] % CHANNEL_STEP
+    ):
         return None
     proj = out.dest_ops[0]
     if not isinstance(proj, QuantableOperation) or proj.type != "Conv" or len(proj.inputs) < 2:
         return None
     weight = proj.inputs[1].value
     expansion = joined.inputs[1].value
-    info = ExporterPatternInfo()
     projected = laid_shape(proj.outputs[0], info)
     cache_bytes = chip()[1]
     if (
@@ -772,9 +780,15 @@ def pool_of(graph, joined):
     take its max over the depthwise's band: 2x2 at stride 2, no pad, no ceil, int8 on one grid.
     """
     from esp_ppq.IR.quantize import QuantableOperation
+    from esp_ppq.parser.espdl.espdl_typedef import ExporterPatternInfo
 
     out = joined.outputs[0]
-    if out.name in graph.outputs or len(out.dest_ops) != 1 or "project_inputs" in joined.attributes:
+    if (
+        out.name in graph.outputs
+        or len(out.dest_ops) != 1
+        or "project_inputs" in joined.attributes
+        or laid_shape(out, ExporterPatternInfo())[-1] % CHANNEL_STEP
+    ):
         return None
     pool = out.dest_ops[0]
     if not isinstance(pool, QuantableOperation) or pool.type != "MaxPool":

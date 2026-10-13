@@ -885,6 +885,41 @@ def test_pointwise_depthwise_leaves_a_max_pool_with_a_pad_or_another_stride(
     assert espdl_shapes.attribute(attrs, "max_pool") is None
 
 
+class NarrowHead(nn.Module):
+    """A YuNet head: a 1x1 convolution to 10 channels and the depthwise one writing the output."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pointwise = nn.Conv2d(16, 10, 1)
+        self.depthwise = nn.Conv2d(10, 10, 3, padding=1, groups=10)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.depthwise(self.pointwise(x))
+
+
+def test_pointwise_depthwise_joins_a_head_whose_middle_channels_are_not_a_multiple_of_16(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("esp_ppq")
+    torch.manual_seed(53)
+    model = NarrowHead()
+    plain_file = exported_pair(tmp_path / "plain", model, [])
+    joined_file = exported_pair(tmp_path / "joined", model, ["pointwise_depthwise"])
+    plain, plain_tensors, plain_exps = espdl_graph(plain_file)
+    joined, joined_tensors, joined_exps = espdl_graph(joined_file)
+    convs = {outs[0]: ins for op, ins, outs in plain.values() if op == "Conv"}
+    ((out, dw_ins),) = [(out, ins) for out, ins in convs.items() if ins[0] in convs]
+    ((_, inputs, outputs),) = [
+        n for n in joined.values() if n[0] == espdl_shapes.POINTWISE_DEPTHWISE
+    ]
+    assert (inputs, outputs) == ([*convs[dw_ins[0]], *dw_ins[1:]], [out])
+    for name in inputs[1:]:
+        assert np.array_equal(joined_tensors[name], plain_tensors[name]), name
+        assert joined_exps[name] == plain_exps[name], name
+    info = espdl_shapes.parse(joined_file.with_suffix(".info").read_text(encoding="utf-8"))
+    assert espdl_shapes.problems(info) == []
+
+
 class ChainedUnits(nn.Module):
     """Two YuNet units in a row: each 1x1 convolution feeds a 3x3 depthwise, and the first unit's
     output is the second one's 1x1 input.
