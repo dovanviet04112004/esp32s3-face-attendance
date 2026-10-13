@@ -19,7 +19,7 @@ branches:
       layerwise_samples: 32
       int16_tops: [1, 2, 4]
       qat: {batch: 16, steps: 2000, learning_rate: 1.0e-5}
-    esp_ppq_patches: [pointwise_depthwise]
+    esp_ppq_patches: [im2col_convolutions, pointwise_depthwise]
     rounding_patches: [clip_as_relu]
     probe: {cuts: 4, frames: 8}
     chosen: null
