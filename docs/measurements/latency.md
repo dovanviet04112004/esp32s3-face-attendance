@@ -966,3 +966,23 @@ còn nhanh hơn (depthwise stage 2: 389 nghìn chu kỳ, so với 459 nghìn ở
 Tái lập: `make board-save DIR=…`; mỗi nhánh `make quant-timing BRANCH=<nhánh>`, rồi `make ai-unit BRANCH=<nhánh>`
 với hàng ở bảng đầu; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`; `make board-restore DIR=…`. Bảng cỡ vùng
 đệm cần bộ đếm gắn tạm, nên không tái lập bằng một lệnh make.
+
+### 14.9 ReLU6 kẹp ngay trên dải ra của `PointwiseDepthwise` — đo 13/10 (E9-T41)
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` giờ nuốt `Clip` đứng sau depthwise khi bảng tra của nó trùng
+`max(0, min(x, đỉnh))` ở cả 256 giá trị vào và cùng một lưới (KẾ HOẠCH §3.7): ở detect `timing`, 17 trong 18
+`Clip` của ReLU6; cái còn lại theo sau tích chập đầu. Depthwise chạy với ReLU gộp, rồi `clamp_s8_esp32s3.S` kẹp
+mỗi dải ra ở `đỉnh` (96 ở lưới 2^-4) bằng `EE.VMIN.S8`. Cả hai hàng qua `model->test()` ở đồ thị và 4 bản cắt.
+
+| Hàng | Khung thật, giá trị lệch mô phỏng | Một khung, mean / đỉnh | Trước (§14.8) | RAM nội | PSRAM | flash |
+|---|---|---:|---:|---:|---:|---:|
+| detect `timing` | 8 khung, **0 / 46.200** | **47,37** / 49,52 ms | 59,71 ms | 25,9 KB | 318,0 KB | 202,4 KB |
+| detect `timing+clip_as_relu` | 8 khung, **0 / 46.200** | 44,71 / 46,82 ms | 44,74 ms | 25,6 KB | 317,2 KB | 200,6 KB |
+
+Hàng `timing` nhanh hơn 20,7% mà không đổi số nguyên nào: 17 `Clip` tốn 12,8 ms ở bảng theo op của §14.8, còn
+phép kẹp thêm 0,7 ms vào 17 op ghép (27,8 → 28,5 ms). Nấc `clip_as_relu` không có `Clip` nào nên không đổi; nó
+còn nhanh hơn hàng chính xác 2,7 ms, phần lớn là `Clip` sau tích chập đầu (2,4 ms). Autoload 4 dòng, trượt và
+trúng: `timing` 44,03 ms. Một khuôn mặt với riêng bản vá giữ nguyên số nguyên: **360,0 ms** (từ 372,3).
+
+Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
+`ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
