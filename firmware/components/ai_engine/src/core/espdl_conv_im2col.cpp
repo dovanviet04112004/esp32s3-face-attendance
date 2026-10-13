@@ -1,5 +1,6 @@
 #include "espdl_conv_im2col.hpp"
 
+#include <array>
 #include <climits>
 #include <cstdint>
 #include <cstring>
@@ -9,12 +10,15 @@
 
 #include "dl_base_conv2d.hpp"
 #include "dl_module_base.hpp"
+#include "dl_tool.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "fbs_model.hpp"
 
 extern "C" void ai_engine_conv_row_s8_esp32s3(int8_t *out, const int8_t *patches, const int8_t *filter,
                                               const int32_t *run);
+extern "C" void ai_engine_conv_3x3x3_row_s8_esp32s3(int8_t *out, const int8_t *const *rows, const int8_t *filter,
+                                                    const int32_t *run);
 
 namespace ai {
 
@@ -27,6 +31,12 @@ constexpr int kChannelStep = 16;
 constexpr size_t kVectorAlign = 16;
 constexpr int kRgbChannels = 3;
 constexpr int kRgbRowOf3x3Bytes = 3 * kRgbChannels;
+constexpr int kWindowRows = 3;
+constexpr int kWindowTaps = kWindowRows * kRgbRowOf3x3Bytes;
+// The left pad reads the lead's zeros; the last window's two 16-byte loads reach into the tail.
+constexpr size_t kRowLead = 16;
+constexpr size_t kRowTail = 32;
+constexpr int kNoRow = INT_MIN;
 constexpr int kNoClamp = INT8_MAX;
 
 template <int kBytes>
@@ -62,7 +72,7 @@ public:
     {
     }
 
-    ~ConvIm2col() override { heap_caps_free(patches_); }
+    ~ConvIm2col() override { heap_caps_free(scratch_); }
 
     ConvIm2col(const ConvIm2col &) = delete;
     ConvIm2col &operator=(const ConvIm2col &) = delete;
@@ -75,8 +85,12 @@ public:
         y[1] = (x[1] + pads_[0] + pads_[1] - kernel_[0]) / strides_[0] + 1;
         y[2] = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
         y[3] = w[3];
-        // esp-dl's planner asks for shapes while the model is built, so the patch row is reserved then.
-        reserve_patches(static_cast<size_t>(y[2]) * w[2]);
+        windowed_ = kernel_[0] == kWindowRows && kernel_[1] * x[3] == kRgbRowOf3x3Bytes && x[3] == kRgbChannels &&
+            static_cast<size_t>(pads_[2]) * x[3] <= kRowLead;
+        row_stride_ = (kRowLead + static_cast<size_t>(x[2] + pads_[3]) * x[3] + kRowTail + kVectorAlign - 1) /
+            kVectorAlign * kVectorAlign;
+        // esp-dl's planner asks for shapes while the model is built, so the scratch rows are reserved then.
+        reserve_scratch(windowed_ ? kWindowRows * row_stride_ : static_cast<size_t>(y[2]) * w[2]);
         return {y};
     }
 
@@ -99,7 +113,7 @@ public:
             bias->reset_bias_layout(quant_type, false);
             bias_laid_ = true;
         }
-        dl::TensorBase row({1, 1, out_w, depth}, patches_, input->get_exponent(), input->get_dtype(), false,
+        dl::TensorBase row({1, 1, out_w, depth}, scratch_, input->get_exponent(), input->get_dtype(), false,
                            MALLOC_CAP_SPIRAM);
         int8_t *out = output->get_element_ptr<int8_t>();
         dl::TensorBase line({1, 1, out_w, output->shape[3]}, out, output->get_exponent(), output->get_dtype(), false,
@@ -121,27 +135,39 @@ public:
         const int kind = activation_ == dl::PReLU ? 2 : (activation_ == dl::ReLU ? 1 : 0);
         const int32_t row_run[] = {out_w,
                                    output->shape[3] / kChannelStep,
-                                   depth / kChannelStep,
+                                   windowed_ ? strides_[1] * kRgbChannels : depth / kChannelStep,
                                    run.mac_shift,
                                    static_cast<int32_t>(reinterpret_cast<uintptr_t>(run.bias_element)),
                                    kind,
                                    alpha,
                                    activation_shift,
-                                   top_};
+                                   top_,
+                                   (depth - kWindowTaps) * kChannelStep};
         const int8_t *weights = static_cast<const int8_t *>(run.filter_element);
-        const int8_t *x = input->get_element_ptr<int8_t>();
+        int8_t *x = input->get_element_ptr<int8_t>();
         const int row_bytes = out_w * output->shape[3];
+        if (windowed_) {
+            held_.fill(kNoRow);
+            const int8_t *rows[kWindowRows];
+            for (int oy = 0; oy < out_h; ++oy) {
+                for (int ky = 0; ky < kWindowRows; ++ky) {
+                    rows[ky] = padded_row(x, input->shape, oy * strides_[0] - pads_[0] + ky);
+                }
+                ai_engine_conv_3x3x3_row_s8_esp32s3(out + oy * row_bytes, rows, weights, row_run);
+            }
+            return;
+        }
         for (int oy = 0; oy < out_h; ++oy) {
             gather(x, input->shape, oy, out_w, depth);
-            ai_engine_conv_row_s8_esp32s3(out + oy * row_bytes, patches_, weights, row_run);
+            ai_engine_conv_row_s8_esp32s3(out + oy * row_bytes, scratch_, weights, row_run);
         }
     }
 
     void print() override
     {
-        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, activation: %s, clip max: %d, quant_type: %s.",
+        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, activation: %s, clip max: %d, windowed: %d, quant_type: %s.",
                  dl::vector_to_string(kernel_).c_str(), dl::vector_to_string(pads_).c_str(),
-                 dl::vector_to_string(strides_).c_str(), dl::activation_type_to_string(activation_), top_,
+                 dl::vector_to_string(strides_).c_str(), dl::activation_type_to_string(activation_), top_, windowed_,
                  dl::quant_type_to_string(quant_type));
     }
 
@@ -187,18 +213,36 @@ public:
 private:
     bool fits(int channels, int depth, int outputs, size_t row_bytes) const noexcept
     {
-        return patches_ != nullptr && row_bytes <= patch_bytes_ && depth % kChannelStep == 0 &&
+        const size_t wanted = windowed_ ? kWindowRows * row_stride_ : row_bytes;
+        return scratch_ != nullptr && wanted <= scratch_bytes_ && depth % kChannelStep == 0 &&
             outputs % kChannelStep == 0 && kernel_[0] * kernel_[1] * channels <= depth;
     }
 
-    void reserve_patches(size_t bytes) noexcept
+    void reserve_scratch(size_t bytes) noexcept
     {
-        if (bytes <= patch_bytes_) {
+        if (bytes <= scratch_bytes_) {
             return;
         }
-        heap_caps_free(patches_);
-        patches_ = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, bytes, MALLOC_CAP_SPIRAM));
-        patch_bytes_ = patches_ != nullptr ? bytes : 0;
+        heap_caps_free(scratch_);
+        scratch_ = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, bytes, MALLOC_CAP_SPIRAM));
+        scratch_bytes_ = scratch_ != nullptr ? bytes : 0;
+    }
+
+    // Image row iy in its scratch row, between the zero lead and tail, from the first output pixel's window.
+    const int8_t *padded_row(int8_t *x, const std::vector<int> &shape, int iy) noexcept
+    {
+        const size_t image_row_bytes = static_cast<size_t>(shape[2]) * shape[3];
+        const int slot = (iy % kWindowRows + kWindowRows) % kWindowRows;
+        int8_t *row = scratch_ + slot * row_stride_;
+        if (held_[slot] != iy) {
+            if (iy < 0 || iy >= shape[1]) {
+                std::memset(row + kRowLead, 0, image_row_bytes);
+            } else {
+                dl::tool::copy_memory(row + kRowLead, x + iy * image_row_bytes, image_row_bytes);
+            }
+            held_[slot] = iy;
+        }
+        return row + kRowLead - pads_[2] * shape[3];
     }
 
     // Each pixel's patch takes depth bytes; the bytes past the kernel's stay zero from the calloc.
@@ -209,7 +253,7 @@ private:
         const int channels = shape[3];
         const int run_bytes = kernel_[1] * channels;
         for (int ox = 0; ox < out_w; ++ox) {
-            int8_t *patch = patches_ + ox * depth;
+            int8_t *patch = scratch_ + ox * depth;
             const int ix0 = ox * strides_[1] - pads_[2];
             const bool inside = ix0 >= 0 && ix0 + kernel_[1] <= in_w;
             for (int ky = 0; ky < kernel_[0]; ++ky) {
@@ -243,8 +287,11 @@ private:
     const int top_;
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
-    int8_t *patches_ = nullptr;
-    size_t patch_bytes_ = 0;
+    int8_t *scratch_ = nullptr;
+    size_t scratch_bytes_ = 0;
+    size_t row_stride_ = 0;
+    std::array<int, kWindowRows> held_ = {};
+    bool windowed_ = false;
     bool bias_laid_ = false;
 };
 
