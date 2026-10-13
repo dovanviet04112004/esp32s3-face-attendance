@@ -15,6 +15,7 @@ import { MonthPicker, monthKey, monthSpan, thisMonth, type Month } from "@/compo
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { clockOf, dayOf, dayOnly, dayWindow, lateBy, todayIso } from "@/lib/format";
@@ -235,6 +236,8 @@ function MyAttendance() {
     },
   });
 
+  const dayPending = punches.isPending || roster.isPending || (openPast && (built.isPending || work.isPending));
+
   const letGo = useMutation({
     mutationFn: (key: string) => api.post(`/notifications/items/${encodeURIComponent(key)}/resolve`, { note: "" }),
     onSuccess: () => {
@@ -388,9 +391,15 @@ function MyAttendance() {
       >
         <LayerDialog.Content closeLabel={common("close")}>
           <LayerDialog.Title>{open ? format.dateTime(dayOnly(open.date), { weekday: "long", day: "numeric", month: "long" }) : ""}</LayerDialog.Title>
-          <LayerDialog.Description>{open ? planWords(open.plan) : ""}</LayerDialog.Description>
+          <LayerDialog.Description>{open && !roster.isPending ? planWords(open.plan) : "\u00a0"}</LayerDialog.Description>
           <LayerDialog.Body>
-            {built.data?.adjustedAt ? (
+            {dayPending ? (
+              <div className="flex flex-col gap-3">
+                <SkeletonLine minWidth={30} maxWidth={45} />
+                <SkeletonLine minWidth={45} maxWidth={65} />
+              </div>
+            ) : null}
+            {!dayPending && built.data?.adjustedAt ? (
               <div className="mb-4 flex flex-col gap-2 border-b border-kumo-hairline pb-4">
                 <p className="font-medium">
                   {t("attCorrected", {
@@ -402,7 +411,7 @@ function MyAttendance() {
                 {built.data.adjustReason ? <p className="rounded-lg bg-kumo-tint p-3 break-words">{built.data.adjustReason}</p> : null}
               </div>
             ) : null}
-            {work.data?.state === "OPEN" ? (
+            {!dayPending && work.data?.state === "OPEN" ? (
               <div className="mb-4 flex flex-col gap-2 border-b border-kumo-hairline pb-4">
                 <p className="font-medium">{t("attOff")}</p>
                 <ul className="flex flex-col gap-1">
@@ -423,8 +432,8 @@ function MyAttendance() {
                 ) : null}
               </div>
             ) : null}
-            {work.data?.state === "DONE" ? <p className="mb-4 text-kumo-subtle">{t("attLetGone")}</p> : null}
-            {open && open.punches.length === 0 ? (
+            {!dayPending && work.data?.state === "DONE" ? <p className="mb-4 text-kumo-subtle">{t("attLetGone")}</p> : null}
+            {dayPending ? null : open && open.punches.length === 0 ? (
               <p className="text-kumo-subtle">{t("attNoPunches")}</p>
             ) : (
               <ul className="-my-1 flex flex-col">
