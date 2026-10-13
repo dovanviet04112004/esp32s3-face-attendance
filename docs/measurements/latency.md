@@ -1149,3 +1149,26 @@ với riêng bản vá giữ nguyên số nguyên (từ 342,9).
 
 Tái lập: mỗi nhánh `make ai-unit BRANCH=<nhánh>` với `ROW=timing` và nấc cuối; `make ai-profile LOG=… ESPDL=…` trên
 `models_0.log`. Lần dò đầu cần vòng nhân-cộng của `conv_row_s8_esp32s3.S` ở d8587c95.
+
+### 14.16 `MaxPool` 2×2 gộp vào dải của `PointwiseDepthwise` — đo 13/10 (E9-T48)
+
+Cùng kiosk, cùng app dò. `pointwise_depthwise` nuốt `MaxPool` 2×2 bước 2 là đầu đọc duy nhất của `stages.0/unit` và
+`stages.2/unit2` ở detect: depthwise ghi dải ra, chẵn hàng, vào vùng đệm thứ hai, kẹp ở đó, rồi
+`max_pool_s8_esp32s3.S` lấy max 2×2 sang tensor ra (KẾ HOẠCH §3.7). Hai `MaxPool` nhỏ sau `stages.3` và `stages.4`
+có đầu đọc khác (neck) nên đứng riêng. Cả hai hàng qua `model->test()` ở đồ thị và 4 bản cắt, và khớp từng bit trên
+khung thật.
+
+| Hàng | Một khung, mean / đỉnh | §14.15 |
+|---|---:|---:|
+| detect `timing` | **33,74** / 36,01 ms | 37,13 ms |
+| detect `timing+clip_as_relu` | **33,50** / 35,76 ms | 36,90 ms |
+
+Bảng theo op của nấc `clip_as_relu`: hai `MaxPool` 1,6 và 1,5 ms không còn; `stages.0/unit` 4,9 → 4,7 ms và
+`stages.2/unit2` 5,2 → 4,9 ms dù gánh thêm phép max, vì tensor ra đủ cỡ (77 KB) không còn ghi ra PSRAM. PSRAM
+của detect 325,0 → 313,7 KB, RAM nội 25,7 → 25,1 KB.
+
+Một khuôn mặt qua cả ba nhánh: **255,0 ms** ở nấc làm tròn cuối (từ 258,4; từ 444,8 lúc đầu, −42,7%), **337,2 ms**
+với riêng bản vá giữ nguyên số nguyên (từ 340,6).
+
+Tái lập: `make quant-timing BRANCH=detection`, rồi `make ai-unit BRANCH=detection` với `ROW=timing` và
+`ROW=timing+clip_as_relu`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log`.
