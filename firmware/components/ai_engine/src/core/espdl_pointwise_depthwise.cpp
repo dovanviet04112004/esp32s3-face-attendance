@@ -16,6 +16,8 @@
 #include "fbs_model.hpp"
 #include "sdkconfig.h"
 
+extern "C" void ai_engine_clamp_s8_esp32s3(int8_t *values, int32_t vectors, const int8_t *top);
+
 namespace ai {
 
 namespace {
@@ -25,6 +27,7 @@ const char *TAG = "pointwise_depthwise";
 constexpr int kSpatialDims = 2;
 constexpr int kChannelStep = 16;
 constexpr size_t kVectorAlign = 16;
+constexpr int kNoClamp = INT8_MAX;
 // A wider band contends for the data cache with the rows it reads and writes (KEHOACH 3.7).
 constexpr size_t kBandBytes = CONFIG_ESP32S3_DATA_CACHE_SIZE / 8;
 
@@ -75,14 +78,15 @@ Part part_at(int first, int count, dl::activation_type_t activation)
 class PointwiseDepthwise final : public dl::module::Module {
 public:
     PointwiseDepthwise(const char *name, std::vector<int> kernel, std::vector<int> pads, std::vector<int> strides,
-                       Part pointwise, Part depthwise, int middle_exponent) :
+                       Part pointwise, Part depthwise, int middle_exponent, int clip_max) :
         Module(name, dl::MODULE_NON_INPLACE, dl::QUANT_TYPE_SYMM_8BIT),
         kernel_(std::move(kernel)),
         pads_(std::move(pads)),
         strides_(std::move(strides)),
         pointwise_(pointwise),
         depthwise_(depthwise),
-        middle_exponent_(middle_exponent)
+        middle_exponent_(middle_exponent),
+        top_(static_cast<int8_t>(clip_max))
     {
         ++shared_band.users;
     }
@@ -164,14 +168,18 @@ public:
             depthwise.output_element = ys + oy0 * out_row_bytes;
             depthwise.output_height = oy1 - oy0;
             dl::base::depthwise_conv2d<int8_t, int32_t, int32_t>(&depthwise);
+            if (top_ != kNoClamp) {
+                ai_engine_clamp_s8_esp32s3(ys + oy0 * out_row_bytes, (oy1 - oy0) * out_row_bytes / kVectorAlign,
+                                           &top_);
+            }
         }
     }
 
     void print() override
     {
-        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, band rows: %d, quant_type: %s.",
+        ESP_LOGI(TAG, "kernel: %s, pads: %s, strides: %s, band rows: %d, clip max: %d, quant_type: %s.",
                  dl::vector_to_string(kernel_).c_str(), dl::vector_to_string(pads_).c_str(),
-                 dl::vector_to_string(strides_).c_str(), band_rows_, dl::quant_type_to_string(quant_type));
+                 dl::vector_to_string(strides_).c_str(), band_rows_, top_, dl::quant_type_to_string(quant_type));
     }
 
     static dl::module::Module *deserialize(fbs::FbsModel *fbs_model, std::string node_name)
@@ -185,6 +193,7 @@ public:
         int pointwise_inputs = 0;
         int middle_exponent = 0;
         int depthwise_inputs = 0;
+        int clip_max = kNoClamp;
         dl::quant_type_t quant_type = dl::QUANT_TYPE_NONE;
         fbs_model->get_operation_attribute(node_name, "kernel_shape", kernel);
         fbs_model->get_operation_attribute(node_name, "pads", pads);
@@ -195,6 +204,7 @@ public:
         fbs_model->get_operation_attribute(node_name, "pointwise_inputs", pointwise_inputs);
         fbs_model->get_operation_attribute(node_name, "middle_exponent", middle_exponent);
         fbs_model->get_operation_attribute(node_name, "depthwise_inputs", depthwise_inputs);
+        fbs_model->get_operation_attribute(node_name, "clip_max", clip_max);
         fbs_model->get_operation_attribute(node_name, "quant_type", quant_type);
         if (pads.empty()) {
             pads.assign(2 * kSpatialDims, 0);
@@ -202,7 +212,8 @@ public:
         const std::vector<int> unit(kSpatialDims, 1);
         if (quant_type != dl::QUANT_TYPE_SYMM_8BIT || kernel.size() != kSpatialDims ||
             pads.size() != 2 * kSpatialDims || strides.size() != kSpatialDims ||
-            (!dilations.empty() && dilations != unit) || pointwise_inputs < 1 || depthwise_inputs < 1) {
+            (!dilations.empty() && dilations != unit) || pointwise_inputs < 1 || depthwise_inputs < 1 ||
+            clip_max < 0 || clip_max > kNoClamp) {
             ESP_LOGE(TAG, "%s: only an int8 1x1 convolution and its depthwise reader run joined", node_name.c_str());
             return nullptr;
         }
@@ -210,7 +221,7 @@ public:
         const Part depthwise = part_at(1 + pointwise_inputs, depthwise_inputs, activation_of(activation));
         // ONNX orders pads [top, left, bottom, right]; esp-dl's kernels read [top, bottom, left, right].
         return new PointwiseDepthwise(node_name.c_str(), std::move(kernel), {pads[0], pads[2], pads[1], pads[3]},
-                                      std::move(strides), pointwise, depthwise, middle_exponent);
+                                      std::move(strides), pointwise, depthwise, middle_exponent, clip_max);
     }
 
 private:
@@ -234,8 +245,9 @@ private:
     {
         const int width = x->shape[2];
         const int channels = y->shape[3];
-        if (channels % kChannelStep != 0 || x->shape[3] % kChannelStep != 0) {
-            ESP_LOGE(TAG, "%s: %d channels in, %d out, not on 16-channel vectors", name, x->shape[3], channels);
+        const bool misaligned = reinterpret_cast<uintptr_t>(y->get_element_ptr()) % kVectorAlign != 0;
+        if (channels % kChannelStep != 0 || x->shape[3] % kChannelStep != 0 || (top_ != kNoClamp && misaligned)) {
+            ESP_LOGE(TAG, "%s: %d channels in, %d out, not on 16-byte vectors", name, x->shape[3], channels);
             return false;
         }
         if (dl::TensorBase *bias = tensor(context, pointwise_.bias)) {
@@ -287,6 +299,7 @@ private:
     const Part pointwise_;
     const Part depthwise_;
     const int middle_exponent_;
+    const int8_t top_;
     std::vector<int> no_pads_ = std::vector<int>(2 * kSpatialDims, 0);
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
     int band_rows_ = 0;
