@@ -7995,6 +7995,15 @@ vào hằng số sẽ trả sai bảo hiểm cho nửa sau của năm. Ở đây
 một hiệu lực 01/01 và một hiệu lực 01/07, và phép tính hỏi chính sách tại **ngày cuối kỳ** —
 nên kỳ tháng Sáu tự lấy trần 46,8 triệu còn kỳ tháng Bảy tự lấy 50,6 triệu, không ai phải nhớ.
 
+**Chính sách đi theo pháp nhân của người được tính, không theo kỳ.** Mỗi dòng `PayrollPolicy` gắn
+một pháp nhân hoặc để trống cho cả công ty. Mỗi người được tính bằng dòng hiệu lực tại ngày cuối kỳ
+của pháp nhân mình, không có mới tới dòng chung, và `Payslip.policyId` ghi dòng đã dùng. Kỳ mở cho
+cả công ty vì thế tính mỗi người theo pháp nhân của họ. Đó là kỳ duy nhất một công ty một pháp nhân
+có được: trang kỳ lương chỉ hỏi pháp nhân khi có từ hai trở lên, còn dòng chính sách mới đi theo
+pháp nhân của dòng đang hiệu lực. Lượt thưởng, lượt quyết toán và bảng quyết toán dùng cùng luật.
+Một người mà cả pháp nhân của họ lẫn dòng chung đều không có dòng hiệu lực thì cả lượt không chạy
+(§9.6): tính thiếu một người là phát một bảng lương sai.
+
 **Cách kiểm một biểu thuế mà không cần tin ai.** Cơ quan thuế công bố kèm **công thức rút gọn**
 cho từng bậc — bậc 5 là `35% × TNTT − 14,5 triệu`. Hai phép kiểm độc lập rơi ra từ đó, và bộ
 test dùng cả hai:
