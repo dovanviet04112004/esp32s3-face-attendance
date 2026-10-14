@@ -91,14 +91,25 @@ export function AssetHistory({ asset, onClose }: { asset: Asset | null; onClose:
           ) : (
             <ul className="flex flex-col">
               {history.data.map((one) => (
-                <li key={one.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-kumo-hairline py-2.5 last:border-0">
-                  <span className="w-28 shrink-0 tabular-nums text-kumo-subtle">{format.dateTime(new Date(one.at), "day")}</span>
-                  <StatePill tone={one.issued ? "waiting" : "good"}>{one.issued ? t("wentOut") : t("cameBack")}</StatePill>
+                <li
+                  key={one.id}
+                  className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-kumo-hairline py-2.5 last:border-0"
+                >
+                  <span className="flex">
+                    <StatePill tone={one.issued ? "waiting" : "good"}>{one.issued ? t("wentOut") : t("cameBack")}</StatePill>
+                  </span>
                   <Link href={`/employees/${one.employeeId}?tab=assets`} className="min-w-0 truncate text-kumo-link hover:underline">
                     {one.employee?.fullName ?? `#${one.employeeId}`}
                   </Link>
-                  {one.condition ? <span className="text-kumo-subtle">{t(`condition${one.condition}`)}</span> : null}
-                  {one.note ? <span className="basis-full text-kumo-subtle">{one.note}</span> : null}
+                  <span className="col-start-2 text-sm text-pretty text-kumo-subtle tabular-nums">
+                    {[
+                      format.dateTime(new Date(one.at), "medium"),
+                      one.condition ? `${t("condition")}: ${t(`condition${one.condition}`)}` : null,
+                      one.note,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
                 </li>
               ))}
             </ul>
