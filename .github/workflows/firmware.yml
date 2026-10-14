@@ -1,7 +1,9 @@
 name: firmware
 
 on:
+  # Branches only: a release tag (KEHOACH 7.7) names a commit this already checked.
   push:
+    branches: ["**"]
     paths: ["firmware/**", "contracts/**", "tools/**", ".github/workflows/firmware.yml"]
   pull_request:
     paths: ["firmware/**", "contracts/**", "tools/**", ".github/workflows/firmware.yml"]

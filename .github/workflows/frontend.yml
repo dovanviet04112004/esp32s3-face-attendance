@@ -1,7 +1,9 @@
 name: frontend
 
 on:
+  # Branches only: a release tag (KEHOACH 7.7) names a commit this already checked.
   push:
+    branches: ["**"]
     paths: ["frontend/**", "contracts/**", ".github/workflows/frontend.yml"]
   pull_request:
     paths: ["frontend/**", "contracts/**", ".github/workflows/frontend.yml"]

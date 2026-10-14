@@ -1,7 +1,9 @@
 name: ml
 
 on:
+  # Branches only: a release tag (KEHOACH 7.7) names a commit this already checked.
   push:
+    branches: ["**"]
     paths: ["ml/**", "contracts/**", ".github/workflows/ml.yml"]
   pull_request:
     paths: ["ml/**", "contracts/**", ".github/workflows/ml.yml"]
