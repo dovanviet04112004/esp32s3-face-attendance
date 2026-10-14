@@ -5,6 +5,7 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
+        release models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
@@ -305,6 +306,162 @@ fw-assets: idf ## Build the assets partition image into firmware/build/assets.bi
 
 fw-fonts: ## Rasterise the kiosk UI fonts from MiSans into firmware/assets/fonts
 	$(ML_PY) firmware/assets/fonts/gen_font.py $(ARGS)
+
+##@ Release (KEHOACH 7.7: CI publishes the firmware, the models go up from here, kiosks update from the dashboard)
+
+VPS ?= cckiosk
+MODELS_IMAGE := firmware/build/models.bin
+RELEASE_LOG := $(or $(TMPDIR),/tmp)/release-build.log
+fw_version = $(shell sed -n 's/^set(PROJECT_VER "\(.*\)")$$/\1/p' firmware/CMakeLists.txt)
+prod_sql = ssh $(VPS) 'docker exec -i kiosk-postgres sh -c "psql -U \"\$$POSTGRES_USER\" -d \"\$$POSTGRES_DB\" -At -v ON_ERROR_STOP=1"'
+
+define MODELS_INFO_PY
+import json, struct, sys, zlib
+image = open(sys.argv[1], "rb").read()
+lock = json.load(open(sys.argv[2]))
+if image[:4] != b"MDLS" or zlib.crc32(image[:252]) != struct.unpack_from("<I", image, 252)[0]:
+    sys.exit(f"{sys.argv[1]} is no whole models image")
+entries = {}
+for at in range(min(struct.unpack_from("<I", image, 8)[0], 3)):
+    name, _, _, sha, _, _, _ = struct.unpack_from("<16sII32sHHI", image, 16 + 64 * at)
+    entries[name.rstrip(b"\0").decode()] = sha.hex()
+names = {"detection": "detect", "antispoof": "spoof", "recognition": "recog"}
+locked = {names[branch]: lock[branch]["sha256"] for branch in names if branch in lock}
+version = "img-%08x" % struct.unpack_from("<I", image, 252)[0]
+print(version, "recog-" + entries.get("recog", "?")[:16], "locked" if entries == locked else "stale")
+endef
+export MODELS_INFO_PY
+
+define UPLOAD_JS
+const parts = [];
+process.stdin.on("data", (part) => parts.push(part)).on("end", async () => {
+  const [target, version, minFw] = process.argv.slice(2);
+  const query = new URLSearchParams({ target, version, ...(minFw ? { minFwVersion: minFw } : {}) });
+  const answer = await fetch("http://127.0.0.1:" + process.env.PORT + "/releases?" + query, {
+    method: "POST",
+    headers: { authorization: "Bearer " + process.env.RELEASE_PUBLISH_TOKEN, "content-type": "application/octet-stream" },
+    body: Buffer.concat(parts),
+  });
+  const text = await answer.text();
+  if (!answer.ok) {
+    console.log("HTTP " + answer.status + " " + text);
+    process.exit(1);
+  }
+  const held = JSON.parse(text);
+  const kept = held.release;
+  console.log((held.existing ? "already published " : "published ") + kept.version + ", " + kept.sizeBytes + " B, sha256 "
+    + kept.sha256 + ", " + (kept.embeddingVersion || "no recog entry") + ", needs firmware " + (kept.minFwVersion || "any"));
+});
+endef
+export UPLOAD_JS
+
+define RELEASE_STATUS_SQL
+select 'server   ' || target || ' ' || version || ', published ' || to_char("createdAt", 'YYYY-MM-DD HH24:MI') || ' UTC'
+       || coalesce(', ' || "embeddingVersion", '') || coalesce(', needs firmware ' || "minFwVersion", '')
+  from (select distinct on (target) * from "Release" where path is not null order by target, "createdAt" desc) newest;
+select 'kiosk    ' || id || ', ' || case when online then 'online' else 'offline' end
+       || ', fw ' || coalesce("fwVersion", '?') || ', models ' || coalesce("modelVersion", '?')
+       || ', ' || coalesce("embeddingVersion", 'recog ?')
+       || coalesce(', seen ' || to_char("lastSeenAt", 'YYYY-MM-DD HH24:MI') || ' UTC', '')
+  from "Device" where status = 'APPROVED' order by id;
+select 'offer    ' || d.id || ', ' || r.target || ' ' || r.version || ' at ' || to_char(d."otaOfferedAt", 'YYYY-MM-DD HH24:MI') || ' UTC, '
+       || case when r.version = case when r.target = 'MODELS' then d."modelVersion" else d."fwVersion" end then 'running it'
+               when d."bootedAt" > d."otaOfferedAt" then 'restarted without it'
+               else 'not taken yet' end
+  from "Device" d join "Release" r on r."releaseId" = d."otaReleaseId" where d.status = 'APPROVED' order by d.id;
+select 'report   ' || "deviceId" || ', ' || type || ', ' || coalesce(message, '') || ', ' || to_char("receivedAt", 'YYYY-MM-DD HH24:MI') || ' UTC'
+  from "DeviceEvent" where type in ('OTA_FAILED', 'OTA_ROLLED_BACK') and "receivedAt" > now() - interval '7 days'
+ order by "receivedAt" desc limit 5;
+endef
+export RELEASE_STATUS_SQL
+
+# Pushing main deploys, so the push waits for a typed y unless YES=1 (KEHOACH 7.7).
+release: idf fw-secrets ## Firmware release VER with commit body WHY (both asked when missing): checks, build as CI, commit, push, wait for CI (DRY=1, YES=1)
+	@set -euo pipefail; \
+	now='$(fw_version)'; ver="$${VER:-}"; why="$${WHY:-}"; \
+	command -v gh >/dev/null || { echo "gh is missing: the last step follows the CI run with it"; exit 1; }; \
+	[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "a release goes out from main"; exit 1; }; \
+	[ -z "$$(git status --porcelain --untracked-files=no)" ] || { echo "commit or stash first: the release commit holds PROJECT_VER alone"; exit 1; }; \
+	git fetch -q origin main; \
+	[ "$$(git rev-list --count HEAD..origin/main)" = 0 ] || { echo "main trails origin/main: pull first"; exit 1; }; \
+	echo "1/7 main is clean and level with origin, PROJECT_VER is $$now"; \
+	git log --oneline origin/main..HEAD | sed 's/^/    also pushes /'; \
+	[ -n "$$ver" ] || read -r -p "New version after $$now: " ver || { echo "VER is missing"; exit 1; }; \
+	[[ "$$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { echo "$$ver is not MAJOR.MINOR.PATCH"; exit 1; }; \
+	[ "$$ver" != "$$now" ] && [ "$$(printf '%s\n%s\n' "$$now" "$$ver" | sort -V | tail -n1)" = "$$ver" ] \
+	  || { echo "$$ver does not come after $$now"; exit 1; }; \
+	[ -n "$$why" ] || read -r -p "Why this release (the commit body): " why || { echo "WHY is missing"; exit 1; }; \
+	[ -n "$$why" ] || { echo "the commit body cannot be empty"; exit 1; }; \
+	echo "2/7 version $$now -> $$ver"; \
+	restore() { git checkout -q -- firmware/CMakeLists.txt; }; \
+	sed -i "s/^set(PROJECT_VER \".*\")$$/set(PROJECT_VER \"$$ver\")/" firmware/CMakeLists.txt; \
+	[ "$$(sed -n 's/^set(PROJECT_VER "\(.*\)")$$/\1/p' firmware/CMakeLists.txt)" = "$$ver" ] || { restore; echo "PROJECT_VER did not take $$ver"; exit 1; }; \
+	echo "3/7 building the release image as CI does, log in $(RELEASE_LOG)"; \
+	$(MAKE) --no-print-directory fw-fleet > "$(RELEASE_LOG)" 2>&1 || { restore; echo "the build failed, see $(RELEASE_LOG)"; exit 1; }; \
+	image=firmware/$(fw_dir_fleet)/face_attendance.bin; \
+	built="$$(esptool --chip esp32s3 image-info "$$image" 2>/dev/null | sed -n 's/^App version: *//p')"; \
+	[ "$$built" = "$$ver" ] || { restore; echo "the image says $$built, not $$ver"; exit 1; }; \
+	grep -qx 'CONFIG_COMPILER_OPTIMIZATION_PERF=y' firmware/$(fw_cfg_fleet) \
+	  || { restore; echo "the release image is not -O2, and a -Og image tears the preview (latency.md section 15)"; exit 1; }; \
+	echo "4/7 $$image: version $$built, -O2, $$(stat -c %s "$$image") B"; \
+	if [ -n "$${DRY:-}" ]; then restore; echo "DRY=1: every check passed, PROJECT_VER stays $$now, nothing committed"; exit 0; fi; \
+	git commit -q -m "build(firmware): release $$ver" -m "$$why" -- firmware/CMakeLists.txt; \
+	echo "5/7 committed $$(git rev-parse --short HEAD) build(firmware): release $$ver"; \
+	if [ -z "$${YES:-}" ]; then \
+	  read -r -p "Push main now? It deploys, and CI publishes FIRMWARE $$ver [y/N] " ok || ok=; \
+	  [ "$$ok" = y ] || { echo "kept local: git push origin main when ready, then make release-status"; exit 0; }; \
+	fi; \
+	git push -q origin main; \
+	sha=$$(git rev-parse HEAD); run=; \
+	for i in $$(seq 30); do \
+	  run=$$(gh run list --workflow firmware.yml --commit "$$sha" --json databaseId --jq '.[0].databaseId // empty'); \
+	  [ -n "$$run" ] && break; sleep 4; \
+	done; \
+	[ -n "$$run" ] || { echo "pushed, but no firmware run showed up for $$sha: make release-status later"; exit 1; }; \
+	echo "6/7 pushed, following CI run $$run"; \
+	gh run watch "$$run" --exit-status --interval 20 || { echo "CI run $$run failed: gh run view $$run --log-failed"; exit 1; }; \
+	held=$$(printf "select count(*) from \"Release\" where target = 'FIRMWARE' and version = '%s' and path is not null;\n" "$$ver" | $(prod_sql)); \
+	[ "$$held" = 1 ] || { echo "CI passed but the server holds no FIRMWARE $$ver: gh run view $$run --log"; exit 1; }; \
+	echo "7/7 the server holds FIRMWARE $$ver"; \
+	$(MAKE) --no-print-directory release-status; \
+	echo "next: dashboard, Devices page, Update on a kiosk or Update the whole fleet; then make release-status"
+
+# The header carries its packing time, so packing again names a new release: publish the image a desk kiosk ran.
+models-release: ## Publish the models image make pack wrote: check it packs the lock, ask on a recognition change, upload on the VPS (MIN_FW=, DRY=1, YES=1)
+	@set -euo pipefail; \
+	image=$(MODELS_IMAGE); min='$(or $(MIN_FW),$(fw_version))'; \
+	[ -f "$$image" ] || { echo "no $$image: make pack PORT=... writes it and runs it on a desk kiosk first"; exit 1; }; \
+	read -r version tag packs <<< "$$(python3 -c "$$MODELS_INFO_PY" "$$image" contracts/models.lock.json)"; \
+	[ "$$packs" = locked ] || { echo "$$image packs other models than contracts/models.lock.json: make pack PORT=... again"; exit 1; }; \
+	echo "1/4 $$image is $$version, $$tag, $$(stat -c %s "$$image") B, packed $$(date -r "$$image" '+%F %R')"; \
+	fleet=$$(printf '%s\n' "select id || ' ' || coalesce(\"embeddingVersion\", '?') || ' ' || coalesce(\"modelVersion\", '?') || ' ' || coalesce(\"fwVersion\", '?') from \"Device\" where status = 'APPROVED' order by id;" | $(prod_sql)); \
+	fw_held=$$(printf "select count(*) from \"Release\" where target = 'FIRMWARE' and version = '%s' and path is not null;\n" "$$min" | $(prod_sql)); \
+	echo "2/4 kiosks need firmware $$min or newer for it; the fleet runs:"; \
+	printf '%s\n' "$$fleet" | awk 'NF {print "    " $$1 ": fw " $$4 ", models " $$3 ", " $$2}'; \
+	[ "$$fw_held" = 1 ] || echo "    the server holds no FIRMWARE $$min: a kiosk older than it refuses the models until it gets one"; \
+	moving=$$(printf '%s\n' "$$fleet" | awk -v tag="$$tag" 'NF && $$2 != tag' | wc -l); \
+	if [ "$$moving" -gt 0 ]; then \
+	  echo "3/4 !! $$version changes the recognition model of $$moving kiosk(s). Once installed, each drops every face it holds;"; \
+	  echo "    everyone captures again once, at any kiosk, and the dashboard installs it only through Update the whole fleet."; \
+	  echo "    A kiosk offline at that press keeps the old model and its faces until the next Update the whole fleet."; \
+	  if [ -z "$${YES:-}" ]; then read -r -p "Type yes to go on: " ok || ok=; [ "$$ok" = yes ] || { echo "stopped, nothing published"; exit 1; }; fi; \
+	else \
+	  echo "3/4 same recognition model as the fleet: the faces stay"; \
+	fi; \
+	if [ -n "$${DRY:-}" ]; then echo "DRY=1: every check passed, nothing published"; exit 0; fi; \
+	echo "4/4 uploading $$version on $(VPS)"; \
+	code=$$(printf '%s' "$$UPLOAD_JS" | base64 -w0); \
+	ssh $(VPS) "docker exec -i kiosk-api node -e 'eval(Buffer.from(process.argv[1], \"base64\").toString())' $$code MODELS $$version $$min" < "$$image"; \
+	echo "next: dashboard, Devices page, Update the whole fleet; then make release-status"
+
+release-status: ## Read-only: PROJECT_VER and models.bin here, the firmware CI, the newest releases, each kiosk's versions and OTA reports (VPS=)
+	@echo "here     PROJECT_VER $(fw_version), HEAD $$(git rev-parse --short HEAD)"
+	@if [ -f $(MODELS_IMAGE) ]; then python3 -c "$$MODELS_INFO_PY" $(MODELS_IMAGE) contracts/models.lock.json \
+	  | awk '{print "here     models.bin " $$1 ", " $$2 ", " ($$3 == "locked" ? "packs the lock" : "packs other models than the lock")}'; fi
+	@run=$$(gh run list --workflow firmware.yml -L 1 --json databaseId --jq '.[0].databaseId'); \
+	gh run view "$$run" --json databaseId,headSha,status,conclusion,jobs \
+	  --jq '"ci       firmware run \(.databaseId) on \(.headSha[0:8]): \(.status) \(.conclusion // "")", (.jobs[] | "ci         \(.name): \(.status) \(.conclusion // "")")'
+	@printf '%s\n' "$$RELEASE_STATUS_SQL" | $(prod_sql)
 
 ##@ ESP-DL ladder and board probe (KEHOACH 3.7; RUN=<run under ml/>, or BRANCH= for the run the lock deploys)
 
