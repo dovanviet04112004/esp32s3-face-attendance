@@ -52,6 +52,11 @@ interface FleetUpdate {
   recapture: string[];
 }
 
+interface ReleaseStep {
+  target: ReleaseNotesFacts["target"];
+  version: string;
+}
+
 /** Read from the heartbeat and the kiosk's own OTA_ROLLED_BACK and OTA_FAILED events (KEHOACH 7.7). */
 interface OfferStatus {
   releaseId: string;
@@ -60,11 +65,18 @@ interface OfferStatus {
   state: "WAITING" | "INSTALLED" | "TRIAL" | "ROLLED_BACK" | "FAILED" | "INTERRUPTED" | "EXPIRED";
   reason: string | null;
   busyUntil: string | null;
+  /** The step the server offers on its own once this one is installed. */
+  next: ReleaseStep | null;
 }
 
 const STATUS_POLL_MS = 5_000;
 // The states the kiosk still moves out of on its own; the page follows them until they end.
 const MOVING: ReadonlySet<OfferStatus["state"] | undefined> = new Set(["WAITING", "TRIAL"]);
+const STEP_AHEAD: ReadonlySet<OfferStatus["state"]> = new Set(["WAITING", "TRIAL", "INSTALLED"]);
+
+function following(status: OfferStatus | null | undefined): boolean {
+  return MOVING.has(status?.state) || (status?.next ?? null) !== null;
+}
 const kInSyncMs = 1_000;
 // Where a skew reads better in the next unit up, largest first.
 const SKEW_UNITS: [unit: "day" | "hour" | "minute" | "second", ms: number, from: number][] = [
@@ -95,7 +107,7 @@ export default function DevicePage() {
   const { items } = useFeed();
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
-  const [reading, setReading] = useState<ReleaseNotesFacts | null>(null);
+  const [reading, setReading] = useState<ReleaseNotesFacts[] | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -104,8 +116,7 @@ export default function DevicePage() {
     queryKey: ["devices", id],
     queryFn: async () => (await api.get<Device>(`/devices/${id}`)).data,
     // A kiosk mid-update drops offline and returns on the new version; the page follows it.
-    refetchInterval: () =>
-      MOVING.has(cache.getQueryData<OfferStatus | null>(["releases", "status", id])?.state) ? STATUS_POLL_MS : false,
+    refetchInterval: () => (following(cache.getQueryData<OfferStatus | null>(["releases", "status", id])) ? STATUS_POLL_MS : false),
   });
 
   const fleet = useQuery({
@@ -118,24 +129,31 @@ export default function DevicePage() {
     queryKey: ["releases", "status", id],
     enabled: role === "ADMIN",
     queryFn: async () => (await api.get<OfferStatus | "">(`/releases/status/${id}`)).data || null,
-    refetchInterval: (query) => (MOVING.has(query.state.data?.state) ? STATUS_POLL_MS : false),
+    refetchInterval: (query) => (following(query.state.data) ? STATUS_POLL_MS : false),
   });
 
   const toldState = offerStatus.data?.state;
-  const lastState = useRef(toldState);
+  const toldStep = offerStatus.data ? `${offerStatus.data.releaseId}:${offerStatus.data.state}` : undefined;
+  const lastStep = useRef(toldStep);
   useEffect(() => {
-    if (MOVING.has(lastState.current) && toldState && toldState !== lastState.current) {
+    if (lastStep.current && toldStep && toldStep !== lastStep.current) {
       void cache.invalidateQueries({ queryKey: ["devices", id] });
       void cache.invalidateQueries({ queryKey: ["releases", "fleet"] });
     }
-    lastState.current = toldState;
-  }, [toldState, cache, id]);
+    lastStep.current = toldStep;
+  }, [toldStep, cache, id]);
   const now = useNow({ updateInterval: toldState === "WAITING" ? kTickMs : undefined }).getTime();
 
-  const offer = useMutation({
-    mutationFn: async (update: FleetUpdate) => api.post(`/releases/${update.release.releaseId}/offer/${id}`, {}),
-    onSuccess: (_, update) => {
-      notify.done(t("offered", { version: update.release.version }));
+  const stepName = (step: ReleaseStep) => `${t(`target${step.target}`)} ${step.version}`;
+  const install = useMutation({
+    mutationFn: async () =>
+      (await api.post<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }>(`/releases/update/${id}`, {})).data,
+    onSuccess: (done) => {
+      notify.done(
+        done.next
+          ? t("updateStartedThen", { step: stepName(done.offered), next: stepName(done.next) })
+          : t("updateStarted", { step: stepName(done.offered) }),
+      );
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: notify.failed,
@@ -201,11 +219,15 @@ export default function DevicePage() {
   const newer = (fleet.data ?? []).filter(
     (update) => update.behind.includes(id) || update.updating.includes(id) || update.offline.includes(id),
   );
+  const parts = newer.map((update) => update.release);
+  const fleetOnly = newer.some((update) => update.recapture.includes(id));
   const told = offerStatus.data;
   const busy = told?.busyUntil ? Date.parse(told.busyUntil) > now : false;
+  const stepAhead = told?.next && STEP_AHEAD.has(told.state) ? told.next : null;
+  const updating = busy || stepAhead !== null || newer.some((update) => update.updating.includes(id));
 
   const broke = told?.state === "FAILED" || told?.state === "ROLLED_BACK";
-  const going = busy || told?.state === "TRIAL";
+  const going = busy || told?.state === "TRIAL" || stepAhead !== null;
   const sentenceOf = (offer: OfferStatus): string => {
     const version = offer.version;
     switch (offer.state) {
@@ -227,14 +249,18 @@ export default function DevicePage() {
           : t("otaStalled", { version, at: format.dateTime(new Date(offer.offeredAt), "medium") });
     }
   };
-  const toldText = told ? sentenceOf(told) : null;
+  const toldText = told
+    ? [sentenceOf(told), stepAhead ? t("otaNext", { target: t(`target${stepAhead.target}`), version: stepAhead.version }) : null]
+        .filter(Boolean)
+        .join(" ")
+    : null;
   const toldVariant = broke ? "error" : told?.state === "INSTALLED" || going ? "default" : "alert";
   const toldIcon = broke ? (
     <WarningCircleIcon weight="fill" />
-  ) : told?.state === "INSTALLED" ? (
-    <CheckCircleIcon weight="fill" />
   ) : going ? (
     <Loader size="sm" />
+  ) : told?.state === "INSTALLED" ? (
+    <CheckCircleIcon weight="fill" />
   ) : (
     <WarningIcon weight="fill" />
   );
@@ -344,46 +370,33 @@ export default function DevicePage() {
                     {(fleet.data ?? []).length === 0 ? t("otaNone") : t("otaCurrent")}
                   </p>
                 ) : (
-                  <ul className="-my-1 flex flex-col">
-                    {newer.map((update) => {
-                      const fleetOnly = update.recapture.includes(id);
-                      const hintId = `ota-hint-${update.release.releaseId}`;
-                      return (
-                        <li
-                          key={update.release.releaseId}
-                          className="flex flex-wrap items-center justify-between gap-3 border-b border-kumo-hairline py-2 last:border-0"
-                        >
-                          <span className="flex min-w-0 grow basis-60 flex-col gap-1">
-                            <span>
-                              {t("otaNewer", { target: t(`target${update.release.target}`), version: update.release.version })}
-                            </span>
-                            <ReleaseSummary release={update.release} onOpen={() => setReading(update.release)} />
-                            {fleetOnly ? (
-                              <span id={hintId} className="text-sm text-pretty text-kumo-subtle">
-                                {t("otaRecaptureHint")}
-                              </span>
-                            ) : null}
-                          </span>
-                          <Button
-                            variant="secondary"
-                            icon={ArrowsClockwiseIcon}
-                            loading={offer.isPending && offer.variables?.release.releaseId === update.release.releaseId}
-                            disabled={offer.isPending || busy || fleetOnly || it?.status !== "APPROVED" || !it?.online}
-                            aria-describedby={fleetOnly ? hintId : undefined}
-                            onClick={() => offer.mutate(update)}
-                          >
-                            {busy
-                              ? t("otaUpdating")
-                              : !it?.online
-                                ? t("otaOffline")
-                                : told?.state === "WAITING" && told.releaseId === update.release.releaseId
-                                  ? t("otaRetry")
-                                  : t("otaUpdate")}
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="flex min-w-0 grow basis-60 flex-col gap-1">
+                      <span>{t("otaNewer", { parts: parts.map(stepName).join(" · ") })}</span>
+                      <ReleaseSummary releases={parts} onOpen={() => setReading(parts)} />
+                      {fleetOnly ? (
+                        <span id="ota-hint" className="text-sm text-pretty text-kumo-subtle">
+                          {t("otaRecaptureHint")}
+                        </span>
+                      ) : null}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      icon={ArrowsClockwiseIcon}
+                      loading={install.isPending}
+                      disabled={install.isPending || updating || fleetOnly || it?.status !== "APPROVED" || !it?.online}
+                      aria-describedby={fleetOnly ? "ota-hint" : undefined}
+                      onClick={() => install.mutate()}
+                    >
+                      {updating
+                        ? t("otaUpdating")
+                        : !it?.online
+                          ? t("otaOffline")
+                          : told?.state === "WAITING" && parts.some((one) => one.releaseId === told.releaseId)
+                            ? t("otaRetry")
+                            : t("otaUpdate")}
+                    </Button>
+                  </div>
                 )}
                 {told && toldText ? (
                   <Banner variant={toldVariant} icon={toldIcon} description={toldText} className="text-pretty" />
@@ -473,7 +486,7 @@ export default function DevicePage() {
         </LayerDialog.Content>
       </LayerDialog.Alert>
 
-      <ReleaseNotesDialog release={reading} onClose={() => setReading(null)} />
+      <ReleaseNotesDialog releases={reading} onClose={() => setReading(null)} />
     </>
   );
 }

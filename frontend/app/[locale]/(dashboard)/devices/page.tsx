@@ -6,7 +6,14 @@ import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } f
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
 
-import { ReleaseNotesDialog, ReleaseNotesText, ReleaseSummary } from "@/components/devices/release-notes";
+import {
+  headlineOf,
+  ReleaseNotesDialog,
+  ReleaseNotesParts,
+  ReleaseSummary,
+  useNotesOf,
+  type ReleaseNotesFacts,
+} from "@/components/devices/release-notes";
 import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
@@ -25,11 +32,10 @@ interface Release {
   releaseId: string;
   target: "FIRMWARE" | "MODELS";
   version: string;
-  sizeBytes: number;
   createdAt: string;
   available: boolean;
-  summary: string | null;
-  notes: string | null;
+  notesVi: string | null;
+  notesEn: string | null;
 }
 
 /** The newest release of one kind and the approved kiosks behind it; the server owns the rule. */
@@ -112,12 +118,13 @@ function Devices() {
   }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
   const show = showOf(url.show);
 
-  const [asking, setAsking] = useState<FleetUpdate | null>(null);
+  const [asking, setAsking] = useState(false);
   const [approving, setApproving] = useState<Device | null>(null);
   const [claim, setClaim] = useState("");
   const [fault, setFault] = useState<string | null>(null);
   const [wholeHistory, setWholeHistory] = useState(false);
-  const [reading, setReading] = useState<Release | null>(null);
+  const [reading, setReading] = useState<ReleaseNotesFacts[] | null>(null);
+  const notesOf = useNotesOf();
 
   const filter = new URLSearchParams();
   if (url.q) {
@@ -166,6 +173,15 @@ function Devices() {
     queryFn: async () => (await api.get<FleetUpdate[]>("/releases/fleet")).data,
     refetchInterval: installing,
   });
+  // One update per kiosk, whichever of firmware and models it lacks; the server orders the steps (KEHOACH 7.7).
+  const updates = fleet.data ?? [];
+  const newestParts = updates.map((update) => update.release);
+  const kiosksIn = (pick: (update: FleetUpdate) => string[]) => [...new Set(updates.flatMap(pick))];
+  const updating = kiosksIn((update) => update.updating);
+  const behind = kiosksIn((update) => update.behind).filter((id) => !updating.includes(id));
+  const offline = kiosksIn((update) => update.offline).filter((id) => !updating.includes(id) && !behind.includes(id));
+  const movesRecognition = updates.some((update) => update.changesRecognition);
+  const partsText = newestParts.map((one) => `${t(`target${one.target}`)} ${one.version}`).join(" · ");
 
   const recent = items.slice(0, kFeedRows);
   const punchers = [...new Set(recent.map((item) => item.body.employeeId).filter((id): id is number => typeof id === "number"))];
@@ -197,15 +213,15 @@ function Devices() {
   }
 
   const updateAll = useMutation({
-    mutationFn: async (update: FleetUpdate) =>
+    mutationFn: async () =>
       (
         await api.post<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }>(
-          `/releases/${update.release.releaseId}/offer`,
-          update.changesRecognition ? { recapture: true } : {},
+          "/releases/update",
+          movesRecognition ? { recapture: true } : {},
         )
       ).data,
     onSuccess: (done) => {
-      setAsking(null);
+      setAsking(false);
       notify.done(
         t("releaseUpdateAllDone", {
           offered: done.offered.length,
@@ -263,11 +279,6 @@ function Devices() {
     return [state, kioskOf(body.deviceId)].join(" · ");
   }
 
-  const updatesFor = (deviceId: string): FleetUpdate[] =>
-    (fleet.data ?? []).filter(
-      (update) => update.behind.includes(deviceId) || update.updating.includes(deviceId) || update.offline.includes(deviceId),
-    );
-
   const statusName = (status: Device["status"]) => t(`status${status}`);
 
   const columns: Column<Device>[] = [
@@ -312,17 +323,11 @@ function Devices() {
       cell: (row) => (
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm">{row.fwVersion ?? common("empty")}</span>
-          {updatesFor(row.id).map((update) =>
-            update.updating.includes(row.id) ? (
-              <StatePill key={update.release.releaseId} tone="waiting">
-                {t("updatingBadge", { version: update.release.version })}
-              </StatePill>
-            ) : (
-              <StatePill key={update.release.releaseId}>
-                {t("updateBadge", { target: t(`target${update.release.target}`), version: update.release.version })}
-              </StatePill>
-            ),
-          )}
+          {updating.includes(row.id) ? (
+            <StatePill tone="waiting">{t("updatingBadge")}</StatePill>
+          ) : behind.includes(row.id) || offline.includes(row.id) ? (
+            <StatePill>{t("updateBadge")}</StatePill>
+          ) : null}
         </span>
       ),
     },
@@ -350,49 +355,46 @@ function Devices() {
             <AsideCard title={t("releasesTitle")}>
               {fleet.isPending ? (
                 <SkeletonLine minWidth={25} maxWidth={43} />
-              ) : (fleet.data ?? []).length === 0 ? (
+              ) : newestParts.length === 0 ? (
                 <p className="text-pretty text-kumo-subtle">{t("releasesEmpty")}</p>
               ) : (
-                <ul className="-my-1 flex flex-col">
-                  {(fleet.data ?? []).map((update) => (
-                    <li
-                      key={update.release.releaseId}
-                      className="flex flex-col gap-2 border-b border-kumo-hairline py-3 first:pt-1 last:border-0 last:pb-1"
+                <div className="flex flex-col gap-3">
+                  <ul className="flex flex-col gap-1">
+                    {newestParts.map((one) => (
+                      <li key={one.releaseId} className="flex items-baseline justify-between gap-3">
+                        <span className="font-medium">{t(`target${one.target}`)}</span>
+                        <span className="font-mono text-sm">{one.version}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="text-sm text-kumo-subtle">
+                    {[
+                      behind.length > 0 || updating.length + offline.length === 0
+                        ? t("releaseBehind", { count: behind.length })
+                        : null,
+                      updating.length > 0 ? t("releaseUpdating", { count: updating.length }) : null,
+                      offline.length > 0 ? t("releaseOffline", { count: offline.length }) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                  <ReleaseSummary releases={newestParts} onOpen={() => setReading(newestParts)} />
+                  {behind.length > 0 ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={ArrowsClockwiseIcon}
+                      className="self-start"
+                      disabled={updateAll.isPending}
+                      onClick={() => {
+                        setFault(null);
+                        setAsking(true);
+                      }}
                     >
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span className="font-medium">{t(`target${update.release.target}`)}</span>
-                        <span className="font-mono text-sm">{update.release.version}</span>
-                      </span>
-                      <span className="text-sm text-kumo-subtle">
-                        {[
-                          update.behind.length > 0 || update.updating.length + update.offline.length === 0
-                            ? t("releaseBehind", { count: update.behind.length })
-                            : null,
-                          update.updating.length > 0 ? t("releaseUpdating", { count: update.updating.length }) : null,
-                          update.offline.length > 0 ? t("releaseOffline", { count: update.offline.length }) : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                      <ReleaseSummary release={update.release} onOpen={() => setReading(update.release)} />
-                      {update.behind.length > 0 ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          icon={ArrowsClockwiseIcon}
-                          className="self-start"
-                          disabled={updateAll.isPending}
-                          onClick={() => {
-                            setFault(null);
-                            setAsking(update);
-                          }}
-                        >
-                          {t("releaseUpdateAll", { count: update.behind.length })}
-                        </Button>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                      {t("releaseUpdateAll", { count: behind.length })}
+                    </Button>
+                  ) : null}
+                </div>
               )}
             </AsideCard>
             <AsideCard title={t("feedTitle")} action={<StatePill tone={LINK_TONE[link]}>{t(`link_${link}`)}</StatePill>}>
@@ -420,24 +422,32 @@ function Devices() {
         extra={
           history.length > 0 ? (
             <AsideCard title={t("releasesHistory")}>
-              <ul className="-my-1 flex flex-col">
-                {(wholeHistory ? history : history.slice(0, kHistoryShown)).map((one) => (
-                  <li key={one.releaseId} className="border-b border-kumo-hairline last:border-0">
-                    <button
-                      type="button"
-                      className="-mx-2 flex min-h-10 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md px-2 py-2 text-start hover:bg-kumo-tint motion-press"
-                      onClick={() => setReading(one)}
-                    >
-                      <span className="w-20 shrink-0">{t(`target${one.target}`)}</span>
-                      <span className="font-mono text-sm">{one.version}</span>
-                      <span className="ms-auto text-sm text-kumo-subtle tabular-nums">
-                        {format.dateTime(new Date(one.createdAt), "day")} ·{" "}
-                        {one.available ? t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) }) : t("releaseCleared")}
-                      </span>
-                      {one.summary ? <span className="w-full truncate text-sm text-kumo-subtle">{one.summary}</span> : null}
-                    </button>
-                  </li>
-                ))}
+              <ul className="-mx-2 -my-1 flex flex-col">
+                {(wholeHistory ? history : history.slice(0, kHistoryShown)).map((one) => {
+                  const notes = notesOf(one);
+                  return (
+                    <li key={one.releaseId}>
+                      <button
+                        type="button"
+                        className="flex min-h-10 w-full flex-col gap-0.5 rounded-md px-2 py-2 text-start hover:bg-kumo-tint motion-press"
+                        onClick={() => setReading([one])}
+                      >
+                        <span className="flex w-full items-baseline justify-between gap-3">
+                          <span className="min-w-0 truncate">
+                            {t(`target${one.target}`)} <span className="font-mono text-sm">{one.version}</span>
+                          </span>
+                          <span className="shrink-0 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+                            {format.dateTime(new Date(one.createdAt), "day")}
+                            {one.available ? null : ` · ${t("releaseCleared")}`}
+                          </span>
+                        </span>
+                        {notes ? (
+                          <span className="line-clamp-2 text-sm text-pretty text-kumo-subtle">{headlineOf(notes)}</span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
               {history.length > kHistoryShown ? (
                 <Button variant="ghost" size="sm" className="mt-2" onClick={() => setWholeHistory(!wholeHistory)}>
@@ -541,23 +551,13 @@ function Devices() {
         </LayerDialog.Content>
       </LayerDialog.Root>
 
-      <LayerDialog.Alert open={asking !== null} onOpenChange={(next) => !next && setAsking(null)} dismissDisabled={updateAll.isPending}>
+      <LayerDialog.Alert open={asking} onOpenChange={(next) => !next && setAsking(false)} dismissDisabled={updateAll.isPending}>
         <LayerDialog.Content closeLabel={common("close")}>
-          <LayerDialog.Title>
-            {asking ? t("releaseUpdateAllTitle", { target: t(`target${asking.release.target}`), version: asking.release.version }) : ""}
-          </LayerDialog.Title>
-          <LayerDialog.Description>
-            {asking
-              ? t("releaseUpdateAllAsk", {
-                  count: asking.behind.length,
-                  target: t(`target${asking.release.target}`),
-                  version: asking.release.version,
-                })
-              : ""}
-          </LayerDialog.Description>
+          <LayerDialog.Title>{t("releaseUpdateAllTitle")}</LayerDialog.Title>
+          <LayerDialog.Description>{t("releaseUpdateAllAsk", { count: behind.length, parts: partsText })}</LayerDialog.Description>
           <LayerDialog.Body>
             <div className="flex flex-col gap-3">
-              {asking?.changesRecognition ? (
+              {movesRecognition ? (
                 <Banner
                   variant="alert"
                   icon={<WarningIcon weight="fill" />}
@@ -565,49 +565,34 @@ function Devices() {
                   className="text-pretty"
                 />
               ) : null}
-              {asking && (asking.release.summary || asking.release.notes) ? (
-                <div className="flex flex-col gap-2 rounded-lg border border-kumo-hairline p-3">
-                  {asking.release.summary ? <p className="font-medium text-pretty">{asking.release.summary}</p> : null}
-                  {asking.release.notes ? (
-                    <div className="max-h-56 overflow-y-auto">
-                      <ReleaseNotesText notes={asking.release.notes} />
-                    </div>
-                  ) : null}
+              {newestParts.some((one) => notesOf(one)) ? (
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-kumo-hairline p-3">
+                  <ReleaseNotesParts releases={newestParts} />
                 </div>
               ) : null}
-              {asking && asking.offline.length > 0 ? (
-                <p className="text-sm text-pretty text-kumo-subtle">
-                  {t("releaseUpdateAllOffline", { count: asking.offline.length })}
-                </p>
+              {offline.length > 0 ? (
+                <p className="text-sm text-pretty text-kumo-subtle">{t("releaseUpdateAllOffline", { count: offline.length })}</p>
               ) : null}
-              {asking ? (
-                <ul className="flex flex-col">
-                  {asking.behind.map((id) => (
-                    <li key={id} className="flex justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
-                      <span>{kioskOf(id)}</span>
-                      <span className="font-mono text-sm text-kumo-subtle">{id}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              <ul className="flex flex-col">
+                {behind.map((id) => (
+                  <li key={id} className="flex justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
+                    <span>{kioskOf(id)}</span>
+                    <span className="font-mono text-sm text-kumo-subtle">{id}</span>
+                  </li>
+                ))}
+              </ul>
               {faultBanner}
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary
-              variant="destructive"
-              loading={updateAll.isPending}
-              onClick={() => asking && updateAll.mutate(asking)}
-            >
-              {asking
-                ? t(asking.changesRecognition ? "releaseRecaptureConfirm" : "releaseUpdateAll", { count: asking.behind.length })
-                : ""}
+            <LayerDialog.Actions.Primary variant="destructive" loading={updateAll.isPending} onClick={() => updateAll.mutate()}>
+              {t(movesRecognition ? "releaseRecaptureConfirm" : "releaseUpdateAll", { count: behind.length })}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Alert>
 
-      <ReleaseNotesDialog release={reading} onClose={() => setReading(null)} />
+      <ReleaseNotesDialog releases={reading} onClose={() => setReading(null)} />
     </>
   );
 }
