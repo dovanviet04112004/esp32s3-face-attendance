@@ -2503,6 +2503,7 @@ esp32s3-face-attendance/
 │                   · check_migrations · check_error_codes · check_plans
 │                   · check_routes · backfill · check_schematic · check_pcb
 │                   · check_notice_kinds · gen_sw_words          ★ §9.21.4
+│                   · check_commit_msg                           ★ §7.7
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
@@ -2521,7 +2522,7 @@ esp32s3-face-attendance/
 |---|---|
 | `.editorconfig` | Thống nhất indent/EOL cho 4 ngôn ngữ. Không có thì diff đầy nhiễu whitespace |
 | `.gitattributes` | `* text=auto eol=lf`, `*.tflite binary`, `*.espdl binary`, `**/generated/** linguist-generated` |
-| `.pre-commit-config.yaml` | Chạy `check_comments` · `ruff` · `clang-format` · `prettier` trước khi commit |
+| `.pre-commit-config.yaml` | Chạy `check_comments` · `ruff` · `clang-format` · `prettier` trước khi commit, và `check_commit_msg` lúc viết commit message: khuôn của CLAUDE.md §5, không tiếng Việt, không trailer AI. `make setup` cài hook `commit-msg` |
 | `Makefile` | Điểm vào duy nhất, và là Makefile duy nhất của repo: mọi lệnh của sáu khối — cài môi trường, sinh code, kiểm tra, dữ liệu, train, lượng tử, xuất model, firmware, gắn board vào WSL qua usbipd, backend, frontend, deploy. `make help` liệt kê; lệnh chưa có target thì thêm target rồi mới chạy |
 
 Ba khối `ml` / `firmware` / `backend+frontend` **không bao giờ copy định nghĩa của nhau**. Payload MQTT, danh sách model đang deploy, vector kiểm thử — tất cả nằm ở `contracts/`, mỗi bên sinh code từ đó. Đây là thứ giữ monorepo không rữa sau vài tháng.
@@ -4861,7 +4862,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, rolloutState. |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, embeddingVersion (§7.5), summary (câu tóm tắt tiếng Việt), notes (chi tiết sinh từ git, §7.7), rolloutState. |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười ba bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
@@ -7279,14 +7280,44 @@ mọi thông tin của một bản đã nằm sẵn ở nơi làm ra nó, nên n
 
 | Loại | Ai đưa lên | Khi nào | Phiên bản |
 |---|---|---|---|
-| `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có | `PROJECT_VER`; server đối lại với `version` của `esp_app_desc_t` trong ảnh, ở offset `0x30` |
+| `FIRMWARE` | CI, job `release` của `firmware.yml` | push vào `main` mang một `PROJECT_VER` server chưa có; `make release` tăng số, dựng ảnh như CI, commit và push | `PROJECT_VER`; server đối lại với `version` của `esp_app_desc_t` trong ảnh, ở offset `0x30` |
 | `ASSETS` | chưa ai | — | kiosk chưa có đường cài: `ota_task` từ chối với `ASSETS has no path yet`, nên một bản assets lên server chỉ là một nút bấm lần nào cũng hỏng. Thêm vào job này cùng lúc `net_ota` có đường ấy |
-| `MODELS` | máy train, ngay sau khi khoá bộ model (§4.2) | mỗi lần `models.bin` đổi | `img-<crc32 header>` — đúng chuỗi kiosk gửi trong heartbeat |
+| `MODELS` | máy train, bằng `make models-release`, sau khi khoá bộ model (§4.2) và chạy gói trên một kiosk ở bàn (`make pack PORT=`) | mỗi lần `models.bin` đổi | `img-<crc32 header>` — đúng chuỗi kiosk gửi trong heartbeat |
 
 `MODELS` không đi qua CI vì trọng số không bao giờ vào git (CLAUDE.md §6): chỗ duy nhất có file là
-máy vừa đóng gói nó, và nó đi đúng cửa CI dùng. Tăng `PROJECT_VER` là cách **duy nhất** phát hành
-firmware: build lại cùng số không ra cùng byte, nên cùng số nghĩa là cùng bản, và lượt CI chạy lại
-chỉ nhận về "đã có".
+máy vừa đóng gói nó, và nó đi đúng cửa CI dùng. Header ghi lúc đóng gói, nên đóng gói lại là ra một
+bản mới dù model không đổi: `make models-release` đưa lên đúng `models.bin` mà `make pack` đã ghi
+và kiosk ở bàn đã chạy, sau khi đối từng nhánh với lock. Nó ghi `minFwVersion` bằng `PROJECT_VER`,
+nên máy chạy firmware cũ hơn từ chối lời mời thay vì cài một bộ nó không dựng nổi; nó liệt kê
+firmware, model và model nhận diện từng máy đang chạy, đòi gõ `yes` khi bản đổi model nhận diện
+(§7.5), và hỏi lý do cùng câu tóm tắt như `make release`. Lượt tải lên chạy trong container `api`
+trên VPS, nên `RELEASE_PUBLISH_TOKEN` không rời máy chủ. Tăng `PROJECT_VER` là cách **duy nhất**
+phát hành firmware: build lại cùng số không ra cùng byte, nên cùng số nghĩa là cùng bản, và lượt CI
+chạy lại chỉ nhận về "đã có".
+
+**`make release` là đường tăng số.** Nó hỏi phiên bản, lý do (thân commit, tiếng Anh) và một câu tóm
+tắt tiếng Việt cho người dùng dashboard; từ chối số không đứng sau `PROJECT_VER`; dựng ảnh như CI
+rồi kiểm ảnh mang đúng số ấy và dựng `-O2` — ảnh `-Og` làm xé preview (`latency.md` §15); commit,
+hỏi trước khi push vì push `main` là deploy, theo lượt CI tới cuối, đọc lại server để chắc bản đã
+lên, rồi để lại ghi chú. `DRY=1` chạy hết các phép kiểm rồi trả mọi thứ về như cũ;
+`make release-notes VER=` viết lại ghi chú của một bản firmware đã lên. `make release-status` đọc lại
+cả chuỗi chỉ bằng `SELECT`: lượt CI, bản mới nhất mỗi loại, máy nào đang chạy gì, lời mời gần nhất
+và các báo cáo `OTA_FAILED`/`OTA_ROLLED_BACK` bảy ngày qua.
+
+**Mỗi bản có ghi chú: server giữ để dashboard hiện, GitHub Releases giữ làm sổ.** Ghi chú gồm câu
+tóm tắt tiếng Việt (`summary`) người phát hành viết, và phần chi tiết tiếng Anh (`notes`) sinh từ
+git. Firmware: thân commit phát hành, các commit đụng `firmware/` kể từ bản trước gom theo loại
+`feat` · `fix` · `perf` · còn lại, cùng kích thước và sha256 server giữ. Model: lý do, file, sha256
+và run của từng nhánh, model nhận diện, firmware tối thiểu, có đổi không gian embedding hay không, và
+các commit đã đổi lock kể từ bản model trước. Câu tóm tắt không vào commit vì commit viết tiếng Anh
+(CLAUDE.md §3.1); phần chi tiết chỉ chuẩn khi commit chuẩn, nên hook `commit-msg` kiểm khuôn của
+CLAUDE.md §5 (§4). Server nhận qua `PUT /releases/notes` cùng `RELEASE_PUBLISH_TOKEN`, ghi được cả
+cho bản đã lên từ trước, và trang *Kiosk* hiện câu tóm tắt cạnh huy hiệu "Có bản x.y.z" và mở toàn
+bộ ghi chú trước khi bấm cập nhật. GitHub giữ cùng ghi chú dưới tag `firmware-vX.Y.Z`, gắn vào
+commit đặt `PROJECT_VER` ấy, và `models-vN`, N tăng dần, gắn vào commit mang lock của gói. Không
+đính file vì repo công khai: ảnh firmware mang token bootstrap của lô (§4.9) và trọng số recog chỉ
+dùng cho nghiên cứu (§1.1); file chỉ nằm ở volume `releases` và máy train. Không tag nào được gắn
+*Latest*: link tải app Android mặc định là tệp của bản phát hành mới nhất (§9.21.7).
 
 **Cửa đưa bản lên: `POST /releases`.** Thân là file thô, `target` và `version` đi trong query, và
 `Authorization` mang `RELEASE_PUBLISH_TOKEN` — token riêng của bên phát hành, không phải tài khoản
@@ -10211,7 +10242,8 @@ vạch ngăn và màn khởi động bằng đúng `kumo-canvas` (sáng `#fbfbfb
   bản sao lưu do chủ repo giữ: mất khoá là không phát được bản cập nhật cho app đã cài.
 - **Phát hành qua GitHub Releases của repo.** Trang đăng nhập link tới `NEXT_PUBLIC_ANDROID_APK_URL`,
   mặc định là tệp của bản phát hành mới nhất; một đường link cố định nên nút không phải sửa theo từng
-  bản.
+  bản. Dấu của firmware và model nằm cùng chỗ nhưng không bao giờ được gắn *Latest* (§7.7), nên bản
+  mới nhất luôn là bản app.
 - **iPhone vẫn là PWA** (§9.21.6), vì iOS không cài APK; manifest và service worker vì thế vẫn giữ,
   và chính app Android cũng dùng chúng cho thông báo đẩy và lúc mất mạng.
 
