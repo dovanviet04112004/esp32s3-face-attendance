@@ -4854,9 +4854,9 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), employeeId, active |
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt, mfaAt (lúc phiên qua bước mã, §9.4) — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
-| `Employee` | id, code, fullName, department, active, embeddingVersion |
-| `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaNextActorId, otaPressedAt (bước kế của một lần bấm Cập nhật, người bấm và lúc bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
+| `Employee` | id, code, fullName, department, active, embeddingVersion (model của bộ mẫu chụp gần nhất, §7.5) |
+| `FaceTemplate` | id, employeeId, embeddingVersion (model đã sinh ra mẫu: một bộ mỗi model, khoá `(employeeId, embeddingVersion, templateIdx)`, §7.5), templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaPressedAt, otaPressedById (lần bấm Cập nhật đang chạy: bước kế, lúc bấm, người bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8). Cột otaNextActorId còn lại chờ lượt co (§9.22.3c), không ai đọc |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
@@ -7173,8 +7173,8 @@ Thứ còn hở là **lần chụp đầu**: người đang nằm trong danh sá
    3–5, §6.2.4). Chụp đủ thì máy xoá dải cũ; bỏ dở thì máy xoá dải mới, còn dải cũ nguyên vẹn.
 3. **Server chỉ nhận mẫu từ cửa đang được giao chụp.** Một lần chụp là một phiên: mọi mẫu của nó
    mang chung `updatedAt`. Cặp ở `ASSIGNED` hoặc `RETAKE` mà nhận một phiên khác phiên đang giữ
-   thì phiên ấy thắng: server xoá mọi mẫu cũ của người đó, ghi mẫu mới, chuyển cặp sang
-   `ENROLLED`, rồi đẩy `DELETE_EMPLOYEE` kèm mẫu mới sang mọi cửa khác. Cửa ấy ghi lại phiên nó
+   thì phiên ấy thắng: server xoá mọi mẫu cũ cùng model của người đó, ghi mẫu mới, chuyển cặp
+   sang `ENROLLED`, rồi đẩy `DELETE_EMPLOYEE` kèm mẫu mới sang mọi cửa khác cùng model. Cửa ấy ghi lại phiên nó
    vừa mở và lúc mở (`DeviceEnrollment.sessionAt`, `sessionOpenedAt`). Sau đó chỉ **chính cửa đã
    mở phiên**, trong `ENROLL_SESSION_MINUTES` (10) phút kể từ lúc mở, mới được thêm mẫu của phiên
    ấy: mẫu thứ hai, thứ ba hoặc một bản gửi trùng. Giờ bắt đầu phiên được phát tới mọi kiosk cùng
@@ -7232,16 +7232,27 @@ ghi các số phiên bản firmware, model, embedding, vì đó là trạng thá
 `status` giữ lại vẫn đặt `online`, vì di chúc của broker là sự thật, nhưng cũng không tính là một
 lần gặp.
 
-**Đổi model nhận diện là đổi không gian embedding, nên mẫu cũ phải đi.** `faces.bin` ghi model
-nhận diện đã sinh ra các mẫu của nó (§6.2.4). Lúc khởi động, model đang chạy khác model của bảng
-thì máy bỏ mọi mẫu — kể cả mẫu chưa báo — và đặt `roster_ver` về 0; máy chủ thấy số lùi thì đồng
-bộ lại, và với cửa có `embeddingVersion` khác bản mẫu nó giữ thì gửi `ASSIGN` thay vì `UPSERT`:
-mọi người vào danh sách chờ để chụp lại, và cặp máy–người đã `ENROLLED` về `ASSIGNED`. Lan mẫu
-(§9.23 luật 7) không đẩy mẫu sang cửa đang chạy model khác. Máy chủ biết một bản model có đổi nhận diện hay không,
-vì `Release` mang `embeddingVersion` đọc từ header của chính file model. Bản đổi nhận diện chỉ
-phát được cho **cả đội** cùng lúc, và dashboard bắt người bấm xác nhận rằng mọi người phải lấy
-mặt lại; phát cho một cửa là để hai cửa giữ hai không gian, và mẫu chụp ở cửa này bị cửa kia từ
-chối. Một bên chưa biết `embeddingVersion` thì tính là đổi.
+**Đổi model nhận diện là đổi không gian embedding, nên mỗi người giữ một bộ mẫu cho mỗi model còn
+máy chạy.** Mẫu chỉ so được với mẫu cùng model. Vì vậy `FaceTemplate` mang `embeddingVersion` của
+model đã sinh ra nó, và trong lúc đội máy chuyển model một người có hai bộ cùng lúc. `faces.bin` ghi
+model nhận diện đã sinh ra các mẫu của nó (§6.2.4). Lúc khởi động, model đang chạy khác model của
+bảng thì máy bỏ mọi mẫu — kể cả mẫu chưa báo — và đặt `roster_ver` về 0. Máy chủ thấy số lùi thì đồng
+bộ lại: người có bộ đúng model của cửa ấy được gửi bộ ấy, người chưa có thì nhận `ASSIGN`, vào danh
+sách chờ chụp lại, và cặp máy–người về `ASSIGNED`.
+
+Một lần chụp chỉ thay bộ cùng model với cửa chụp; bộ của model khác giữ nguyên. Nên máy còn chạy
+model cũ vẫn nhận người đã lấy mặt mới ở máy khác, kể cả sau một lượt đồng bộ lại, và chụp lại ở máy
+cũ không xoá mặt mới. Lan mẫu (§9.23 luật 7) chỉ đẩy mẫu sang cửa cùng model. Bộ của một model không
+còn máy nào trong đội chạy thì lượt dọn đêm xoá thật (§9.19). `Employee.embeddingVersion` chỉ còn
+nghĩa là model của bộ chụp gần nhất.
+
+**Bước cập nhật đổi model nhận diện của một máy luôn cần xác nhận, nhưng không bắt cả đội đi cùng
+lúc.** Máy chủ biết một bản model có đổi nhận diện hay không, vì `Release` mang `embeddingVersion` đọc
+từ header của chính file model; một bên chưa biết `embeddingVersion` thì tính là đổi. Người bấm xác
+nhận rằng ai chưa có mặt trên model mới phải lấy mặt lại một lần, ở máy nào chạy model ấy cũng được,
+và mỗi người như vậy nhận một việc nhắc `FACE_RECAPTURE` (§9.21.4). Thường thì cả đội cùng đi bằng
+*Cập nhật tất cả*. Một máy lỡ lượt ấy vì offline thì cập nhật riêng để nhập lại đội; lúc đó phần lớn
+mọi người đã có mặt mới, nên máy nhận họ ngay sau lượt đồng bộ lại.
 
 **Hai luật khó nhất đã nằm sẵn trong `enroll_payload.schema.json` từ trước**, và chúng đúng:
 `embeddingVersion` — *"A kiosk running a different model must refuse the template rather than
@@ -7356,7 +7367,9 @@ và `modelVersion` của từng máy (heartbeat ghi) với bản mới nhất c�
 server — hai phân vùng, hai nhịp ra bản, A/B và lùi riêng — nhưng người dùng chỉ thấy một bản cập nhật:
 máy chậm bất kỳ phần nào mang huy hiệu "Có bản cập nhật", máy đang cập nhật mang "Đang cập nhật…",
 trang một máy có đúng một nút **Cập nhật**, và đầu trang *Kiosk* có **Cập nhật tất cả (n)** với n đếm
-máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì mới* gộp ghi chú của cả hai phần.
+máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì mới* gộp ghi chú của cả hai phần. Không
+ai phải mở trang để biết có bản mới: bản nào lên server mà còn máy đã duyệt chạy bản cũ hơn thì mỗi
+`ADMIN` có một việc `RELEASE_AVAILABLE`, đóng khi cả đội đã lên (§9.21.4).
 
 **Firmware và model ràng buộc nhau bằng hai lời khai, và server suy ra thứ tự từ đó:**
 
@@ -7375,18 +7388,21 @@ server, từ thứ máy đang chạy tới bản mới nhất của cả hai lo�
 đúng lúc cài; hai đường dài bằng nhau thì đường mở bằng firmware thắng. Đường thường chỉ một hay hai
 bước, nhưng máy tụt nhiều nấc có thể phải qua một bản trung gian, không phải bản mới nhất loại ấy: máy
 0.9.9 đi 0.9.10 → img-x → 0.9.11 khi img-x cần 0.9.10 và 0.9.11 cần img-x. Server mời bước đầu, rồi
-ghi bước kế vào `otaNextReleaseId` của máy cùng người bấm và lúc bấm (`otaPressedAt`). Mỗi heartbeat,
-server xét lời mời đang chạy. Bước ấy **Đã lên** (firmware không còn chạy thử, model đã nằm trong
-heartbeat) thì server tìm lại đường từ thứ máy đang chạy và mời bước kế, nên lời khai của mỗi bước luôn
-được thoả. Bước ấy **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì phần còn lại bị bỏ và nút
-hiện lại. Lần tìm lại chỉ xét các bản đã có lúc bấm: bản lên giữa chừng đợi lần bấm sau, nên không gói
-đổi model nhận diện nào tự cài khi chưa ai xác nhận. Không đường nào tới được, vì bản trung gian đã bị
+ghi lên máy lúc bấm (`otaPressedAt`), người bấm (`otaPressedById`) và bước kế nếu còn
+(`otaNextReleaseId`); lần bấm chỉ một bước cũng ghi hai thứ đầu. Mỗi heartbeat, server xét lời mời
+đang chạy. Bước ấy **Đã lên** (firmware không còn chạy thử, model đã nằm trong heartbeat) thì server
+tìm lại đường từ thứ máy đang chạy và mời bước kế, nên lời khai của mỗi bước luôn được thoả; hết bước
+thì lần bấm xong, server xoá dấu lần bấm và báo người bấm bằng tin `UPDATE_FINISHED` (§9.21.4). Bước
+ấy **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì phần còn lại bị bỏ, nút hiện lại, và việc
+`KIOSK_ALERT` đã báo mọi `ADMIN`. Lần tìm lại chỉ xét các bản đã có lúc bấm: bản lên giữa chừng đợi
+lần bấm sau, nên không gói đổi model nhận diện nào tự cài khi chưa ai xác nhận. Không đường nào tới được, vì bản trung gian đã bị
 dọn file, thì lần bấm bị từ chối với `RELEASE_UNREACHABLE`. Máy đang chạy thử firmware không nhận lời
 mời nào, nên lần bấm trả `OTA_IN_PROGRESS` và *Cập nhật tất cả* đếm máy ấy là đang cập nhật. Máy còn
 giữ bước kế, khi bước đang chạy đang chạy thử hay đã lên, cũng tính là đang cập nhật: *Cập nhật tất cả*
-không đếm nó và không mời chồng giữa hai bước. Gói đổi model nhận diện vẫn chỉ đi bằng *Cập nhật tất
-cả* kèm xác nhận lấy mặt lại (§7.5), xét trên mọi bước của đường. Trang một máy có một dòng trạng thái
-suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
+không đếm nó và không mời chồng giữa hai bước. Lần bấm có bước đổi model nhận diện của máy, xét trên
+mọi bước của đường, cần xác nhận lấy mặt lại (§7.5), bấm cho cả đội hay cho một máy cũng vậy; thiếu
+xác nhận thì server trả `RELEASE_CHANGES_RECOGNITION`. Trang một máy có một dòng trạng thái suy ra từ
+ba nguồn đã có, kèm bước kế tiếp nếu còn:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
@@ -9522,7 +9538,9 @@ hợp đồng:
   phủ tới đây.
 - **Quyền xoá**. Hồ sơ của người nghỉ việc đóng thì mẫu khuôn mặt **xoá thật** ở cả server lẫn
   mọi kiosk từng nhận — hồ sơ nhân sự ở lại, sinh trắc thì không (§9.14). Đây là thứ duy nhất trong hệ bị
-  xoá thật, và §7.5 đã có đường `DELETE` xuống kiosk để làm việc đó.
+  xoá thật, và §7.5 đã có đường `DELETE` xuống kiosk để làm việc đó. Bộ mẫu của một model nhận diện
+  mà không còn kiosk đã duyệt nào chạy cũng bị xoá thật ở lượt dọn đêm: không máy nào dùng được nó
+  nữa, nên giữ lại chỉ là giữ dữ liệu nhạy cảm vô ích.
 
 ### 9.20 Sáu thứ cắt ngang mọi phân hệ
 
@@ -9872,13 +9890,15 @@ ngang: `requests:<id đơn>`, `advances-to-pay:<id tạm ứng>`, `disputes:<id 
 những việc độc lập của cùng một chủ thể. Mỗi người ký nhận một phiên bản tài liệu là một việc:
 `documents:<id phiên bản>:<id nhân viên>`. Mỗi điều một kiosk báo cũng là một việc:
 `kiosk:<id máy>:offline`, `:pending`, `:update`, một khoá cho từng mã lỗi viết thường nối gạch ngang
-như `:camera-fault`, và hai loạt `:spoof`, `:unknown`.
+như `:camera-fault`, và hai loạt `:spoof`, `:unknown`. Một bản phát hành chờ cả đội lên là
+`releases:<id bản>`, và một người phải lấy mặt lại là `recapture:<id nhân viên>`.
 
 **Việc của một tình trạng lặp lại mở lại được dưới đúng khoá cũ.** Kiosk tuần này mất kết nối, tuần
-sau mất lại; một lỗi phần cứng `ADMIN` đã đóng rồi tái phát; sao lưu hỏng hai lần trong một ngày. Lần
-mở sau thấy khoá đã đóng thì việc cũ cùng các dòng của nó chuyển sang khoá `<khoá>:<lúc đóng, mili
-giây>`, giữ nguyên ai đã xử lý và lúc nào, rồi việc mới mở dưới khoá cũ. Chỉ hai hàng đợi `KIOSK` và
-`BACKUP` làm vậy. Đơn từ, hợp đồng và mọi việc mà mỗi lần có một chủ thể riêng thì đã đóng là đóng hẳn,
+sau mất lại; một lỗi phần cứng `ADMIN` đã đóng rồi tái phát; sao lưu hỏng hai lần trong một ngày; một
+người lấy mặt lại xong thì lần đổi model nhận diện sau lại phải lấy nữa. Lần mở sau thấy khoá đã đóng
+thì việc cũ cùng các dòng của nó chuyển sang khoá `<khoá>:<lúc đóng, mili giây>`, giữ nguyên ai đã xử
+lý và lúc nào, rồi việc mới mở dưới khoá cũ. Chỉ ba hàng đợi `KIOSK`, `BACKUP` và `RECAPTURE` làm vậy.
+Đơn từ, hợp đồng, bản phát hành và mọi việc mà mỗi lần có một chủ thể riêng thì đã đóng là đóng hẳn,
 và một lượt quét chạy lại không mở lại được chúng.
 
 | `kind` · hàng đợi | Mở khi | Tới ai | Nhắc | Đóng khi | Mở trang |
@@ -9896,10 +9916,12 @@ và một lượt quét chạy lại không mở lại được chúng.
 | `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản; người vào đối tượng sau đó, ở lượt quét hằng ngày | chính người ấy, mỗi người một việc, rải qua hàng đợi | 3 · 7 ngày từ lúc phát hành | ký nhận → `DONE` (`SIGNED`); có phiên bản mới hơn, tài liệu ngừng dùng, hay người ấy rời đối tượng → `EXPIRED` | `/me/documents?doc=<id phiên bản>` |
 | `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng thì `ADMIN` đóng tay | `/devices/<id>` |
 | `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau không còn mã hỏng nào → `CLEARED` | chi tiết ngay trên trang thông báo |
+| `RELEASE_AVAILABLE` · `RELEASES` | một bản firmware hay model lên server mà còn máy đã duyệt chạy bản cũ hơn nó (§7.7) | `ADMIN` | — | mọi máy đã duyệt đã lên → `DONE` (`COMPLETED`); bản mới hơn cùng loại lên, hay file bản ấy bị dọn → `EXPIRED` | `/devices` |
+| `FACE_RECAPTURE` · `RECAPTURE` | một kiosk người ấy được gán chạy model nhận diện mới hơn mọi bộ mẫu người ấy có (§7.5) | chính người ấy | — | có bộ mẫu trên model ấy → `DONE` (`COMPLETED`); không còn kiosk nào như vậy — bị gỡ khỏi máy, xoá sinh trắc, máy về model cũ → `CLEARED` | `/me` |
 | `ATTENDANCE_EXCEPTION` · `ATTENDANCE` | lượt dựng ngày (§9.8) thấy một ngày lệch | chính người ấy | — | ngày được sửa; một đơn đã duyệt phủ ngày ấy; người ấy bấm *Không cần giải trình*; kỳ lương của ngày ấy chốt → `EXPIRED` | `/me/attendance?day=<ngày>` |
 | `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | hôm nay: tên của những người bản tin đếm, nhóm cần hỏi trước đứng trước. Có người vắng không đơn hay chưa chấm thì trang chủ người xem cuộn tới thẻ của nhóm (`?focus=today`, sau khi trang tải xong, vì trên điện thoại thẻ ấy nằm dưới hộp chờ duyệt) và mở sẵn danh sách vắng (`&who=absent`): bảng tên trên trang tổng quan, tab "Vắng" — hay "Chưa chấm" khi chưa ai quá giờ — trên thẻ nhóm của quản lý. Không ai vắng mà có người đi muộn thì trang chấm công của hôm nay lọc người đi muộn. Chỉ còn người nghỉ phép thì cũng thẻ ấy mở danh sách nghỉ (`&who=onLeave`). Ngày đã qua: ngoại lệ của ngày ấy trong bảng công. Mọi đường đều trong phạm vi người xem |
 
-Sáu thứ trong bảng cần nói thêm:
+Tám thứ trong bảng cần nói thêm:
 
 - **Việc nhận việc** (`tasks:<id việc>`) mở cho mọi việc của một lượt ngay khi lượt mở, dù lượt do bàn
   nhân sự mở tay hay mở theo tuyển dụng và nghỉ việc (§9.14). Người phụ trách là người ghi trên việc lúc
@@ -9927,6 +9949,18 @@ Sáu thứ trong bảng cần nói thêm:
   mỗi người nhận một việc mỗi ngày (`team-attendance:<id đăng nhập>:<ngày>`, chủ thể là chính đăng nhập
   ấy). Lượt quét chạy mỗi mười lăm phút trong buổi sáng mở việc khi giờ vào ca sớm nhất trong phạm vi cộng
   30 phút đã qua, đẩy một lần, và việc của ngày trước `EXPIRED` khi ngày mới tới.
+- **Bản phát hành là một việc mỗi bản** (`releases:<id bản>`), `facts` mang loại, phiên bản và bản ấy có
+  đổi model nhận diện không. Việc mở ngay khi `POST /releases` ghi một bản mới mà còn máy đã duyệt chạy
+  bản cũ hơn; không máy nào cần thì không mở. Lượt canh kiosk năm phút một lần đóng việc khi mọi máy đã
+  lên. Bản mới hơn cùng loại tới thì việc của bản cũ `EXPIRED`, vì nút Cập nhật luôn đưa máy tới bản
+  mới nhất.
+- **Lấy mặt lại là một việc mỗi người** (`recapture:<id nhân viên>`, của chính người ấy). Cùng lượt canh
+  năm phút tìm người có một kiosk đã duyệt, cặp chưa bị gỡ, chạy model nhận diện mới hơn mọi bộ mẫu
+  người ấy có. "Mới hơn" so theo lúc bản model mang model ấy lên server; model chưa từng lên server tính
+  là cũ hơn mọi model đã lên. Người chưa từng có mặt không vào đây, vì lần chụp đầu là việc của bàn nhân
+  sự. Việc mở trang `/me`, nơi một thẻ nêu tên các kiosk ấy và cách chụp: trên màn kiosk mở menu, chọn
+  *Thêm người*, chọn tên mình rồi nhìn thẳng vào camera. Chụp ở một máy là đủ, vì mẫu lan sang mọi máy
+  cùng model.
 
 **Tin.** Tin không có trạng thái chung, nên không có việc đi kèm.
 
@@ -9938,6 +9972,7 @@ Sáu thứ trong bảng cần nói thêm:
 | `PAYSLIP_ISSUED` | phiếu lương của tôi đã phát | người nhận | `/me/payslips?slip=<id>` | bật cả hai kênh |
 | `ADVANCE_PAID` | khoản tạm ứng của tôi đã chi | người xin | `/me/requests?tab=advances` | bật cả hai kênh |
 | `PAYROLL_RUN_DONE` | lượt chạy lương tôi bấm đã xong kèm số phiếu, hay hỏng (`WARNING`); `facts` mang lúc xong, nên chạy lại cùng một bản nháp là một lần nói nữa | người bấm chạy | kỳ lương ấy | bật cả hai kênh |
+| `UPDATE_FINISHED` | lần bấm Cập nhật của tôi cho một kiosk đã cài xong mọi bước; `facts` mang firmware và model máy đang chạy, nên lần cập nhật sau của cùng máy là một lần nói nữa. Gom theo người như `SHIFT_CHANGED`, vì một lần *Cập nhật tất cả* xong ở nhiều máy cùng lúc. Bước hỏng không thành tin này: việc `KIOSK_ALERT` đã báo | người bấm | `/devices/<id>` | bật cả hai kênh |
 | `CONTRACT_ENDING` | hợp đồng của tôi sắp hết hạn | người ký | — | **tắt** cả hai kênh, tới khi `/me` có thẻ hợp đồng: một tin mở ra trang không nói gì về hợp đồng là một ngõ cụt (§9.15 luật 1), còn bàn nhân sự đã có việc `CONTRACT_DUE` |
 | `PUNCH_RECORDED` | một lượt chấm của tôi vừa được nhận: giờ của chính lượt ấy, kiosk nào, có tới muộn vì đồng bộ trễ không | chính người ấy | — | **không ghi dòng nào**: bảng chấm công đã là bản ghi, và ba mươi nghìn người hai lượt một ngày thì chép đôi nó. Ứng dụng đang mở hiện một toast qua feed; đẩy phải tự bật |
 | `DAY_CORRECTED` | ngày công của tôi được người khác sửa: ai, lúc nào | chính người ấy | `/me/attendance?day=<ngày>` | bật cả hai kênh |
@@ -10661,17 +10696,19 @@ song song rồi đếm dòng trong cơ sở dữ liệu. Con số vào `docs/mea
 **Luật 7 — một người, nhiều cửa: máy này nhận mặt thì máy kia phải thôi hỏi.** Người mới được
 gán vào nhiều kiosk, và hợp đồng đã phân biệt sẵn `ASSIGN` ("chờ người này tới lấy mặt") với
 `UPSERT` ("đây là mặt rồi"). Nên khi một cửa lấy được mặt, máy chủ phải **đẩy mẫu sang mọi cửa
-còn lại và chuyển chúng sang `ENROLLED`** — để nguyên `ASSIGN` chính là thứ khiến cửa thứ hai
-hỏi lại.
+còn lại cùng model và chuyển chúng sang `ENROLLED`** — để nguyên `ASSIGN` chính là thứ khiến cửa
+thứ hai hỏi lại. Cửa chạy model khác không nhận được mẫu ấy và không mất bộ của model nó (§7.5).
 
 Năm điều kèm theo, mỗi điều bịt một khe khác nhau:
 
-- **Phiên được nhận đầu tiên thắng, không so điểm.** Mẫu chụp tại kiosk luôn mang điểm 255, nên
-  một phép so `quality` không bao giờ chọn được bản nào. Hai cửa cùng được giao một người thì
-  phiên tới trước chuyển cặp sang `ENROLLED` và lan mẫu sang cửa kia; phiên của cửa kia tới sau
-  gặp cặp đã `ENROLLED` ở phiên khác nên bị từ chối, và cửa ấy nhận lại đúng mẫu đã chốt
-  (§7.5, lấy lại mẫu, bước 4). Kết quả phụ thuộc thứ tự tới, nhưng hai phiên đều hợp lệ như
-  nhau, và mọi cửa kết thúc với **cùng một** bộ mẫu.
+- **Trong một model, phiên được nhận đầu tiên thắng, không so điểm.** Mẫu chụp tại kiosk luôn mang
+  điểm 255, nên một phép so `quality` không bao giờ chọn được bản nào. Hai cửa cùng model cùng được
+  giao một người thì phiên tới trước chuyển cặp sang `ENROLLED` và lan mẫu sang cửa kia; phiên của
+  cửa kia tới sau gặp cặp đã `ENROLLED` ở phiên khác nên bị từ chối, và cửa ấy nhận lại đúng mẫu đã
+  chốt (§7.5, lấy lại mẫu, bước 4). Kết quả phụ thuộc thứ tự tới, nhưng hai phiên đều hợp lệ như
+  nhau, và mọi cửa cùng model kết thúc với **cùng một** bộ mẫu. Ca hay gặp nhất là hai cửa cùng chụp
+  một người lúc mất mạng: mỗi cửa dùng ngay mặt nó chụp, và khi có mạng lại thì phiên tới trước thắng.
+  Hai cửa khác model thì hai phiên vào hai bộ khác nhau và cả hai được giữ.
 - **Báo cáo phải đến từ cửa đã được giao người ấy.** Máy chủ nhận dữ liệu sinh trắc thì không
   được chỉ dựa vào phép xác thực của broker: không có dòng `DeviceEnrollment` thì từ chối. Và chỉ
   dashboard đưa được một cặp vào `ASSIGNED` hay `RETAKE`, nên không cửa nào tự mở cho mình một
