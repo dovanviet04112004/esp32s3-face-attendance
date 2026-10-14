@@ -17,6 +17,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useReadSubject } from "@/components/notifications/notice-row";
+import { ReleaseNotesDialog, ReleaseSummary, type ReleaseNotesFacts } from "@/components/devices/release-notes";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
@@ -43,7 +44,7 @@ interface Device {
 }
 
 interface FleetUpdate {
-  release: { releaseId: string; target: "FIRMWARE" | "MODELS"; version: string };
+  release: ReleaseNotesFacts & { releaseId: string };
   behind: string[];
   updating: string[];
   offline: string[];
@@ -94,6 +95,7 @@ export default function DevicePage() {
   const { items } = useFeed();
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [reading, setReading] = useState<ReleaseNotesFacts | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -355,6 +357,7 @@ export default function DevicePage() {
                             <span>
                               {t("otaNewer", { target: t(`target${update.release.target}`), version: update.release.version })}
                             </span>
+                            <ReleaseSummary release={update.release} onOpen={() => setReading(update.release)} />
                             {fleetOnly ? (
                               <span id={hintId} className="text-sm text-pretty text-kumo-subtle">
                                 {t("otaRecaptureHint")}
@@ -469,6 +472,8 @@ export default function DevicePage() {
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Alert>
+
+      <ReleaseNotesDialog release={reading} onClose={() => setReading(null)} />
     </>
   );
 }

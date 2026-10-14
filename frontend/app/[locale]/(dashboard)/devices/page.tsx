@@ -6,6 +6,7 @@ import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } f
 import { useFormatter, useNow, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
 
+import { ReleaseNotesDialog, ReleaseNotesText, ReleaseSummary } from "@/components/devices/release-notes";
 import { DataTable, type Column, type RowAction } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
@@ -27,6 +28,8 @@ interface Release {
   sizeBytes: number;
   createdAt: string;
   available: boolean;
+  summary: string | null;
+  notes: string | null;
 }
 
 /** The newest release of one kind and the approved kiosks behind it; the server owns the rule. */
@@ -114,6 +117,7 @@ function Devices() {
   const [claim, setClaim] = useState("");
   const [fault, setFault] = useState<string | null>(null);
   const [wholeHistory, setWholeHistory] = useState(false);
+  const [reading, setReading] = useState<Release | null>(null);
 
   const filter = new URLSearchParams();
   if (url.q) {
@@ -370,6 +374,7 @@ function Devices() {
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
+                      <ReleaseSummary release={update.release} onOpen={() => setReading(update.release)} />
                       {update.behind.length > 0 ? (
                         <Button
                           variant="secondary"
@@ -417,16 +422,20 @@ function Devices() {
             <AsideCard title={t("releasesHistory")}>
               <ul className="-my-1 flex flex-col">
                 {(wholeHistory ? history : history.slice(0, kHistoryShown)).map((one) => (
-                  <li
-                    key={one.releaseId}
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-kumo-hairline py-2 last:border-0"
-                  >
-                    <span className="w-20 shrink-0">{t(`target${one.target}`)}</span>
-                    <span className="font-mono text-sm">{one.version}</span>
-                    <span className="ms-auto text-sm text-kumo-subtle tabular-nums">
-                      {format.dateTime(new Date(one.createdAt), "day")} ·{" "}
-                      {one.available ? t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) }) : t("releaseCleared")}
-                    </span>
+                  <li key={one.releaseId} className="border-b border-kumo-hairline last:border-0">
+                    <button
+                      type="button"
+                      className="-mx-2 flex min-h-10 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-md px-2 py-2 text-start hover:bg-kumo-tint motion-press"
+                      onClick={() => setReading(one)}
+                    >
+                      <span className="w-20 shrink-0">{t(`target${one.target}`)}</span>
+                      <span className="font-mono text-sm">{one.version}</span>
+                      <span className="ms-auto text-sm text-kumo-subtle tabular-nums">
+                        {format.dateTime(new Date(one.createdAt), "day")} ·{" "}
+                        {one.available ? t("releaseSize", { kb: Math.round(one.sizeBytes / 1024) }) : t("releaseCleared")}
+                      </span>
+                      {one.summary ? <span className="w-full truncate text-sm text-kumo-subtle">{one.summary}</span> : null}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -556,6 +565,16 @@ function Devices() {
                   className="text-pretty"
                 />
               ) : null}
+              {asking && (asking.release.summary || asking.release.notes) ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-kumo-hairline p-3">
+                  {asking.release.summary ? <p className="font-medium text-pretty">{asking.release.summary}</p> : null}
+                  {asking.release.notes ? (
+                    <div className="max-h-56 overflow-y-auto">
+                      <ReleaseNotesText notes={asking.release.notes} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {asking && asking.offline.length > 0 ? (
                 <p className="text-sm text-pretty text-kumo-subtle">
                   {t("releaseUpdateAllOffline", { count: asking.offline.length })}
@@ -587,6 +606,8 @@ function Devices() {
           </LayerDialog.Actions>
         </LayerDialog.Content>
       </LayerDialog.Alert>
+
+      <ReleaseNotesDialog release={reading} onClose={() => setReading(null)} />
     </>
   );
 }
