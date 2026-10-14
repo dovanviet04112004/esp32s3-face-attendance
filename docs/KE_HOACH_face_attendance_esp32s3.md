@@ -2503,7 +2503,7 @@ esp32s3-face-attendance/
 │                   · check_migrations · check_error_codes · check_plans
 │                   · check_routes · backfill · check_schematic · check_pcb
 │                   · check_notice_kinds · gen_sw_words          ★ §9.21.4
-│                   · check_commit_msg                           ★ §7.7
+│                   · check_commit_msg · release_notes           ★ §7.7
 └── docs/
     ├── KE_HOACH_face_attendance_esp32s3.md      # kiến trúc — nguồn sự thật
     ├── TASKS.md                                 # backlog
