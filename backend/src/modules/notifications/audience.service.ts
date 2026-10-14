@@ -155,7 +155,7 @@ export class AudienceService {
     if (queue === "CONTRACTS_DUE" || queue === "PROBATION_DUE") {
       return this.dueAudience(queue, subjectId);
     }
-    if (queue === "BACKUP" || queue === "KIOSK") {
+    if (queue === "BACKUP" || queue === "KIOSK" || queue === "RELEASES") {
       return this.admins();
     }
     if (queue === "TASKS") {

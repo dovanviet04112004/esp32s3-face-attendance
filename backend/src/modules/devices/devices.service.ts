@@ -107,6 +107,7 @@ export type PublicDevice = Omit<
   | "otaNextReleaseId"
   | "otaNextActorId"
   | "otaPressedAt"
+  | "otaPressedById"
   | "bootedAt"
   | "fwOnTrial"
 >;

@@ -16,7 +16,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { OnEvent } from "@nestjs/event-emitter";
+import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
 import type { Device, DeviceEvent, Release } from "@prisma/client";
 
 import type { OtaManifest } from "../../common/generated/ota_manifest.js";
@@ -27,10 +27,17 @@ import { AuditService } from "../audit/audit.service.js";
 import { DEVICE_BEAT, type DeviceBeat } from "../devices/devices.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
-
-/** What a publisher may put on the register; ASSETS waits for the kiosk to install it (KEHOACH 7.7). */
-export const PUBLISHED_TARGETS = ["FIRMWARE", "MODELS"] as const;
-export type PublishedTarget = (typeof PUBLISHED_TARGETS)[number];
+import {
+  behind,
+  changesRecognition,
+  PUBLISHED_TARGETS,
+  RELEASE_PUBLISHED,
+  semver,
+  UPDATE_FINISHED,
+  type PublishedTarget,
+  type ReleasePublished,
+  type UpdateFinished,
+} from "./release-rules.js";
 
 /** A release as the dashboard sees it: no file path, and whether it can still be offered. */
 export type ReleaseView = Omit<Release, "path" | "summary" | "notes"> & { available: boolean };
@@ -119,29 +126,6 @@ const LINK_PURPOSE = "release-link";
 const kHourMs = 3_600_000;
 const kMinuteMs = 60_000;
 
-function semver(version: string | null): [number, number, number] | null {
-  const parts = version?.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  return parts ? [Number(parts[1]), Number(parts[2]), Number(parts[3])] : null;
-}
-
-/** Whether a kiosk runs something older than the release; a version it cannot state counts as older. */
-export function behind(device: Pick<Device, "fwVersion" | "modelVersion">, release: Pick<Release, "target" | "version">): boolean {
-  if (release.target === "MODELS") {
-    return device.modelVersion !== release.version;
-  }
-  const mine = semver(device.fwVersion);
-  const theirs = semver(release.version);
-  if (!mine || !theirs) {
-    return true;
-  }
-  for (let part = 0; part < 3; part += 1) {
-    if (mine[part] !== theirs[part]) {
-      return mine[part] < theirs[part];
-    }
-  }
-  return false;
-}
-
 function runs(device: Pick<Device, "fwVersion" | "modelVersion">, release: Pick<Release, "target" | "version">): boolean {
   return (release.target === "MODELS" ? device.modelVersion : device.fwVersion) === release.version;
 }
@@ -154,14 +138,6 @@ function reportOn(reports: OtaReport[], type: string, releaseId: string, offered
     .filter((one) => one.type === type && one.receivedAt >= offeredAt && (one.cmdId === null || one.cmdId === releaseId))
     .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
   return heard.find((one) => one.cmdId === releaseId) ?? heard[0] ?? null;
-}
-
-/** Whether installing the release moves the kiosk to another recognition model; a side that cannot say counts as moving. */
-export function changesRecognition(
-  device: Pick<Device, "embeddingVersion">,
-  release: Pick<Release, "target" | "embeddingVersion">,
-): boolean {
-  return release.target === "MODELS" && (release.embeddingVersion === null || release.embeddingVersion !== device.embeddingVersion);
 }
 
 /** The recognition model a models image carries, named the way the kiosk's heartbeat names it. */
@@ -277,6 +253,7 @@ export class ModelsService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly config: ConfigService<Env, true>,
     private readonly feed: RealtimeGateway,
+    private readonly bus: EventEmitter2,
   ) {
     this.dir = resolve(this.config.get("RELEASE_DIR", { infer: true }));
     this.linkKey = createHmac("sha256", this.config.get("JWT_DEVICE_SECRET", { infer: true }))
@@ -447,6 +424,7 @@ export class ModelsService implements OnModuleInit {
     );
     // The publisher is a token, not a person, so the change interceptor never announces it.
     this.feed.publish(FEED.change, { resources: ["releases"] }, null);
+    this.bus.emit(RELEASE_PUBLISHED, { releaseId } satisfies ReleasePublished);
     return { release: view(release), existing: false };
   }
 
@@ -497,7 +475,7 @@ export class ModelsService implements OnModuleInit {
     if (!device.online) {
       throw new ConflictException("DEVICE_OFFLINE");
     }
-    const offeredAt = await this.send(release, device, actorId);
+    const offeredAt = await this.send(release, device, actorId, { next: null, pressedAt: new Date() });
     if (!offeredAt) {
       throw new ConflictException((await this.isOnline(deviceId)) ? "OTA_IN_PROGRESS" : "DEVICE_OFFLINE");
     }
@@ -512,6 +490,7 @@ export class ModelsService implements OnModuleInit {
     actorId: string,
     recapture = false,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
+    const pressedAt = new Date();
     const release = await this.offerable(releaseId);
     const installing = await this.installing();
     const fleet = await this.db.device.findMany({
@@ -524,8 +503,8 @@ export class ModelsService implements OnModuleInit {
         otaReleaseId: true,
         otaOfferedAt: true,
         otaNextReleaseId: true,
-        otaNextActorId: true,
         otaPressedAt: true,
+        otaPressedById: true,
         online: true,
       },
       orderBy: { id: "asc" },
@@ -548,7 +527,7 @@ export class ModelsService implements OnModuleInit {
         continue;
       }
       try {
-        const sent = await this.send(release, device, actorId);
+        const sent = await this.send(release, device, actorId, { next: null, pressedAt });
         if (sent) {
           offered.push(device.id);
         } else {
@@ -657,39 +636,44 @@ export class ModelsService implements OnModuleInit {
     );
   }
 
-  /** Offer the next step of an Update press once the offer ahead of it is installed, finding the path again
-   *  from what the kiosk runs, or end the press when that offer fails, rolls back, is cut or expires (KEHOACH 7.7).
+  /** Carry an Update press on once the offer ahead is installed: offer the next step of the path found again
+   *  from what the kiosk runs, or tell the presser it is done. A failed, rolled back, cut or expired offer
+   *  ends the press (KEHOACH 7.7).
    */
   async followUp(deviceId: string): Promise<void> {
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
-    if (!device?.otaNextReleaseId) {
+    if (!device?.otaPressedAt) {
       return;
     }
     const current = await this.status(deviceId);
     if (current?.state === "WAITING" || current?.state === "TRIAL") {
       return;
     }
-    const queued = device.otaNextReleaseId;
-    // Cleared ahead of the send, so two heartbeats in a row never offer it twice.
+    const pressedAt = device.otaPressedAt;
+    // Cleared ahead of the send, so two heartbeats in a row never carry one press on twice.
     const cleared = await this.db.device.updateMany({
-      where: { id: deviceId, otaNextReleaseId: queued },
-      data: { otaNextReleaseId: null, otaNextActorId: null, otaPressedAt: null },
+      where: { id: deviceId, otaPressedAt: pressedAt },
+      data: { otaNextReleaseId: null, otaPressedAt: null, otaPressedById: null },
     });
     if (cleared.count === 0 || current?.state !== "INSTALLED") {
       return;
     }
-    const path = route(device, await this.releases(), device.otaPressedAt);
+    const path = route(device, await this.releases(), pressedAt);
     if (!path) {
+      if (device.otaPressedById) {
+        const done = { deviceId, actorId: device.otaPressedById, firmware: device.fwVersion ?? "", models: device.modelVersion ?? "" };
+        this.bus.emit(UPDATE_FINISHED, done satisfies UpdateFinished);
+      }
       return;
     }
     const [step, next = null] = path;
     // A step the press did not name never moves the kiosk to another recognition model (KEHOACH 7.5).
-    if (step.releaseId !== queued && changesRecognition(device, step)) {
+    if (step.releaseId !== device.otaNextReleaseId && changesRecognition(device, step)) {
       this.log.warn(`the update of ${deviceId} stops ahead of ${step.version}, which changes recognition`);
       return;
     }
-    const ended = { ...device, otaNextReleaseId: null, otaNextActorId: null, otaPressedAt: null };
-    await this.send(step, ended, device.otaNextActorId ?? undefined, { next, pressedAt: device.otaPressedAt });
+    const ended = { ...device, otaNextReleaseId: null, otaPressedAt: null, otaPressedById: null };
+    await this.send(step, ended, device.otaPressedById ?? undefined, { next, pressedAt });
   }
 
   private releases(): Promise<Release[]> {
@@ -843,7 +827,7 @@ export class ModelsService implements OnModuleInit {
    */
   private async send(
     release: Release,
-    device: Pick<Device, "id" | "otaReleaseId" | "otaOfferedAt" | "otaNextReleaseId" | "otaNextActorId" | "otaPressedAt">,
+    device: Pick<Device, "id" | "otaReleaseId" | "otaOfferedAt" | "otaNextReleaseId" | "otaPressedAt" | "otaPressedById">,
     actorId?: string,
     press: { next: Release | null; pressedAt: Date | null } = { next: null, pressedAt: null },
   ): Promise<Date | null> {
@@ -856,8 +840,8 @@ export class ModelsService implements OnModuleInit {
         otaReleaseId: release.releaseId,
         otaOfferedAt: offeredAt,
         otaNextReleaseId: next?.releaseId ?? null,
-        otaNextActorId: next ? (actorId ?? null) : null,
-        otaPressedAt: next ? press.pressedAt : null,
+        otaPressedAt: press.pressedAt,
+        otaPressedById: press.pressedAt ? (actorId ?? null) : null,
       },
     });
     if (taken.count === 0) {
@@ -883,8 +867,8 @@ export class ModelsService implements OnModuleInit {
           otaReleaseId: device.otaReleaseId,
           otaOfferedAt: device.otaOfferedAt,
           otaNextReleaseId: device.otaNextReleaseId,
-          otaNextActorId: device.otaNextActorId,
           otaPressedAt: device.otaPressedAt,
+          otaPressedById: device.otaPressedById,
         },
       });
       throw error;

@@ -17,7 +17,8 @@ export type ItemKind =
   | "TASK_ASSIGNED"
   | "DOCUMENT_TO_SIGN"
   | "ATTENDANCE_EXCEPTION"
-  | "TEAM_ATTENDANCE";
+  | "TEAM_ATTENDANCE"
+  | "RELEASE_AVAILABLE";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -68,7 +69,7 @@ export const TEAM_SUMMARY_CRON = "*/15 5-11 * * *";
 export const KIOSK_BURST_QUIET_MINUTES = 60;
 
 /** Kinds whose pushes gather per person in every role, as a desk's always do: one bulk change writes many rows (KEHOACH 9.21.4). */
-export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED"]);
+export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED", "UPDATE_FINISHED"]);
 
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
@@ -177,6 +178,23 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { code: "string", errorCode: "number" },
+  },
+  RELEASE_AVAILABLE: {
+    category: "SYSTEM",
+    level: "ACTION",
+    receivers: ["ADMIN"],
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { target: "string", version: "string", recognition: "boolean" },
+  },
+  // What the kiosk runs once the press is done, so its next update is said again (KEHOACH 9.21.4).
+  UPDATE_FINISHED: {
+    category: "SYSTEM",
+    level: "INFO",
+    receivers: ["ADMIN"],
+    item: false,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { firmware: "string", models: "string" },
   },
   // Whoever owns the task: the person it is about, their manager, or the desk (KEHOACH 9.21.4).
   TASK_ASSIGNED: {

@@ -37,6 +37,7 @@ const CHAIN = [
   "e2e-rel-chain-d",
   "e2e-rel-chain-e",
   "e2e-rel-chain-f",
+  "e2e-rel-chain-g",
 ] as const;
 const MODELS_PREFIX = "img-e2e0";
 const KIOSK_MODELS = `${MODELS_PREFIX}0001`;
@@ -733,5 +734,45 @@ describe("releases (e2e)", () => {
     const stuck = await asAdmin("post", `/releases/update/${CHAIN[5]}`);
     assert.equal(stuck.status, 409, JSON.stringify(stuck.body));
     assert.equal(stuck.body.message, "RELEASE_UNREACHABLE");
+  });
+
+  it("tells whoever pressed Update once the kiosk has every step, and only once", async () => {
+    const presser = await db.user.findFirstOrThrow({ where: { email: "admin@kiosk.local" }, select: { id: true } });
+    await kiosk(CHAIN[6], "98.5.0", `${MODELS_PREFIX}0100`);
+    offers.length = 0;
+    const pressed = await asAdmin("post", `/releases/update/${CHAIN[6]}`);
+    assert.equal(pressed.status, 201, JSON.stringify(pressed.body));
+    assert.deepEqual(pressed.body.offered, { target: "MODELS", version: `${MODELS_PREFIX}0200` });
+    assert.equal(pressed.body.next, null);
+    const held = await db.device.findUniqueOrThrow({ where: { id: CHAIN[6] } });
+    assert.equal(held.otaPressedById, presser.id, "a one-step press kept no presser to tell");
+    const told = () => db.notification.findMany({ where: { userId: presser.id, kind: "UPDATE_FINISHED", subjectId: CHAIN[6] } });
+    await beatOf(CHAIN[6], { fwVersion: "98.5.0", modelVersion: `${MODELS_PREFIX}0200` });
+    await until(async () => (await told()).length === 1, "the finished update notice");
+    const [notice] = await told();
+    assert.equal(notice.subjectType, "DEVICE");
+    assert.deepEqual(notice.facts, { firmware: "98.5.0", models: `${MODELS_PREFIX}0200` });
+    await beatOf(CHAIN[6], { fwVersion: "98.5.0", modelVersion: `${MODELS_PREFIX}0200` });
+    await new Promise((done) => setTimeout(done, 300));
+    const again = await told();
+    assert.equal(again.length, 1);
+    assert.equal(again[0].remindCount, 0, "a second heartbeat told the same finish again");
+    assert.equal((await db.device.findUniqueOrThrow({ where: { id: CHAIN[6] } })).otaPressedAt, null);
+  });
+
+  it("gives the ADMINs work for a release kiosks lack, and expires it once a newer one arrives", async () => {
+    const admin = await db.user.findFirstOrThrow({ where: { email: "admin@kiosk.local" }, select: { id: true } });
+    const firmware = await db.release.findUniqueOrThrow({ where: { target_version: { target: "FIRMWARE", version: "98.5.0" } } });
+    const workOf = (releaseId: string) => db.noticeItem.findUnique({ where: { key: `releases:${releaseId}` } });
+    await until(async () => (await workOf(firmware.releaseId))?.state === "OPEN", "the work of the newest firmware");
+    const open = await workOf(firmware.releaseId);
+    assert.equal(open?.queue, "RELEASES");
+    assert.deepEqual(open?.facts, { target: "FIRMWARE", version: "98.5.0", recognition: false });
+    const row = await db.notification.findFirst({ where: { itemId: open?.id, userId: admin.id } });
+    assert.equal(row?.kind, "RELEASE_AVAILABLE", "an ADMIN was not told of the release");
+    const newer = await publish("target=FIRMWARE&version=98.6.0", appImage("98.6.0"));
+    assert.equal(newer.status, 201, JSON.stringify(newer.body));
+    await until(async () => (await workOf(firmware.releaseId))?.state === "EXPIRED", "the replaced release's work expiring");
+    await until(async () => (await workOf(newer.body.release.releaseId as string))?.state === "OPEN", "the newer release's work");
   });
 });

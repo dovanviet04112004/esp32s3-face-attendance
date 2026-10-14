@@ -54,6 +54,7 @@ import { CleanupSweep } from "./sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "./sweeps/contracts.sweep.js";
 import { DocumentsSweep } from "./sweeps/documents.sweep.js";
 import { KioskSweep } from "./sweeps/kiosk.sweep.js";
+import { ReleaseSweep } from "./sweeps/release.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
@@ -82,6 +83,7 @@ export class NotificationsController {
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
+    private readonly releases: ReleaseSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
     private readonly attendance: AttendanceSweep,
@@ -164,6 +166,7 @@ export class NotificationsController {
       backup: () => this.backups.sweep(),
       cleanup: () => this.cleanup.sweep(),
       kiosk: () => this.kiosk.sweep(),
+      releases: () => this.releases.sweep(),
       tasks: () => this.tasks.sweep(),
       documents: () => this.documents.sweep(),
       attendance: () => this.attendance.sweep(),

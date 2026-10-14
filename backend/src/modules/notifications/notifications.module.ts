@@ -17,6 +17,7 @@ import { DocumentsSweep } from "./sweeps/documents.sweep.js";
 import { KioskSweep } from "./sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "./sweeps/probation.sweep.js";
 import { ReconcileSweep } from "./sweeps/reconcile.sweep.js";
+import { ReleaseSweep } from "./sweeps/release.sweep.js";
 import { StalledSweep } from "./sweeps/stalled.sweep.js";
 import { TasksSweep } from "./sweeps/tasks.sweep.js";
 
@@ -36,6 +37,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     ReconcileSweep,
     CleanupSweep,
     KioskSweep,
+    ReleaseSweep,
     TasksSweep,
     DocumentsSweep,
     AttendanceSweep,
@@ -53,6 +55,7 @@ import { TasksSweep } from "./sweeps/tasks.sweep.js";
     ReconcileSweep,
     CleanupSweep,
     KioskSweep,
+    ReleaseSweep,
     TasksSweep,
     DocumentsSweep,
     AttendanceSweep,

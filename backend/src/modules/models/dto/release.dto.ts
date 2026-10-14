@@ -3,7 +3,7 @@ import { Type } from "class-transformer";
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
-import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
+import { PUBLISHED_TARGETS, type PublishedTarget } from "../release-rules.js";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const MODELS_VERSION = /^img-[0-9a-f]{8}$/;

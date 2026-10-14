@@ -501,6 +501,7 @@ const SWEEPS = [
   "backup",
   "cleanup",
   "kiosk",
+  "releases",
   "tasks",
   "documents",
   "attendance",

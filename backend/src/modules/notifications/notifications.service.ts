@@ -64,6 +64,9 @@ export interface NoticeFacts {
   day?: string;
   correctedAt?: number;
   month?: string;
+  deviceId?: string;
+  firmware?: string;
+  models?: string;
 }
 
 // The first reference present names the subject; an answered dispute carries its slip as well.
@@ -79,6 +82,7 @@ const SUBJECT_REFS: readonly (readonly [keyof NoticeFacts, NoticeSubject])[] = [
   ["runId", "PAYROLL_RUN"],
   ["personDay", "PERSON_DAY"],
   ["periodId", "PAYROLL_PERIOD"],
+  ["deviceId", "DEVICE"],
 ];
 
 /** The facts a kind declares, read off the references a caller passed (KEHOACH 9.21.4). */

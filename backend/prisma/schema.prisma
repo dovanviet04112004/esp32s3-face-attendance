@@ -379,10 +379,12 @@ model Device {
   // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).
   otaReleaseId  String?            @db.Uuid
   otaOfferedAt  DateTime?
-  // The step one Update press queues behind the current offer, who pressed, and when (KEHOACH 7.7).
+  // The Update press in flight: the step it offers next, when and by whom it was pressed (KEHOACH 7.7).
   otaNextReleaseId String?         @db.Uuid
-  otaNextActorId   String?
   otaPressedAt     DateTime?
+  otaPressedById   String?
+  // Expand-contract leftover nothing reads; the contract migration of KEHOACH 9.22.3c drops it.
+  otaNextActorId   String?
   approvedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -1469,6 +1471,8 @@ enum NoticeKind {
   SHIFT_CHANGED
   TIMESHEET_MONTH_CLOSED
   PUNCH_RECORDED
+  RELEASE_AVAILABLE
+  UPDATE_FINISHED
 }
 
 enum NoticeChannel {
@@ -1494,6 +1498,7 @@ enum NoticeQueue {
   DOCUMENTS
   ATTENDANCE
   TEAM_ATTENDANCE
+  RELEASES
 }
 
 enum NoticeSubject {
@@ -1513,6 +1518,7 @@ enum NoticeSubject {
   PERSON_DAY
   LOGIN
   PAYROLL_PERIOD
+  RELEASE
 }
 
 enum NoticeOutcome {

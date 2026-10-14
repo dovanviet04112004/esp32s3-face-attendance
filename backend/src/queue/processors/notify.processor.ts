@@ -17,6 +17,7 @@ import { DocumentsSweep } from "../../modules/notifications/sweeps/documents.swe
 import { KioskSweep } from "../../modules/notifications/sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
+import { ReleaseSweep } from "../../modules/notifications/sweeps/release.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
 import { TasksSweep } from "../../modules/notifications/sweeps/tasks.sweep.js";
 import { PrismaService } from "../../database/prisma.service.js";
@@ -48,6 +49,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly reconcile: ReconcileSweep,
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
+    private readonly releases: ReleaseSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
     private readonly attendance: AttendanceSweep,
@@ -88,6 +90,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === JOB.kioskAlerts) {
           await this.kiosk.sweep();
+          await this.releases.sweep();
           return;
         }
         if (body.type === JOB.tasksDue) {
