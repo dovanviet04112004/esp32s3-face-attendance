@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-.PHONY: help setup ml-sync ml-lock be-install fe-install \
+.PHONY: help setup git-hooks ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
@@ -72,7 +72,11 @@ help: ## List every target
 	@awk 'BEGIN {FS = ":[^#]*## "} /^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} /^[a-z0-9-]+:[^#]*## / {printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ##@ Setup
-setup: ml-sync be-install fe-install ## Install the dependencies of every block
+setup: ml-sync be-install fe-install git-hooks ## Install the dependencies of every block and the commit-msg hook
+
+git-hooks: ## Install the commit-msg hook that checks the CLAUDE.md 5 commit format
+	@command -v pre-commit >/dev/null || { echo "pre-commit is missing: uv tool install pre-commit"; exit 1; }
+	pre-commit install --hook-type commit-msg
 
 ml-sync: ## Sync ml/.venv to uv.lock with every extra this box uses
 	cd ml && $(UV) sync --frozen $(ML_EXTRAS)

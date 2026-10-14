@@ -1,6 +1,12 @@
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: check-commit-msg
+        name: check the commit message format (CLAUDE.md 5)
+        entry: python3 tools/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
       - id: check-comments
         name: check comments (CLAUDE.md 2)
         entry: python3 tools/check_comments.py
