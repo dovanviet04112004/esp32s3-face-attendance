@@ -6,9 +6,9 @@ import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
 import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
-// Release.summary is VARCHAR(200); notes is TEXT, held to what a page shows.
-const SUMMARY_MAX_LEN = 200;
-const NOTES_MAX_LEN = 20000;
+const MODELS_VERSION = /^img-[0-9a-f]{8}$/;
+// A changelog for the people who press update, not a log of commits (KEHOACH 7.7).
+const NOTES_MAX_LEN = 2000;
 
 /** What the publisher states about the file in the body; the file itself is the rest. */
 export class PublishQueryDto {
@@ -39,7 +39,7 @@ export class PublishQueryDto {
 }
 
 /** What the publisher says about a release already on the register; a later call replaces it whole. */
-export class ReleaseNotesDto {
+export class ReleaseDetailsDto {
   @ApiProperty({ enum: PUBLISHED_TARGETS, enumName: "PublishedTarget", example: "FIRMWARE", description: "Kind of image" })
   @IsIn(PUBLISHED_TARGETS)
   target!: PublishedTarget;
@@ -50,23 +50,59 @@ export class ReleaseNotesDto {
   version!: string;
 
   @ApiProperty({
-    example: "Bộ model mới: nhận diện mặt nghiêng tốt hơn, một khuôn mặt còn 349 ms",
-    description: "One line in Vietnamese for the people who press update",
-    maxLength: SUMMARY_MAX_LEN,
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(SUMMARY_MAX_LEN)
-  summary!: string;
-
-  @ApiProperty({
-    example: "Carries the ESP-DL kernels the models need.\n\n### Features\n- feat(firmware/ai_engine): run SpatialMean",
-    description: "The details built from git, in English",
+    example: "- Nhận diện mặt nghiêng chính xác hơn\n- Mỗi lượt chấm công nhanh hơn 21%",
+    description: "What is new, in Vietnamese, one '- ' line per change",
     maxLength: NOTES_MAX_LEN,
   })
   @IsString()
+  @MinLength(1)
   @MaxLength(NOTES_MAX_LEN)
-  notes!: string;
+  notesVi!: string;
+
+  @ApiProperty({
+    example: "- Recognises faces turned to the side more reliably\n- Each punch is 21% faster",
+    description: "What is new, in English, one '- ' line per change",
+    maxLength: NOTES_MAX_LEN,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(NOTES_MAX_LEN)
+  notesEn!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: "img-1cb9e2ec",
+    description: "FIRMWARE only: the oldest models release it runs; null when it runs any",
+  })
+  @IsOptional()
+  @Matches(MODELS_VERSION)
+  requiresModels?: string | null;
+}
+
+/** An update of the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
+export class UpdateAllDto {
+  @ApiPropertyOptional({ example: false, description: "Required when a step changes recognition" })
+  @IsOptional()
+  @IsBoolean()
+  recapture?: boolean;
+}
+
+export class ReleaseStepView {
+  @ApiProperty({ enum: ["FIRMWARE", "MODELS"], enumName: "PublishedTarget", example: "FIRMWARE", description: "Kind of image" })
+  target!: string;
+  @ApiProperty({ example: "0.9.10", description: "Version of the step" }) version!: string;
+}
+
+export class UpdateView {
+  @ApiProperty({ example: "kiosk-2884859fd3c8", description: "Kiosk updated" }) deviceId!: string;
+  @ApiProperty({ type: ReleaseStepView, description: "The step offered now" }) offered!: ReleaseStepView;
+  @ApiProperty({
+    type: ReleaseStepView,
+    nullable: true,
+    description: "The step offered once the first is installed; null when there is one step",
+  })
+  next!: ReleaseStepView | null;
 }
 
 /** An offer to the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
@@ -135,17 +171,24 @@ export class ReleaseViewDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    example: "Bộ model mới: nhận diện mặt nghiêng tốt hơn, một khuôn mặt còn 349 ms",
-    description: "The publisher's one line in Vietnamese; null until the notes are written",
+    example: "img-1cb9e2ec",
+    description: "FIRMWARE only: the oldest models release it runs; null when it runs any",
   })
-  summary!: string | null;
+  requiresModels!: string | null;
   @ApiProperty({
     type: String,
     nullable: true,
-    example: "Carries the ESP-DL kernels the models need.",
-    description: "The details built from git, in English; null until the notes are written",
+    example: "- Nhận diện mặt nghiêng chính xác hơn",
+    description: "What is new, in Vietnamese; null until the publisher writes it",
   })
-  notes!: string | null;
+  notesVi!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "- Recognises faces turned to the side more reliably",
+    description: "What is new, in English; null until the publisher writes it",
+  })
+  notesEn!: string | null;
   @ApiProperty({
     enum: ["DRAFT", "ROLLING", "PAUSED", "COMPLETED"],
     enumName: "RolloutState",
@@ -244,6 +287,12 @@ export class OfferStatusView {
     description: "WAITING only: until when another offer to this kiosk is refused; null otherwise",
   })
   busyUntil!: string | null;
+  @ApiProperty({
+    type: ReleaseStepView,
+    nullable: true,
+    description: "The step offered once this one is installed, from one Update press; null when none",
+  })
+  next!: ReleaseStepView | null;
 }
 
 export class OfferAllView {

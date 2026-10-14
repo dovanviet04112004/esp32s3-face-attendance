@@ -87,11 +87,27 @@ export interface DeviceChange {
   status: DeviceStatus;
 }
 
+/** Raised once a live heartbeat is on the row, so a queued update step can follow it (KEHOACH 7.7). */
+export const DEVICE_BEAT = "device.beat";
+
+export interface DeviceBeat {
+  deviceId: string;
+}
+
 export type DeviceCounts = Record<DeviceStatus | "online" | "offline", number>;
 
 export type PublicDevice = Omit<
   Device,
-  "tokenHash" | "prevTokenHash" | "claimHash" | "claimFailures" | "otaReleaseId" | "otaOfferedAt" | "bootedAt" | "fwOnTrial"
+  | "tokenHash"
+  | "prevTokenHash"
+  | "claimHash"
+  | "claimFailures"
+  | "otaReleaseId"
+  | "otaOfferedAt"
+  | "otaNextReleaseId"
+  | "otaNextActorId"
+  | "bootedAt"
+  | "fwOnTrial"
 >;
 
 @Injectable()
@@ -445,6 +461,7 @@ export class DevicesService {
       where: { id: deviceId },
       data: { ...runs, ...skew, bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000), lastSeenAt: at, online: true },
     });
+    this.bus.emit(DEVICE_BEAT, { deviceId } satisfies DeviceBeat);
   }
 
   /** Follow the retained status topic, which the broker writes on a last will; a replayed copy is not a sighting. */

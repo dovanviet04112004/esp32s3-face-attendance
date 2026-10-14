@@ -35,7 +35,7 @@ OPEN: dict[str, str] = {
     "POST /releases": "CI or the training box, held by the publisher token guard (KEHOACH 7.7)",
     "GET /releases/:releaseId/image": "a kiosk holding a link signed for it alone (KEHOACH 7.7)",
     "GET /releases/published": "CI asking before it builds, held by the publisher token guard (KEHOACH 7.7)",
-    "PUT /releases/notes": "the release box naming a release, held by the publisher token guard (KEHOACH 7.7)",
+    "PUT /releases/details": "the release box describing a release, held by the publisher token guard (KEHOACH 7.7)",
 }
 
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')

@@ -30,6 +30,7 @@ const BEHIND = "e2e-rel-behind";
 const CURRENT = "e2e-rel-current";
 const WAITING = "e2e-rel-pending";
 const MODELS_DOOR = "e2e-rel-models";
+const CHAIN = ["e2e-rel-chain-a", "e2e-rel-chain-b", "e2e-rel-chain-c", "e2e-rel-chain-d"] as const;
 const MODELS_PREFIX = "img-e2e0";
 const KIOSK_MODELS = `${MODELS_PREFIX}0001`;
 const OLD_RECOG = createHash("sha256").update("e2e recognition model, the one kiosks run").digest();
@@ -85,6 +86,25 @@ describe("releases (e2e)", () => {
     return request(http)[method](path).set("Authorization", `Bearer ${admin}`);
   }
 
+  function details(token: string, body: object): request.Test {
+    return request(http).put("/releases/details").set("Authorization", `Bearer ${token}`).send(body);
+  }
+
+  async function until(check: () => Promise<boolean>, what: string): Promise<void> {
+    for (let tries = 0; tries < 60; tries += 1) {
+      if (await check()) {
+        return;
+      }
+      await new Promise((done) => setTimeout(done, 50));
+    }
+    assert.fail(`${what} never happened`);
+  }
+
+  /** A live heartbeat of any kiosk, applied the way the broker's listener applies it. */
+  async function beatOf(deviceId: string, runs: { fwVersion: string; modelVersion: string; onTrial?: boolean }): Promise<void> {
+    await app.get(DevicesService).applyHeartbeat(deviceId, { ts: Date.now(), uptimeSeconds: 40, ...runs }, new Date(), true);
+  }
+
   function pathOf(url: string): string {
     const parsed = new URL(url);
     return `${parsed.pathname}${parsed.search}`;
@@ -130,7 +150,7 @@ describe("releases (e2e)", () => {
   async function sweep(): Promise<void> {
     await db.release.deleteMany({ where: { version: { startsWith: "98." } } });
     await db.release.deleteMany({ where: { version: { startsWith: MODELS_PREFIX } } });
-    await db.device.deleteMany({ where: { id: { in: [BEHIND, CURRENT, WAITING, MODELS_DOOR] } } });
+    await db.device.deleteMany({ where: { id: { in: [BEHIND, CURRENT, WAITING, MODELS_DOOR, ...CHAIN] } } });
   }
 
   before(async () => {
@@ -226,29 +246,32 @@ describe("releases (e2e)", () => {
     assert.equal(again.body.release.sizeBytes, image.length, "a second upload replaced the first");
   });
 
-  it("writes the summary and notes of a release through the publisher's door alone", async () => {
-    const write = (token: string, body: object) =>
-      request(http).put("/releases/notes").set("Authorization", `Bearer ${token}`).send(body);
-    const said = { target: "FIRMWARE", version: VERSION, summary: "Bản thử: ghi chú phát hành", notes: "### Fixes\n- fix(e2e): one" };
-    assert.equal((await write("not-the-publishing-token", said)).status, 401);
-    assert.equal((await write(admin, said)).status, 401, "a signed-in admin wrote notes through the machine door");
-    const unknown = await write(PUBLISHER, { ...said, version: "98.9.9" });
+  it("writes the notes of a release in both languages through the publisher's door alone", async () => {
+    const said = { target: "FIRMWARE", version: VERSION, notesVi: "- Nhận diện nhanh hơn", notesEn: "- Faster recognition" };
+    assert.equal((await details("not-the-publishing-token", said)).status, 401);
+    assert.equal((await details(admin, said)).status, 401, "a signed-in admin wrote notes through the machine door");
+    const unknown = await details(PUBLISHER, { ...said, version: "98.9.9" });
     assert.equal(unknown.status, 404);
     assert.equal(unknown.body.message, "RELEASE_NOT_FOUND");
-    assert.equal((await write(PUBLISHER, { ...said, summary: "" })).status, 400);
-    assert.equal((await write(PUBLISHER, { ...said, summary: "x".repeat(201) })).status, 400);
-    const written = await write(PUBLISHER, said);
+    assert.equal((await details(PUBLISHER, { ...said, notesVi: "" })).status, 400);
+    assert.equal((await details(PUBLISHER, { ...said, notesEn: "x".repeat(2001) })).status, 400);
+    const stranger = await details(PUBLISHER, { ...said, requiresModels: `${MODELS_PREFIX}9999` });
+    assert.equal(stranger.status, 400);
+    assert.equal(stranger.body.message, "RELEASE_REQUIRES_INVALID");
+    const written = await details(PUBLISHER, said);
     assert.equal(written.status, 200, JSON.stringify(written.body));
-    assert.equal(written.body.summary, said.summary);
-    assert.equal(written.body.notes, said.notes);
-    const rewritten = await write(PUBLISHER, { ...said, summary: "Bản thử, viết lại" });
-    assert.equal(rewritten.body.summary, "Bản thử, viết lại", "a second call left the first summary");
+    assert.equal(written.body.notesVi, said.notesVi);
+    assert.equal(written.body.notesEn, said.notesEn);
+    assert.equal(written.body.requiresModels, null);
+    assert.equal("summary" in written.body, false, "the leftover columns reached the dashboard");
+    const rewritten = await details(PUBLISHER, { ...said, notesVi: "- Nhận diện nhanh hơn nữa" });
+    assert.equal(rewritten.body.notesVi, "- Nhận diện nhanh hơn nữa", "a second call left the first notes");
     const fleet = await asAdmin("get", "/releases/fleet");
-    const shown = (fleet.body as { release: { releaseId: string; summary: string | null; notes: string | null } }[]).find(
+    const shown = (fleet.body as { release: { releaseId: string; notesVi: string | null; notesEn: string | null } }[]).find(
       (one) => one.release.releaseId === releaseId,
     );
-    assert.equal(shown?.release.summary, "Bản thử, viết lại");
-    assert.equal(shown?.release.notes, said.notes);
+    assert.equal(shown?.release.notesVi, "- Nhận diện nhanh hơn nữa");
+    assert.equal(shown?.release.notesEn, said.notesEn);
   });
 
   it("lists the newest firmware and which approved kiosks run something older", async () => {
@@ -503,10 +526,10 @@ describe("releases (e2e)", () => {
   let modelsId = "";
 
   it("reads the recognition model out of a models image, and turns away a file that is not one", async () => {
-    const noise = await publish(`target=MODELS&version=${MODELS_PREFIX}000a`, Buffer.alloc(4096, 1));
+    const noise = await publish(`target=MODELS&version=${MODELS_PREFIX}000a&minFwVersion=${OLDER}`, Buffer.alloc(4096, 1));
     assert.equal(noise.status, 400);
     assert.equal(noise.body.message, "RELEASE_NOT_MODELS_IMAGE");
-    const res = await publish(`target=MODELS&version=${MODELS_PREFIX}000b`, modelsImage(NEW_RECOG));
+    const res = await publish(`target=MODELS&version=${MODELS_PREFIX}000b&minFwVersion=${OLDER}`, modelsImage(NEW_RECOG));
     assert.equal(res.status, 201, JSON.stringify(res.body));
     modelsId = res.body.release.releaseId as string;
     assert.equal(res.body.release.embeddingVersion, recogName(NEW_RECOG));
@@ -548,9 +571,119 @@ describe("releases (e2e)", () => {
       where: { id: MODELS_DOOR },
       data: { modelVersion: `${MODELS_PREFIX}000b`, embeddingVersion: recogName(NEW_RECOG), otaOfferedAt: null, otaReleaseId: null },
     });
-    const next = await publish(`target=MODELS&version=${MODELS_PREFIX}000c`, modelsImage(NEW_RECOG));
+    const next = await publish(`target=MODELS&version=${MODELS_PREFIX}000c&minFwVersion=${OLDER}`, modelsImage(NEW_RECOG));
     assert.equal(next.status, 201, JSON.stringify(next.body));
     const one = await asAdmin("post", `/releases/${next.body.release.releaseId as string}/offer/${MODELS_DOOR}`);
     assert.equal(one.status, 201, JSON.stringify(one.body));
+  });
+
+  function kiosk(id: string, fwVersion: string, modelVersion: string) {
+    return db.device.create({
+      data: { id, status: "APPROVED", online: true, fwVersion, modelVersion, embeddingVersion: recogName(NEW_RECOG) },
+    });
+  }
+
+  const targetsSent = () => offers.map((one) => (one.payload as { target: string }).target);
+
+  it("refuses a models release that names no firmware to run it", async () => {
+    const res = await publish(`target=MODELS&version=${MODELS_PREFIX}00a0`, modelsImage(NEW_RECOG));
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, "RELEASE_MIN_FW_REQUIRED");
+  });
+
+  it("installs the firmware first when the newest models need it, then the models once it signs off", async () => {
+    assert.equal((await publish("target=FIRMWARE&version=98.1.0", appImage("98.1.0"))).status, 201);
+    const models = await publish(`target=MODELS&version=${MODELS_PREFIX}00d0&minFwVersion=98.1.0`, modelsImage(NEW_RECOG));
+    assert.equal(models.status, 201, JSON.stringify(models.body));
+    const crossed = await details(PUBLISHER, {
+      target: "FIRMWARE",
+      version: "98.1.0",
+      notesVi: "- Cần bộ model mới",
+      notesEn: "- Needs the new models",
+      requiresModels: `${MODELS_PREFIX}00d0`,
+    });
+    assert.equal(crossed.status, 409, "a firmware and models that need each other first were accepted");
+    assert.equal(crossed.body.message, "RELEASE_LOCKSTEP");
+    await kiosk(CHAIN[0], VERSION, `${MODELS_PREFIX}000c`);
+    offers.length = 0;
+    const pressed = await asAdmin("post", `/releases/update/${CHAIN[0]}`);
+    assert.equal(pressed.status, 201, JSON.stringify(pressed.body));
+    assert.deepEqual(pressed.body.offered, { target: "FIRMWARE", version: "98.1.0" });
+    assert.deepEqual(pressed.body.next, { target: "MODELS", version: `${MODELS_PREFIX}00d0` });
+    assert.deepEqual(targetsSent(), ["FIRMWARE"]);
+    assert.deepEqual((await asAdmin("get", `/releases/status/${CHAIN[0]}`)).body.next, pressed.body.next);
+    await beatOf(CHAIN[0], { fwVersion: "98.1.0", modelVersion: `${MODELS_PREFIX}000c`, onTrial: true });
+    await new Promise((done) => setTimeout(done, 300));
+    assert.deepEqual(targetsSent(), ["FIRMWARE"], "the models went out while the firmware was on trial");
+    const fleet = (await asAdmin("get", "/releases/fleet")).body as { release: { target: string }; behind: string[]; updating: string[] }[];
+    const newestModels = fleet.find((one) => one.release.target === "MODELS");
+    assert.ok(newestModels?.updating.includes(CHAIN[0]), "a kiosk between the two steps of one press read as idle");
+    assert.ok(!newestModels?.behind.includes(CHAIN[0]), "an update to all would offer a kiosk between two steps again");
+    await beatOf(CHAIN[0], { fwVersion: "98.1.0", modelVersion: `${MODELS_PREFIX}000c`, onTrial: false });
+    await until(async () => offers.length === 2, "the queued models offer");
+    assert.deepEqual(targetsSent(), ["FIRMWARE", "MODELS"]);
+    const row = await db.device.findUniqueOrThrow({ where: { id: CHAIN[0] } });
+    assert.equal(row.otaReleaseId, models.body.release.releaseId);
+    assert.equal(row.otaNextReleaseId, null, "the step stayed queued after it went out");
+    await beatOf(CHAIN[0], { fwVersion: "98.1.0", modelVersion: `${MODELS_PREFIX}000c`, onTrial: false });
+    await new Promise((done) => setTimeout(done, 300));
+    assert.equal(offers.length, 2, "a second heartbeat offered the models again");
+  });
+
+  it("installs the models first when the firmware needs them, then the firmware once they run", async () => {
+    const models = await publish(`target=MODELS&version=${MODELS_PREFIX}00e0&minFwVersion=${VERSION}`, modelsImage(NEW_RECOG));
+    assert.equal(models.status, 201, JSON.stringify(models.body));
+    assert.equal((await publish("target=FIRMWARE&version=98.2.0", appImage("98.2.0"))).status, 201);
+    const needs = await details(PUBLISHER, {
+      target: "FIRMWARE",
+      version: "98.2.0",
+      notesVi: "- Cần bộ model mới",
+      notesEn: "- Needs the new models",
+      requiresModels: `${MODELS_PREFIX}00e0`,
+    });
+    assert.equal(needs.status, 200, JSON.stringify(needs.body));
+    assert.equal(needs.body.requiresModels, `${MODELS_PREFIX}00e0`);
+    await kiosk(CHAIN[1], VERSION, `${MODELS_PREFIX}000c`);
+    offers.length = 0;
+    const pressed = await asAdmin("post", `/releases/update/${CHAIN[1]}`);
+    assert.equal(pressed.status, 201, JSON.stringify(pressed.body));
+    assert.deepEqual(pressed.body.offered, { target: "MODELS", version: `${MODELS_PREFIX}00e0` });
+    assert.deepEqual(pressed.body.next, { target: "FIRMWARE", version: "98.2.0" });
+    await beatOf(CHAIN[1], { fwVersion: VERSION, modelVersion: `${MODELS_PREFIX}00e0` });
+    await until(async () => offers.length === 2, "the queued firmware offer");
+    assert.deepEqual(targetsSent(), ["MODELS", "FIRMWARE"]);
+  });
+
+  it("drops the queued step when the first one fails, so nothing follows a broken install", async () => {
+    await kiosk(CHAIN[2], VERSION, `${MODELS_PREFIX}000c`);
+    offers.length = 0;
+    assert.equal((await asAdmin("post", `/releases/update/${CHAIN[2]}`)).status, 201);
+    const first = offers[0].payload as { releaseId: string };
+    const heardAt = new Date();
+    await app.get(RealtimeListener).onEvent({
+      topic: "event",
+      deviceId: CHAIN[2],
+      receivedAt: heardAt,
+      payload: { deviceId: CHAIN[2], ts: heardAt.getTime(), type: "OTA_FAILED", severity: "WARN", cmdId: first.releaseId, message: "sha256 mismatch" },
+    });
+    await beatOf(CHAIN[2], { fwVersion: VERSION, modelVersion: `${MODELS_PREFIX}000c` });
+    await until(
+      async () => (await db.device.findUniqueOrThrow({ where: { id: CHAIN[2] } })).otaNextReleaseId === null,
+      "the queued step dropping",
+    );
+    assert.equal(offers.length, 1, "the second step went out after the first failed");
+  });
+
+  it("finds nothing to install on the newest of both, and refuses models no published firmware runs", async () => {
+    await kiosk(CHAIN[3], "98.2.0", `${MODELS_PREFIX}00e0`);
+    const current = await asAdmin("post", `/releases/update/${CHAIN[3]}`);
+    assert.equal(current.status, 409);
+    assert.equal(current.body.message, "RELEASE_ALREADY_RUNNING");
+    const ahead = await publish(`target=MODELS&version=${MODELS_PREFIX}00f0&minFwVersion=99.0.0`, modelsImage(NEW_RECOG));
+    assert.equal(ahead.status, 409, "models no published firmware runs reached the register");
+    assert.equal(ahead.body.message, "RELEASE_FIRMWARE_MISSING");
+    const all = await asAdmin("post", "/releases/update").send({});
+    assert.equal(all.status, 201, JSON.stringify(all.body));
+    assert.ok(!(all.body.offered as string[]).includes(CHAIN[3]), "a kiosk on the newest of both was offered something");
   });
 });

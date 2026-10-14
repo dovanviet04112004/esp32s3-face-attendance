@@ -42,10 +42,12 @@ import {
   PublishedView,
   PublishQueryDto,
   PublishResultView,
-  ReleaseNotesDto,
+  ReleaseDetailsDto,
   ReleaseViewDto,
+  UpdateAllDto,
+  UpdateView,
 } from "./dto/release.dto.js";
-import { ModelsService, type FleetUpdate, type OfferStatus, type ReleaseView } from "./models.service.js";
+import { ModelsService, type FleetUpdate, type OfferStatus, type ReleaseStep, type ReleaseView } from "./models.service.js";
 import { PublishGuard } from "./publish.guard.js";
 
 /** What people do with releases: see them and offer them to kiosks (KEHOACH 7.7). */
@@ -88,6 +90,33 @@ export class ModelsController {
       res.status(HttpStatus.NO_CONTENT);
     }
     return found;
+  }
+
+  @Post("update")
+  @AuditedInService()
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "Bring every approved, online kiosk to the newest firmware and models, in the order their claims allow" })
+  @ApiCreatedResponse({ type: OfferAllView })
+  @ApiErrors(HttpStatus.CONFLICT)
+  updateAll(
+    @Body() body: UpdateAllDto,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
+    return this.models.updateAll(viewer.userId, body.recapture ?? false);
+  }
+
+  @Post("update/:deviceId")
+  @AuditedInService()
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "Bring one kiosk to the newest firmware and models: the first step now, the second once it is installed" })
+  @ApiCreatedResponse({ type: UpdateView })
+  @ApiErrors(HttpStatus.CONFLICT)
+  @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
+  update(
+    @Param("deviceId") deviceId: string,
+    @CurrentViewer() viewer: Viewer,
+  ): Promise<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }> {
+    return this.models.update(deviceId, viewer.userId);
   }
 
   @Post(":releaseId/offer")
@@ -149,14 +178,14 @@ export class ReleaseFilesController {
     return this.models.published(query.target, query.version);
   }
 
-  @Put("notes")
+  @Put("details")
   @UseGuards(PublishGuard)
   @ApiBearerAuth(API_AUTH.publisher)
-  @ApiOperation({ summary: "Write the summary and notes of a release already on the register" })
+  @ApiOperation({ summary: "Write the notes of a release already on the register and, for firmware, the models it needs" })
   @ApiOkResponse({ type: ReleaseViewDto })
-  @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND)
-  annotate(@Body() body: ReleaseNotesDto): Promise<ReleaseView> {
-    return this.models.annotate(body.target, body.version, body.summary, body.notes);
+  @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND, HttpStatus.CONFLICT)
+  describe(@Body() body: ReleaseDetailsDto): Promise<ReleaseView> {
+    return this.models.describe(body);
   }
 
   @Get(":releaseId/image")

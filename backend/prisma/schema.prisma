@@ -379,6 +379,9 @@ model Device {
   // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).
   otaReleaseId  String?            @db.Uuid
   otaOfferedAt  DateTime?
+  // The step one Update press queues behind the current offer, and who pressed (KEHOACH 7.7).
+  otaNextReleaseId String?         @db.Uuid
+  otaNextActorId   String?
   approvedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -531,7 +534,12 @@ model Release {
   runId        String?
   // MODELS only: recog- and the recognition entry's sha256 prefix, read from the image header (KEHOACH 7.5).
   embeddingVersion String?
-  // The publisher's Vietnamese line and the English details built from git (KEHOACH 7.7).
+  // FIRMWARE only: the oldest MODELS version this firmware runs (KEHOACH 7.7).
+  requiresModels String?
+  // What the publisher says to the people who press update, one text per language (KEHOACH 7.7).
+  notesVi      String?
+  notesEn      String?
+  // Expand-contract leftovers nothing reads; the contract migration of KEHOACH 9.22.3c drops them.
   summary      String?      @db.VarChar(200)
   notes        String?
   rolloutState RolloutState @default(DRAFT)
