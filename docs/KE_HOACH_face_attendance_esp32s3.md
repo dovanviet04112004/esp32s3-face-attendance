@@ -7362,7 +7362,7 @@ máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì
 
 | Quan hệ | Ai khai | Server làm gì |
 |---|---|---|
-| Gói model cần firmware từ X trở lên | `minFwVersion` của gói, **bắt buộc**: thiếu thì `POST /releases` từ chối (`RELEASE_MIN_FW_REQUIRED`); `make models-release` ghi bằng `PROJECT_VER` | máy firmware cũ hơn X cài firmware trước; không có bản firmware nào từ X trở lên thì từ chối (`RELEASE_FIRMWARE_MISSING`) |
+| Gói model cần firmware từ X trở lên | `minFwVersion` của gói, **bắt buộc**: thiếu thì `POST /releases` từ chối (`RELEASE_MIN_FW_REQUIRED`); `make models-release` ghi bằng `PROJECT_VER` | máy firmware cũ hơn X cài firmware trước. Chưa có bản firmware nào từ X trở lên thì `POST /releases` từ chối chính gói ấy (`RELEASE_FIRMWARE_MISSING`), nên nút Cập nhật không bao giờ gặp một gói không có thứ tự cài |
 | Bản firmware cần gói model R trở lên | `requiresModels` của bản firmware, tuỳ chọn: `make release REQUIRES_MODELS=img-…`; R phải là gói đã lên | máy đang chạy gói cũ hơn R cài gói model mới nhất trước, rồi mới tới firmware |
 | Bản firmware chỉ thêm tính năng | để trống `requiresModels` | firmware đi một mình; có gói model mới thì đi sau |
 | Khoá chéo: firmware cần R mà R cần chính firmware ấy hay mới hơn | **cấm**: `PUT /releases/details` từ chối `RELEASE_LOCKSTEP`, vì không thứ tự hai bước nào cài được | — |
@@ -7374,9 +7374,10 @@ Một lần bấm, server lo thứ tự theo bảng trên: nó mời bước đ�
 của máy, cùng người đã bấm. Mỗi heartbeat, server xét lời mời đang chạy: bước đầu **Đã lên** (firmware
 không còn chạy thử, model đã nằm trong heartbeat) thì server tự mời bước sau, nên lời khai của bước sau
 luôn được thoả; bước đầu **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì bước sau bị bỏ và nút
-hiện lại. Gói đổi model nhận diện vẫn chỉ đi bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5),
-và từng máy đi đúng chuỗi trên. Trang một máy có một dòng trạng thái suy ra từ ba nguồn đã có, kèm
-bước kế tiếp nếu còn:
+hiện lại. Máy còn giữ bước sau mà bước đầu đang chạy thử hay đã lên vẫn tính là đang cập nhật, nên
+*Cập nhật tất cả* không đếm nó và không mời chồng giữa hai bước. Gói đổi model nhận diện vẫn chỉ đi
+bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5), và từng máy đi đúng chuỗi trên. Trang một máy
+có một dòng trạng thái suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
