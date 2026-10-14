@@ -4856,7 +4856,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaNextActorId (gói model mời tiếp khi firmware đã lên, và người đã bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaNextActorId, otaPressedAt (bước kế của một lần bấm Cập nhật, người bấm và lúc bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
@@ -7365,19 +7365,28 @@ máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì
 | Gói model cần firmware từ X trở lên | `minFwVersion` của gói, **bắt buộc**: thiếu thì `POST /releases` từ chối (`RELEASE_MIN_FW_REQUIRED`); `make models-release` ghi bằng `PROJECT_VER` | máy firmware cũ hơn X cài firmware trước. Chưa có bản firmware nào từ X trở lên thì `POST /releases` từ chối chính gói ấy (`RELEASE_FIRMWARE_MISSING`), nên nút Cập nhật không bao giờ gặp một gói không có thứ tự cài |
 | Bản firmware cần gói model R trở lên | `requiresModels` của bản firmware, tuỳ chọn: `make release REQUIRES_MODELS=img-…`; R phải là gói đã lên | máy đang chạy gói cũ hơn R cài gói model mới nhất trước, rồi mới tới firmware |
 | Bản firmware chỉ thêm tính năng | để trống `requiresModels` | firmware đi một mình; có gói model mới thì đi sau |
-| Khoá chéo: firmware cần R mà R cần chính firmware ấy hay mới hơn | **cấm**: `PUT /releases/details` từ chối `RELEASE_LOCKSTEP`, vì không thứ tự hai bước nào cài được | — |
+| Khoá chéo: firmware cần R mà R cần chính firmware ấy hay mới hơn | **cấm**: `PUT /releases/details` từ chối `RELEASE_LOCKSTEP`, vì không thứ tự nào cài được cặp ấy | — |
 
 Gói "cũ hơn" so theo lúc lên server, vì tên `img-…` không xếp được. Firmware luôn phải chạy được mọi
 gói model nó không khai là cần; bản nào lỡ không chạy được thì chính lượt chạy thử của nó tự lùi.
 
-Một lần bấm, server lo thứ tự theo bảng trên: nó mời bước đầu và ghi bước sau vào `otaNextReleaseId`
-của máy, cùng người đã bấm. Mỗi heartbeat, server xét lời mời đang chạy: bước đầu **Đã lên** (firmware
-không còn chạy thử, model đã nằm trong heartbeat) thì server tự mời bước sau, nên lời khai của bước sau
-luôn được thoả; bước đầu **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì bước sau bị bỏ và nút
-hiện lại. Máy còn giữ bước sau mà bước đầu đang chạy thử hay đã lên vẫn tính là đang cập nhật, nên
-*Cập nhật tất cả* không đếm nó và không mời chồng giữa hai bước. Gói đổi model nhận diện vẫn chỉ đi
-bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5), và từng máy đi đúng chuỗi trên. Trang một máy
-có một dòng trạng thái suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
+Một lần bấm, server lo thứ tự theo bảng trên. Nó tìm **đường ngắn nhất** qua các bản còn file trên
+server, từ thứ máy đang chạy tới bản mới nhất của cả hai loại, sao cho mỗi bước thoả lời khai của nó
+đúng lúc cài; hai đường dài bằng nhau thì đường mở bằng firmware thắng. Đường thường chỉ một hay hai
+bước, nhưng máy tụt nhiều nấc có thể phải qua một bản trung gian, không phải bản mới nhất loại ấy: máy
+0.9.9 đi 0.9.10 → img-x → 0.9.11 khi img-x cần 0.9.10 và 0.9.11 cần img-x. Server mời bước đầu, rồi
+ghi bước kế vào `otaNextReleaseId` của máy cùng người bấm và lúc bấm (`otaPressedAt`). Mỗi heartbeat,
+server xét lời mời đang chạy. Bước ấy **Đã lên** (firmware không còn chạy thử, model đã nằm trong
+heartbeat) thì server tìm lại đường từ thứ máy đang chạy và mời bước kế, nên lời khai của mỗi bước luôn
+được thoả. Bước ấy **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì phần còn lại bị bỏ và nút
+hiện lại. Lần tìm lại chỉ xét các bản đã có lúc bấm: bản lên giữa chừng đợi lần bấm sau, nên không gói
+đổi model nhận diện nào tự cài khi chưa ai xác nhận. Không đường nào tới được, vì bản trung gian đã bị
+dọn file, thì lần bấm bị từ chối với `RELEASE_UNREACHABLE`. Máy đang chạy thử firmware không nhận lời
+mời nào, nên lần bấm trả `OTA_IN_PROGRESS` và *Cập nhật tất cả* đếm máy ấy là đang cập nhật. Máy còn
+giữ bước kế, khi bước đang chạy đang chạy thử hay đã lên, cũng tính là đang cập nhật: *Cập nhật tất cả*
+không đếm nó và không mời chồng giữa hai bước. Gói đổi model nhận diện vẫn chỉ đi bằng *Cập nhật tất
+cả* kèm xác nhận lấy mặt lại (§7.5), xét trên mọi bước của đường. Trang một máy có một dòng trạng thái
+suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
