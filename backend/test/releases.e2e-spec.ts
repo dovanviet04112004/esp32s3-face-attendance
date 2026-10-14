@@ -226,6 +226,31 @@ describe("releases (e2e)", () => {
     assert.equal(again.body.release.sizeBytes, image.length, "a second upload replaced the first");
   });
 
+  it("writes the summary and notes of a release through the publisher's door alone", async () => {
+    const write = (token: string, body: object) =>
+      request(http).put("/releases/notes").set("Authorization", `Bearer ${token}`).send(body);
+    const said = { target: "FIRMWARE", version: VERSION, summary: "Bản thử: ghi chú phát hành", notes: "### Fixes\n- fix(e2e): one" };
+    assert.equal((await write("not-the-publishing-token", said)).status, 401);
+    assert.equal((await write(admin, said)).status, 401, "a signed-in admin wrote notes through the machine door");
+    const unknown = await write(PUBLISHER, { ...said, version: "98.9.9" });
+    assert.equal(unknown.status, 404);
+    assert.equal(unknown.body.message, "RELEASE_NOT_FOUND");
+    assert.equal((await write(PUBLISHER, { ...said, summary: "" })).status, 400);
+    assert.equal((await write(PUBLISHER, { ...said, summary: "x".repeat(201) })).status, 400);
+    const written = await write(PUBLISHER, said);
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+    assert.equal(written.body.summary, said.summary);
+    assert.equal(written.body.notes, said.notes);
+    const rewritten = await write(PUBLISHER, { ...said, summary: "Bản thử, viết lại" });
+    assert.equal(rewritten.body.summary, "Bản thử, viết lại", "a second call left the first summary");
+    const fleet = await asAdmin("get", "/releases/fleet");
+    const shown = (fleet.body as { release: { releaseId: string; summary: string | null; notes: string | null } }[]).find(
+      (one) => one.release.releaseId === releaseId,
+    );
+    assert.equal(shown?.release.summary, "Bản thử, viết lại");
+    assert.equal(shown?.release.notes, said.notes);
+  });
+
   it("lists the newest firmware and which approved kiosks run something older", async () => {
     const res = await asAdmin("get", "/releases/fleet");
     assert.equal(res.status, 200);

@@ -237,6 +237,23 @@ export class ModelsService implements OnModuleInit {
     return { published: held !== null };
   }
 
+  /** Write the publisher's summary and notes onto a release already on the register (KEHOACH 7.7). */
+  async annotate(target: PublishedTarget, version: string, summary: string, notes: string): Promise<ReleaseView> {
+    const written = await this.db.release.updateMany({ where: { target, version }, data: { summary, notes } });
+    if (written.count === 0) {
+      throw new NotFoundException("RELEASE_NOT_FOUND");
+    }
+    const release = await this.db.release.findUniqueOrThrow({ where: { target_version: { target, version } } });
+    await this.audit.record({
+      action: AUDIT_ACTIONS.RELEASE_NOTES,
+      subject: AUDIT_SUBJECTS.RELEASE,
+      subjectId: release.releaseId,
+      meta: { target, version, summary },
+    });
+    this.feed.publish(FEED.change, { resources: ["releases"] }, null);
+    return view(release);
+  }
+
   /**
    * Store a release from the body of the publisher's request. Hashed while it
    * is written, so the digest can only describe the file kept (KEHOACH 7.7).

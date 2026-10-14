@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -41,6 +42,7 @@ import {
   PublishedView,
   PublishQueryDto,
   PublishResultView,
+  ReleaseNotesDto,
   ReleaseViewDto,
 } from "./dto/release.dto.js";
 import { ModelsService, type FleetUpdate, type OfferStatus, type ReleaseView } from "./models.service.js";
@@ -145,6 +147,16 @@ export class ReleaseFilesController {
   @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
   published(@Query() query: PublishQueryDto): Promise<{ published: boolean }> {
     return this.models.published(query.target, query.version);
+  }
+
+  @Put("notes")
+  @UseGuards(PublishGuard)
+  @ApiBearerAuth(API_AUTH.publisher)
+  @ApiOperation({ summary: "Write the summary and notes of a release already on the register" })
+  @ApiOkResponse({ type: ReleaseViewDto })
+  @ApiErrors(HttpStatus.BAD_REQUEST, HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN, HttpStatus.NOT_FOUND)
+  annotate(@Body() body: ReleaseNotesDto): Promise<ReleaseView> {
+    return this.models.annotate(body.target, body.version, body.summary, body.notes);
   }
 
   @Get(":releaseId/image")

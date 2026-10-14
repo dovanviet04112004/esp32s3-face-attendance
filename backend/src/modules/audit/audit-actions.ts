@@ -142,6 +142,7 @@ export const AUDIT_ACTIONS = {
   DEVICE_REVOKE: "device.revoke",
 
   RELEASE_PUBLISH: "release.publish",
+  RELEASE_NOTES: "release.notes",
   RELEASE_OFFER: "release.offer",
 
   SHIFT_ASSIGN: "shift.assign",

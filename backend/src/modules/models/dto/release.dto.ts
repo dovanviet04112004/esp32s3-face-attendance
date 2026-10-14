@@ -1,11 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 
 import { DEVICE_ID_MAX_LEN } from "../../../common/generated/topics.js";
 import { PUBLISHED_TARGETS, type PublishedTarget } from "../models.service.js";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
+// Release.summary is VARCHAR(200); notes is TEXT, held to what a page shows.
+const SUMMARY_MAX_LEN = 200;
+const NOTES_MAX_LEN = 20000;
 
 /** What the publisher states about the file in the body; the file itself is the rest. */
 export class PublishQueryDto {
@@ -33,6 +36,37 @@ export class PublishQueryDto {
   @IsString()
   @MaxLength(128)
   runId?: string;
+}
+
+/** What the publisher says about a release already on the register; a later call replaces it whole. */
+export class ReleaseNotesDto {
+  @ApiProperty({ enum: PUBLISHED_TARGETS, enumName: "PublishedTarget", example: "FIRMWARE", description: "Kind of image" })
+  @IsIn(PUBLISHED_TARGETS)
+  target!: PublishedTarget;
+
+  @ApiProperty({ example: "0.9.10", description: "MAJOR.MINOR.PATCH for FIRMWARE, img-<crc32> for MODELS" })
+  @IsString()
+  @MaxLength(32)
+  version!: string;
+
+  @ApiProperty({
+    example: "Bộ model mới: nhận diện mặt nghiêng tốt hơn, một khuôn mặt còn 349 ms",
+    description: "One line in Vietnamese for the people who press update",
+    maxLength: SUMMARY_MAX_LEN,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(SUMMARY_MAX_LEN)
+  summary!: string;
+
+  @ApiProperty({
+    example: "Carries the ESP-DL kernels the models need.\n\n### Features\n- feat(firmware/ai_engine): run SpatialMean",
+    description: "The details built from git, in English",
+    maxLength: NOTES_MAX_LEN,
+  })
+  @IsString()
+  @MaxLength(NOTES_MAX_LEN)
+  notes!: string;
 }
 
 /** An offer to the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
@@ -98,6 +132,20 @@ export class ReleaseViewDto {
   runId!: string | null;
   @ApiProperty({ type: String, nullable: true, example: "recog-f77969e342ab10b4", description: "MODELS only" })
   embeddingVersion!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "Bộ model mới: nhận diện mặt nghiêng tốt hơn, một khuôn mặt còn 349 ms",
+    description: "The publisher's one line in Vietnamese; null until the notes are written",
+  })
+  summary!: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "Carries the ESP-DL kernels the models need.",
+    description: "The details built from git, in English; null until the notes are written",
+  })
+  notes!: string | null;
   @ApiProperty({
     enum: ["DRAFT", "ROLLING", "PAUSED", "COMPLETED"],
     enumName: "RolloutState",

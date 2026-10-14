@@ -531,6 +531,9 @@ model Release {
   runId        String?
   // MODELS only: recog- and the recognition entry's sha256 prefix, read from the image header (KEHOACH 7.5).
   embeddingVersion String?
+  // The publisher's Vietnamese line and the English details built from git (KEHOACH 7.7).
+  summary      String?      @db.VarChar(200)
+  notes        String?
   rolloutState RolloutState @default(DRAFT)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
