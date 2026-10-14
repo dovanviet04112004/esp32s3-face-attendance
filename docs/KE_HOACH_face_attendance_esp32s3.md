@@ -5170,6 +5170,8 @@ frontend/
 │   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
 │   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
+│   ├── devices/release-notes.tsx     # ★ §7.7 — câu tóm tắt và ghi chú của một bản phát hành,
+│   │                                 #   dùng chung cho trang Thiết bị và trang một máy
 │   ├── notifications/{bell.tsx, notice-list.tsx, notice-row.tsx, notice-prefs.tsx,
 │   │                  push-switch.tsx, push-devices.tsx, kinds.ts}
 │   │                                 # ★ §9.21.4 — kinds.ts là bảng tra mỗi loại: biểu tượng, câu,
