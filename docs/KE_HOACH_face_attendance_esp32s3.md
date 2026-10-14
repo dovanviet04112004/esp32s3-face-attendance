@@ -4856,13 +4856,13 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
 | `Employee` | id, code, fullName, department, active, embeddingVersion |
 | `FaceTemplate` | id, employeeId, templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaNextActorId (gói model mời tiếp khi firmware đã lên, và người đã bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8) |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, embeddingVersion (§7.5), summary (câu tóm tắt tiếng Việt), notes (chi tiết sinh từ git, §7.7), rolloutState. |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, embeddingVersion (§7.5), notesVi, notesEn (ghi chú cho người dùng theo ngôn ngữ, §7.7), rolloutState. Hai cột summary, notes còn lại chờ lượt co (§9.22.3c), không ai đọc. |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười ba bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
@@ -7292,34 +7292,32 @@ bản mới dù model không đổi: `make models-release` đưa lên đúng `mo
 và kiosk ở bàn đã chạy, sau khi đối từng nhánh với lock. Nó ghi `minFwVersion` bằng `PROJECT_VER`,
 nên máy chạy firmware cũ hơn từ chối lời mời thay vì cài một bộ nó không dựng nổi; nó liệt kê
 firmware, model và model nhận diện từng máy đang chạy, đòi gõ `yes` khi bản đổi model nhận diện
-(§7.5), và hỏi lý do cùng câu tóm tắt như `make release`. Lượt tải lên chạy trong container `api`
+(§7.5), và mở trình soạn ghi chú như `make release`. Lượt tải lên chạy trong container `api`
 trên VPS, nên `RELEASE_PUBLISH_TOKEN` không rời máy chủ. Tăng `PROJECT_VER` là cách **duy nhất**
 phát hành firmware: build lại cùng số không ra cùng byte, nên cùng số nghĩa là cùng bản, và lượt CI
 chạy lại chỉ nhận về "đã có".
 
-**`make release` là đường tăng số.** Nó hỏi phiên bản, lý do (thân commit, tiếng Anh) và một câu tóm
-tắt tiếng Việt cho người dùng dashboard; từ chối số không đứng sau `PROJECT_VER`; dựng ảnh như CI
-rồi kiểm ảnh mang đúng số ấy và dựng `-O2` — ảnh `-Og` làm xé preview (`latency.md` §15); commit,
-hỏi trước khi push vì push `main` là deploy, theo lượt CI tới cuối, đọc lại server để chắc bản đã
-lên, rồi để lại ghi chú. `DRY=1` chạy hết các phép kiểm rồi trả mọi thứ về như cũ;
-`make release-notes VER=` viết lại ghi chú của một bản firmware đã lên. `make release-status` đọc lại
-cả chuỗi chỉ bằng `SELECT`: lượt CI, bản mới nhất mỗi loại, máy nào đang chạy gì, lời mời gần nhất
-và các báo cáo `OTA_FAILED`/`OTA_ROLLED_BACK` bảy ngày qua.
+**`make release` là đường tăng số.** Nó hỏi phiên bản và lý do (thân commit, tiếng Anh); từ chối số
+không đứng sau `PROJECT_VER`; mở trình soạn ghi chú; dựng ảnh như CI rồi kiểm ảnh mang đúng số ấy và
+dựng `-O2` — ảnh `-Og` làm xé preview (`latency.md` §15); commit, hỏi trước khi push vì push `main` là
+deploy, theo lượt CI tới cuối, đọc lại server để chắc bản đã lên, rồi để lại ghi chú. `DRY=1` chạy
+hết các phép kiểm rồi trả mọi thứ về như cũ; `make release-notes VER=` viết lại ghi chú của một bản
+firmware đã lên. `make release-status` đọc lại cả chuỗi chỉ bằng `SELECT`: lượt CI, bản mới nhất mỗi
+loại, máy nào đang chạy gì, lời mời gần nhất và các báo cáo `OTA_FAILED`/`OTA_ROLLED_BACK` bảy ngày qua.
 
-**Mỗi bản có ghi chú: server giữ để dashboard hiện, GitHub Releases giữ làm sổ.** Ghi chú gồm câu
-tóm tắt tiếng Việt (`summary`) người phát hành viết, và phần chi tiết tiếng Anh (`notes`) sinh từ
-git. Firmware: thân commit phát hành, các commit đụng `firmware/` kể từ bản trước gom theo loại
-`feat` · `fix` · `perf` · còn lại, cùng kích thước và sha256 server giữ. Model: lý do, file, sha256
-và run của từng nhánh, model nhận diện, firmware tối thiểu, có đổi không gian embedding hay không, và
-các commit đã đổi lock kể từ bản model trước. Câu tóm tắt không vào commit vì commit viết tiếng Anh
-(CLAUDE.md §3.1); phần chi tiết chỉ chuẩn khi commit chuẩn, nên hook `commit-msg` kiểm khuôn của
-CLAUDE.md §5 (§4). Server nhận qua `PUT /releases/notes` cùng `RELEASE_PUBLISH_TOKEN`, ghi được cả
-cho bản đã lên từ trước, và trang *Kiosk* hiện câu tóm tắt cạnh huy hiệu "Có bản x.y.z" và mở toàn
-bộ ghi chú trước khi bấm cập nhật. GitHub giữ cùng ghi chú dưới tag `firmware-vX.Y.Z`, gắn vào
-commit đặt `PROJECT_VER` ấy, và `models-vN`, N tăng dần, gắn vào commit mang lock của gói. Không
-đính file vì repo công khai: ảnh firmware mang token bootstrap của lô (§4.9) và trọng số recog chỉ
-dùng cho nghiên cứu (§1.1); file chỉ nằm ở volume `releases` và máy train. Không tag nào được gắn
-*Latest*: link tải app Android mặc định là tệp của bản phát hành mới nhất (§9.21.7).
+**Mỗi bản có ghi chú như bản cập nhật của một app, bằng hai thứ tiếng.** Người phát hành viết vài
+gạch đầu dòng cho người dùng — cái gì mới, cái gì nhanh hơn, lỗi nào hết — một bản tiếng Việt
+(`notesVi`) và một bản tiếng Anh (`notesEn`), và dashboard hiện bản đúng ngôn ngữ người xem chọn ở
+Cài đặt. Commit không chép vào đó, vì commit viết cho người đọc code: trình soạn mở sẵn khung hai mục
+cùng các commit kể từ bản trước (với model, các commit đã đổi lock) làm gợi ý, và dòng gợi ý bị bỏ khi
+lưu; phần gợi ý chỉ chuẩn khi commit chuẩn, nên hook `commit-msg` kiểm khuôn của CLAUDE.md §5 (§4).
+Server nhận qua `PUT /releases/notes` cùng `RELEASE_PUBLISH_TOKEN`, ghi được cả cho bản đã lên từ
+trước. GitHub Releases giữ cùng hai bản ghi chú dưới tag `firmware-vX.Y.Z`, gắn vào commit đặt
+`PROJECT_VER` ấy, hay `models-vN`, N tăng dần, gắn vào commit mang lock của gói, cộng một link so sánh
+commit cho người làm kỹ thuật. Không đính file vì repo công khai: ảnh firmware mang token bootstrap
+của lô (§4.9) và trọng số recog chỉ dùng cho nghiên cứu (§1.1); file chỉ nằm ở volume `releases` và
+máy train. Không tag nào được gắn *Latest*: link tải app Android mặc định là tệp của bản phát hành mới
+nhất (§9.21.7).
 
 **Cửa đưa bản lên: `POST /releases`.** Thân là file thô, `target` và `version` đi trong query, và
 `Authorization` mang `RELEASE_PUBLISH_TOKEN` — token riêng của bên phát hành, không phải tài khoản
@@ -7352,11 +7350,21 @@ ai đặt được một lời mời lên `down/ota` là chỉ được máy t�
 sha256 đi cùng chính lời mời ấy nên không chặn được gì. `main` đưa địa chỉ ấy cho `net_ota` như
 một tham số, vì hai component cùng tầng không gọi nhau (§4.5.4).
 
-**Người thấy bản mới mà không phải đi tìm.** Trang *Kiosk* so `fwVersion` và `modelVersion` của
-từng máy (heartbeat ghi) với bản mới nhất của loại ấy: máy cũ hơn mang huy hiệu "Có bản x.y.z", máy
-đang cập nhật mang "Đang cập nhật…", đầu trang có **Cập nhật tất cả (n)** với n chỉ đếm máy chưa
-đang cập nhật. Firmware so theo `major.minor.patch`; model so theo chuỗi, khác là
-cũ. Trang một máy có nút **Cập nhật** và một dòng trạng thái suy ra từ ba nguồn đã có:
+**Người thấy bản mới mà không phải đi tìm, và cập nhật bằng một nút.** Trang *Kiosk* so `fwVersion`
+và `modelVersion` của từng máy (heartbeat ghi) với bản mới nhất của mỗi loại. Firmware so theo
+`major.minor.patch`; model so theo chuỗi, khác là cũ. Firmware và model vẫn là hai bản riêng trên
+server — hai phân vùng, hai nhịp ra bản, A/B và lùi riêng — nhưng người dùng chỉ thấy một bản cập nhật:
+máy chậm bất kỳ phần nào mang huy hiệu "Có bản cập nhật", máy đang cập nhật mang "Đang cập nhật…",
+trang một máy có đúng một nút **Cập nhật**, và đầu trang *Kiosk* có **Cập nhật tất cả (n)** với n đếm
+máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì mới* gộp ghi chú của cả hai phần.
+
+Một lần bấm, server lo thứ tự. Máy chậm firmware thì server mời firmware trước và ghi gói model mới
+nhất máy còn thiếu vào `otaNextReleaseId` của máy, cùng người đã bấm. Mỗi heartbeat, server xét lời
+mời đang chạy: firmware đã **Đã lên** (không còn chạy thử) thì server tự mời tiếp gói model, nên
+`minFwVersion` của gói luôn được thoả; firmware **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì
+bước model bị bỏ và nút hiện lại. Máy chỉ chậm model thì mời model ngay. Gói đổi model nhận diện vẫn
+chỉ đi bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5), và bước model của từng máy theo đúng
+chuỗi trên. Trang một máy có một dòng trạng thái suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
