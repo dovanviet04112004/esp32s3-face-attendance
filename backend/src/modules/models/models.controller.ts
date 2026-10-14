@@ -108,7 +108,7 @@ export class ModelsController {
   @Post("update/:deviceId")
   @AuditedInService()
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Bring one kiosk to the newest firmware and models: the first step now, the second once it is installed" })
+  @ApiOperation({ summary: "Bring one kiosk to the newest firmware and models: the first step now, each next one once the one ahead is installed" })
   @ApiCreatedResponse({ type: UpdateView })
   @ApiErrors(HttpStatus.CONFLICT)
   @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
