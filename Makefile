@@ -5,7 +5,7 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
-        release models-release release-status \
+        release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
         usb-list usb-attach usb-detach \
@@ -359,9 +359,44 @@ process.stdin.on("data", (part) => parts.push(part)).on("end", async () => {
 endef
 export UPLOAD_JS
 
+define NOTES_JS
+const parts = [];
+process.stdin.on("data", (part) => parts.push(part)).on("end", async () => {
+  const answer = await fetch("http://127.0.0.1:" + process.env.PORT + "/releases/notes", {
+    method: "PUT",
+    headers: { authorization: "Bearer " + process.env.RELEASE_PUBLISH_TOKEN, "content-type": "application/json" },
+    body: Buffer.concat(parts),
+  });
+  const text = await answer.text();
+  if (!answer.ok) {
+    console.log("HTTP " + answer.status + " " + text);
+    process.exit(1);
+  }
+  const held = JSON.parse(text);
+  console.log("server notes of " + held.target + " " + held.version + ": " + held.summary);
+});
+endef
+export NOTES_JS
+
+summary_ok = [ -n "$$summary" ] && [ "$$(printf '%s' "$$summary" | python3 -c 'import sys; print(len(sys.stdin.read()))')" -le 200 ]
+# Takes $$target $$version $$summary, the notes file $$notes, and $$tag $$title $$at for GitHub.
+leave_notes = \
+	code=$$(printf '%s' "$$NOTES_JS" | base64 -w0); \
+	T="$$target" V="$$version" S="$$summary" N="$$notes" python3 -c 'import json, os; print(json.dumps({"target": os.environ["T"], "version": os.environ["V"], "summary": os.environ["S"], "notes": open(os.environ["N"], encoding="utf-8").read()}))' \
+	  | ssh $(VPS) "docker exec -i kiosk-api node -e 'eval(Buffer.from(process.argv[1], \"base64\").toString())' $$code"; \
+	body=$$(mktemp); { printf '**%s**\n\n' "$$summary"; cat "$$notes"; } > "$$body"; \
+	if gh release view "$$tag" > /dev/null 2>&1; then \
+	  gh release edit "$$tag" --title "$$title" --notes-file "$$body" --latest=false > /dev/null; echo "GitHub release $$tag: notes rewritten"; \
+	else \
+	  gh release create "$$tag" --target "$$at" --title "$$title" --notes-file "$$body" --latest=false > /dev/null; \
+	  echo "GitHub release $$tag on $$(git rev-parse --short "$$at")"; \
+	fi; \
+	rm -f "$$notes" "$$body"
+
 define RELEASE_STATUS_SQL
 select 'server   ' || target || ' ' || version || ', published ' || to_char("createdAt", 'YYYY-MM-DD HH24:MI') || ' UTC'
        || coalesce(', ' || "embeddingVersion", '') || coalesce(', needs firmware ' || "minFwVersion", '')
+       || coalesce(', "' || summary || '"', ', no notes yet')
   from (select distinct on (target) * from "Release" where path is not null order by target, "createdAt" desc) newest;
 select 'kiosk    ' || id || ', ' || case when online then 'online' else 'offline' end
        || ', fw ' || coalesce("fwVersion", '?') || ', models ' || coalesce("modelVersion", '?')
@@ -380,9 +415,9 @@ endef
 export RELEASE_STATUS_SQL
 
 # Pushing main deploys, so the push waits for a typed y unless YES=1 (KEHOACH 7.7).
-release: idf fw-secrets ## Firmware release VER with commit body WHY (both asked when missing): checks, build as CI, commit, push, wait for CI (DRY=1, YES=1)
+release: idf fw-secrets ## Firmware release VER, commit body WHY, Vietnamese SUMMARY (asked when missing): checks, build as CI, commit, push, CI, notes (DRY=1, YES=1)
 	@set -euo pipefail; \
-	now='$(fw_version)'; ver="$${VER:-}"; why="$${WHY:-}"; \
+	now='$(fw_version)'; ver="$${VER:-}"; why="$${WHY:-}"; summary="$${SUMMARY:-}"; \
 	command -v gh >/dev/null || { echo "gh is missing: the last step follows the CI run with it"; exit 1; }; \
 	[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "a release goes out from main"; exit 1; }; \
 	[ -z "$$(git status --porcelain --untracked-files=no)" ] || { echo "commit or stash first: the release commit holds PROJECT_VER alone"; exit 1; }; \
@@ -396,6 +431,8 @@ release: idf fw-secrets ## Firmware release VER with commit body WHY (both asked
 	  || { echo "$$ver does not come after $$now"; exit 1; }; \
 	[ -n "$$why" ] || read -r -p "Why this release (the commit body): " why || { echo "WHY is missing"; exit 1; }; \
 	[ -n "$$why" ] || { echo "the commit body cannot be empty"; exit 1; }; \
+	[ -n "$$summary" ] || read -r -p "Vietnamese summary for the dashboard (one line): " summary || { echo "SUMMARY is missing"; exit 1; }; \
+	$(summary_ok) || { echo "SUMMARY is one line of 1 to 200 characters"; exit 1; }; \
 	echo "2/7 version $$now -> $$ver"; \
 	restore() { git checkout -q -- firmware/CMakeLists.txt; }; \
 	sed -i "s/^set(PROJECT_VER \".*\")$$/set(PROJECT_VER \"$$ver\")/" firmware/CMakeLists.txt; \
@@ -427,16 +464,36 @@ release: idf fw-secrets ## Firmware release VER with commit body WHY (both asked
 	held=$$(printf "select count(*) from \"Release\" where target = 'FIRMWARE' and version = '%s' and path is not null;\n" "$$ver" | $(prod_sql)); \
 	[ "$$held" = 1 ] || { echo "CI passed but the server holds no FIRMWARE $$ver: gh run view $$run --log"; exit 1; }; \
 	echo "7/7 the server holds FIRMWARE $$ver"; \
+	$(MAKE) --no-print-directory release-notes VER="$$ver" SUMMARY="$$summary"; \
 	$(MAKE) --no-print-directory release-status; \
 	echo "next: dashboard, Devices page, Update on a kiosk or Update the whole fleet; then make release-status"
 
-# The header carries its packing time, so packing again names a new release: publish the image a desk kiosk ran.
-models-release: ## Publish the models image make pack wrote: check it packs the lock, ask on a recognition change, upload on the VPS (MIN_FW=, DRY=1, YES=1)
+release-notes: ## Notes of a published firmware VER (PROJECT_VER) with the Vietnamese SUMMARY, on the server and as GitHub release firmware-vVER
 	@set -euo pipefail; \
-	image=$(MODELS_IMAGE); min='$(or $(MIN_FW),$(fw_version))'; \
+	target=FIRMWARE; version="$${VER:-$(fw_version)}"; summary="$${SUMMARY:-}"; \
+	[ -n "$$summary" ] || read -r -p "Vietnamese summary of $$version for the dashboard (one line): " summary || { echo "SUMMARY is missing"; exit 1; }; \
+	$(summary_ok) || { echo "SUMMARY is one line of 1 to 200 characters"; exit 1; }; \
+	held=$$(printf "select \"sizeBytes\" || ' ' || sha256 from \"Release\" where target = 'FIRMWARE' and version = '%s';\n" "$$version" | $(prod_sql)); \
+	[ -n "$$held" ] || { echo "the server holds no FIRMWARE $$version"; exit 1; }; \
+	read -r size sha <<< "$$held"; \
+	at=$$(git log --format=%H -S"set(PROJECT_VER \"$$version\")" -- firmware/CMakeLists.txt | tail -n1); \
+	[ -n "$$at" ] || { echo "no commit sets PROJECT_VER to $$version"; exit 1; }; \
+	git fetch -q origin main; \
+	git merge-base --is-ancestor "$$at" origin/main || { echo "push main first: the GitHub release points at $$at"; exit 1; }; \
+	notes=$$(mktemp); python3 tools/release_notes.py firmware --version "$$version" --size "$$size" --sha256 "$$sha" > "$$notes"; \
+	tag="firmware-v$$version"; title="Firmware kiosk $$version"; \
+	$(leave_notes)
+
+# The header carries its packing time, so packing again names a new release: publish the image a desk kiosk ran.
+models-release: ## Publish the image make pack wrote, with WHY and the Vietnamese SUMMARY: checks, ask on a recognition change, upload, notes (MIN_FW=, DRY=1, YES=1)
+	@set -euo pipefail; \
+	image=$(MODELS_IMAGE); min='$(or $(MIN_FW),$(fw_version))'; why="$${WHY:-}"; summary="$${SUMMARY:-}"; \
 	[ -f "$$image" ] || { echo "no $$image: make pack PORT=... writes it and runs it on a desk kiosk first"; exit 1; }; \
 	read -r version tag packs <<< "$$(python3 -c "$$MODELS_INFO_PY" "$$image" contracts/models.lock.json)"; \
 	[ "$$packs" = locked ] || { echo "$$image packs other models than contracts/models.lock.json: make pack PORT=... again"; exit 1; }; \
+	git diff --quiet HEAD -- contracts/models.lock.json || { echo "commit contracts/models.lock.json first: the GitHub release points at it"; exit 1; }; \
+	lockat=$$(git log -1 --format=%H -- contracts/models.lock.json); git fetch -q origin main; \
+	git merge-base --is-ancestor "$$lockat" origin/main || { echo "push main first: the GitHub release points at $$(git rev-parse --short "$$lockat")"; exit 1; }; \
 	echo "1/4 $$image is $$version, $$tag, $$(stat -c %s "$$image") B, packed $$(date -r "$$image" '+%F %R')"; \
 	fleet=$$(printf '%s\n' "select id || ' ' || coalesce(\"embeddingVersion\", '?') || ' ' || coalesce(\"modelVersion\", '?') || ' ' || coalesce(\"fwVersion\", '?') from \"Device\" where status = 'APPROVED' order by id;" | $(prod_sql)); \
 	fw_held=$$(printf "select count(*) from \"Release\" where target = 'FIRMWARE' and version = '%s' and path is not null;\n" "$$min" | $(prod_sql)); \
@@ -452,10 +509,21 @@ models-release: ## Publish the models image make pack wrote: check it packs the 
 	else \
 	  echo "3/4 same recognition model as the fleet: the faces stay"; \
 	fi; \
+	[ -n "$$why" ] || read -r -p "Why these models, in English: " why || { echo "WHY is missing"; exit 1; }; \
+	[ -n "$$why" ] || { echo "WHY cannot be empty"; exit 1; }; \
+	[ -n "$$summary" ] || read -r -p "Vietnamese summary for the dashboard (one line): " summary || { echo "SUMMARY is missing"; exit 1; }; \
+	$(summary_ok) || { echo "SUMMARY is one line of 1 to 200 characters"; exit 1; }; \
 	if [ -n "$${DRY:-}" ]; then echo "DRY=1: every check passed, nothing published"; exit 0; fi; \
 	echo "4/4 uploading $$version on $(VPS)"; \
 	code=$$(printf '%s' "$$UPLOAD_JS" | base64 -w0); \
 	ssh $(VPS) "docker exec -i kiosk-api node -e 'eval(Buffer.from(process.argv[1], \"base64\").toString())' $$code MODELS $$version $$min" < "$$image"; \
+	prev=$$(git ls-remote --tags origin 'refs/tags/models-v*' | sed -n 's|.*refs/tags/models-v\([0-9]*\)$$|\1|p' | sort -n | tail -n1); \
+	existing=$$(gh release list -L 100 --json tagName,name --jq ".[] | select(.tagName | startswith(\"models-v\")) | select(.name | contains(\"$$version\")) | .tagName" | head -n1); \
+	if [ -n "$$existing" ]; then tag=$$existing; base=$$(( $${existing#models-v} - 1 )); else base=$${prev:-0}; tag=models-v$$(( base + 1 )); fi; \
+	since=; if [ "$$base" -gt 0 ]; then since=$$(git ls-remote origin "refs/tags/models-v$$base" | cut -f1); fi; \
+	notes=$$(mktemp); python3 tools/release_notes.py models --image "$$image" --why "$$why" --min-fw "$$min" --moving "$$moving" --since "$$since" > "$$notes"; \
+	target=MODELS; at="$$lockat"; title="Model kiosk $${tag#models-} ($$version)"; \
+	$(leave_notes); \
 	echo "next: dashboard, Devices page, Update the whole fleet; then make release-status"
 
 release-status: ## Read-only: PROJECT_VER and models.bin here, the firmware CI, the newest releases, each kiosk's versions and OTA reports (VPS=)
@@ -466,6 +534,8 @@ release-status: ## Read-only: PROJECT_VER and models.bin here, the firmware CI, 
 	gh run view "$$run" --json databaseId,headSha,status,conclusion,jobs \
 	  --jq '"ci       firmware run \(.databaseId) on \(.headSha[0:8]): \(.status) \(.conclusion // "")", (.jobs[] | "ci         \(.name): \(.status) \(.conclusion // "")")'
 	@printf '%s\n' "$$RELEASE_STATUS_SQL" | $(prod_sql)
+	@gh release list -L 30 --json tagName,name \
+	  --jq '[.[] | select(.tagName | test("^(firmware|models)-v"))][0:4][] | "github   \(.tagName): \(.name)"'
 
 ##@ ESP-DL ladder and board probe (KEHOACH 3.7; RUN=<run under ml/>, or BRANCH= for the run the lock deploys)
 
