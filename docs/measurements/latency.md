@@ -1248,3 +1248,28 @@ theo cổng của E9-T31.
 
 Tái lập: mỗi nhánh `make quant-ptq`, `quant-int16`, `quant-qat ALLOW_TRAIN=1`, `quant-variants`, rồi `make ai-unit`
 với `ROW=` của hàng và `make quant-choose`; `make ai-profile LOG=… ESPDL=…` trên `models_0.log` của hàng.
+
+## 15. Preview xé hình khi kiosk chạy profile `dev` — đo 14/10
+
+Bộ model của §14.19 lên kiosk cùng firmware dựng bằng `PROFILE=dev` (`-Og`, assert, stack check, heap poisoning,
+KẾ HOẠCH §4.5.9), thay cho ảnh phát hành `prod` + `sdkconfig.fleet` mà kiosk chạy tới lúc đó. Preview xé ngang khi
+ảnh chuyển động, hết một lúc rồi lại bị. Nạp lại bộ model 24/09 trên cùng bản `dev` vẫn xé; cùng mã nguồn dựng bằng
+`bench` (`-O2`) thì hết ngay từ lần boot đầu. Phán quyết xé hay không là của chủ repo nhìn kính.
+
+Số là giờ ghi một khung của `drv_lcd_blit_frame`, tính từ lúc khoá pha xong; dòng `preview` in một mẫu mỗi ~5 s.
+Kiosk cho model, panel và sensor ngủ sau 60 s không ai lại gần. Ở bản `dev`, mỗi lần thức giờ ghi rơi vào một trong
+hai mức rồi giữ nguyên tới lần ngủ sau:
+
+| Profile | Đoạn giữa hai lần thức | Mẫu | Trung vị mỗi đoạn | Lớn nhất | fps preview | Kính |
+|---|---|---:|---:|---:|---:|---|
+| `dev` | mức chậm, 8 đoạn | 112 | 46,0–55,0 ms | 58,6 ms | 10,8–13,6 | xé |
+| `dev` | mức nhanh, 2 đoạn | 28 | 43,2–43,3 ms | 50,0 ms | 11,3–13,8 | không xé |
+| `bench` | 2 đoạn | 27 | 36,9–39,5 ms | 43,0 ms | 13,2–14,2 | không xé |
+
+Mức chậm có cả lúc không ai đứng trước camera và AI chỉ chạy detect (đoạn 548–608 s: trung vị 52,6 ms), nên nó
+không đến từ tải AI. Bộ model 24/09 trên bản `dev`, có người trước camera: 13 mẫu, trung vị 47,6 ms, lớn nhất 56,1 ms.
+Mỗi lần thức rơi vào mức nào là do đâu thì chưa đo 🔬.
+
+Tái lập: `make fw-dev` hoặc `make fw-bench`, `make flash PROFILE=… PORT=…`, rồi `make fw-log PROFILE=… LOG_S=900`
+trong lúc người đứng trước camera rồi đi ra cho kiosk ngủ, vài lượt. Log `dev`: `ml/artifacts/device/board_20261014/`
+(`kiosk_dev_15min.log`, `kiosk_dev_oldmodels.log`).
