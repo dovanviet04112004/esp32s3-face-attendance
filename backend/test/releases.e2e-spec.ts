@@ -30,7 +30,14 @@ const BEHIND = "e2e-rel-behind";
 const CURRENT = "e2e-rel-current";
 const WAITING = "e2e-rel-pending";
 const MODELS_DOOR = "e2e-rel-models";
-const CHAIN = ["e2e-rel-chain-a", "e2e-rel-chain-b", "e2e-rel-chain-c", "e2e-rel-chain-d"] as const;
+const CHAIN = [
+  "e2e-rel-chain-a",
+  "e2e-rel-chain-b",
+  "e2e-rel-chain-c",
+  "e2e-rel-chain-d",
+  "e2e-rel-chain-e",
+  "e2e-rel-chain-f",
+] as const;
 const MODELS_PREFIX = "img-e2e0";
 const KIOSK_MODELS = `${MODELS_PREFIX}0001`;
 const OLD_RECOG = createHash("sha256").update("e2e recognition model, the one kiosks run").digest();
@@ -685,5 +692,46 @@ describe("releases (e2e)", () => {
     const all = await asAdmin("post", "/releases/update").send({});
     assert.equal(all.status, 201, JSON.stringify(all.body));
     assert.ok(!(all.body.offered as string[]).includes(CHAIN[3]), "a kiosk on the newest of both was offered something");
+  });
+
+  it("walks a kiosk through an older firmware when the newest two need each other's predecessor", async () => {
+    assert.equal((await publish("target=FIRMWARE&version=98.4.0", appImage("98.4.0"))).status, 201);
+    const bridge = await publish(`target=MODELS&version=${MODELS_PREFIX}0100&minFwVersion=98.4.0`, modelsImage(NEW_RECOG));
+    assert.equal(bridge.status, 201, JSON.stringify(bridge.body));
+    assert.equal((await publish("target=FIRMWARE&version=98.5.0", appImage("98.5.0"))).status, 201);
+    const needs = await details(PUBLISHER, {
+      target: "FIRMWARE",
+      version: "98.5.0",
+      notesVi: "- Cần bộ model mới",
+      notesEn: "- Needs the new models",
+      requiresModels: `${MODELS_PREFIX}0100`,
+    });
+    assert.equal(needs.status, 200, JSON.stringify(needs.body));
+    await kiosk(CHAIN[4], "98.2.0", `${MODELS_PREFIX}00e0`);
+    offers.length = 0;
+    const pressed = await asAdmin("post", `/releases/update/${CHAIN[4]}`);
+    assert.equal(pressed.status, 201, JSON.stringify(pressed.body));
+    assert.deepEqual(pressed.body.offered, { target: "FIRMWARE", version: "98.4.0" });
+    assert.deepEqual(pressed.body.next, { target: "MODELS", version: `${MODELS_PREFIX}0100` });
+    const later = await publish(`target=MODELS&version=${MODELS_PREFIX}0200&minFwVersion=98.5.0`, modelsImage(NEW_RECOG));
+    assert.equal(later.status, 201, JSON.stringify(later.body));
+    await beatOf(CHAIN[4], { fwVersion: "98.4.0", modelVersion: `${MODELS_PREFIX}00e0`, onTrial: false });
+    await until(async () => offers.length === 2, "the bridging models offer");
+    assert.deepEqual((await asAdmin("get", `/releases/status/${CHAIN[4]}`)).body.next, { target: "FIRMWARE", version: "98.5.0" });
+    await beatOf(CHAIN[4], { fwVersion: "98.4.0", modelVersion: `${MODELS_PREFIX}0100` });
+    await until(async () => offers.length === 3, "the newest firmware offer");
+    const versions = offers.map((one) => (one.payload as { version: string }).version);
+    assert.deepEqual(versions, ["98.4.0", `${MODELS_PREFIX}0100`, "98.5.0"]);
+    await beatOf(CHAIN[4], { fwVersion: "98.5.0", modelVersion: `${MODELS_PREFIX}0100`, onTrial: false });
+    await new Promise((done) => setTimeout(done, 300));
+    assert.equal(offers.length, 3, "a release published after the press joined its chain");
+  });
+
+  it("refuses a press no order of the releases on the register can satisfy", async () => {
+    await db.release.updateMany({ where: { target: "FIRMWARE", version: "98.4.0" }, data: { path: null } });
+    await kiosk(CHAIN[5], "98.2.0", `${MODELS_PREFIX}00e0`);
+    const stuck = await asAdmin("post", `/releases/update/${CHAIN[5]}`);
+    assert.equal(stuck.status, 409, JSON.stringify(stuck.body));
+    assert.equal(stuck.body.message, "RELEASE_UNREACHABLE");
   });
 });

@@ -186,9 +186,6 @@ function view(release: Release): ReleaseView {
   return { ...rest, available: path !== null };
 }
 
-type Steps = { first: Release; next: Release | null };
-type Newest = Record<PublishedTarget, Release | null>;
-
 function stepOf(release: Release): ReleaseStep {
   return { target: release.target, version: release.version };
 }
@@ -206,6 +203,65 @@ function atLeast(version: string | null, wanted: string): boolean {
     }
   }
   return true;
+}
+
+type Runs = Pick<Device, "fwVersion" | "modelVersion">;
+
+// KEHOACH 7.7: the shortest order of releases with a file, published by asOf, from what the kiosk runs to the newest
+// of both kinds, every claim met as its step installs; firmware opens a path when two are as short. Null: it runs both.
+function route(device: Runs & Pick<Device, "fwOnTrial">, releases: Release[], asOf: Date | null): Release[] | null {
+  const steps = releases.filter((one) => one.path !== null && (asOf === null || one.createdAt <= asOf));
+  const firmware = steps.filter((one) => one.target === "FIRMWARE");
+  const models = steps.filter((one) => one.target === "MODELS");
+  const goals = [firmware[0], models[0]].filter((one): one is Release => one !== undefined);
+  // Models order by when they reached the server; img- names do not sort.
+  const modelsAt = new Map(releases.filter((one) => one.target === "MODELS").map((one) => [one.version, one.createdAt.getTime()]));
+  const timeOf = (version: string | null) => (version === null ? undefined : modelsAt.get(version));
+  const done = (runs: Runs) => goals.every((goal) => !behind(runs, goal));
+  const moves = (runs: Runs): Release[] => [
+    ...firmware.filter((one) => {
+      const ran = timeOf(runs.modelVersion);
+      const wanted = one.requiresModels === null ? undefined : timeOf(one.requiresModels);
+      return behind(runs, one) && (one.requiresModels === null || (ran !== undefined && wanted !== undefined && ran >= wanted));
+    }),
+    ...models.filter((one) => {
+      const ran = timeOf(runs.modelVersion);
+      return (
+        one.version !== runs.modelVersion &&
+        (ran === undefined || one.createdAt.getTime() > ran) &&
+        (one.minFwVersion === null || atLeast(runs.fwVersion, one.minFwVersion))
+      );
+    }),
+  ];
+  const start: Runs = { fwVersion: device.fwVersion, modelVersion: device.modelVersion };
+  if (done(start)) {
+    return null;
+  }
+  // The kiosk takes no offer while a firmware is on trial (FIRMWARE_ON_TRIAL, ESP_OTA_IMG_PENDING_VERIFY).
+  if (device.fwOnTrial === true) {
+    throw new ConflictException("OTA_IN_PROGRESS");
+  }
+  const keyOf = (runs: Runs) => `${runs.fwVersion ?? ""}|${runs.modelVersion ?? ""}`;
+  const seen = new Set([keyOf(start)]);
+  let level: { runs: Runs; path: Release[] }[] = [{ runs: start, path: [] }];
+  while (level.length > 0) {
+    const deeper: typeof level = [];
+    for (const { runs, path } of level) {
+      for (const step of moves(runs)) {
+        const after = step.target === "FIRMWARE" ? { ...runs, fwVersion: step.version } : { ...runs, modelVersion: step.version };
+        const longer = [...path, step];
+        if (done(after)) {
+          return longer;
+        }
+        if (!seen.has(keyOf(after))) {
+          seen.add(keyOf(after));
+          deeper.push({ runs: after, path: longer });
+        }
+      }
+    }
+    level = deeper;
+  }
+  throw new ConflictException("RELEASE_UNREACHABLE");
 }
 
 @Injectable()
@@ -469,6 +525,7 @@ export class ModelsService implements OnModuleInit {
         otaOfferedAt: true,
         otaNextReleaseId: true,
         otaNextActorId: true,
+        otaPressedAt: true,
         online: true,
       },
       orderBy: { id: "asc" },
@@ -506,7 +563,7 @@ export class ModelsService implements OnModuleInit {
   }
 
   /** Bring one kiosk to the newest firmware and models in the order their claims allow: the first step is
-   *  offered now and the second queued until a heartbeat shows the first installed (KEHOACH 7.7).
+   *  offered now and each next one once a heartbeat shows the one ahead installed (KEHOACH 7.7).
    */
   async update(deviceId: string, actorId: string): Promise<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }> {
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
@@ -516,12 +573,13 @@ export class ModelsService implements OnModuleInit {
     if (device.status !== "APPROVED") {
       throw new ConflictException("DEVICE_NOT_APPROVED");
     }
-    const steps = await this.plan(device, await this.newest());
-    if (!steps) {
+    const pressedAt = new Date();
+    const path = route(device, await this.releases(), null);
+    if (!path) {
       throw new ConflictException("RELEASE_ALREADY_RUNNING");
     }
     // One door on another model would refuse every face captured at the rest (KEHOACH 7.5).
-    if ([steps.first, steps.next].some((one) => one !== null && changesRecognition(device, one))) {
+    if (path.some((step) => changesRecognition(device, step))) {
       throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
     }
     if ((await this.status(deviceId))?.busyUntil) {
@@ -530,44 +588,45 @@ export class ModelsService implements OnModuleInit {
     if (!device.online) {
       throw new ConflictException("DEVICE_OFFLINE");
     }
-    const offeredAt = await this.send(steps.first, device, actorId, steps.next);
+    const [first, next = null] = path;
+    const offeredAt = await this.send(first, device, actorId, { next, pressedAt });
     if (!offeredAt) {
       throw new ConflictException((await this.isOnline(deviceId)) ? "OTA_IN_PROGRESS" : "DEVICE_OFFLINE");
     }
-    return { deviceId, offered: stepOf(steps.first), next: steps.next ? stepOf(steps.next) : null };
+    return { deviceId, offered: stepOf(first), next: next ? stepOf(next) : null };
   }
 
   /** The same for every approved, online kiosk behind on either kind. A release that changes recognition needs
-   *  `recapture`; a kiosk whose claims cannot be met counts as failed.
+   *  `recapture`; a kiosk with no path to the newest counts as failed, one on firmware trial as busy.
    */
   async updateAll(
     actorId: string,
     recapture = false,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
-    const newest = await this.newest();
+    const pressedAt = new Date();
+    const releases = await this.releases();
     const installing = await this.installing();
     const fleet = await this.db.device.findMany({ where: { status: "APPROVED" }, orderBy: { id: "asc" } });
     const failed: string[] = [];
-    const planned: { device: Device; steps: Steps }[] = [];
+    const busy: string[] = [];
+    const planned: { device: Device; path: Release[] }[] = [];
     for (const device of fleet) {
       try {
-        const steps = await this.plan(device, newest);
-        if (steps) {
-          planned.push({ device, steps });
+        const path = route(device, releases, null);
+        if (path) {
+          planned.push({ device, path });
         }
-      } catch {
-        failed.push(device.id);
+      } catch (error) {
+        (error instanceof ConflictException && error.message === "OTA_IN_PROGRESS" ? busy : failed).push(device.id);
       }
     }
-    const moves = (device: Device, steps: Steps) =>
-      [steps.first, steps.next].some((one) => one !== null && changesRecognition(device, one));
-    if (!recapture && planned.some(({ device, steps }) => !installing.has(device.id) && device.online && moves(device, steps))) {
+    const moves = (device: Device, path: Release[]) => path.some((step) => changesRecognition(device, step));
+    if (!recapture && planned.some(({ device, path }) => !installing.has(device.id) && device.online && moves(device, path))) {
       throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
     }
     const offered: string[] = [];
-    const busy: string[] = [];
     const offline: string[] = [];
-    for (const { device, steps } of planned) {
+    for (const { device, path } of planned) {
       if (installing.has(device.id)) {
         busy.push(device.id);
         continue;
@@ -577,7 +636,7 @@ export class ModelsService implements OnModuleInit {
         continue;
       }
       try {
-        const sent = await this.send(steps.first, device, actorId, steps.next);
+        const sent = await this.send(path[0], device, actorId, { next: path[1] ?? null, pressedAt });
         if (sent) {
           offered.push(device.id);
         } else {
@@ -598,8 +657,8 @@ export class ModelsService implements OnModuleInit {
     );
   }
 
-  /** Offer the step one Update press queued once the offer ahead of it is installed, or drop it when that
-   *  offer fails, rolls back, is cut or expires (KEHOACH 7.7).
+  /** Offer the next step of an Update press once the offer ahead of it is installed, finding the path again
+   *  from what the kiosk runs, or end the press when that offer fails, rolls back, is cut or expires (KEHOACH 7.7).
    */
   async followUp(deviceId: string): Promise<void> {
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
@@ -614,57 +673,27 @@ export class ModelsService implements OnModuleInit {
     // Cleared ahead of the send, so two heartbeats in a row never offer it twice.
     const cleared = await this.db.device.updateMany({
       where: { id: deviceId, otaNextReleaseId: queued },
-      data: { otaNextReleaseId: null, otaNextActorId: null },
+      data: { otaNextReleaseId: null, otaNextActorId: null, otaPressedAt: null },
     });
     if (cleared.count === 0 || current?.state !== "INSTALLED") {
       return;
     }
-    const next = await this.db.release.findUnique({ where: { releaseId: queued } });
-    if (!next?.path || !behind(device, next)) {
+    const path = route(device, await this.releases(), device.otaPressedAt);
+    if (!path) {
       return;
     }
-    await this.send(next, { ...device, otaNextReleaseId: null, otaNextActorId: null }, device.otaNextActorId ?? undefined);
+    const [step, next = null] = path;
+    // A step the press did not name never moves the kiosk to another recognition model (KEHOACH 7.5).
+    if (step.releaseId !== queued && changesRecognition(device, step)) {
+      this.log.warn(`the update of ${deviceId} stops ahead of ${step.version}, which changes recognition`);
+      return;
+    }
+    const ended = { ...device, otaNextReleaseId: null, otaNextActorId: null, otaPressedAt: null };
+    await this.send(step, ended, device.otaNextActorId ?? undefined, { next, pressedAt: device.otaPressedAt });
   }
 
-  // KEHOACH 7.7's order for one kiosk: models that need newer firmware wait for it, firmware that needs newer
-  // models waits for them, and otherwise firmware goes first. Null when the kiosk runs the newest of both.
-  private async plan(device: Device, newest: Newest): Promise<Steps | null> {
-    const firmware = newest.FIRMWARE && behind(device, newest.FIRMWARE) ? newest.FIRMWARE : null;
-    const models = newest.MODELS && behind(device, newest.MODELS) ? newest.MODELS : null;
-    if (!firmware && !models) {
-      return null;
-    }
-    const modelsWait = models?.minFwVersion ? !atLeast(device.fwVersion, models.minFwVersion) : false;
-    const firmwareWaits = firmware?.requiresModels ? !(await this.runsAtLeast(device, firmware.requiresModels)) : false;
-    if (modelsWait && firmwareWaits) {
-      throw new ConflictException("RELEASE_LOCKSTEP");
-    }
-    if (models && modelsWait) {
-      if (!firmware || !atLeast(firmware.version, models.minFwVersion as string)) {
-        throw new ConflictException("RELEASE_FIRMWARE_MISSING");
-      }
-      return { first: firmware, next: models };
-    }
-    // The kiosk takes no models while a firmware is on trial (FIRMWARE_ON_TRIAL), so they wait for its sign-off.
-    if (models && (firmwareWaits || !firmware) && device.fwOnTrial === true) {
-      throw new ConflictException("OTA_IN_PROGRESS");
-    }
-    if (models && firmwareWaits) {
-      return { first: models, next: firmware };
-    }
-    return firmware ? { first: firmware, next: models } : { first: models as Release, next: null };
-  }
-
-  // Whether the kiosk runs the named models release or one published after it; img- names do not sort.
-  private async runsAtLeast(device: Device, version: string): Promise<boolean> {
-    if (!device.modelVersion) {
-      return false;
-    }
-    const [running, wanted] = await Promise.all([
-      this.db.release.findUnique({ where: { target_version: { target: "MODELS", version: device.modelVersion } } }),
-      this.db.release.findUnique({ where: { target_version: { target: "MODELS", version } } }),
-    ]);
-    return running !== null && wanted !== null && running.createdAt >= wanted.createdAt;
+  private releases(): Promise<Release[]> {
+    return this.db.release.findMany({ where: { target: { in: [...PUBLISHED_TARGETS] } }, orderBy: { createdAt: "desc" } });
   }
 
   private async firmwareRuns(minFwVersion: string): Promise<boolean> {
@@ -673,15 +702,6 @@ export class ModelsService implements OnModuleInit {
       select: { version: true },
     });
     return firmware.some((one) => atLeast(one.version, minFwVersion));
-  }
-
-  private async newest(): Promise<Newest> {
-    const [FIRMWARE, MODELS] = await Promise.all(
-      PUBLISHED_TARGETS.map((target) =>
-        this.db.release.findFirst({ where: { target, path: { not: null } }, orderBy: { createdAt: "desc" } }),
-      ),
-    );
-    return { FIRMWARE, MODELS };
   }
 
   /** How the newest offer to a kiosk went, read from its heartbeat and its events. */
@@ -823,12 +843,13 @@ export class ModelsService implements OnModuleInit {
    */
   private async send(
     release: Release,
-    device: Pick<Device, "id" | "otaReleaseId" | "otaOfferedAt" | "otaNextReleaseId" | "otaNextActorId">,
+    device: Pick<Device, "id" | "otaReleaseId" | "otaOfferedAt" | "otaNextReleaseId" | "otaNextActorId" | "otaPressedAt">,
     actorId?: string,
-    next: Release | null = null,
+    press: { next: Release | null; pressedAt: Date | null } = { next: null, pressedAt: null },
   ): Promise<Date | null> {
     const deviceId = device.id;
     const offeredAt = new Date();
+    const { next } = press;
     const taken = await this.db.device.updateMany({
       where: { id: deviceId, status: "APPROVED", online: true, otaOfferedAt: device.otaOfferedAt },
       data: {
@@ -836,6 +857,7 @@ export class ModelsService implements OnModuleInit {
         otaOfferedAt: offeredAt,
         otaNextReleaseId: next?.releaseId ?? null,
         otaNextActorId: next ? (actorId ?? null) : null,
+        otaPressedAt: next ? press.pressedAt : null,
       },
     });
     if (taken.count === 0) {
@@ -862,6 +884,7 @@ export class ModelsService implements OnModuleInit {
           otaOfferedAt: device.otaOfferedAt,
           otaNextReleaseId: device.otaNextReleaseId,
           otaNextActorId: device.otaNextActorId,
+          otaPressedAt: device.otaPressedAt,
         },
       });
       throw error;
