@@ -1,9 +1,11 @@
 import type { Icon as IconType } from "@phosphor-icons/react";
 import {
+  ArrowCircleUpIcon,
   CalculatorIcon,
   CalendarDotsIcon,
   CalendarXIcon,
   ChatCircleTextIcon,
+  CheckCircleIcon,
   CheckSquareIcon,
   ClockClockwiseIcon,
   CoinsIcon,
@@ -47,7 +49,9 @@ export type NoticeKind =
   | "DAY_CORRECTED"
   | "SHIFT_CHANGED"
   | "TIMESHEET_MONTH_CLOSED"
-  | "PUNCH_RECORDED";
+  | "PUNCH_RECORDED"
+  | "RELEASE_AVAILABLE"
+  | "UPDATE_FINISHED";
 
 type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
@@ -130,6 +134,8 @@ export type NoticeSentence =
   | "kindKIOSK_ALERT_update"
   | "kindKIOSK_ALERT_spoof"
   | "kindKIOSK_ALERT_unknown"
+  | "kindRELEASE_AVAILABLE"
+  | "kindUPDATE_FINISHED"
   | "kindTASK_ASSIGNED"
   | "kindTASK_ASSIGNED_due"
   | "kindTASK_ASSIGNED_late"
@@ -374,6 +380,20 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     category: "SYSTEM",
     label: { key: "kindKIOSK_ALERT" },
     sentence: (notice) => ({ key: kioskSentence(notice) }),
+    path: (notice) => (notice.subject?.id && !notice.subject.hidden ? `/devices/${notice.subject.id}` : "/devices"),
+  },
+  RELEASE_AVAILABLE: {
+    icon: ArrowCircleUpIcon,
+    category: "SYSTEM",
+    label: { key: "kindRELEASE_AVAILABLE" },
+    sentence: () => ({ key: "kindRELEASE_AVAILABLE" }),
+    path: () => "/devices",
+  },
+  UPDATE_FINISHED: {
+    icon: CheckCircleIcon,
+    category: "SYSTEM",
+    label: { key: "kindUPDATE_FINISHED" },
+    sentence: () => ({ key: "kindUPDATE_FINISHED" }),
     path: (notice) => (notice.subject?.id && !notice.subject.hidden ? `/devices/${notice.subject.id}` : "/devices"),
   },
   TASK_ASSIGNED: {

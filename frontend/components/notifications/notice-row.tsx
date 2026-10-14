@@ -66,6 +66,7 @@ function counted(facts: Notice["facts"], name: string): number {
 /** The words of one notice: what happened, whom and what it is about, and where its work stands. */
 export function useNoticeWords() {
   const t = useTranslations("notices");
+  const kiosks = useTranslations("devices");
   const format = useFormatter();
   const locale = useLocale();
   const now = useNow({ updateInterval: kTickMs });
@@ -104,6 +105,22 @@ export function useNoticeWords() {
     return said.length > 0 ? said.join(" · ") : t("teamAllIn");
   }
 
+  function release(facts: Notice["facts"]): string | null {
+    const target = facts?.target;
+    const version = facts?.version;
+    if ((target !== "FIRMWARE" && target !== "MODELS") || typeof version !== "string") {
+      return null;
+    }
+    const named = `${kiosks(`target${target}`)} ${version}`;
+    return facts?.recognition === true ? `${named} · ${t("releaseRecognition")}` : named;
+  }
+
+  function finished(facts: Notice["facts"]): string | null {
+    const firmware = facts?.firmware;
+    const models = facts?.models;
+    return typeof firmware === "string" && typeof models === "string" ? t("updateRuns", { firmware, models }) : null;
+  }
+
   return {
     deviations,
 
@@ -125,6 +142,12 @@ export function useNoticeWords() {
       }
       if (notice.kind === "TEAM_ATTENDANCE") {
         return team(notice.facts);
+      }
+      if (notice.kind === "RELEASE_AVAILABLE") {
+        return release(notice.facts);
+      }
+      if (notice.kind === "UPDATE_FINISHED") {
+        return finished(notice.facts);
       }
       const subject = notice.subject;
       if (!subject || subject.hidden) {
