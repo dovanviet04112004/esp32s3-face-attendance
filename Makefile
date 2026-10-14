@@ -221,9 +221,22 @@ golden: ## Golden vectors of the three branches into contracts/golden/
 pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 	cd ml && ./scripts/50_pack_and_flash.sh $(if $(PORT),--port $(PORT))
 
-##@ Firmware (source $IDF_PATH/export.sh first; PORT=/dev/ttyACM0 picks the port)
+##@ Firmware (ESP-IDF from IDF_EXPORT when the shell has none; PORT=/dev/ttyACM0 picks the port)
+IDF_EXPORT ?= $(HOME)/esp/esp-idf/export.sh
+IDF_GOALS := idf fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write \
+  fw-part-erase fw-app fw-app-flash fw-app-test fw-assets release ai-unit speed board-save board-restore $(if $(PORT),pack)
+# Sourced once and exported, so a goal needing the tools runs from any shell, its sub-makes included.
+ifneq ($(filter $(IDF_GOALS),$(MAKECMDGOALS)),)
+ifeq ($(shell command -v idf.py 2>/dev/null),)
+idf_env := $(shell bash -c '. "$(IDF_EXPORT)" > /dev/null 2>&1 || exit; \
+  for name in PATH IDF_PATH IDF_PYTHON_ENV_PATH ESP_ROM_ELF_DIR ESP_IDF_VERSION OPENOCD_SCRIPTS IDF_TOOLS_EXPORT_CMD IDF_TOOLS_INSTALL_CMD; do \
+    [ -n "$${!name}" ] && printf "%s=%s\n" "$$name" "$${!name}"; done')
+$(foreach pair,$(idf_env),$(eval export $(pair)))
+endif
+endif
+
 idf:
-	@command -v idf.py >/dev/null || { echo "idf.py not found: source \$$IDF_PATH/export.sh"; exit 1; }
+	@command -v idf.py >/dev/null || { echo "no ESP-IDF: $(IDF_EXPORT) did not put idf.py on PATH; IDF_EXPORT=<its export.sh>"; exit 1; }
 
 fw-secrets:
 	@test -f firmware/sdkconfig.secrets || { \
