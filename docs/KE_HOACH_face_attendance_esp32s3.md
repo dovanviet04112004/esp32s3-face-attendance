@@ -4862,7 +4862,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
-| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion, runId, embeddingVersion (§7.5), notesVi, notesEn (ghi chú cho người dùng theo ngôn ngữ, §7.7), rolloutState. Hai cột summary, notes còn lại chờ lượt co (§9.22.3c), không ai đọc. |
+| `Release` | releaseId(uuid), target(`FIRMWARE`/`MODELS`/`ASSETS`), version, path (file trong volume `releases`; rỗng khi đã dọn), sha256, sizeBytes, minFwVersion (MODELS, bắt buộc), requiresModels (FIRMWARE, tuỳ chọn, §7.7), runId, embeddingVersion (§7.5), notesVi, notesEn (ghi chú cho người dùng theo ngôn ngữ, §7.7), rolloutState. Hai cột summary, notes còn lại chờ lượt co (§9.22.3c), không ai đọc. |
 | `AuditLog` | actorId, action(từ `audit-actions.ts`), subjectType, subjectId, meta(json), ts — §9.24 |
 
 Mười ba bảng. `AttendanceRecord.localId` là khoá chống trùng cho cơ chế at-least-once của
@@ -7311,8 +7311,8 @@ gạch đầu dòng cho người dùng — cái gì mới, cái gì nhanh hơn, 
 Cài đặt. Commit không chép vào đó, vì commit viết cho người đọc code: trình soạn mở sẵn khung hai mục
 cùng các commit kể từ bản trước (với model, các commit đã đổi lock) làm gợi ý, và dòng gợi ý bị bỏ khi
 lưu; phần gợi ý chỉ chuẩn khi commit chuẩn, nên hook `commit-msg` kiểm khuôn của CLAUDE.md §5 (§4).
-Server nhận qua `PUT /releases/notes` cùng `RELEASE_PUBLISH_TOKEN`, ghi được cả cho bản đã lên từ
-trước. GitHub Releases giữ cùng hai bản ghi chú dưới tag `firmware-vX.Y.Z`, gắn vào commit đặt
+Server nhận ghi chú và `requiresModels` qua `PUT /releases/details` cùng `RELEASE_PUBLISH_TOKEN`, ghi
+được cả cho bản đã lên từ trước. GitHub Releases giữ cùng hai bản ghi chú dưới tag `firmware-vX.Y.Z`, gắn vào commit đặt
 `PROJECT_VER` ấy, hay `models-vN`, N tăng dần, gắn vào commit mang lock của gói, cộng một link so sánh
 commit cho người làm kỹ thuật. Không đính file vì repo công khai: ảnh firmware mang token bootstrap
 của lô (§4.9) và trọng số recog chỉ dùng cho nghiên cứu (§1.1); file chỉ nằm ở volume `releases` và
@@ -7358,13 +7358,25 @@ máy chậm bất kỳ phần nào mang huy hiệu "Có bản cập nhật", má
 trang một máy có đúng một nút **Cập nhật**, và đầu trang *Kiosk* có **Cập nhật tất cả (n)** với n đếm
 máy chậm ít nhất một phần và chưa đang cập nhật. Hộp *Có gì mới* gộp ghi chú của cả hai phần.
 
-Một lần bấm, server lo thứ tự. Máy chậm firmware thì server mời firmware trước và ghi gói model mới
-nhất máy còn thiếu vào `otaNextReleaseId` của máy, cùng người đã bấm. Mỗi heartbeat, server xét lời
-mời đang chạy: firmware đã **Đã lên** (không còn chạy thử) thì server tự mời tiếp gói model, nên
-`minFwVersion` của gói luôn được thoả; firmware **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì
-bước model bị bỏ và nút hiện lại. Máy chỉ chậm model thì mời model ngay. Gói đổi model nhận diện vẫn
-chỉ đi bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5), và bước model của từng máy theo đúng
-chuỗi trên. Trang một máy có một dòng trạng thái suy ra từ ba nguồn đã có, kèm bước kế tiếp nếu còn:
+**Firmware và model ràng buộc nhau bằng hai lời khai, và server suy ra thứ tự từ đó:**
+
+| Quan hệ | Ai khai | Server làm gì |
+|---|---|---|
+| Gói model cần firmware từ X trở lên | `minFwVersion` của gói, **bắt buộc**: thiếu thì `POST /releases` từ chối (`RELEASE_MIN_FW_REQUIRED`); `make models-release` ghi bằng `PROJECT_VER` | máy firmware cũ hơn X cài firmware trước; không có bản firmware nào từ X trở lên thì từ chối (`RELEASE_FIRMWARE_MISSING`) |
+| Bản firmware cần gói model R trở lên | `requiresModels` của bản firmware, tuỳ chọn: `make release REQUIRES_MODELS=img-…`; R phải là gói đã lên | máy đang chạy gói cũ hơn R cài gói model mới nhất trước, rồi mới tới firmware |
+| Bản firmware chỉ thêm tính năng | để trống `requiresModels` | firmware đi một mình; có gói model mới thì đi sau |
+| Khoá chéo: firmware cần R mà R cần chính firmware ấy hay mới hơn | **cấm**: `PUT /releases/details` từ chối `RELEASE_LOCKSTEP`, vì không thứ tự hai bước nào cài được | — |
+
+Gói "cũ hơn" so theo lúc lên server, vì tên `img-…` không xếp được. Firmware luôn phải chạy được mọi
+gói model nó không khai là cần; bản nào lỡ không chạy được thì chính lượt chạy thử của nó tự lùi.
+
+Một lần bấm, server lo thứ tự theo bảng trên: nó mời bước đầu và ghi bước sau vào `otaNextReleaseId`
+của máy, cùng người đã bấm. Mỗi heartbeat, server xét lời mời đang chạy: bước đầu **Đã lên** (firmware
+không còn chạy thử, model đã nằm trong heartbeat) thì server tự mời bước sau, nên lời khai của bước sau
+luôn được thoả; bước đầu **bị quay về**, **lỗi**, **bị ngắt** hay **hết hạn** thì bước sau bị bỏ và nút
+hiện lại. Gói đổi model nhận diện vẫn chỉ đi bằng *Cập nhật tất cả* kèm xác nhận lấy mặt lại (§7.5),
+và từng máy đi đúng chuỗi trên. Trang một máy có một dòng trạng thái suy ra từ ba nguồn đã có, kèm
+bước kế tiếp nếu còn:
 
 | Trạng thái | Khi nào — xét từ trên xuống, dòng đầu khớp là đáp án |
 |---|---|
