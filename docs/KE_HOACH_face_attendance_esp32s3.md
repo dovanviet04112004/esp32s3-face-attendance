@@ -4729,7 +4729,7 @@ backend/
     │   │   ├── notice-items.service.ts   # ★ mở, đóng một lần, nổi lại ở mốc, nhận, đóng tay
     │   │   ├── subjects.service.ts   # ★ dựng người và ngày của chủ thể lúc đọc, qua phạm vi người xem
     │   │   └── sweeps/{contracts, probation, tasks, documents, stalled, kiosk, backup, attendance,
-    │   │                reconcile, cleanup}.sweep.ts
+    │   │                release, recapture, reconcile, cleanup}.sweep.ts
     │   │                             # ★ mỗi lượt quét một file; stalled nhắc mọi hàng đợi của hộp,
     │   │                             #   khiếu nại theo hạn trả lời; reconcile đóng việc mà bảng
     │   │                             #   nghiệp vụ đã xong, cleanup dọn tin quá NOTICE_KEEP_DAYS
@@ -7243,7 +7243,8 @@ sách chờ chụp lại, và cặp máy–người về `ASSIGNED`.
 Một lần chụp chỉ thay bộ cùng model với cửa chụp; bộ của model khác giữ nguyên. Nên máy còn chạy
 model cũ vẫn nhận người đã lấy mặt mới ở máy khác, kể cả sau một lượt đồng bộ lại, và chụp lại ở máy
 cũ không xoá mặt mới. Lan mẫu (§9.23 luật 7) chỉ đẩy mẫu sang cửa cùng model. Bộ của một model không
-còn máy nào trong đội chạy thì lượt dọn đêm xoá thật (§9.19). `Employee.embeddingVersion` chỉ còn
+còn máy nào trong đội chạy thì lượt dọn đêm xoá thật (§9.19); còn một máy đã duyệt chưa khai model thì
+lượt ấy không xoá gì, vì không ai biết máy ấy chạy model nào. `Employee.embeddingVersion` chỉ còn
 nghĩa là model của bộ chụp gần nhất.
 
 **Bước cập nhật đổi model nhận diện của một máy luôn cần xác nhận, nhưng không bắt cả đội đi cùng
@@ -9917,7 +9918,7 @@ và một lượt quét chạy lại không mở lại được chúng.
 | `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng thì `ADMIN` đóng tay | `/devices/<id>` |
 | `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau không còn mã hỏng nào → `CLEARED` | chi tiết ngay trên trang thông báo |
 | `RELEASE_AVAILABLE` · `RELEASES` | một bản firmware hay model lên server mà còn máy đã duyệt chạy bản cũ hơn nó (§7.7) | `ADMIN` | — | mọi máy đã duyệt đã lên → `DONE` (`COMPLETED`); bản mới hơn cùng loại lên, hay file bản ấy bị dọn → `EXPIRED` | `/devices` |
-| `FACE_RECAPTURE` · `RECAPTURE` | một kiosk người ấy được gán chạy model nhận diện mới hơn mọi bộ mẫu người ấy có (§7.5) | chính người ấy | — | có bộ mẫu trên model ấy → `DONE` (`COMPLETED`); không còn kiosk nào như vậy — bị gỡ khỏi máy, xoá sinh trắc, máy về model cũ → `CLEARED` | `/me` |
+| `FACE_RECAPTURE` · `RECAPTURE` | một kiosk người ấy được gán chạy model nhận diện mới hơn mọi bộ mẫu người ấy có (§7.5) | chính người ấy | — | có bộ mẫu trên model ấy hay mới hơn → `DONE` (`COMPLETED`); không còn kiosk nào như vậy — bị gỡ khỏi máy, xoá sinh trắc, máy về model cũ → `CLEARED` | `/me` |
 | `ATTENDANCE_EXCEPTION` · `ATTENDANCE` | lượt dựng ngày (§9.8) thấy một ngày lệch | chính người ấy | — | ngày được sửa; một đơn đã duyệt phủ ngày ấy; người ấy bấm *Không cần giải trình*; kỳ lương của ngày ấy chốt → `EXPIRED` | `/me/attendance?day=<ngày>` |
 | `TEAM_ATTENDANCE` · `TEAM_ATTENDANCE` | đầu ngày, sau giờ vào ca sớm nhất trong phạm vi cộng 30 phút | mỗi quản lý cho cây của mình; bàn nhân sự cho cả công ty | — | hết ngày → `EXPIRED` | hôm nay: tên của những người bản tin đếm, nhóm cần hỏi trước đứng trước. Có người vắng không đơn hay chưa chấm thì trang chủ người xem cuộn tới thẻ của nhóm (`?focus=today`, sau khi trang tải xong, vì trên điện thoại thẻ ấy nằm dưới hộp chờ duyệt) và mở sẵn danh sách vắng (`&who=absent`): bảng tên trên trang tổng quan, tab "Vắng" — hay "Chưa chấm" khi chưa ai quá giờ — trên thẻ nhóm của quản lý. Không ai vắng mà có người đi muộn thì trang chấm công của hôm nay lọc người đi muộn. Chỉ còn người nghỉ phép thì cũng thẻ ấy mở danh sách nghỉ (`&who=onLeave`). Ngày đã qua: ngoại lệ của ngày ấy trong bảng công. Mọi đường đều trong phạm vi người xem |
 
@@ -9957,10 +9958,14 @@ Tám thứ trong bảng cần nói thêm:
 - **Lấy mặt lại là một việc mỗi người** (`recapture:<id nhân viên>`, của chính người ấy). Cùng lượt canh
   năm phút tìm người có một kiosk đã duyệt, cặp chưa bị gỡ, chạy model nhận diện mới hơn mọi bộ mẫu
   người ấy có. "Mới hơn" so theo lúc bản model mang model ấy lên server; model chưa từng lên server tính
-  là cũ hơn mọi model đã lên. Người chưa từng có mặt không vào đây, vì lần chụp đầu là việc của bàn nhân
-  sự. Việc mở trang `/me`, nơi một thẻ nêu tên các kiosk ấy và cách chụp: trên màn kiosk mở menu, chọn
-  *Thêm người*, chọn tên mình rồi nhìn thẳng vào camera. Chụp ở một máy là đủ, vì mẫu lan sang mọi máy
-  cùng model.
+  là cũ hơn mọi model đã lên. Model của lần chụp gần nhất (`Employee.embeddingVersion`) tính như một bộ
+  người ấy có, kể cả khi lượt dọn đêm đã xoá bộ ấy: cả đội đổi model xong thì đêm ấy bộ cũ đi, và việc
+  nhắc không được đi theo nó trước khi người ta kịp chụp. Người chưa từng có mặt, hay đã bị xoá sinh
+  trắc, không vào đây, vì lần chụp đầu là việc của bàn nhân sự. `facts` mang model cần chụp; việc đóng
+  `DONE` khi người ấy có bộ trên model ấy hay một model mới hơn, còn lại là `CLEARED`. Việc mở trang
+  `/me`, nơi một thẻ đọc `GET /enrollments/me`, nêu tên các kiosk ấy và cách chụp: trên màn kiosk mở
+  menu, chọn *Thêm người*, chọn tên mình rồi nhìn thẳng vào camera. Chụp ở một máy là đủ, vì mẫu lan
+  sang mọi máy cùng model.
 
 **Tin.** Tin không có trạng thái chung, nên không có việc đi kèm.
 
@@ -10046,7 +10051,8 @@ Notification  id · userId · kind · itemId · subjectType · subjectId · subj
 ```
 
 - `queue` là tên các hàng đợi của hộp chờ duyệt cộng những hàng đợi không qua hộp: `CONTRACTS_DUE`,
-  `PROBATION_DUE`, `TASKS`, `DOCUMENTS`, `KIOSK`, `BACKUP`, `ATTENDANCE`, `TEAM_ATTENDANCE`.
+  `PROBATION_DUE`, `TASKS`, `DOCUMENTS`, `KIOSK`, `BACKUP`, `ATTENDANCE`, `TEAM_ATTENDANCE`, `RELEASES`,
+  `RECAPTURE`.
   `employeeId` là người mà việc nói về, để phạm vi lúc đọc có chỗ bám; khoá ngoại tới `Employee`,
   cùng `subjectEmployeeId` của `Notification`.
 - Giá trị của `queue`, `subjectType` và `outcome` vào lược đồ cùng migration với loại tin đầu tiên
