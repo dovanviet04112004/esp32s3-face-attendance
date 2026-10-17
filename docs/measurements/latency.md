@@ -1273,3 +1273,25 @@ Mỗi lần thức rơi vào mức nào là do đâu thì chưa đo 🔬.
 Tái lập: `make fw-dev` hoặc `make fw-bench`, `make flash PROFILE=… PORT=…`, rồi `make fw-log PROFILE=… LOG_S=900`
 trong lúc người đứng trước camera rồi đi ra cho kiosk ngủ, vài lượt. Log `dev`: `ml/artifacts/device/board_20261014/`
 (`kiosk_dev_15min.log`, `kiosk_dev_oldmodels.log`).
+
+## 16. Có tải preview: model ở lõi nào cũng chậm như nhau — đo 17–18/10 (E9-T51)
+
+Cùng `bench_ai` ESP-DL, cùng bộ model deploy của §14.19, chỉ đổi lõi của main task chạy model. Task tải chép một
+khung 480×320 RGB565 (307.200 B) mỗi 70 ms ở lõi 0, ưu tiên 7. Median / p95 của 50 lượt, µs:
+
+| | Model ở lõi 0, chung lõi với tải | Model ở lõi 1, như `ai_task` của kiosk |
+|---|---:|---:|
+| detect một mình, rảnh | 32.946 / 32.950 | 32.882 / 32.886 |
+| detect một mình, có tải | 33.059 / 43.029 | 35.225 / 41.698 |
+| spoof một mình, có tải | 83.462 / 94.341 | 86.008 / 86.966 |
+| recog một mình, có tải | 286.233 / 286.916 | 278.526 / 289.890 |
+| một lượt xen kẽ ba model, rảnh | 354.129 / 354.151 | 353.617 / 353.630 |
+| **một lượt xen kẽ ba model, có tải** | **404.114** / 414.548 (+14,1%) | **406.210** / 411.435 (+14,9%) |
+| tải chép được, mỗi chiều | 3.795 KB/s (12,65 khung/s) | 3.444 KB/s (11,48 khung/s) |
+
+Hai bố trí ra cùng mức chậm nhưng khác cơ chế. Cùng lõi, tải ưu tiên cao hơn nên mỗi lượt chép chạy một mình còn
+model đứng chờ: 12,65 khung/s, tức mỗi lượt chép ~9 ms ngoài 70 ms ngủ. Khác lõi, hai lõi chia bus PSRAM: lượt chép
+dài ra ~17 ms và model chạy chậm suốt lúc đó. Số mili giây của lượt chép suy ra từ số khung mỗi giây, không đo trực
+tiếp 🔬. Kiosk là trường hợp khác lõi, nên `bench_ai` đo theo bố trí ấy (KẾ HOẠCH §3 lớp 5).
+
+Log: `ml/artifacts/device/runtime_compare/espdl_core0.log` (lõi 0) và `espdl/bench.log` (lõi 1).
