@@ -230,6 +230,14 @@ TEST_CASE("the outputs two builds must agree on to the bit", "[bench_ai]")
 
     printf("hash detect %08" PRIx32 " (%u faces)  spoof %08" PRIx32 " (live %.6f)  recog %08" PRIx32 "\n",
            detect, (unsigned)found, spoof, (double)live, recog);
+
+    uint32_t scale_bits = 0;
+    memcpy(&scale_bits, &scale, sizeof(scale_bits));
+    printf("embedding ");
+    for (size_t i = 0; i < embedding_bytes; ++i) {
+        printf("%02x", (unsigned)(uint8_t)s_embedding[i]);
+    }
+    printf(" scale %08" PRIx32 "\n", scale_bits);
 }
 
 TEST_CASE("each branch alone, the number the budget is measured against", "[bench_ai]")
