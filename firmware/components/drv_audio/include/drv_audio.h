@@ -21,13 +21,13 @@ extern "C" {
  */
 esp_err_t drv_audio_init(void);
 
-/** Scale every sample of later plays: DRV_AUDIO_VOLUME_MAX is full scale, 0 is mute.
+/** Scale every sample of later plays: DRV_AUDIO_VOLUME_MAX is full scale, 0 plays nothing.
  *  @ctx any | non-blocking
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG above DRV_AUDIO_VOLUME_MAX
  */
 esp_err_t drv_audio_set_volume(uint8_t percent);
 
-/** Wake the amp, push the clip through, and shut the amp down again.
+/** Wake the amp, push the clip through, and shut the amp down again; at volume 0 nothing wakes.
  *  @ctx task | blocking for the clip length plus about 100 ms | takes m_i2c
  *  @param samples count of int16 mono samples at DRV_AUDIO_SAMPLE_HZ
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init | ESP_ERR_TIMEOUT

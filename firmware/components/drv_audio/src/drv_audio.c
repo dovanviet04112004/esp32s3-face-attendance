@@ -18,6 +18,7 @@ static const char *TAG = "drv_audio";
 #define CHUNK_SAMPLES 256
 #define WRITE_TIMEOUT_MS 1000
 #define AMP_WAKE_MS 10
+#define AMP_SD_TRIES 3
 
 static i2s_chan_handle_t s_tx;
 static uint8_t s_volume = DRV_AUDIO_VOLUME_MAX;
@@ -25,7 +26,12 @@ static int16_t s_chunk[CHUNK_SAMPLES];
 
 static esp_err_t amp_awake(bool awake)
 {
-    return drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, awake);
+    // A lost SD write leaves a grant silent or the amp switching at rest, so it is tried again.
+    esp_err_t err = ESP_FAIL;
+    for (int tries = 0; tries < AMP_SD_TRIES && err != ESP_OK; ++tries) {
+        err = drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, awake);
+    }
+    return err;
 }
 
 static esp_err_t push_chunk(size_t samples)
@@ -116,6 +122,10 @@ esp_err_t drv_audio_play_pcm(const int16_t *pcm, size_t samples)
 {
     if (s_tx == NULL || pcm == NULL) {
         return ESP_ERR_INVALID_STATE;
+    }
+    // A class-D stage switches even on zeros, so a muted kiosk keeps the amp in shutdown.
+    if (s_volume == 0) {
+        return ESP_OK;
     }
     APP_RETURN_ON_ERR(amp_awake(true), TAG, "amp on");
     vTaskDelay(pdMS_TO_TICKS(AMP_WAKE_MS));
