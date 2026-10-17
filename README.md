@@ -174,6 +174,8 @@ make fw-log PORT=/dev/ttyACM0       # in log của board trong 30 s
   xin vé lần đầu.
 - Board cắm vào Windows thì gắn sang WSL: `make usb-attach` tự tìm board `303a:1001` (cắm hai board cùng loại thì thêm `BUSID=` lấy từ `make usb-list`), rồi `make fw-mac PORT=/dev/ttyACM0` để chắc đó là board nào.
 - Test app trên board: `make fw-app APP=<đường dẫn>`, rồi `make fw-app-flash APP=<đường dẫn>`.
+- Đối chứng hai runtime: `make fw-bench-ai RUNTIME=espdl` hoặc `RUNTIME=tflm` dựng `test_apps/bench_ai`
+  vào `build_<RUNTIME>` riêng, nên dựng bản này không đè bản kia.
 
 ### Model
 

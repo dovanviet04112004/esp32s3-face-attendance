@@ -232,7 +232,7 @@ pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 ##@ Firmware (ESP-IDF from IDF_EXPORT when the shell has none; PORT=/dev/ttyACM0 picks the port)
 IDF_EXPORT ?= $(HOME)/esp/esp-idf/export.sh
 IDF_GOALS := idf fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write \
-  fw-part-erase fw-app fw-app-flash fw-app-test fw-assets release ai-unit speed board-save board-restore $(if $(PORT),pack)
+  fw-part-erase fw-app fw-app-flash fw-app-test fw-bench-ai fw-assets release ai-unit speed board-save board-restore $(if $(PORT),pack)
 # Sourced once and exported, so a goal needing the tools runs from any shell, its sub-makes included.
 ifneq ($(filter $(IDF_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(shell command -v idf.py 2>/dev/null),)
@@ -325,6 +325,14 @@ fw-app-test: idf ## Flash a built test app and run its pytest_*.py on the board 
 	$(call need,PORT,the board's serial port)
 	cd $(APP) && python -m pytest -o python_files='pytest_*.py' --embedded-services esp,idf \
 	  --target esp32s3 --port $(PORT) $(ARGS)
+
+# Each runtime keeps its own build dir and sdkconfig, so one build never rewrites the other (KEHOACH 3 layer 5).
+fw-bench-ai: idf ## Build test_apps/bench_ai on one runtime (RUNTIME=espdl or tflm) into build_<RUNTIME>
+	$(call need,RUNTIME,espdl or tflm)
+	@for f in firmware/test_apps/bench_ai/sdkconfig.{defaults,$(RUNTIME)} firmware/sdkconfig.defaults.esp32s3; do \
+	  [ $$f -nt firmware/test_apps/bench_ai/build_$(RUNTIME)/sdkconfig ] && rm -f firmware/test_apps/bench_ai/build_$(RUNTIME)/sdkconfig; done; true
+	cd firmware/test_apps/bench_ai && SDKCONFIG_DEFAULTS=$(CURDIR)/firmware/test_apps/bench_ai/sdkconfig.$(RUNTIME) \
+	  idf.py -B build_$(RUNTIME) -D SDKCONFIG=build_$(RUNTIME)/sdkconfig reconfigure && ninja -C build_$(RUNTIME) -j$(JOBS)
 
 fw-assets: idf ## Build the assets partition image into firmware/build/assets.bin (KEHOACH 6.2.8)
 	python firmware/assets/build_assets.py $(ARGS)
