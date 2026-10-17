@@ -26,6 +26,8 @@ _Static_assert(RUNS % 2 == 0, "the median below averages the two middle samples"
 #define LOAD_TASK_CORE 0
 #define LOAD_TASK_PRIORITY 7
 #define LOAD_TASK_STACK_BYTES 3072
+#define STACK_PROBE_BYTES (32 * 1024)
+#define STACK_PROBE_TIMEOUT_MS 120000
 
 static const char *const BRANCHES[] = {"detect", "spoof", "recog"};
 #define BRANCH_COUNT (sizeof(BRANCHES) / sizeof(BRANCHES[0]))
@@ -272,6 +274,34 @@ TEST_CASE("the heap stays where it was across fifty passes", "[bench_ai]")
     TEST_ASSERT_EQUAL(spiram, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
+static TaskHandle_t s_probe_caller;
+static esp_err_t s_probe_err;
+static UBaseType_t s_probe_left_bytes;
+
+static void stack_probe_task(void *arg)
+{
+    (void)arg;
+    s_probe_err = ESP_OK;
+    for (size_t branch = 0; branch < BRANCH_COUNT && s_probe_err == ESP_OK; ++branch) {
+        s_probe_err = RUN[branch]();
+    }
+    s_probe_left_bytes = uxTaskGetStackHighWaterMark(NULL);
+    xTaskNotifyGive(s_probe_caller);
+    vTaskDelete(NULL);
+}
+
+// A task of its own, so the stack Unity takes is not charged to the models (KEHOACH 3 layer 5).
+TEST_CASE("the stack one pass through the three models needs", "[bench_ai]")
+{
+    s_probe_caller = xTaskGetCurrentTaskHandle();
+    TEST_ASSERT_EQUAL(pdPASS, xTaskCreatePinnedToCore(stack_probe_task, "stack", STACK_PROBE_BYTES, NULL,
+                                                      uxTaskPriorityGet(NULL), NULL, xPortGetCoreID()));
+    TEST_ASSERT_EQUAL(pdTRUE, ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(STACK_PROBE_TIMEOUT_MS)));
+    TEST_ASSERT_EQUAL(ESP_OK, s_probe_err);
+    printf("stack: one pass took %u B of the probe's %u B\n", (unsigned)(STACK_PROBE_BYTES - s_probe_left_bytes),
+           (unsigned)STACK_PROBE_BYTES);
+}
+
 TEST_CASE("what copying the weights to psram and one crc32 over them cost", "[bench_ai]")
 {
     const void *data[BRANCH_COUNT];
@@ -303,6 +333,8 @@ TEST_CASE("what copying the weights to psram and one crc32 over them cost", "[be
 
 void app_main(void)
 {
+    printf("timing: %d warm-up and %d timed runs, load copies %u B every %u ms on core %d\n", WARMUP_RUNS, RUNS,
+           (unsigned)FRAME_BYTES, (unsigned)FRAME_PERIOD_MS, LOAD_TASK_CORE);
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
