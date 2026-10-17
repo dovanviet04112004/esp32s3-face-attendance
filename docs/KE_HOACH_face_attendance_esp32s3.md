@@ -3815,8 +3815,8 @@ không bao giờ bị tranh và không có đường mã nào chuyển quyền l
 **Màn phủ kín vẽ theo nhịp UI, không theo nhịp camera.** Khi overlay đang hiện là loại đục,
 `cam_task` chờ `ui_kiosk` publish overlay mới tối đa một chu kỳ khung rồi mới lấy khung cho AI;
 có overlay mới là vẽ ngay. Bàn phím và danh sách vì thế hiện phím vừa bấm sau một nhịp `ui_task`
-cộng một lượt vẽ, thay vì chờ thêm tới một khung camera (~75 ms ở 13 fps). AI vẫn nhận khung như
-cũ, và `cam_task` vẫn là người duy nhất ghi panel.
+cộng một lượt vẽ, thay vì chờ thêm tới một khung camera (~75 ms ở 13 fps). Dưới màn phủ kín model
+nghỉ (§5.4), nên khung camera lúc ấy chỉ để vẽ; `cam_task` vẫn là người duy nhất ghi panel.
 
 **Camera im thì màn hình vẫn chạy.** `ui_task` chỉ công bố overlay mới khi `cam_task` báo cái trước
 đã lên kính (`ui_kiosk_shown`), và với overlay có video thì lời báo ấy chỉ đến sau một lần blit. Quá
@@ -5767,7 +5767,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
 | `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt INT GPIO14; poll 40 ms chỉ khi đang có ngón tay | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3). Không ai chạm thì không có giao dịch I2C nào ngoài một lượt đọc an toàn mỗi giây, phòng ngắt lỡ |
-| **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1) |
+| **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1). Máy nghỉ, màn Cập nhật hay một màn phủ kín đang mở thì model nghỉ, khung trả thẳng về pool (§5.4) |
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
@@ -5916,12 +5916,20 @@ thời gian camera khoá lại PLL. Nghỉ quá sớm là trả giá đánh th�
 5. `drv_tof_read_mm` trả lỗi **thật** — khác `ESP_ERR_TIMEOUT`, vốn chỉ là "chưa tới lượt đo" và
    xảy ra mỗi 100 ms. Lưới an toàn: cảm biến hỏng thì máy phải thức, không phải ngủ vĩnh viễn
 
-**Màn của người vận hành tự đóng.** Menu, Thêm người, Danh sách, Cài đặt, Wi-Fi, Thiết bị, và màn
-lấy mẫu khi đã hỏng hay đã xong, tự về `Scan` sau `UI_ADMIN_IDLE_S` (30 s) không chạm; màn lấy mẫu
-hỏng về như bấm *Thoát*, màn đã xong về như bấm *Xác nhận*. Màn lấy mẫu đang chụp và màn Cập nhật
-không tự đóng, vì chúng tự kết thúc. Thiếu luật này thì nguồn số 4 thành vòng tự nuôi: một menu bị
-bỏ mở che khung ngắm và giữ máy thức mãi, trong khi chấm công vẫn chạy ngầm phía sau mà người đứng
-trước máy không thấy gì.
+**Màn của người vận hành dừng chấm công.** Lúc một màn phủ kín đang mở — Menu, Thêm người, Danh sách,
+Cài đặt, Wi-Fi, Thiết bị — model nghỉ và chấm công dừng hẳn: không bản ghi, không mở cửa, không
+chuông. `ai_task` trả khung về pool như lúc máy nghỉ, và `attend_task` bỏ những kết quả còn nằm trong
+`q_result` từ trước lúc màn mở. Người thao tác menu đứng ngay trước camera, nên để chấm công chạy ngầm
+là chấm chính họ, mở cửa giữa lúc họ gõ mật khẩu Wi-Fi, và chấm cả người đi ngang mà không ai thấy
+kết quả vì menu che màn quét. Về `Scan` thì máy nhìn lại từ đầu (§4.5.5h.1). Giá phải trả: trong lúc
+màn mở, tối đa `UI_ADMIN_IDLE_S` sau lần chạm cuối, không ai chấm công được ở máy ấy. Màn lấy mẫu là
+ngoại lệ đã có: model vẫn chạy để chụp, chỉ đường nghiệp vụ im (§4.5.5h).
+
+**Và các màn ấy tự đóng.** Menu, Thêm người, Danh sách, Cài đặt, Wi-Fi, Thiết bị, và màn lấy mẫu khi
+đã hỏng hay đã xong, tự về `Scan` sau `UI_ADMIN_IDLE_S` (30 s) không chạm; màn lấy mẫu hỏng về như
+bấm *Thoát*, màn đã xong về như bấm *Xác nhận*. Màn lấy mẫu đang chụp và màn Cập nhật không tự đóng,
+vì chúng tự kết thúc. Thiếu luật này thì nguồn số 4 thành vòng tự nuôi: một menu bị bỏ mở giữ máy
+thức mãi, và chấm công đứng theo nó.
 
 **Đầu ra của model không nằm trong danh sách, và đây là luật.** Lấy `result.faces > 0` làm nguồn
 đánh thức là vòng tự nuôi: bộ dò còn báo thấy mặt thì máy không bao giờ nghỉ, đúng hay sai cũng
