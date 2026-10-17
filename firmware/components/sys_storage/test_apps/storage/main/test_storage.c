@@ -415,9 +415,8 @@ TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[
     TEST_ASSERT_TRUE(header->count >= 1 && header->count <= STORAGE_MODEL_COUNT);
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_model_find("spoof", &data, &size, NULL));
     TEST_ASSERT_GREATER_THAN_UINT(0, size);
-    // A flatbuffer carries its identifier at byte 4, so the packer's offset
-    // arithmetic fails here rather than deep inside the interpreter.
-    TEST_ASSERT_EQUAL_MEMORY("TFL3", (const uint8_t *)data + 4, 4);
+    // An offset the packer got wrong loses the magic, so it fails here and not inside a runtime.
+    TEST_ASSERT_TRUE(storage_model_is_tflite(data, size) || storage_model_is_espdl(data, size));
 }
 
 TEST_CASE("the first record creates the log with its own header", "[sys_storage]")
