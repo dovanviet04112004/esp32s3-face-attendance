@@ -196,6 +196,11 @@ quantize: ## Q0 and Q1 rungs, TFLite and ESP-DL, of RUN="<run directory> ..."
 	$(call need,RUN,make quantize RUN=artifacts/<branch>/runs/<run>)
 	cd ml && $(ml_capped) ./scripts/30_quantize.sh $(RUN)
 
+tflite-op-check: ## The ops of one .tflite against its branch's resolver (MODEL=ml-relative path BRANCH=)
+	$(call need,MODEL,the .tflite, relative to ml/)
+	$(call need,BRANCH,detection | antispoof | recognition)
+	cd ml && $(ML_PY) -m facepipe.export.tflite_op_check --model $(MODEL) --branch $(BRANCH)
+
 export: ## Deploy one exported model and lock it (BRANCH MODEL RUN_ID ARENA_BYTES)
 	$(call need,BRANCH,detection | antispoof | recognition)
 	$(call need,MODEL,the exported .tflite or .espdl)
