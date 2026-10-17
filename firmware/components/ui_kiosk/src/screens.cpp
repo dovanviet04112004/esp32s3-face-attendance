@@ -813,12 +813,17 @@ public:
 
     void on_enter() noexcept override { held_ = kNothing; }
 
+    // A drag stays with the slider it landed on, wherever the finger drifts.
+    bool drags() const noexcept override { return held_ == kBright || held_ == kVolume; }
+
+    bool on_drag(int x, int y) noexcept override
+    {
+        (void)y;
+        return drag(held_, x);
+    }
+
     bool on_touch(int x, int y, bool down) noexcept override
     {
-        // A drag stays with the slider it began on, wherever the finger drifts.
-        if (down && (held_ == kBright || held_ == kVolume)) {
-            return drag(held_, x);
-        }
         if (down && on_slider(x, y, kBright)) {
             held_ = kBright;
             return drag(kBright, x);

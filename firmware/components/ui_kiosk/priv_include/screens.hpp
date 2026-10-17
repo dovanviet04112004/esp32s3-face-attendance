@@ -47,8 +47,14 @@ public:
     virtual void on_enter() noexcept {}
     virtual void on_exit() noexcept {}
 
-    /** @ret true when the screen wants repainting */
+    /** A press lands (down) or lifts where it landed; (-1, -1) when it slid away (KEHOACH 4.5.5h).
+     *  @ret true when the screen wants repainting
+     */
     virtual bool on_touch(int x, int y, bool down) noexcept { return false; }
+    /** True while the press in progress drags something, so it hears each point between. */
+    virtual bool drags() const noexcept { return false; }
+    /** @ret true when the screen wants repainting */
+    virtual bool on_drag(int x, int y) noexcept { return false; }
     virtual bool tick(uint32_t dt_ms, const Sight &seen) noexcept { return false; }
     virtual void paint(Canvas &to, const Sight &seen) noexcept = 0;
 

@@ -35,6 +35,8 @@ constexpr int32_t kTouchUp = -1;
 constexpr int32_t kTouchLost = -2;
 // A new screen waits this long for a new press, so a double tap never acts on it.
 constexpr int64_t kFreshPressMs = 250;
+// A press that slides further than this from where it landed is a drag, not a tap (KEHOACH 4.5.5h).
+constexpr int kTapSlopPx = 12;
 
 // One map per slot: cam_task reads the published one for a whole frame while
 // ui_task paints the other (KEHOACH 4.5.5h).
@@ -62,7 +64,10 @@ uint32_t s_taken_serial;
 int64_t s_clear_in_ms;
 std::atomic<int32_t> s_touch{ kTouchUp };
 int32_t s_touch_taken = kTouchUp;         // the last value of s_touch handed on
-int32_t s_press = kTouchUp;               // where the press in progress landed
+int32_t s_landed = kTouchUp;              // where the press in progress landed
+int32_t s_last = kTouchUp;                // the latest point of that press
+bool s_heard;                             // the current screen owns the press in progress
+bool s_dragging;                          // the screen drags it rather than waiting for a tap
 int64_t s_touched_ms;                     // the last touch, or the last screen change
 bool s_wait_fresh;                        // presses until s_fresh_from_ms belong to another screen
 int64_t s_fresh_from_ms;
@@ -150,12 +155,76 @@ int64_t now_ms()
     return esp_timer_get_time() / 1000;
 }
 
-void hand_touch(int x, int y, bool down)
+int touch_x(int32_t at)
 {
+    return (at >> 12) & 0xFFFF;
+}
+
+int touch_y(int32_t at)
+{
+    return at & 0xFFF;
+}
+
+void hand_touch(int32_t at, bool down)
+{
+    const int x = at < 0 ? -1 : touch_x(at);
+    const int y = at < 0 ? -1 : touch_y(at);
     s_dirty = ui::manager().current()->on_touch(x, y, down) || s_dirty;
 }
 
-// A lift acts where its press landed; a press the controller lost ends off the glass.
+bool slid(int32_t from, int32_t to)
+{
+    const int dx = touch_x(to) - touch_x(from);
+    const int dy = touch_y(to) - touch_y(from);
+    return dx * dx + dy * dy > kTapSlopPx * kTapSlopPx;
+}
+
+void land(int32_t at)
+{
+    s_landed = at;
+    s_last = at;
+    s_dragging = false;
+    s_heard = !s_wait_fresh || now_ms() >= s_fresh_from_ms;
+    if (s_heard) {
+        s_wait_fresh = false;
+        hand_touch(at, true);
+    }
+}
+
+void slide(int32_t at)
+{
+    s_last = at;
+    if (!s_heard) {
+        return;
+    }
+    ui::Screen *screen = ui::manager().current();
+    if (screen->drags()) {
+        s_dragging = true;
+        s_dirty = screen->on_drag(touch_x(at), touch_y(at)) || s_dirty;
+        return;
+    }
+    // A slide on a screen that drags nothing ends the press there: whatever it held stays unfired.
+    if (slid(s_landed, at)) {
+        s_heard = false;
+        hand_touch(kTouchUp, false);
+    }
+}
+
+// A tap lifts where it landed, a drag where it ended; a press the controller lost ends off the glass.
+void lift(bool lost)
+{
+    const int32_t at = s_dragging ? s_last : s_landed;
+    const bool heard = s_heard && s_landed >= 0;
+    s_landed = kTouchUp;
+    s_last = kTouchUp;
+    s_heard = false;
+    s_dragging = false;
+    if (heard) {
+        hand_touch(lost ? kTouchUp : at, false);
+    }
+}
+
+// One landing, then a tap or a drag: no screen sees a lift aimed where a swipe stopped (KEHOACH 4.5.5h).
 void take_touch()
 {
     const int32_t now = s_touch.load(std::memory_order_acquire);
@@ -164,26 +233,13 @@ void take_touch()
     }
     s_touch_taken = now;
     s_touched_ms = now_ms();
-    if (now >= 0) {
-        const bool fresh = s_press < 0;
-        s_press = now;
-        if (s_wait_fresh && (!fresh || now_ms() < s_fresh_from_ms)) {
-            return;
-        }
-        s_wait_fresh = false;
-        hand_touch((now >> 12) & 0xFFFF, now & 0xFFF, true);
-        return;
+    if (now >= 0 && s_landed < 0) {
+        land(now);
+    } else if (now >= 0) {
+        slide(now);
+    } else {
+        lift(now == kTouchLost);
     }
-    const int32_t from = s_press;
-    s_press = kTouchUp;
-    if (from < 0 || s_wait_fresh) {
-        return;
-    }
-    if (now == kTouchLost) {
-        hand_touch(-1, -1, false);
-        return;
-    }
-    hand_touch((from >> 12) & 0xFFFF, from & 0xFFF, false);
 }
 
 // The whole panel is one map, but only the rectangle a screen touched is worth
@@ -501,6 +557,8 @@ void ui_kiosk_tick(uint32_t dt_ms)
         s_wait_fresh = true;
         s_fresh_from_ms = now_ms() + kFreshPressMs;
         s_touched_ms = now_ms();
+        // A press still on the glass belongs to the screen just left.
+        s_heard = false;
     }
     s_enrolling.store(ui::manager().at() == ui::ScreenId::Capture, std::memory_order_release);
     if (!s_dirty) {
