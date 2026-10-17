@@ -2135,9 +2135,21 @@ trúc và trọng số FP32, đo trên ba cấu hình:
 ESP-DL deploy recog bằng QAT và spoof có một lớp int16 (§3.7), hai thứ chỉ ESP-PPQ làm được; bảng
 ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách lượng tử.
 
-- **Trên board** (`test_apps/bench_ai`): latency từng model (median, p95, rảnh và có tải PSRAM),
-  một lượt detect → spoof → recog, thời gian dựng, RAM nội và PSRAM, heap qua 50 lượt, CRC đầu ra.
-  Hai cấu hình TFLM phải ra cùng CRC: esp-nn khớp bản C của nó từng bit (`NN_SKIP_NUDGE` tắt).
+- **Trên board** (`test_apps/bench_ai`), bố trí lõi như kiosk: model chạy ở main task trên lõi 1
+  như `ai_task`, task tải PSRAM của preview (một khung 480×320 RGB565 mỗi 70 ms) ở lõi 0 như
+  `cam_task`. Chung một lõi thì mỗi lần chép khung (~10 ms) giành CPU của model, và số "có tải" đo
+  thời gian bị chiếm CPU chứ không phải tranh chấp bus. Đo: latency từng model (median, p95, rảnh
+  và có tải), một lượt detect → spoof → recog, thời gian dựng, RAM nội và PSRAM lấy khi dựng (cả ba
+  và từng model), RAM còn trống và khối PSRAM liền lớn nhất, arena TFLM đã dùng, đỉnh stack của một
+  lượt ba model (task thăm dò riêng, không tính Unity), heap qua 50 lượt, giá chép trọng số từ flash
+  sang PSRAM, CRC đầu ra. Hai cấu hình TFLM phải ra cùng CRC: esp-nn khớp bản C của nó từng bit
+  (`NN_SKIP_NUDGE` tắt).
+- **Tài nguyên tĩnh và môi trường**, chụp từ đúng bản build vừa nạp (`make fw-bench-ai-run`): cỡ ảnh
+  app, flash code và rodata, IRAM, DRAM `.data` + `.bss`, phần của từng thư viện runtime
+  (`idf.py size`, `size-components`); sdkconfig, phiên bản ESP-IDF, GCC và component
+  (`dependencies.lock`); chip, xung CPU, flash, PSRAM đọc từ log khởi động. Độ phức tạp từng model —
+  tham số và MAC của conv, depthwise, FC — đếm trên file `.tflite`, quy ra MAC mỗi chu kỳ CPU ở từng
+  cấu hình.
 - **Độ chính xác chấm trên máy**, cùng thước với thang lượng tử (`ml/bench/host_bench.py`). ESP-DL
   qua mô phỏng ESP-PPQ, mà `model->test()` giữ khớp chip từng bit; TFLite qua kernel tham chiếu
   (`BUILTIN_REF`), mà điểm live và CRC embedding trên board phải trùng khi máy chạy cùng đầu vào
@@ -2145,8 +2157,10 @@ ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách l�
   Spoof: AUC, APCER, BPCER và EER trên CelebA-Spoof, cùng 87 khung OV5640. Recog: accuracy,
   TAR@1e-3, TAR@1e-4 và EER trên LFW, CFP-FP, AgeDB-30. Hàng ESP-DL phải ra lại đúng số đã ghi
   ở `docs/measurements/<nhánh>/quant_ladder.md`.
-- **Báo cáo** `docs/measurements/runtime_compare.md` do `make runtime-report` sinh từ log của board
-  và kết quả chấm, không sửa tay. Ghi ảnh model TFLM lên board thì `make board-save STORAGE=1`
+- **Báo cáo** `docs/measurements/runtime_compare.md` do `make runtime-report` sinh từ log của board,
+  ảnh chụp build và kết quả chấm, không sửa tay: tóm tắt, môi trường đo, model, thời gian, tốc độ
+  quy đổi (khung/giây, MAC mỗi chu kỳ, hệ số tăng tốc), tài nguyên (flash, RAM tĩnh, RAM động,
+  stack), độ chính xác, so khớp. Ghi ảnh model TFLM lên board thì `make board-save STORAGE=1`
   trước, `board-restore` sau.
 
 Bộ cũ đo 23/09 (TFLM chạy `1616` / `1050` / `1750`): một lượt 1.271 ms với TFLM, 228 ms với ESP-DL
@@ -3291,7 +3305,7 @@ firmware/
 │
 ├── test_apps/                        # test TÍCH HỢP toàn hệ (unit test nằm trong component)
 │   ├── parity/                       # đọc contracts/golden/, so sánh postproc C vs Python
-│   ├── bench_ai/                     # latency, RAM, CRC đầu ra; sdkconfig.{espdl,tflm,tflm_ansi} chọn runtime
+│   ├── bench_ai/                     # latency, bộ nhớ, stack, CRC đầu ra; sdkconfig.{espdl,tflm,tflm_ansi} chọn runtime
 │   ├── bench_mem/                    # đo heap đỉnh, watermark stack
 │   └── soak/                         # chạy 24h, theo dõi rò heap
 │
