@@ -8001,7 +8001,7 @@ cho nó đổi luôn mật khẩu là cho nó **khoá chủ tài khoản ra ngo�
 đường tự lấy lại. Hỏi lại mật khẩu cũ không cứu được dữ liệu đã lộ — nó giữ cho cửa quay lại
 vẫn mở. Tài khoản chưa từng đặt mật khẩu không đi cửa này được: băm của nó không khớp với gì,
 nên đường duy nhất của nó vẫn là liên kết. Tài khoản đã có ứng dụng xác thực thì đưa thêm **một mã**
-của bước mã: thiếu mã là `401 MFA_REQUIRED`, mã sai đi qua đúng phép kiểm và đúng bộ đếm sai của
+của bước mã: thiếu mã là `400 MFA_CODE_NEEDED`, mã sai đi qua đúng phép kiểm và đúng bộ đếm sai của
 lượt đăng nhập (luật 4 và 6 bên dưới), nên sai đủ lần thì bước mã khoá như ở cửa đăng nhập. Kẻ cầm
 một phiên và đoán trúng mật khẩu vẫn không đổi được mật khẩu khi thiếu điện thoại của chủ.
 
