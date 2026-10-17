@@ -43,12 +43,12 @@ static esp_err_t models_error = ESP_OK;
 #define NVS_DETECT_MIN "detect_min"
 #define NVS_LIVE_MIN "live_min"
 #define NVS_MATCH_MIN "match_min"
-#define NVS_FACE_MIN_PX "face_min_px"
 #define NVS_GUIDE_MIN "guide_min"
-#define NVS_DEDUP_MIN "dedup_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
 #define PERMILLE 1000.0f
 #define PERCENT 100.0f
+#define MODEL_ENTRY_DETECT "detect"
+#define MODEL_ENTRY_SPOOF "spoof"
 #define MODEL_ENTRY_RECOG "recog"
 
 #ifdef CONFIG_ATTEND_SEED_ALLOW_NO_SPOOF
@@ -67,10 +67,10 @@ static const app_seed_t kSeeds[] = {
     { STORAGE_NS_VISION, NVS_DETECT_MIN, CONFIG_VISION_SEED_DETECT_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_LIVE_MIN, CONFIG_VISION_SEED_LIVE_MIN_PERMILLE },
     { STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE },
-    { STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
+    { STORAGE_NS_VISION, STORAGE_KEY_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
     { STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT },
     { STORAGE_NS_VISION, STORAGE_KEY_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
-    { STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
+    { STORAGE_NS_ATTEND, STORAGE_KEY_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN },
     { STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF },
     { STORAGE_NS_UI, STORAGE_KEY_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS },
     { STORAGE_NS_UI, STORAGE_KEY_VOLUME, CONFIG_UI_SEED_VOLUME },
@@ -203,20 +203,34 @@ uint8_t app_boot_brightness(void)
     return (uint8_t)(stored > 100 ? 100 : stored);
 }
 
-static svc_vision_thresholds_t vision_thresholds(void)
+// The threshold the running image carries for one entry; a v1 image carries none, so NVS
+// keeps the one it held (KEHOACH 6.2.2).
+static float model_threshold(const char *entry, const char *key, uint32_t seed, bool *from_image)
 {
+    const storage_models_header_t *header = NULL;
+    if (sys_storage_models_open(&header) == ESP_OK && header != NULL) {
+        for (uint32_t i = 0; i < header->count && i < STORAGE_MODEL_COUNT; ++i) {
+            if (strcmp(header->entry[i].name, entry) == 0 && header->threshold_permille[i] != 0) {
+                return header->threshold_permille[i] / PERMILLE;
+            }
+        }
+    }
+    *from_image = false;
+    return setting(STORAGE_NS_VISION, key, seed) / PERMILLE;
+}
+
+static svc_vision_thresholds_t vision_thresholds(bool *from_image)
+{
+    *from_image = true;
     svc_vision_thresholds_t thresholds = {
-        .detect_min_score =
-            setting(STORAGE_NS_VISION, NVS_DETECT_MIN, CONFIG_VISION_SEED_DETECT_MIN_PERMILLE) /
-            PERMILLE,
-        .live_min_score =
-            setting(STORAGE_NS_VISION, NVS_LIVE_MIN, CONFIG_VISION_SEED_LIVE_MIN_PERMILLE) /
-            PERMILLE,
-        .match_min_score =
-            setting(STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE) /
-            PERMILLE,
-        .face_min_px =
-            (int)setting(STORAGE_NS_VISION, NVS_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX),
+        .detect_min_score = model_threshold(MODEL_ENTRY_DETECT, NVS_DETECT_MIN,
+                                            CONFIG_VISION_SEED_DETECT_MIN_PERMILLE, from_image),
+        .live_min_score = model_threshold(MODEL_ENTRY_SPOOF, NVS_LIVE_MIN,
+                                          CONFIG_VISION_SEED_LIVE_MIN_PERMILLE, from_image),
+        .match_min_score = model_threshold(MODEL_ENTRY_RECOG, NVS_MATCH_MIN,
+                                           CONFIG_VISION_SEED_MATCH_MIN_PERMILLE, from_image),
+        .face_min_px = (int)setting(STORAGE_NS_VISION, STORAGE_KEY_FACE_MIN_PX,
+                                    CONFIG_VISION_SEED_FACE_MIN_PX),
         .guide_min_share =
             setting(STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT) /
             PERCENT,
@@ -231,7 +245,7 @@ static svc_vision_thresholds_t vision_thresholds(void)
 static svc_attendance_policy_t attend_policy(void)
 {
     const svc_attendance_policy_t policy = {
-        .dedup_min = setting(STORAGE_NS_ATTEND, NVS_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN),
+        .dedup_min = setting(STORAGE_NS_ATTEND, STORAGE_KEY_DEDUP_MIN, CONFIG_ATTEND_SEED_DEDUP_MIN),
         .allow_no_spoof =
             setting(STORAGE_NS_ATTEND, NVS_ALLOW_NO_SPOOF, ATTEND_SEED_ALLOW_NO_SPOOF) != 0,
     };
@@ -292,16 +306,17 @@ static void start_vision(EventGroupHandle_t flags)
     xEventGroupSetBits(flags, APP_EG_DB_LOADED);
     ESP_LOGI(TAG, "face table holds %u templates", (unsigned)svc_facedb_count());
 
-    const svc_vision_thresholds_t thresholds = vision_thresholds();
+    bool from_image = false;
+    const svc_vision_thresholds_t thresholds = vision_thresholds(&from_image);
     const esp_err_t vision = svc_vision_init(&thresholds);
     if (vision != ESP_OK) {
         ESP_LOGE(TAG, "vision pipeline: %s", esp_err_to_name(vision));
         return;
     }
     xEventGroupSetBits(flags, APP_EG_AI_READY);
-    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f, face %d px",
+    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f from %s, face %d px",
              thresholds.detect_min_score, thresholds.live_min_score, thresholds.match_min_score,
-             thresholds.face_min_px);
+             from_image ? "the models image" : "nvs", thresholds.face_min_px);
 }
 
 esp_err_t app_boot_models_error(void)

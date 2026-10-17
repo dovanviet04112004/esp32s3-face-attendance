@@ -5,29 +5,27 @@ menu "Vision pipeline"
         default 350
         range 1 999
         help
-            Written to NVS key vision/detect_min on the first boot only
-            (KEHOACH 6.2.1); afterwards the kiosk reads NVS and SET_CONFIG
-            changes it. A real face at kiosk range scores 0.45-0.59 and
-            background noise 0.14-0.37, so this sits between them (KEHOACH 2.1).
+            Seeds NVS key vision/detect_min, which the kiosk reads only while
+            the running models image is format 1. A format 2 image carries the
+            threshold of its own detector, from ml/configs/common/quant.yaml
+            (KEHOACH 6.2.2), and SET_CONFIG never changes it.
 
     config VISION_SEED_LIVE_MIN_PERMILLE
         int "Seed for the liveness floor (per mille)"
         default 500
         range 1 999
         help
-            Written to NVS key vision/live_min on the first boot only. On the
-            board's own frames the distilled model puts every attack under 316
-            and the lowest live face at 636 (antispoof measurements 42.2).
+            Seeds NVS key vision/live_min, read only for a format 1 models
+            image, the way the detector seed is (KEHOACH 6.2.2).
 
     config VISION_SEED_MATCH_MIN_PERMILLE
         int "Seed for the cosine match floor (per mille)"
         default 450
         range 1 999
         help
-            Same rule as the detector seed. Cosine of unit embeddings, so
-            450 means 0.45: 0.063 above the highest real-face impostor the
-            deployed recog scores on 18,998 benchmark pairs (recognition
-            measurements 8). A new recognition model needs its own value.
+            Seeds NVS key vision/match_min, read only for a format 1 models
+            image, the way the detector seed is. Cosine of unit embeddings, so
+            450 means 0.45 (KEHOACH 6.2.2).
 
     config VISION_SEED_FACE_MIN_PX
         int "Seed for the smallest face the pipeline verifies (frame pixels)"
