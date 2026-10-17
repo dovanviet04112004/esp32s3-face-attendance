@@ -354,3 +354,33 @@ Giới hạn của số này:
   2 × N lần con số ấy.
 - Cột người thật là benchmark ảnh-với-ảnh. Kiosk so một khung với template của chính camera ấy;
   tỉ lệ nhận trên OV5640 là E8-T12 🔬.
+
+### 8.1 Hàng `qat` khoá 14/10 — đo lại 17/10
+
+Model: `mobilefacenet_s8.espdl` trên `contracts/models.lock.json` từ 14/10, tức hàng `qat` của run
+`20260923-2106_59828c4_9a6954` (sha256 `5af1965f…`, ADR-0006). Đo bằng `make recog-floors`: cùng sáu
+benchmark, cùng mô phỏng ESP-PPQ dưới đúng các patch của hàng ấy (`ladder.row_patches`), cùng cosine
+không lật như §8.
+
+| Benchmark | Cặp khác người | Khác người: trung bình · độ lệch chuẩn · cao nhất | Cùng người: trung bình |
+|---|---:|---|---:|
+| LFW | 3.000 | 0,004 · 0,074 · 0,294 | 0,643 |
+| CFP-FF | 3.500 | 0,006 · 0,074 · 0,291 | 0,634 |
+| CALFW | 3.000 | 0,010 · 0,085 · **0,383** | 0,497 |
+| CFP-FP | 3.500 | 0,006 · 0,073 · 0,268 | 0,369 |
+| AgeDB-30 | 3.000 | 0,013 · 0,080 · 0,323 | 0,411 |
+| CPLFW | 3.000 | 0,006 · 0,080 · 0,381 | 0,360 |
+
+| Ngưỡng | Người lạ lọt / 18.998 | Người thật qua: LFW · CFP-FF · CALFW · CFP-FP · AgeDB · CPLFW |
+|---|---:|---|
+| 0,30 | 8 | 0,990 · 0,987 · 0,885 · 0,697 · 0,829 · 0,656 |
+| 0,35 | 3 | 0,981 · 0,976 · 0,842 · 0,580 · 0,717 · 0,571 |
+| 0,40 | 0 | 0,967 · 0,954 · 0,778 · 0,447 · 0,570 · 0,470 |
+| **0,45** | **0** | **0,935 · 0,916 · 0,689 · 0,309 · 0,402 · 0,363** |
+| 0,50 | 0 | 0,889 · 0,867 · 0,577 · 0,186 · 0,244 · 0,260 |
+| 0,60 | 0 | 0,686 · 0,657 · 0,290 · 0,037 · 0,049 · 0,080 |
+
+**450‰ giữ nguyên.** Cặp khác người cao nhất là 0,383 (CALFW #4790), nên 450‰ đứng trên nó 0,067;
+cột người thật lệch số của §8 không quá 0,013 ở bộ nào. Hai cặp CPLFW không có mặt từng chấm 0,670 và
+0,503 ở file 24/09 nay chấm dưới 0,39, nên lần này không cặp nào phải loại tay. Giới hạn của §8 vẫn
+áp nguyên.
