@@ -1295,3 +1295,22 @@ dài ra ~17 ms và model chạy chậm suốt lúc đó. Số mili giây của l
 tiếp 🔬. Kiosk là trường hợp khác lõi, nên `bench_ai` đo theo bố trí ấy (KẾ HOẠCH §3 lớp 5).
 
 Log: `ml/artifacts/device/runtime_compare/espdl_core0.log` (lõi 0) và `espdl/bench.log` (lõi 1).
+
+## 17. TFLM trên board khớp kernel tham chiếu của TFLM, lệch TFLite một FC — đo 18/10 (E9-T51)
+
+`runtime_compare.md` chấm độ chính xác TFLite trên máy bằng kernel tham chiếu của LiteRT 2.2.0 (`BUILTIN_REF`). Với
+đầu vào tổng hợp của `bench_ai`, điểm live của spoof trùng board từng bit nhưng CRC embedding của recog thì không.
+Chạy cùng ba file `.tflite` qua kernel tham chiếu của chính TFLM trên máy (gói `tflite-micro` 0.dev20261016174617,
+venv tạm, không phải phụ thuộc của dự án):
+
+| | TFLM trên máy | Board, esp-nn và bản C | LiteRT `BUILTIN_REF` |
+|---|---|---|---|
+| Điểm live spoof | 0,9519844651 | 0,951984, CRC `730ddbb7` | 0,9519844651 |
+| CRC embedding recog | `4dac51b0` | `4dac51b0` | `e189fe84` |
+
+Board khớp TFLM từng bit. So từng tensor giữa LiteRT `BUILTIN_REF` và TFLM trên cùng đầu vào: detect 62 op và spoof
+115 op không lệch tensor nào; recog trùng 188 op đầu, lệch ở op cuối `FULLY_CONNECTED` 512 → 512 trọng số theo kênh:
+2/512 đầu ra khác 1 bậc. Qua `normalized_int8` thành 7/512 phần tử khác, lệch tối đa 3 bậc, cosine 0,99998 so với
+board. Để so, kernel mặc định của LiteRT lệch kernel tham chiếu của nó 501/512 phần tử, tối đa 46 bậc, cosine 0,931
+trên cùng đầu vào, và cosine trung vị 0,968 (thấp nhất 0,933) trên 100 mặt LFW: chấm bằng kernel mặc định là chấm
+một phép tính khác hẳn board.
