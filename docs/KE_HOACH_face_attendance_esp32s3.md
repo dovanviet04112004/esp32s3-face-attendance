@@ -3288,6 +3288,8 @@ components/svc_facedb/
 
 Quy tắc header:
 - `include/` → khai vào `INCLUDE_DIRS` = công khai. `priv_include/` → `PRIV_INCLUDE_DIRS` = riêng.
+  Ngoại lệ duy nhất là `ai_engine`: header riêng nằm cạnh file `.cpp` trong `src/`, vì ở đó cây
+  thư mục chia runtime và nhánh (§4.5.6).
 - Header công khai của component **C++ chỉ được chứa cú pháp C**: POD struct, handle mờ (`typedef struct svc_facedb_s* svc_facedb_t`), bọc `extern "C"`. Không `std::`, không class, không template.
 - Tên file header = tên component → nhìn `#include "svc_vision.h"` là biết ngay nó ở đâu.
 
@@ -3422,7 +3424,7 @@ Chỗ RAII cứu thật là mutex: `FaceDb` giữ khoá bảng và khoá IO qua 
 Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: dựng interpreter trên arena được đưa và `AllocateTensors`.
 
 ```cpp
-// priv_include/tflite_model.hpp
+// src/core/tflm/tflite_model.hpp
 class ITfliteModel {
 public:
     virtual ~ITfliteModel() = default;
@@ -3441,7 +3443,7 @@ public:
 **`input`/`output` có chỉ số.** Anti-spoof đọc hai crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
 
 ```cpp
-// src/detection/detect_model.hpp
+// src/detection/tflm/detect_model.hpp
 class DetectModel final : public TfliteModelBase {
 public:
     const char* name() const noexcept override { return "detect"; }
@@ -3451,7 +3453,7 @@ protected:
 };
 ```
 
-`resolver()` là **template method**: `core/` dựng interpreter mà không biết nhánh nào đăng ký op gì, đúng luật "`src/core/` không được biết tên bất kỳ model nào" ở §4.5.6. Danh sách op nằm ở `<nhánh>/ops.cpp`.
+`resolver()` là **template method**: `core/` dựng interpreter mà không biết nhánh nào đăng ký op gì, đúng luật "`src/core/` không được biết tên bất kỳ model nào" ở §4.5.6. Danh sách op nằm ở `<nhánh>/tflm/ops.cpp`.
 
 `decode_and_nms` cố tình **không** virtual: nó nằm trong đường nóng và chỉ có một cách làm.
 
@@ -3466,7 +3468,7 @@ crop anti-spoof, align, l2norm và softmax nhận `ai::TensorView` — con trỏ
 
 ```
    TFLM                                   ESP-DL
-   ITfliteModel → TfliteModelBase         EspdlModel (core/, không biết tên nhánh)
+   ITfliteModel → TfliteModelBase         EspdlModel (core/espdl/, không biết tên nhánh)
      → DetectModel / SpoofModel /           bọc dl::Model, trả TensorView
        RecogModel (op resolver riêng)
              │                                     │
@@ -3484,7 +3486,7 @@ runtime nào đang chạy.
 
 ##### d) `svc_vision` — tuần tự, tiêm phụ thuộc, test được không cần model
 
-`svc_vision` không nhìn thấy lớp C++ của `ai_engine` (chúng nằm trong `priv_include`, §4.5.3), nên nó tự khai bốn interface nhỏ của mình và bọc API C của `ai_engine` và `svc_facedb` bằng bốn adapter:
+`svc_vision` không nhìn thấy lớp C++ của `ai_engine` (chúng là header riêng trong `src/` của nó, §4.5.6), nên nó tự khai bốn interface nhỏ của mình và bọc API C của `ai_engine` và `svc_facedb` bằng bốn adapter:
 
 ```cpp
 class IDetector { virtual size_t detect(const ai_engine_frame_t&, float min_score, ai_engine_face_t* out, size_t cap) = 0; };
@@ -4480,60 +4482,61 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `svc_sync` | `UplinkQueue`, `IPersist`, `ILink` | Composition | Thay LittleFS **và** broker bằng fake khi test: luật "con trỏ đi sau ack" của §6.2.6 chỉ kiểm được khi ép được cả hai bên trả lỗi |
 | `ui_kiosk` | `Screen` → 9 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Chín màn hình cùng vòng đời; khung ngắm đứng yên, bộ bám giữ lại ngoài đường vẽ |
 
-#### 4.5.6 `ai_engine` — mỗi model một thư mục
+#### 4.5.6 `ai_engine` — mỗi model một thư mục, mỗi runtime một thư mục con
 
-Ba model không gộp chung một cục. Danh sách op, hậu xử lý và test của từng model nằm cạnh nhau, sửa nhánh nào chỉ mở một thư mục:
+Ba model không gộp chung một cục, và hai runtime không trộn vào nhau. Hậu xử lý, danh sách op và
+test của từng model nằm cạnh nhau, sửa nhánh nào chỉ mở một thư mục; phần chỉ đúng cho một
+runtime nằm trong thư mục con mang đúng tên runtime ấy:
 
 ```
 components/ai_engine/
 ├── include/ai_engine.h                    # mặt tiền C duy nhất cho cả 3 model, cả 2 runtime
 ├── Kconfig                                # AI_RUNTIME, kích thước 2 arena TFLM, trọng số PSRAM ESP-DL
 ├── idf_component.yml                      # espressif/esp-dl ==3.3.11 (§4.5.1)
-├── priv_include/{tensor_view.hpp,         # ★ view int8 NHWC + scale + zero point, runtime nào cũng dựng được
-│                 tflite_model.hpp, arena.hpp, model_store.hpp,   # TFLM
-│                 espdl_model.hpp, espdl_conv_prelu.hpp, espdl_conv_slices.hpp,   # ESP-DL
-│                 espdl_channel_conv.hpp, espdl_conv_im2col.hpp, espdl_mul_add.hpp,
-│                 espdl_pointwise_depthwise.hpp, espdl_spatial_mean.hpp, pixels.hpp}
 ├── src/
-│   ├── ai_engine.cpp                      # mặt tiền TFLM: dựng 2 arena, mở model store, nối 3 model
+│   ├── ai_engine_tflm.cpp                 # mặt tiền TFLM: dựng 2 arena, mở model store, nối 3 model
 │   ├── ai_engine_espdl.cpp                # mặt tiền ESP-DL: nối 3 model, cùng ai_engine.h
 │   ├── core/                              # dùng chung — KHÔNG chứa gì riêng của model nào
-│   │   ├── model_base.cpp                 # TFLM — TfliteModelBase: arena, interpreter, AllocateTensors
-│   │   ├── arena.cpp                      # TFLM — cấp phát 16-byte aligned, internal → PSRAM fallback
-│   │   ├── model_store.cpp                # TFLM — đọc header partition, trả con trỏ mmap từng entry
-│   │   ├── profiler.cpp                   # TFLM — MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
-│   │   ├── espdl_model.cpp                # ESP-DL — dl::Model trên con trỏ mmap, param_copy, TensorView;
-│   │   │                                  #   đăng ký op riêng của ai_engine trước model đầu tiên
-│   │   ├── espdl_conv_prelu.cpp           # ESP-DL — module ConvPRelu: Conv + PReLU trong một nhân (§3.7)
-│   │   ├── espdl_conv_slices.cpp          # ESP-DL — module ConvSlices: các lát 1×1 ghi thẳng vào tensor ra (§3.7)
-│   │   ├── espdl_channel_conv.cpp         # ESP-DL — module ChannelConv: tích chập 1-D của ECA dọc trục kênh (§3.7)
-│   │   ├── espdl_conv_im2col.cpp          # ESP-DL — module ConvIm2col: ô k×k gom thành kênh, chạy nhân 1×1 căn 16;
-│   │   │                                  #   ô 3×3 trên 3 kênh đọc thẳng từ ba hàng đệm của ảnh (§3.7)
-│   │   ├── espdl_mul_add.cpp              # ESP-DL — module MulAdd: cổng ECA nhân rồi cộng residual trong một vòng (§3.7)
-│   │   ├── espdl_pointwise_depthwise.cpp  # ESP-DL — module PointwiseDepthwise: 1×1 rồi depthwise theo dải hàng (§3.7)
-│   │   ├── espdl_spatial_mean.cpp         # ESP-DL — module SpatialMean: trung bình H×W mỗi kênh, tổng trong QACC (§3.7)
-│   │   ├── clamp_s8_esp32s3.S             # ESP-DL — kẹp int8 ở một đỉnh bằng EE.VMIN.S8, cho PointwiseDepthwise (§3.7)
-│   │   ├── max_pool_s8_esp32s3.S          # ESP-DL — max 2×2 bước 2 bằng EE.VMAX.S8, cho dải ra của PointwiseDepthwise (§3.7)
-│   │   ├── mul_add_s8_esp32s3.S           # ESP-DL — cổng nhân, đổi lưới residual và cộng trong một vòng PIE, cho MulAdd (§3.7)
-│   │   ├── conv_row_s8_esp32s3.S          # ESP-DL — tích chập cho cả một dãy điểm: 1×1 căn 16 (hàng ô của ConvIm2col,
-│   │   │                                  #   dải của PointwiseDepthwise), 3×3 trên 3 kênh nạp lệch từ ba hàng đệm (§3.7)
-│   │   └── pixels.cpp                     # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
+│   │   ├── tensor_view.hpp                # ★ view int8 NHWC + scale + zero point, runtime nào cũng dựng được
+│   │   ├── pixels.{hpp,cpp}               # RGB565 → RGB, lấy mẫu bilinear/area, ghi vào tensor int8
+│   │   ├── tflm/                          # chỉ TFLM
+│   │   │   ├── tflite_model.hpp           # ITfliteModel, TfliteModelBase, view_of(TfLiteTensor*), profiler
+│   │   │   ├── model_base.cpp             # TfliteModelBase: arena, interpreter, AllocateTensors
+│   │   │   ├── arena.{hpp,cpp}            # cấp phát 16-byte aligned, internal → PSRAM fallback
+│   │   │   ├── model_store.{hpp,cpp}      # đọc header partition, trả con trỏ mmap từng entry .tflite
+│   │   │   └── profiler.cpp               # MicroProfiler, chỉ bật khi CONFIG_AI_PROFILING
+│   │   └── espdl/                         # chỉ ESP-DL
+│   │       ├── espdl_model.{hpp,cpp}      # dl::Model trên con trỏ mmap, param_copy, TensorView;
+│   │       │                              #   đăng ký op riêng của ai_engine trước model đầu tiên
+│   │       ├── espdl_conv_prelu.{hpp,cpp}           # module ConvPRelu: Conv + PReLU trong một nhân (§3.7)
+│   │       ├── espdl_conv_slices.{hpp,cpp}          # module ConvSlices: các lát 1×1 ghi thẳng vào tensor ra (§3.7)
+│   │       ├── espdl_channel_conv.{hpp,cpp}         # module ChannelConv: tích chập 1-D của ECA dọc trục kênh (§3.7)
+│   │       ├── espdl_conv_im2col.{hpp,cpp}          # module ConvIm2col: ô k×k gom thành kênh, chạy nhân 1×1 căn 16;
+│   │       │                                        #   ô 3×3 trên 3 kênh đọc thẳng từ ba hàng đệm của ảnh (§3.7)
+│   │       ├── espdl_mul_add.{hpp,cpp}              # module MulAdd: cổng ECA nhân rồi cộng residual trong một vòng (§3.7)
+│   │       ├── espdl_pointwise_depthwise.{hpp,cpp}  # module PointwiseDepthwise: 1×1 rồi depthwise theo dải hàng (§3.7)
+│   │       ├── espdl_spatial_mean.{hpp,cpp}         # module SpatialMean: trung bình H×W mỗi kênh, tổng trong QACC (§3.7)
+│   │       ├── clamp_s8_esp32s3.S         # kẹp int8 ở một đỉnh bằng EE.VMIN.S8, cho PointwiseDepthwise (§3.7)
+│   │       ├── max_pool_s8_esp32s3.S      # max 2×2 bước 2 bằng EE.VMAX.S8, cho dải ra của PointwiseDepthwise (§3.7)
+│   │       ├── mul_add_s8_esp32s3.S       # cổng nhân, đổi lưới residual và cộng trong một vòng PIE, cho MulAdd (§3.7)
+│   │       └── conv_row_s8_esp32s3.S      # tích chập cho cả một dãy điểm: 1×1 căn 16 (hàng ô của ConvIm2col,
+│   │                                      #   dải của PointwiseDepthwise), 3×3 trên 3 kênh nạp lệch từ ba hàng đệm (§3.7)
 │   ├── detection/
-│   │   ├── detect_model.hpp               # DetectModel : TfliteModelBase, chỉ khai op + tên
-│   │   ├── ops.cpp                        # TFLM — MicroMutableOpResolver<6>, đếm trên graph thật
+│   │   ├── detection.hpp                  # decode_faces, suppress, letterbox_frame — chung hai runtime
 │   │   ├── letterbox.cpp                  # khung 480×320 → tensor 160×120, khớp letterbox_params; và phép ngược face_to_frame
 │   │   ├── decode.cpp                     # giải mã anchor — khớp 1:1 ml/tasks/detection/postproc
-│   │   └── nms.cpp
+│   │   ├── nms.cpp
+│   │   └── tflm/{detect_model.hpp, ops.cpp}   # DetectModel : TfliteModelBase; MicroMutableOpResolver<6>, đếm trên graph thật
 │   ├── antispoof/
-│   │   ├── spoof_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
-│   │   ├── spoof_model.cpp                # softmax trên TensorView, dùng chung hai runtime
-│   │   ├── ops.cpp                        # TFLM — MicroMutableOpResolver<10>; LOGISTIC + MEAN cho khối SE nhập
-│   │   └── preproc.cpp                    # crop 2,7× + resize về cạnh graph khai (80 hoặc 81)
+│   │   ├── antispoof.hpp                  # live_score, crop_face — chung hai runtime
+│   │   ├── live_score.cpp                 # softmax trên TensorView
+│   │   ├── preproc.cpp                    # crop 2,7× + resize về cạnh graph khai (80 hoặc 81)
+│   │   └── tflm/{spoof_model.hpp, ops.cpp}    # SpoofModel; MicroMutableOpResolver<10>, LOGISTIC + MEAN cho khối SE nhập
 │   └── recognition/
-│       ├── recog_model.hpp                # lớp + op của nhánh, không ra khỏi thư mục này
-│       ├── ops.cpp                        # TFLM — MicroMutableOpResolver<4>, đếm trên graph thật
+│       ├── recognition.hpp                # align_face, normalized_int8 — chung hai runtime
 │       ├── align.cpp                      # affine warp 5 landmark → cạnh graph khai (112 hoặc 113)
-│       └── l2norm.cpp
+│       ├── l2norm.cpp
+│       └── tflm/{recog_model.hpp, ops.cpp}    # RecogModel; MicroMutableOpResolver<4>, đếm trên graph thật
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
     ├── antispoof/{main/{test_spoof.c, test_preproc.c}, CMakeLists.txt, pytest_preproc.py}
@@ -4545,13 +4548,30 @@ components/ai_engine/
 
 **Quy tắc**: `src/core/` không được biết tên bất kỳ model nào. Thứ gì chỉ đúng cho một nhánh thì nằm trong thư mục nhánh đó. Thêm model thứ tư sau này = thêm một thư mục, không sửa `core/`.
 
-`src/ai_engine.cpp` và `src/ai_engine_espdl.cpp` nằm ngoài `core/` chính vì lý do đó: mỗi runtime có **đúng một** chỗ gọi tên cả ba nhánh, để dựng đúng model nào với bộ nhớ nào. `CMakeLists.txt` biên dịch một trong hai theo `AI_RUNTIME`, nên chúng cùng định nghĩa `ai_engine.h` mà không bao giờ cùng có mặt lúc link. `core/` chỉ nhận `tflite::Model*` và một `Arena&`, hoặc một con trỏ `.espdl` và cờ `param_copy`, không biết chúng thuộc nhánh gì. File đánh dấu TFLM hoặc ESP-DL ở cây trên chỉ biên dịch khi runtime ấy được chọn; file không đánh dấu dùng chung.
+**Thư mục con `tflm/` hay `espdl/`, ở cấp nào cũng vậy, chỉ biên dịch khi runtime ấy được chọn;
+mọi file khác biên dịch ở cả hai và không được include header nào của TFLM hay ESP-DL.** Vì thế
+`find src -path '*/tflm/*'` liệt kê đủ phần riêng của TFLM, và hậu xử lý chung không kéo theo
+thư viện runtime nào. ESP-DL chưa có phần riêng theo nhánh (§4.5.5c), nên chỉ `core/` có
+`espdl/`; nhánh nào cần thì thêm `<nhánh>/espdl/`.
+
+`src/ai_engine_tflm.cpp` và `src/ai_engine_espdl.cpp` nằm ngoài `core/` chính vì lý do đó: mỗi runtime có **đúng một** chỗ gọi tên cả ba nhánh, để dựng đúng model nào với bộ nhớ nào. `CMakeLists.txt` biên dịch một trong hai theo `AI_RUNTIME`, nên chúng cùng định nghĩa `ai_engine.h` mà không bao giờ cùng có mặt lúc link. `core/` chỉ nhận `tflite::Model*` và một `Arena&`, hoặc một con trỏ `.espdl` và cờ `param_copy`, không biết chúng thuộc nhánh gì.
+
+**Cả hai thư viện runtime vẫn nằm trong `PRIV_REQUIRES`.** IDF gom phụ thuộc của component trước
+khi đọc Kconfig (`tools/cmake/build.cmake`), nên một `PRIV_REQUIRES` đặt theo `CONFIG_AI_RUNTIME_*`
+không có tác dụng. Thư viện của runtime không chọn vẫn được biên dịch, nhưng không file nào của
+`ai_engine` được dựng gọi tới nó.
+
+**Header riêng nằm cạnh file `.cpp` của nó, không ở `priv_include/`** — ngoại lệ có chủ ý của
+§4.5.3. Ở component này chính cây thư mục chia runtime và nhánh; một header đặt ở `priv_include/`
+sẽ rời khỏi thư mục `tflm/` hay `espdl/` của nó. `PRIV_INCLUDE_DIRS` là `src`, nên mọi `#include`
+ghi đường dẫn tính từ `src/` (`"core/tflm/arena.hpp"`, `"detection/detection.hpp"`): đọc dòng
+include là biết file thuộc runtime nào.
 
 **Kconfig của `ai_engine`**, không gõ vào code, để `sdkconfig.bench` chỉnh được mà không sửa nguồn:
 
 | Symbol | Mặc định | Nghĩa |
 |---|---|---|
-| `AI_RUNTIME_TFLM` / `AI_RUNTIME_ESPDL` | **ESP-DL** | `choice AI_RUNTIME`. Chọn runtime được biên dịch và link. TFLM là bản đối chứng, build bằng overlay `test_apps/bench_ai/sdkconfig.tflm`. Mặc định và `contracts/models.lock.json` luôn cùng runtime (§6.2.2) |
+| `AI_RUNTIME_TFLM` / `AI_RUNTIME_ESPDL` | **ESP-DL** | `choice AI_RUNTIME`. Chọn runtime được biên dịch và link. TFLM là bản đối chứng, build bằng overlay `test_apps/bench_ai/sdkconfig.tflm` (`make fw-bench-ai RUNTIME=tflm`). Mặc định và `contracts/models.lock.json` luôn cùng runtime (§6.2.2) |
 | `AI_ARENA_FAST_KB` | 224 | TFLM. `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
 | `AI_ARENA_BIG_KB` | 1536 | TFLM. `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
 | `AI_ARENA_FAST_INTERNAL` | n | TFLM. `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.8) |
