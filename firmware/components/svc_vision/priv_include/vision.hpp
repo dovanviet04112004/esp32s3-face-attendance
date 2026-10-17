@@ -56,6 +56,7 @@ public:
     VisionPipeline &operator=(const VisionPipeline &) = delete;
 
     void configure(const svc_vision_thresholds_t &thresholds) noexcept { thresholds_ = thresholds; }
+    void set_face_min_px(int face_min_px) noexcept { thresholds_.face_min_px = face_min_px; }
     svc_vision_result_t step(const ai_engine_frame_t &frame) noexcept;
     void observe(svc_vision_seen_cb_t cb, void *ctx) noexcept { seen_cb_ = cb; seen_ctx_ = ctx; }
     void enrol_next(uint32_t employee_id, uint16_t template_idx, const char *name, float yaw_min,

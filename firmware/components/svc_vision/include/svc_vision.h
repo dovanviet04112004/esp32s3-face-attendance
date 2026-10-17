@@ -105,6 +105,12 @@ bool svc_vision_settled(uint32_t ticket);
  */
 int svc_vision_face_min_px(void);
 
+/** Change the smallest face the pipeline verifies, from its next step on (KEHOACH 4.6).
+ *  @ctx task | non-blocking
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE until svc_vision_init | ESP_ERR_INVALID_ARG below one pixel
+ */
+esp_err_t svc_vision_set_face_min_px(int face_min_px);
+
 /** Feed one RGB565 frame; the caller keeps the frame and returns it afterwards.
  *  @ctx ai_task | blocking: detect, plus spoof and recog once the face is stable (KEHOACH 4.5.5d)
  *  @ret ESP_OK with out->kind set | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG on another pixel format

@@ -28,6 +28,7 @@ struct Asks {
     char name[STORAGE_NAME_CAP];
     float yaw_min;
     float yaw_max;
+    int face_min_px;  // 0 leaves the pipeline's own
 };
 
 // The pipeline belongs to ai_task; other tasks leave asks here for its next step (KEHOACH 4.5.5d).
@@ -53,6 +54,9 @@ uint32_t take_asks() noexcept
     if (taken.enrol) {
         s_pipeline.enrol_next(taken.employee_id, taken.template_idx, taken.name, taken.yaw_min, taken.yaw_max);
     }
+    if (taken.face_min_px > 0) {
+        s_pipeline.set_face_min_px(taken.face_min_px);
+    }
     return step;
 }
 
@@ -66,7 +70,7 @@ bool sane(const svc_vision_thresholds_t &t)
 
 }  // namespace
 
-int s_face_min_px;
+std::atomic<int> s_face_min_px{ 0 };
 
 extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
 {
@@ -81,7 +85,7 @@ extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
         return ESP_ERR_NOT_FOUND;
     }
     s_pipeline.configure(*thresholds);
-    s_face_min_px = thresholds->face_min_px;
+    s_face_min_px.store(thresholds->face_min_px);
     s_ready = true;
     ESP_LOGI(TAG, "detect >= %.2f, live >= %.2f%s, match >= %.2f, face >= %d px", thresholds->detect_min_score,
              thresholds->live_min_score, s_liveness.available() ? "" : " (no spoof branch, skipped)",
@@ -138,7 +142,22 @@ extern "C" bool svc_vision_settled(uint32_t ticket)
 
 extern "C" int svc_vision_face_min_px(void)
 {
-    return s_ready ? s_face_min_px : 0;
+    return s_ready ? s_face_min_px.load() : 0;
+}
+
+extern "C" esp_err_t svc_vision_set_face_min_px(int face_min_px)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (face_min_px <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&s_asks_lock);
+    s_asks.face_min_px = face_min_px;
+    portEXIT_CRITICAL(&s_asks_lock);
+    s_face_min_px.store(face_min_px);
+    return ESP_OK;
 }
 
 extern "C" esp_err_t svc_vision_step(const camera_fb_t *frame, svc_vision_result_t *out)
