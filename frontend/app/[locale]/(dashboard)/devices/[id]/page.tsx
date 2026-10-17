@@ -17,6 +17,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useReadSubject } from "@/components/notifications/notice-row";
+import { KioskCommands } from "@/components/devices/kiosk-commands";
 import { ReleaseNotesDialog, ReleaseSummary, type ReleaseNotesFacts } from "@/components/devices/release-notes";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -411,6 +412,8 @@ export default function DevicePage() {
               </LayerCard.Primary>
             </LayerCard>
           ) : null}
+
+          {role === "ADMIN" && it?.status === "APPROVED" ? <KioskCommands deviceId={id} name={title} online={it.online} /> : null}
 
           <LayerCard>
             <LayerCard.Secondary>{t("eventsTitle")}</LayerCard.Secondary>
