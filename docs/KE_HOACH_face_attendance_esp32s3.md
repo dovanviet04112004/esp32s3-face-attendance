@@ -2111,10 +2111,38 @@ thẳng 8 bit (`EE.VSMULAS.S8`). Đó là một phần lớn của mức nhanh 5
 ### Lớp 5 — Runtime ESP32-S3
 
 **Hai runtime, chọn lúc biên dịch bằng `AI_RUNTIME` (§4.5.6).** ESP-DL là runtime deploy;
-TFLite Micro + esp-nn **ở lại nguyên vẹn và build được**, vì nó là một nửa của bảng đối chứng
-trong báo cáo: cùng ba model trên cùng board, một lượt detect → spoof → recog mất **1.271 ms**
-với TFLM và **228 ms** với ESP-DL (trial 23/09; `latency.md` §13 đo lại bằng code của repo).
-Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho cái đang chạy.
+TFLite Micro **ở lại nguyên vẹn và build được**, vì nó là một nửa của bảng đối chứng trong báo
+cáo. Mỗi ảnh firmware chỉ link một runtime, nên flash chỉ trả giá cho cái đang chạy.
+
+**Bảng đối chứng chạy đúng ba model đang deploy, không model nào khác.** Ba run trên
+`contracts/models.lock.json` — detect `1616`, spoof `0118_5d7b35`, recog `2106` — giữ nguyên kiến
+trúc và trọng số FP32, đo trên ba cấu hình:
+
+| Cấu hình | File model | Build |
+|---|---|---|
+| ESP-DL | đúng ba file `.espdl` trên lock | `make fw-bench-ai RUNTIME=espdl` |
+| TFLM + esp-nn | `.tflite` Q1 của chính ba run ấy: PTQ per-channel, gập BN, sửa bias, calib 300 ảnh val (chặng TFLite của `make quantize`) | `RUNTIME=tflm` (`NN_OPTIMIZED`) |
+| TFLM không esp-nn | cùng ba file `.tflite` | `RUNTIME=tflm_ansi` (`NN_ANSI_C`: bảy op có kernel esp-nn chạy bản C của nó; PAD, RESIZE, MEAN, LOGISTIC, PRELU là bản tham chiếu của TFLM ở cả hai cấu hình) |
+
+ESP-DL deploy recog bằng QAT và spoof có một lớp int16 (§3.7), hai thứ chỉ ESP-PPQ làm được; bảng
+ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách lượng tử.
+
+- **Trên board** (`test_apps/bench_ai`): latency từng model (median, p95, rảnh và có tải PSRAM),
+  một lượt detect → spoof → recog, thời gian dựng, RAM nội và PSRAM, heap qua 50 lượt, CRC đầu ra.
+  Hai cấu hình TFLM phải ra cùng CRC: esp-nn khớp bản C của nó từng bit (`NN_SKIP_NUDGE` tắt).
+- **Độ chính xác chấm trên máy**, cùng thước với thang lượng tử (`ml/bench/host_bench.py`). ESP-DL
+  qua mô phỏng ESP-PPQ, mà `model->test()` giữ khớp chip từng bit; TFLite qua kernel tham chiếu
+  (`BUILTIN_REF`), mà điểm live và CRC embedding trên board phải trùng khi máy chạy cùng đầu vào
+  tổng hợp của `bench_ai` — nên số trên máy là số của board. Detect: AP từng mức và AP ≥ 38 px.
+  Spoof: AUC, APCER, BPCER và EER trên CelebA-Spoof, cùng 87 khung OV5640. Recog: accuracy,
+  TAR@1e-3, TAR@1e-4 và EER trên LFW, CFP-FP, AgeDB-30. Hàng ESP-DL phải ra lại đúng số đã ghi
+  ở `docs/measurements/<nhánh>/quant_ladder.md`.
+- **Báo cáo** `docs/measurements/runtime_compare.md` do `make runtime-report` sinh từ log của board
+  và kết quả chấm, không sửa tay. Ghi ảnh model TFLM lên board thì `make board-save STORAGE=1`
+  trước, `board-restore` sau.
+
+Bộ cũ đo 23/09 (TFLM chạy `1616` / `1050` / `1750`): một lượt 1.271 ms với TFLM, 228 ms với ESP-DL
+cùng model (`latency.md` §13).
 
 | Kỹ thuật | TFLM + esp-nn (đối chứng) | ESP-DL (deploy) |
 |---|---|---|
@@ -2525,6 +2553,7 @@ esp32s3-face-attendance/
     ├── DPIA.md                                  # ★ đánh giá tác động Điều 24 — hồ sơ nộp được
     ├── adr/{0001-yunet-thay-ulfg.md, 0002-bo-knowledge-distillation.md, 0003-distill-chong-gia-tu-trong-so-nhap.md, 0004-v1se-thay-student-chong-gia.md, 0005-espdl-thay-tflm.md, 0006-hang-luong-tu-espdl.md}
     ├── measurements/{arena.md, latency.md, power.md, parity.md, ram.md}  # số 🔬 đo được trên board
+    │                 runtime_compare.md   # sinh bằng make runtime-report (§3 lớp 5), không sửa tay
     │                 ├ notifications.md                          # số dòng trước và sau đổi lược đồ, thời gian
     │                 │                                           #   chốt kỳ, đối soát — §9.21.4
     │                 └ {antispoof,detection,recognition,rppg}/   # số theo nhánh; rppg: vì sao không dùng (§3)
@@ -2961,6 +2990,7 @@ ml/
 │       └── update_lock.py                 # ★ ghi contracts/models.lock.json
 │
 ├── bench/{host_bench.py,                  # ★ chấm onnx | tflite | espdl, ba nhánh, cùng metric với torch
+│          runtime_report.py,              # ★ bảng ba runtime: chấm trên máy, đọc log bench_ai → runtime_compare.md
 │          device_client.py,
 │          live_demo.py,                   # ★ detect → align → spoof → recog, webcam host
 │          cam_bridge.py}                  # ★ chạy trên Windows: virtual cam → MJPEG
@@ -3253,7 +3283,7 @@ firmware/
 │
 ├── test_apps/                        # test TÍCH HỢP toàn hệ (unit test nằm trong component)
 │   ├── parity/                       # đọc contracts/golden/, so sánh postproc C vs Python
-│   ├── bench_ai/                     # đo arena_used_bytes + latency/op
+│   ├── bench_ai/                     # latency, RAM, CRC đầu ra; sdkconfig.{espdl,tflm,tflm_ansi} chọn runtime
 │   ├── bench_mem/                    # đo heap đỉnh, watermark stack
 │   └── soak/                         # chạy 24h, theo dõi rò heap
 │
