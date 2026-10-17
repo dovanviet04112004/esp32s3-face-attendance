@@ -1661,6 +1661,8 @@
     "RELEASE_FIRMWARE_MISSING": "The newest models need a firmware that is not published yet. Publish that firmware first.",
     "RELEASE_UNREACHABLE": "No order of the releases still on the server brings this kiosk to the newest ones: a release it must pass through has had its file cleared. Publish that release again, then press Update.",
     "RELEASE_NOT_MODELS_IMAGE": "The file is not a models image: it has no MDLS header or no recognition model.",
+    "COMMAND_INVALID": "The command misses something it needs or holds a value outside the allowed range.",
+    "COMMAND_NOT_SENT": "The server could not send the command to the kiosk. Try again in a few minutes.",
     "DEVICE_OFFLINE": "The kiosk is offline and would never receive the offer. Wait until it is back online, then update it.",
     "NOTICE_NOT_FOUND": "This notice was not found",
     "NOTICE_CHANNEL_LOCKED": "Work waiting on you always shows in the bell; only its push can be turned off",

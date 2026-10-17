@@ -140,6 +140,7 @@ export const AUDIT_ACTIONS = {
   DEVICE_RESET: "device.reset",
   DEVICE_APPROVE: "device.approve",
   DEVICE_REVOKE: "device.revoke",
+  DEVICE_COMMAND: "device.command",
 
   RELEASE_PUBLISH: "release.publish",
   RELEASE_NOTES: "release.notes",

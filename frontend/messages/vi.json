@@ -1661,6 +1661,8 @@
     "RELEASE_FIRMWARE_MISSING": "Gói model mới cần một bản firmware chưa phát hành. Hãy phát hành firmware ấy trước.",
     "RELEASE_UNREACHABLE": "Máy này không lên được bản mới nhất theo thứ tự nào từ các bản còn trên máy chủ: một bản trung gian đã bị dọn file. Phát hành lại bản ấy rồi bấm lại.",
     "RELEASE_NOT_MODELS_IMAGE": "Tệp gửi lên không phải ảnh models: thiếu header MDLS hoặc không có model nhận diện.",
+    "COMMAND_INVALID": "Lệnh thiếu thông tin cần có hoặc có giá trị ngoài khoảng cho phép.",
+    "COMMAND_NOT_SENT": "Máy chủ chưa gửi được lệnh tới kiosk. Thử lại sau ít phút.",
     "DEVICE_OFFLINE": "Máy đang offline nên sẽ không nhận được lời mời. Chờ máy online lại rồi hãy cập nhật.",
     "NOTICE_NOT_FOUND": "Không tìm thấy thông báo này",
     "NOTICE_CHANNEL_LOCKED": "Việc đang chờ bạn luôn hiện trong chuông; chỉ tắt được thông báo đẩy",

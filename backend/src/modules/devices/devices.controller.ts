@@ -8,7 +8,9 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
+import { CommandsService, type CommandView } from "./commands.service.js";
 import { DevicesService, type DeviceCounts, type PublicDevice } from "./devices.service.js";
+import { CommandView as CommandViewDto, SendCommandDto } from "./dto/command.dto.js";
 import {
   ApproveDeviceDto,
   DeviceCountsView,
@@ -24,7 +26,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("devices")
 export class DevicesController {
-  constructor(private readonly devices: DevicesService) {}
+  constructor(
+    private readonly devices: DevicesService,
+    private readonly commands: CommandsService,
+  ) {}
 
   @Get()
   @Roles("ADMIN")
@@ -73,6 +78,30 @@ export class DevicesController {
     @Body() body: ApproveDeviceDto,
   ): Promise<PublicDevice> {
     return this.devices.approve(id, body, viewer.userId);
+  }
+
+  @Get(":id/commands")
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "The newest commands sent to one kiosk and how each ended" })
+  @ApiOkResponse({ type: [CommandViewDto] })
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
+  recentCommands(@Param("id") id: string): Promise<CommandView[]> {
+    return this.commands.recent(id);
+  }
+
+  @Post(":id/commands")
+  @AuditedInService()
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "Send one kiosk a command; its answer closes it" })
+  @ApiCreatedResponse({ type: CommandViewDto })
+  @ApiErrors(HttpStatus.CONFLICT)
+  @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
+  sendCommand(
+    @CurrentViewer() viewer: Viewer,
+    @Param("id") id: string,
+    @Body() body: SendCommandDto,
+  ): Promise<CommandView> {
+    return this.commands.send(viewer, id, body);
   }
 
   @Post(":id/revoke")
