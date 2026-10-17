@@ -4871,7 +4871,7 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 | `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
 | `Employee` | id, code, fullName, department, active, embeddingVersion (model của bộ mẫu chụp gần nhất, §7.5) |
 | `FaceTemplate` | id, employeeId, embeddingVersion (model đã sinh ra mẫu: một bộ mỗi model, khoá `(employeeId, embeddingVersion, templateIdx)`, §7.5), templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
-| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaPressedAt, otaPressedById (lần bấm Cập nhật đang chạy: bước kế, lúc bấm, người bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8). Cột otaNextActorId còn lại chờ lượt co (§9.22.3c), không ai đọc |
+| `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), tokenIssuedAt, tokenExpiresAt (vé đang giữ cấp lúc nào, hết hạn lúc nào, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), rssiDbm, heapFreeBytes, heapMinFreeBytes, psramFreeBytes, pendingUplinkCount, activeSlot, bootCount, healthAt (số đo của nhịp sống gần nhất và lúc nhận nó, §4.8), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaPressedAt, otaPressedById (lần bấm Cập nhật đang chạy: bước kế, lúc bấm, người bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8). Cột otaNextActorId còn lại chờ lượt co (§9.22.3c), không ai đọc |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
 | `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
@@ -4908,10 +4908,20 @@ của `down/cmd` (§4.8), broker nhận thì dòng thành `SENT`. Máy chưa duy
 `COMMAND_DONE` hay `COMMAND_REJECTED` trên `up/event` nối về dòng qua `cmdId`, đổi `state` và ghi
 `resultNote` bằng `message` của kiosk; dòng đã đóng không đổi nữa, nên một kết quả giao lại không viết
 đè. Dòng `SENT` quá `expiresAt` mà chưa có kết quả đọc là `EXPIRED` lúc đọc, không cần lượt quét. Mỗi
-lệnh một dòng audit mang người bấm. Trang một máy có khối *Lệnh*: mở cửa, đồng bộ giờ, chẩn đoán, đổi
-vé, khởi động lại (hỏi xác nhận vì máy gián đoạn), và *Đổi cấu hình* mở một form `SET_CONFIG` mà ô để
-trống là giữ nguyên; dưới đó là các lệnh gần đây với trạng thái, tự cập nhật qua feed `event`.
-`SET_ACTIVE_SLOT` chỉ đi qua API: lùi ngăn model là việc chẩn đoán, không phải nút cho ngày thường.
+lệnh một dòng audit mang người bấm.
+
+**Trang một máy có khối *Lệnh*, và kết quả của mỗi nút hiện ra ở nơi người bấm nhìn.** Các nút: mở
+cửa, đồng bộ giờ, chẩn đoán, đổi vé, *Đổi cấu hình* mở một form `SET_CONFIG` mà ô để trống là giữ
+nguyên, *Đổi ngăn model* và khởi động lại. Hai nút cuối làm máy khởi động lại nên hỏi xác nhận; hộp của
+*Đổi ngăn model* nêu ngăn đang chạy, đọc từ `activeSlot` của nhịp sống gần nhất, nêu ngăn sẽ thử, và
+nói rằng ngăn ấy không nạp được thì máy tự về ngăn cũ (§4.8). Máy chưa từng báo ngăn thì nút khoá, vì
+đoán ngăn là gửi một lệnh chắc chắn bị từ chối. Dưới các nút là những lệnh gần đây với trạng thái,
+tự cập nhật qua feed `event`. `resultNote` là câu tiếng Anh của firmware, nên trang dịch những câu
+nó biết sang ngôn ngữ người xem và để nguyên câu lạ: hiện chữ gốc vẫn hơn đoán nghĩa. Hai lệnh có
+kết quả nằm ngoài câu ghi chú. *Chẩn đoán* làm máy phát ngay một nhịp sống, nên câu trả lời là thẻ
+*Sức khoẻ máy* đổi giờ đo (§4.8). *Đổi vé* chỉ xếp lượt; vé mới về sau vài giây qua
+`POST /devices/me/token` (§7.3 bước 5), nên câu trả lời là dòng *Vé truy cập* của cùng thẻ đổi giờ
+cấp.
 
 **`DeviceEvent` tách khỏi `AuditLog` vì hai bảng trả lời hai câu khác nhau.** `AuditLog` ghi việc
 **người** làm nên luôn có `actorId`; `up/event` là việc **máy** gặp — `CAMERA_FAULT`,
@@ -4992,6 +5002,17 @@ biết kiosk còn sống. Hai thuộc tính trả lời hai câu hỏi khác nha
 thấy điều đó. Đếm bằng **kích thước file**, không đọc bản ghi: log là lưới 48 B cố định sau
 header 32 B và xoay vòng ở 256 KB, nên một `stat` mỗi file là đủ — vài chục lần `stat` mỗi 30
 giây, không phải vài trăm lần đọc.
+
+**Server giữ số đo của nhịp sống gần nhất, không giữ chuỗi.** Mỗi nhịp sống ghi đè bảy cột sức khoẻ
+của `Device` — `rssiDbm`, `heapFreeBytes` với `heapMinFreeBytes` (RAM nội trống và đáy của nó từ lúc
+khởi động), `psramFreeBytes`, `pendingUplinkCount`, `activeSlot`, `bootCount` — cùng `healthAt`, trong
+đúng lần ghi vốn đã đặt `lastSeenAt`, nên không thêm lượt ghi nào. Trường nhịp không mang thì cột về
+rỗng: số của nhịp cũ đứng cạnh số của nhịp mới là một ảnh ghép, không còn là ảnh chụp. Bản retained
+broker phát lại lúc `api` nối không ghi số đo, vì nó có thể cũ cả ngày mà `healthAt` lại nói là vừa
+đo. Không giữ lịch sử: trang một máy hỏi *bây giờ máy ra sao*, còn xu hướng heap là việc của bàn đo
+(§6.4). Trang một máy vẽ chúng ở thẻ *Sức khoẻ máy* cho `ADMIN`: sóng Wi-Fi, chạy liền bao lâu và
+lần khởi động thứ mấy, RAM nội trống cùng đáy, PSRAM trống, số bản ghi chờ gửi, ngăn model, giờ đo, và
+vé truy cập (§7.3 bước 5).
 
 **`modelVersion` có đường lui.** §6.2.1 giao nó cho `nvs model/version`, mà khoá ấy chỉ được
 đặt khi OTA model A/B (E13-T2) tồn tại. Chưa có thì heartbeat mang **crc32 của header ảnh
@@ -5222,7 +5243,10 @@ frontend/
 │   ├── devices/release-notes.tsx     # ★ §7.7 — câu tóm tắt và ghi chú của một bản phát hành,
 │   │                                 #   dùng chung cho trang Thiết bị và trang một máy
 │   ├── devices/kiosk-commands.tsx    # ★ §4.6 — khối Lệnh của trang một máy: nút lệnh, form
-│   │                                 #   đổi cấu hình, lệnh gần đây với trạng thái
+│   │                                 #   đổi cấu hình, hộp đổi ngăn model, lệnh gần đây với
+│   │                                 #   trạng thái và câu kết quả theo ngôn ngữ người xem
+│   ├── devices/kiosk-health.tsx      # ★ §4.8 — thẻ Sức khoẻ máy của trang một máy: số đo
+│   │                                 #   của nhịp sống gần nhất và vé truy cập đang giữ
 │   ├── notifications/{bell.tsx, notice-list.tsx, notice-row.tsx, notice-prefs.tsx,
 │   │                  push-switch.tsx, push-devices.tsx, kinds.ts}
 │   │                                 # ★ §9.21.4 — kinds.ts là bảng tra mỗi loại: biểu tượng, câu,
@@ -6823,7 +6847,9 @@ bị `Kconfig` loại khỏi bản `prod`.
    `device/jwt_exp`, rồi nối lại. Lệnh `ROTATE_TOKEN` làm đúng việc ấy ngay lập tức. Không hỏi
    được thì giữ vé cũ, lùi bậc như bước 3 rồi thử lại; `api` trả **401** thì đi như bước 6. Một
    máy tắt quá 90 ngày thì vé chết thật và máy về bước 3: máy vắng mặt ba tháng phải có người
-   nhận lại.
+   nhận lại. `api` ghi `tokenIssuedAt` và `tokenExpiresAt` trong cùng lượt ghi `tokenHash`, cả lúc
+   máy nhận vé ở bước 4 lẫn lúc đổi vé, và xoá cả ba cùng nhau khi thu hồi hay khi máy đã duyệt
+   đăng ký lại; trang một máy đọc hai cột ấy để người quản trị thấy vé vừa đổi.
 6. **Thu hồi** — admin gỡ máy: `api` xoá vé trên dòng, xoá cache xác thực của EMQX và **đá
    phiên đang mở** của máy (§7.4), nên máy mất broker ngay chứ không chờ tới lần nối sau. Kể cả
    khi lời gọi ấy hỏng, `api` bỏ mọi gói lên từ máy không `APPROVED`, và không gửi xuống nó danh
@@ -9189,10 +9215,10 @@ cây là sai hai lần cùng lúc: bày một con số riêng tư của người
 
 **Một đơn quyết ở hộp hoặc ở trang chi tiết, không quyết ở sổ.** Hộp cho quyết nhanh vì ở đó
 mọi dòng đều đang đợi chính người đang nhìn; sổ thì phần lớn dòng không phải việc của họ, nên
-một hàng nút duyệt trên mỗi dòng là mời bấm nhầm. Sổ **bấm vào được**, và trang chi tiết là nơi
-có đủ bối cảnh để quyết. Một sổ không bấm vào được thì lỗi nặng hơn cả thiếu nút: nó bày ra thứ
-đang treo rồi không cho làm gì với nó, mà trang duy nhất làm được lại **không có đường nào dẫn
-tới**.
+một hàng nút duyệt trên mỗi dòng là mời bấm nhầm. Sổ **bấm vào được**: dòng mở tấm xem ngay trên
+sổ, và việc đang chờ có đường sang đúng dòng ấy trong hộp, nơi có đủ bối cảnh để quyết. Một sổ
+không bấm vào được thì lỗi nặng hơn cả thiếu nút: nó bày ra thứ đang treo rồi không cho làm gì với
+nó, mà nơi duy nhất làm được lại **không có đường nào dẫn tới**.
 
 **Sổ đơn từ giữ mọi việc người ta nộp lên bàn, mỗi bảng một tab.** Sáu bảng giữ những việc ấy:
 `Request` (nghỉ phép, tăng ca, giải trình công, công tác, làm từ xa), `ProfileChange`, `Dependent`,
@@ -9200,14 +9226,27 @@ tới**.
 đợi chỉ giữ việc đang chờ: quyết xong là việc rời mọi màn của bàn, chỉ còn trong nhật ký. Nên sổ có
 một tab cho mỗi bảng, cùng thứ tự với hộp, và tab nào cũng mang **mọi trạng thái**. Tab *Đơn từ*
 lọc theo năm loại của `Request` — gọi cả sổ theo loại đông nhất là dạy người dùng rằng bốn loại kia
-nằm ở đâu đó khác, nên tên sổ nói đúng thứ nó chứa. Năm tab còn lại dùng chính bảng và tấm xem của
-hàng đợi cùng loại (`components/requests/queues.tsx`), chỉ đổi cột *đã chờ* thành *ngày nộp* cộng
-*trạng thái*; xuất CSV ở lại tab *Đơn từ*. Một tab chỉ hiện cho vai có hàng đợi ấy: năm bảng kia là
-dữ liệu lương nên đọc theo `deskOrSelfEmployeeIds` (§9.4), và một tab chỉ chứa đơn của chính trưởng
-phòng là một tab thừa. Vì thế `PAYROLL` cũng mở sổ — khiếu nại, tạm ứng chờ chi và người phụ thuộc là
-hàng đợi của chính bàn lương — nhưng không có tab *Đơn từ*, vì sổ `Request` theo cây chỉ trả cho
-`ADMIN`, `HR`, `MANAGER`. Sổ vẫn không quyết (đoạn trên): việc đang chờ mở tấm xem kèm đường sang
-đúng dòng ấy trong hộp, việc đã xong mở đúng kết quả của nó.
+nằm ở đâu đó khác, nên tên sổ nói đúng thứ nó chứa. Một tab chỉ hiện cho vai có hàng đợi ấy: năm
+bảng kia là dữ liệu lương nên đọc theo `deskOrSelfEmployeeIds` (§9.4), và một tab chỉ chứa đơn của
+chính trưởng phòng là một tab thừa. Vì thế `PAYROLL` cũng mở sổ — khiếu nại, tạm ứng chờ chi và
+người phụ thuộc là hàng đợi của chính bàn lương — nhưng không có tab *Đơn từ*, vì sổ `Request` theo
+cây chỉ trả cho `ADMIN`, `HR`, `MANAGER`.
+
+**Sáu tab dùng chung một khung, nên đổi tab không phải học lại cách đọc.** Cột theo đúng thứ tự:
+*Người gửi* (tên trên mã) · *Phòng ban* · hai cột của riêng loại đơn · *Ngày gửi* · *Trạng thái* ·
+*Người quyết* (tên trên ngày quyết; rỗng khi chưa ai quyết, hay khi người gửi tự rút). Hai cột riêng
+là: đơn từ — loại đơn trên khoảng ngày, và mức; khiếu nại — khoản lương trên kỳ, và nội dung; giấy
+xác nhận — loại giấy, và mục đích; sửa thông tin — mục, và thay đổi; người phụ thuộc — tên trên quan
+hệ, và tháng bắt đầu; tạm ứng — số tiền, và lý do. Người quyết của tạm ứng là bàn duyệt, không phải
+bàn chi. Danh sách của cả sáu bảng trả tên người quyết ngay trên dòng, đọc một lượt cho cả trang
+(§9.10), vì một cột phải mở từng đơn mới biết ai quyết là một cột không ai đọc. Bấm dòng nào cũng mở
+tấm xem của chính loại ấy ngay trên sổ — tab *Đơn từ* cũng vậy, không rời sổ sang trang chi tiết —
+và tấm xem không quyết (đoạn trên): việc đã xong hiện đúng kết quả của nó, việc đang chờ hiện nút
+sang hộp khi người xem giữ hàng đợi ấy, riêng đơn từ khi chính người xem được quyết đơn ấy. Đổi thứ
+tự bằng tiêu đề *Ngày gửi* ở mọi tab; tab *Đơn từ* sắp thêm được theo ngày bắt đầu. Năm tab sau dùng
+chính bảng và tấm xem của hàng đợi cùng loại (`components/requests/queues.tsx`) ở chế độ sổ; xuất
+CSV ở lại tab *Đơn từ*. Trang `/leave/[id]` vẫn là trang của một đơn từ, nơi thông báo và hộp xem
+trước ở trang nhà dẫn tới.
 
 **Vệt điều hướng nằm ở thanh trên, như product header của Cloudflare.** Nó dựng từ chính bảng
 này: nhóm, rồi mục, rồi tab hay trang con, rồi tên bản ghi đang mở — tên ấy do chính trang báo
