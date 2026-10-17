@@ -128,7 +128,7 @@ const NAV: NavGroup[] = [
         topBar: true,
         section: "inbox",
       },
-      { href: "/leave", key: "leave", icon: CalendarXIcon, roles: TEAM_TIME, section: "inbox" },
+      { href: "/leave", key: "leave", icon: CalendarXIcon, roles: DECIDERS, section: "inbox" },
     ],
   },
   {

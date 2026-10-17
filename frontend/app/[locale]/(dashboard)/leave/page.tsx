@@ -6,6 +6,7 @@ import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
+import { QUEUE_ROLES, type Queue } from "@/components/nav/waiting-count";
 import {
   StatePill,
   useRequestWords,
@@ -13,18 +14,48 @@ import {
   type RequestRow,
 } from "@/components/requests/request-card";
 import { REQUEST_KINDS } from "@/components/requests/request-form";
+import {
+  AdvancesQueue,
+  ChangesQueue,
+  DependentsQueue,
+  DisputesQueue,
+  LETTER_KINDS,
+  LettersQueue,
+  PROFILE_FIELDS,
+} from "@/components/requests/queues";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
-import { FilterBar, useSettled } from "@/components/ui/filter-bar";
+import { FilterBar, useSettled, type Filter } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { useRouter } from "@/i18n/navigation";
 import { api, queryOf, saveCsv } from "@/lib/api";
-import { useSession } from "@/lib/auth";
+import { useSession, type Role } from "@/lib/auth";
 import { useUrlState } from "@/lib/url-state";
 
 const STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
+const LETTER_STATES = ["REQUESTED", "ISSUED", "REJECTED", "CANCELLED"] as const;
+const CHANGE_STATES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
+const CLAIM_STATES = ["OPEN", "ANSWERED", "WITHDRAWN"] as const;
+const DEPENDENT_STATES = ["PENDING", "ACTIVE", "REJECTED", "ENDED"] as const;
+const ADVANCE_STATES = ["PENDING", "APPROVED", "PAID", "SETTLED", "REJECTED", "CANCELLED"] as const;
 const kPage = 50;
-const DEFAULTS = { q: "", kind: "", state: "", dept: "", from: "", to: "", sort: "", dir: "" };
+const DEFAULTS = { tab: "", q: "", kind: "", state: "", dept: "", from: "", to: "", sort: "", dir: "", order: "" };
+const NO_LINK = { openId: "", onOpened: () => undefined };
+
+type Tab = "requests" | "disputes" | "certificates" | "profileChanges" | "dependents" | "advances";
+
+// The tree-scoped Request ledger answers these roles only, PAYROLL left out (KEHOACH 9.15).
+const REQUEST_LEDGER: Role[] = ["ADMIN", "HR", "MANAGER"];
+
+// One tab per table that holds filings, shown to the roles holding its queue (KEHOACH 9.15).
+const TABS: { tab: Tab; queues: Queue[] }[] = [
+  { tab: "requests", queues: [] },
+  { tab: "disputes", queues: ["disputes"] },
+  { tab: "certificates", queues: ["certificates"] },
+  { tab: "profileChanges", queues: ["profileChanges"] },
+  { tab: "dependents", queues: ["dependents"] },
+  { tab: "advances", queues: ["advancesToDecide", "advancesToPay"] },
+];
 
 interface RequestPage {
   rows: RequestRow[];
@@ -40,6 +71,11 @@ interface Department {
 
 function Register() {
   const t = useTranslations("requests");
+  const c = useTranslations("certificates");
+  const p = useTranslations("profile");
+  const d = useTranslations("disputes");
+  const me = useTranslations("me");
+  const pay = useTranslations("payroll");
   const common = useTranslations("common");
   const format = useFormatter();
   const words = useRequestWords();
@@ -56,6 +92,14 @@ function Register() {
     }
   }, [settled]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const role = useSession((held) => held.role);
+  const holds = (one: (typeof TABS)[number]) =>
+    role !== null &&
+    (one.tab === "requests" ? REQUEST_LEDGER.includes(role) : one.queues.some((queue) => QUEUE_ROLES[queue].includes(role)));
+  const shown = TABS.filter(holds);
+  const tab: Tab = shown.find((one) => one.tab === url.tab)?.tab ?? shown[0]?.tab ?? "requests";
+  const onRequests = tab === "requests";
+
   const filter = useMemo(
     () => ({ search: url.q, kind: url.kind, departmentId: url.dept, from: url.from, to: url.to }),
     [url.q, url.kind, url.dept, url.from, url.to],
@@ -64,6 +108,7 @@ function Register() {
 
   const rows = useInfiniteQuery({
     queryKey: ["requests", "register", filter, url.state, order],
+    enabled: onRequests,
     initialPageParam: "",
     queryFn: async ({ pageParam }) =>
       (await api.get<RequestPage>(`/requests${queryOf({ ...filter, state: url.state, ...order, take: String(kPage), cursor: pageParam })}`)).data,
@@ -73,6 +118,7 @@ function Register() {
   // One row asked per state, the total read off each page, so the options carry their counts.
   const counts = useQuery({
     queryKey: ["requests", "register", "counts", filter],
+    enabled: onRequests,
     queryFn: async () => {
       const count = async (state: string) =>
         (await api.get<RequestPage>(`/requests${queryOf({ ...filter, state, take: "1" })}`)).data.total;
@@ -87,7 +133,6 @@ function Register() {
   });
 
   // Nobody can file leave until the desk declares a type (KEHOACH 9.5).
-  const role = useSession((held) => held.role);
   const router = useRouter();
   const declares = role === "HR" || role === "ADMIN";
   const types = useQuery({
@@ -103,9 +148,77 @@ function Register() {
     onError: notify.failed,
   });
 
-  const shown = rows.data?.pages.flatMap((one) => one.rows);
+  const listed = rows.data?.pages.flatMap((one) => one.rows);
   const first = rows.data?.pages[0];
   const filtered = Object.values(filter).some((one) => one !== "") || url.state !== "";
+
+  const LABEL: Record<Tab, string> = {
+    requests: t("queueRequests"),
+    disputes: t("queueDisputes"),
+    certificates: t("queueCertificates"),
+    profileChanges: t("queueProfile"),
+    dependents: t("queueDependents"),
+    advances: t("registerAdvances"),
+  };
+  const states: Record<string, string> = {
+    "": t("anyState"),
+    ...(tab === "requests" ? Object.fromEntries(STATES.map((one) => [one, t(`count${one}`)])) : {}),
+    ...(tab === "certificates" ? Object.fromEntries(LETTER_STATES.map((one) => [one, c(one)])) : {}),
+    ...(tab === "profileChanges" ? Object.fromEntries(CHANGE_STATES.map((one) => [one, p(`state${one}`)])) : {}),
+    ...(tab === "disputes" ? Object.fromEntries(CLAIM_STATES.map((one) => [one, d(`state${one}`)])) : {}),
+    ...(tab === "dependents" ? Object.fromEntries(DEPENDENT_STATES.map((one) => [one, me(`dependentState${one}`)])) : {}),
+    ...(tab === "advances" ? Object.fromEntries(ADVANCE_STATES.map((one) => [one, pay(`advance${one}`)])) : {}),
+  };
+  const kinds: Record<string, string> | null =
+    tab === "requests"
+      ? { "": t("anyKind"), ...Object.fromEntries(REQUEST_KINDS.map((one: RequestKind) => [one, t(`kind${one}`)])) }
+      : tab === "certificates"
+        ? { "": t("anyKind"), ...Object.fromEntries(LETTER_KINDS.map((one) => [one, c(one)])) }
+        : tab === "profileChanges"
+          ? { "": t("anyKind"), ...Object.fromEntries(PROFILE_FIELDS.map((one) => [one, p(`field${one}`)])) }
+          : null;
+
+  const filters: Filter[] = [
+    ...(kinds ? [{ key: "kind", label: t("kind"), value: url.kind, onChange: (next: string) => setUrl({ kind: next }), items: kinds }] : []),
+    {
+      key: "state",
+      label: t("state"),
+      value: url.state,
+      onChange: (next) => setUrl({ state: next }),
+      items: states,
+      counts: onRequests ? counts.data : undefined,
+    },
+    {
+      key: "dept",
+      label: t("department"),
+      value: url.dept,
+      searchable: true,
+      onChange: (next) => setUrl({ dept: next }),
+      items: { "": t("anyDepartment"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])) },
+    },
+    ...(onRequests
+      ? []
+      : [
+          {
+            key: "order",
+            label: t("order"),
+            value: url.order,
+            onChange: (next: string) => setUrl({ order: next }),
+            items: { "": t("orderNewest"), asc: t("orderOldest") },
+          },
+        ]),
+  ];
+
+  const params = {
+    search: url.q,
+    departmentId: url.dept,
+    from: url.from,
+    to: url.to,
+    order: url.order || "desc",
+    ...(url.state ? { state: url.state } : {}),
+    ...(tab === "certificates" && url.kind ? { kind: url.kind } : {}),
+    ...(tab === "profileChanges" && url.kind ? { field: url.kind } : {}),
+  };
 
   const columns: Column<RequestRow>[] = [
     {
@@ -161,10 +274,16 @@ function Register() {
 
   return (
     <>
-      <PageHeader title={t("registerTitle")} description={t("deskLead")} />
+      <PageHeader
+        title={t("registerTitle")}
+        description={t("deskLead")}
+        tabs={shown.length > 1 ? shown.map((one) => ({ value: one.tab, label: LABEL[one.tab] })) : undefined}
+        tab={tab}
+        onTab={(next) => setUrl({ tab: next === "requests" ? "" : next, kind: "", state: "", sort: "", dir: "", order: "" })}
+      />
 
       <PageLayout>
-        {declares && types.data?.length === 0 ? (
+        {onRequests && declares && types.data?.length === 0 ? (
           <Banner
             variant="alert"
             className="mb-4"
@@ -179,66 +298,51 @@ function Register() {
           />
         ) : null}
         <FilterBar
-          search={{ value: typed, onChange: setTyped, placeholder: t("registerSearch") }}
-          filters={[
-            {
-              key: "kind",
-              label: t("kind"),
-              value: url.kind,
-              onChange: (next) => setUrl({ kind: next }),
-              items: { "": t("anyKind"), ...Object.fromEntries(REQUEST_KINDS.map((one: RequestKind) => [one, t(`kind${one}`)])) },
-            },
-            {
-              key: "state",
-              label: t("state"),
-              value: url.state,
-              onChange: (next) => setUrl({ state: next }),
-              items: { "": t("anyState"), ...Object.fromEntries(STATES.map((one) => [one, t(`count${one}`)])) },
-              counts: counts.data,
-            },
-            {
-              key: "dept",
-              label: t("department"),
-              value: url.dept,
-              searchable: true,
-              onChange: (next) => setUrl({ dept: next }),
-              items: { "": t("anyDepartment"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])) },
-            },
-          ]}
+          search={{ value: typed, onChange: setTyped, placeholder: onRequests ? t("registerSearch") : t("inboxSearch") }}
+          filters={filters}
           range={{ from: url.from, to: url.to, onFrom: (next) => setUrl({ from: next }), onTo: (next) => setUrl({ to: next }) }}
           extra={
-            <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()}>
-              {common("export")}
-            </Button>
+            onRequests ? (
+              <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()}>
+                {common("export")}
+              </Button>
+            ) : undefined
           }
         />
-        <DataTable
-          id="requests"
-          cardLead="who"
-          cardTrailing="state"
-          columns={columns}
-          rows={shown}
-          keyOf={(row) => row.id}
-          pending={rows.isPending}
-          failed={rows.isError}
-          onRetry={() => void rows.refetch()}
-          rowHref={(row) => `/leave/${row.id}`}
-          sort={{ key: order.sort, dir: order.order === "asc" ? "asc" : "desc" }}
-          onSortChange={(next) => setUrl({ sort: next.key === "createdAt" ? "" : next.key, dir: next.dir === "desc" ? "" : next.dir })}
-          empty={filtered ? t("registerNoMatch") : t("registerEmpty")}
-          emptyHint={filtered ? t("registerNoMatchHint") : undefined}
-          paging={
-            first
-              ? {
-                  shown: shown?.length ?? 0,
-                  total: first.total,
-                  exact: first.totalIsExact !== false,
-                  onMore: rows.hasNextPage ? () => void rows.fetchNextPage() : undefined,
-                  loading: rows.isFetchingNextPage,
-                }
-              : undefined
-          }
-        />
+        {onRequests ? (
+          <DataTable
+            id="requests"
+            cardLead="who"
+            cardTrailing="state"
+            columns={columns}
+            rows={listed}
+            keyOf={(row) => row.id}
+            pending={rows.isPending}
+            failed={rows.isError}
+            onRetry={() => void rows.refetch()}
+            rowHref={(row) => `/leave/${row.id}`}
+            sort={{ key: order.sort, dir: order.order === "asc" ? "asc" : "desc" }}
+            onSortChange={(next) => setUrl({ sort: next.key === "createdAt" ? "" : next.key, dir: next.dir === "desc" ? "" : next.dir })}
+            empty={filtered ? t("registerNoMatch") : t("registerEmpty")}
+            emptyHint={filtered ? t("registerNoMatchHint") : undefined}
+            paging={
+              first
+                ? {
+                    shown: listed?.length ?? 0,
+                    total: first.total,
+                    exact: first.totalIsExact !== false,
+                    onMore: rows.hasNextPage ? () => void rows.fetchNextPage() : undefined,
+                    loading: rows.isFetchingNextPage,
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {tab === "disputes" ? <DisputesQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "certificates" ? <LettersQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "profileChanges" ? <ChangesQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "dependents" ? <DependentsQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "advances" ? <AdvancesQueue ledger paying={false} params={params} filtered={filtered} {...NO_LINK} /> : null}
       </PageLayout>
     </>
   );

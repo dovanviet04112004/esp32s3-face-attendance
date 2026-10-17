@@ -1,13 +1,13 @@
 "use client";
 
 import { Button, Input, LayerDialog, Textarea } from "@cloudflare/kumo";
-import { CheckIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, CheckIcon, XIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { COUNTS_KEY, WAITING_POLL_MS, type Queue } from "@/components/nav/waiting-count";
+import { COUNTS_KEY, QUEUE_ROLES, WAITING_POLL_MS, type Queue } from "@/components/nav/waiting-count";
 import { useReadSubject } from "@/components/notifications/notice-row";
 import { useLineName } from "@/components/payroll/payslip-view";
 import {
@@ -24,8 +24,10 @@ import { DataTable, PersonCell, type Column, type Paging } from "@/components/ta
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { Facts } from "@/components/ui/page";
-import { StatePill } from "@/components/ui/pill";
+import { StatePill, type Tone } from "@/components/ui/pill";
+import { useRouter } from "@/i18n/navigation";
 import { api, queryOf } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, days, money } from "@/lib/format";
 
@@ -35,7 +37,7 @@ const kDayMs = 86_400_000;
 export const LETTER_KINDS = ["EMPLOYMENT", "INCOME"] as const;
 /** The parts of a record a person can ask to change. */
 export const PROFILE_FIELDS = ["PERSONAL_EMAIL", "PHONE", "BANK", "NATIONAL_ID", "TAX_CODE", "SOCIAL_INSURANCE_NO"] as const;
-/** The inbox's queues in tab order. */
+/** The inbox's queues in tab order; the register follows the same order (KEHOACH 9.15). */
 export const QUEUE_ORDER: Queue[] = [
   "requests",
   "disputes",
@@ -154,6 +156,20 @@ interface Verdict {
   name: string;
 }
 
+const LETTER_TONE: Record<NonNullable<Letter["state"]>, Tone> = { REQUESTED: "waiting", ISSUED: "good", REJECTED: "bad", CANCELLED: "idle" };
+const CHANGE_TONE: Record<NonNullable<Change["state"]>, Tone> = { PENDING: "waiting", APPROVED: "good", REJECTED: "bad", CANCELLED: "idle" };
+const CLAIM_TONE: Record<NonNullable<Claim["state"]>, Tone> = { OPEN: "waiting", ANSWERED: "good", WITHDRAWN: "idle" };
+// An approved advance still waits on the pay desk, so it reads as waiting until it is paid.
+const ADVANCE_TONE: Record<NonNullable<Advance["state"]>, Tone> = {
+  PENDING: "waiting",
+  APPROVED: "waiting",
+  REJECTED: "bad",
+  PAID: "good",
+  SETTLED: "good",
+  CANCELLED: "idle",
+};
+const DEPENDENT_TONE: Record<NonNullable<Dependent["state"]>, Tone> = { PENDING: "waiting", ACTIVE: "good", REJECTED: "bad", ENDED: "idle" };
+
 function waitedSince(row: { createdAt: string; waitedDays?: number }): number {
   return row.waitedDays ?? Math.max(0, Math.floor((Date.now() - new Date(row.createdAt).getTime()) / kDayMs));
 }
@@ -235,6 +251,51 @@ interface Said {
   who?: string | null;
   at?: string | null;
   note?: string | null;
+}
+
+/** The inbox row that decides an item, or null when this viewer holds no queue that answers it. */
+function useInboxLink(): (queue: Queue, id: string) => (() => void) | null {
+  const role = useSession((held) => held.role);
+  const router = useRouter();
+  return (queue, id) =>
+    role !== null && QUEUE_ROLES[queue].includes(role) ? () => router.push(`/approvals?tab=${queue}&open=${id}`) : null;
+}
+
+/** A waiting item seen from the register, which decides nothing itself (KEHOACH 9.15). */
+function useWaiting(): (go: (() => void) | null) => ReactNode {
+  const t = useTranslations("requests");
+  return (go) => (
+    <div className="mt-4 flex flex-col items-start gap-3 border-t border-kumo-hairline pt-4">
+      <p className="font-medium">{t("ledgerWaiting")}</p>
+      {go ? (
+        <Button variant="secondary" icon={ArrowRightIcon} onClick={go}>
+          {t("ledgerDecide")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The register's two columns in place of the queue's wait: the filing day, and where the item stands. */
+function useLedgerColumns<T>(filedOf: (row: T) => string, stateOf: (row: T) => [Tone, string]): Column<T>[] {
+  const t = useTranslations("requests");
+  const format = useFormatter();
+  return [
+    {
+      id: "filed",
+      header: t("filed"),
+      priority: 2,
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(filedOf(row)), "day")}</span>,
+    },
+    {
+      id: "state",
+      header: t("state"),
+      cell: (row) => {
+        const [tone, label] = stateOf(row);
+        return <StatePill tone={tone}>{label}</StatePill>;
+      },
+    },
+  ];
 }
 
 /** What a handled item came to, in place of its decision; a 409 lands here too (KEHOACH 9.21.4). */
@@ -423,9 +484,12 @@ function useSheetMutation<V>(
   return { mutation, fault, clear: () => setFault(null) };
 }
 
-interface QueueProps extends Linked {
+/** What a queue reads and how it shows it. */
+export interface QueueProps extends Linked {
   params: Record<string, string>;
   filtered: boolean;
+  /** The register's view: every state, the filing day in place of the wait, no decision (KEHOACH 9.15). */
+  ledger?: boolean;
 }
 
 /** The requests waiting on this viewer, decided in a sheet with the balance and who else is off. */
@@ -821,15 +885,21 @@ export function PunchesQueue({ params, filtered }: QueueProps) {
   );
 }
 
-/** Letters waiting on the desk. */
-export function LettersQueue({ params, filtered, ...link }: QueueProps) {
+/** Letters asked for: the desk's queue, or every letter in the register. */
+export function LettersQueue({ params, filtered, ledger, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const c = useTranslations("certificates");
   const common = useTranslations("common");
   const format = useFormatter();
   const notify = useNotify();
   const handled = useHandled();
-  const asked = useQueue<Letter>(["certificates", "queue"], "/certificates", { ...params, state: "REQUESTED" });
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  const asked = useQueue<Letter>(
+    ["certificates", ledger ? "ledger" : "queue"],
+    "/certificates",
+    ledger ? params : { ...params, state: "REQUESTED" },
+  );
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<Letter | null>(null);
   const decide = useSheetMutation<Verdict>(
@@ -854,25 +924,31 @@ export function LettersQueue({ params, filtered, ...link }: QueueProps) {
         ? { key: "handledWithdrawn" }
         : { key: row.state === "ISSUED" ? "handledISSUED" : "handledREJECTED", who: row.decidedByName, at: row.issuedAt ?? row.updatedAt, note: row.note };
   const kindOf = (row: Letter) => (row.kind === "INCOME" && row.months ? `${c(row.kind)} · ${c("monthsN", { count: row.months })}` : c(row.kind));
+  const ledgerColumns = useLedgerColumns<Letter>(
+    (row) => row.createdAt,
+    (row) => [LETTER_TONE[row.state ?? "REQUESTED"], c(row.state ?? "REQUESTED")],
+  );
   const columns: Column<Letter>[] = [
     ...personColumns<Letter>(t("who"), t("department"), common("empty")),
     { id: "kind", header: c("kind"), cell: kindOf },
     { id: "purpose", header: c("purpose"), priority: 3, truncate: true, cell: (row) => row.purpose },
-    { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row) => <Waited count={waitedSince(row)} /> },
+    ...(ledger
+      ? ledgerColumns
+      : [{ id: "waited", header: t("waitedHeader"), numeric: true, cell: (row: Letter) => <Waited count={waitedSince(row)} /> }]),
   ];
   return (
     <>
       <DataTable
-        id="inbox-letters"
+        id={ledger ? "register-letters" : "inbox-letters"}
         columns={columns}
         rows={rows}
         keyOf={(row) => row.id}
         pending={asked.isPending}
         failed={asked.isError}
         onRetry={() => void asked.refetch()}
-        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        empty={filtered ? t("queueNoMatch") : ledger ? t("ledgerEmpty") : t("queueEmpty")}
         cardLead="person"
-        cardTrailing="waited"
+        cardTrailing={ledger ? "state" : "waited"}
         paging={paging}
         onRowClick={show}
       />
@@ -885,7 +961,7 @@ export function LettersQueue({ params, filtered, ...link }: QueueProps) {
         approveLabel={c("issue")}
         busy={decide.mutation.isPending}
         fault={decide.fault}
-        handled={open ? handled(said(open)) : undefined}
+        handled={open ? (handled(said(open)) ?? (ledger ? waiting(inbox("certificates", open.id)) : undefined)) : undefined}
         onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee.fullName })}
         onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee.fullName })}
       >
@@ -908,14 +984,20 @@ function reads(values: Record<string, string | null> | null, blank: string): str
   return shown.length > 0 ? shown.join(" · ") : blank;
 }
 
-/** Changes to a record waiting on the desk. */
-export function ChangesQueue({ params, filtered, ...link }: QueueProps) {
+/** Changes to a record asked for: the desk's queue, or every change in the register. */
+export function ChangesQueue({ params, filtered, ledger, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const p = useTranslations("profile");
   const common = useTranslations("common");
   const notify = useNotify();
   const handled = useHandled();
-  const asked = useQueue<Change>(["profile-changes", "queue"], "/profile-changes", { ...params, state: "PENDING" });
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  const asked = useQueue<Change>(
+    ["profile-changes", ledger ? "ledger" : "queue"],
+    "/profile-changes",
+    ledger ? params : { ...params, state: "PENDING" },
+  );
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<Change | null>(null);
   const decide = useSheetMutation<Verdict>(
@@ -939,6 +1021,10 @@ export function ChangesQueue({ params, filtered, ...link }: QueueProps) {
       : row.state === "CANCELLED"
         ? { key: "handledWithdrawn" }
         : { key: `handled${row.state}`, who: row.decidedByName, at: row.decidedAt, note: row.note };
+  const ledgerColumns = useLedgerColumns<Change>(
+    (row) => row.createdAt,
+    (row) => [CHANGE_TONE[row.state ?? "PENDING"], p(`state${row.state ?? "PENDING"}`)],
+  );
   const columns: Column<Change>[] = [
     ...personColumns<Change>(t("who"), t("department"), common("empty")),
     { id: "field", header: p("field"), cell: (row) => p(`field${row.field}`) },
@@ -949,21 +1035,23 @@ export function ChangesQueue({ params, filtered, ...link }: QueueProps) {
       truncate: true,
       cell: (row) => `${reads(row.oldValue, p("blank"))} → ${reads(row.newValue, p("blank"))}`,
     },
-    { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row) => <Waited count={waitedSince(row)} /> },
+    ...(ledger
+      ? ledgerColumns
+      : [{ id: "waited", header: t("waitedHeader"), numeric: true, cell: (row: Change) => <Waited count={waitedSince(row)} /> }]),
   ];
   return (
     <>
       <DataTable
-        id="inbox-changes"
+        id={ledger ? "register-changes" : "inbox-changes"}
         columns={columns}
         rows={rows}
         keyOf={(row) => row.id}
         pending={asked.isPending}
         failed={asked.isError}
         onRetry={() => void asked.refetch()}
-        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        empty={filtered ? t("queueNoMatch") : ledger ? t("ledgerEmpty") : t("queueEmpty")}
         cardLead="person"
-        cardTrailing="waited"
+        cardTrailing={ledger ? "state" : "waited"}
         paging={paging}
         onRowClick={show}
       />
@@ -976,7 +1064,7 @@ export function ChangesQueue({ params, filtered, ...link }: QueueProps) {
         approveLabel={p("approve")}
         busy={decide.mutation.isPending}
         fault={decide.fault}
-        handled={open ? handled(said(open)) : undefined}
+        handled={open ? (handled(said(open)) ?? (ledger ? waiting(inbox("profileChanges", open.id)) : undefined)) : undefined}
         onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee.fullName })}
         onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee.fullName })}
       >
@@ -994,8 +1082,8 @@ export function ChangesQueue({ params, filtered, ...link }: QueueProps) {
   );
 }
 
-/** Payslip disputes waiting on the pay desk. */
-export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
+/** Payslip disputes: the pay desk's queue, or every dispute in the register. */
+export function DisputesQueue({ params, filtered, ledger, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const d = useTranslations("disputes");
   const common = useTranslations("common");
@@ -1004,7 +1092,13 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
   const lineName = useLineName();
   const notify = useNotify();
   const handled = useHandled();
-  const asked = useQueue<Claim>(["payslip-disputes", "queue"], "/payslip-disputes", { ...params, state: "OPEN" });
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  const asked = useQueue<Claim>(
+    ["payslip-disputes", ledger ? "ledger" : "queue"],
+    "/payslip-disputes",
+    ledger ? params : { ...params, state: "OPEN" },
+  );
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<Claim | null>(null);
   const [answer, setAnswer] = useState("");
@@ -1041,6 +1135,11 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
         ? { key: "handledWithdrawn" }
         : { key: row.outcome === "UPHELD" ? "handledUPHELD" : "handledREJECTED", who: row.decidedByName, at: row.answeredAt, note: row.answer };
   const closed = open ? said(open) : null;
+  const deciding = open !== null && closed === null && !ledger;
+  const ledgerColumns = useLedgerColumns<Claim>(
+    (row) => row.createdAt,
+    (row) => [CLAIM_TONE[row.state ?? "OPEN"], d(`state${row.state ?? "OPEN"}`)],
+  );
   const columns: Column<Claim>[] = [
     ...personColumns<Claim>(t("who"), t("department"), common("empty")),
     {
@@ -1054,14 +1153,18 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
       ),
     },
     { id: "claim", header: d("claim"), priority: 3, truncate: true, cell: (row) => row.claim },
-    {
-      id: "due",
-      header: d("due"),
-      priority: 2,
-      cell: (row) =>
-        late(row) ? <StatePill tone="bad">{d("overdue")}</StatePill> : format.dateTime(new Date(row.dueAt), "day"),
-    },
-    { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row) => <Waited count={waitedSince(row)} /> },
+    ...(ledger
+      ? ledgerColumns
+      : [
+          {
+            id: "due",
+            header: d("due"),
+            priority: 2 as const,
+            cell: (row: Claim) =>
+              late(row) ? <StatePill tone="bad">{d("overdue")}</StatePill> : format.dateTime(new Date(row.dueAt), "day"),
+          },
+          { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row: Claim) => <Waited count={waitedSince(row)} /> },
+        ]),
   ];
 
   function send(outcome: "UPHELD" | "REJECTED"): void {
@@ -1077,16 +1180,16 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
   return (
     <>
       <DataTable
-        id="inbox-disputes"
+        id={ledger ? "register-disputes" : "inbox-disputes"}
         columns={columns}
         rows={rows}
         keyOf={(row) => row.id}
         pending={asked.isPending}
         failed={asked.isError}
         onRetry={() => void asked.refetch()}
-        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        empty={filtered ? t("queueNoMatch") : ledger ? t("ledgerEmpty") : t("queueEmpty")}
         cardLead="person"
-        cardTrailing="waited"
+        cardTrailing={ledger ? "state" : "waited"}
         paging={paging}
         onRowClick={show}
       />
@@ -1106,8 +1209,8 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
                   ]}
                 />
                 <p className="break-words">{open.claim}</p>
-                {closed ? handled(closed) : null}
-                {closed ? null : (
+                {closed ? handled(closed) : ledger ? waiting(inbox("disputes", open.id)) : null}
+                {!deciding ? null : (
                   <>
                     <Textarea
                       label={d("answer")}
@@ -1146,7 +1249,7 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
               </div>
             ) : null}
           </LayerDialog.Body>
-          {closed ? null : (
+          {!deciding ? null : (
             <LayerDialog.Actions dismissLabel={common("close")}>
               <LayerDialog.Actions.Primary loading={decide.mutation.isPending} onClick={() => send("UPHELD")}>
                 {d("uphold")}
@@ -1159,8 +1262,8 @@ export function DisputesQueue({ params, filtered, ...link }: QueueProps) {
   );
 }
 
-/** Salary advances waiting on the desk to decide or to pay. */
-export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps & { paying: boolean }) {
+/** Salary advances: the desk's queue to decide or to pay, or every advance in the register. */
+export function AdvancesQueue({ params, filtered, paying, ledger, ...link }: QueueProps & { paying: boolean }) {
   const t = useTranslations("requests");
   const pay = useTranslations("payroll");
   const common = useTranslations("common");
@@ -1168,10 +1271,13 @@ export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps 
   const locale = useLocale();
   const notify = useNotify();
   const handled = useHandled();
-  const asked = useQueue<Advance>(["advances", "queue", paying ? "pay" : "decide"], "/advances", {
-    ...params,
-    state: paying ? "APPROVED" : "PENDING",
-  });
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  const asked = useQueue<Advance>(
+    ["advances", ledger ? "ledger" : "queue", paying ? "pay" : "decide"],
+    "/advances",
+    ledger ? params : { ...params, state: paying ? "APPROVED" : "PENDING" },
+  );
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<Advance | null>(null);
   const decide = useSheetMutation<Verdict>(
@@ -1197,7 +1303,9 @@ export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps 
       return null;
     }
     if (row.state === "PAID" || row.state === "SETTLED") {
-      return paying ? { key: "handledPAID", at: row.paidAt } : { key: "handledAPPROVED", who: row.decidedByName, at: row.decidedAt, note: row.decisionNote };
+      return paying || ledger
+        ? { key: "handledPAID", at: row.paidAt }
+        : { key: "handledAPPROVED", who: row.decidedByName, at: row.decidedAt, note: row.decisionNote };
     }
     if (row.state === "APPROVED" || row.state === "REJECTED") {
       return { key: `handled${row.state}`, who: row.decidedByName, at: row.decidedAt, note: row.decisionNote };
@@ -1205,43 +1313,46 @@ export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps 
     return { key: "handledWithdrawn" };
   };
   const closed = open ? said(open) : null;
+  const ledgerColumns = useLedgerColumns<Advance>(
+    (row) => row.requestedAt,
+    (row) => [ADVANCE_TONE[row.state ?? "PENDING"], pay(`advance${row.state ?? "PENDING"}`)],
+  );
   const columns: Column<Advance>[] = [
     ...personColumns<Advance>(t("who"), t("department"), common("empty")),
     { id: "amount", header: pay("advanceAmount"), numeric: true, cell: (row) => cash(row.amount) },
-    ...(paying
-      ? [
-          {
-            id: "decidedAt",
-            header: t("decidedAtHeader"),
-            priority: 2 as const,
-            cell: (row: Advance) => (row.decidedAt ? format.dateTime(new Date(row.decidedAt), "day") : common("empty")),
-          },
-        ]
-      : [
-          { id: "base", header: t("baseSalary"), numeric: true, priority: 2 as const, cell: (row: Advance) => cash(row.baseSalary) },
-          { id: "owed", header: t("outstanding"), numeric: true, priority: 2 as const, cell: (row: Advance) => cash(row.outstanding) },
-        ]),
+    ...(ledger
+      ? []
+      : paying
+        ? [
+            {
+              id: "decidedAt",
+              header: t("decidedAtHeader"),
+              priority: 2 as const,
+              cell: (row: Advance) => (row.decidedAt ? format.dateTime(new Date(row.decidedAt), "day") : common("empty")),
+            },
+          ]
+        : [
+            { id: "base", header: t("baseSalary"), numeric: true, priority: 2 as const, cell: (row: Advance) => cash(row.baseSalary) },
+            { id: "owed", header: t("outstanding"), numeric: true, priority: 2 as const, cell: (row: Advance) => cash(row.outstanding) },
+          ]),
     { id: "reason", header: t("reason"), priority: 3, truncate: true, cell: (row) => row.reason },
-    {
-      id: "waited",
-      header: t("waitedHeader"),
-      numeric: true,
-      cell: (row) => <Waited count={row.waitedDays} />,
-    },
+    ...(ledger
+      ? ledgerColumns
+      : [{ id: "waited", header: t("waitedHeader"), numeric: true, cell: (row: Advance) => <Waited count={row.waitedDays} /> }]),
   ];
   return (
     <>
       <DataTable
-        id={paying ? "inbox-to-pay" : "inbox-advances"}
+        id={ledger ? "register-advances" : paying ? "inbox-to-pay" : "inbox-advances"}
         columns={columns}
         rows={rows}
         keyOf={(row) => row.id}
         pending={asked.isPending}
         failed={asked.isError}
         onRetry={() => void asked.refetch()}
-        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        empty={filtered ? t("queueNoMatch") : ledger ? t("ledgerEmpty") : t("queueEmpty")}
         cardLead="person"
-        cardTrailing="amount"
+        cardTrailing={ledger ? "state" : "amount"}
         paging={paging}
         onRowClick={show}
       />
@@ -1279,7 +1390,7 @@ export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps 
           approveLabel={t("approve")}
           busy={decide.mutation.isPending}
           fault={decide.fault}
-          handled={closed ? handled(closed) : undefined}
+          handled={closed ? handled(closed) : ledger && open ? waiting(inbox("advancesToDecide", open.id)) : undefined}
           noteOnApprove
           onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee.fullName })}
           onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee.fullName })}
@@ -1303,15 +1414,21 @@ export function AdvancesQueue({ params, filtered, paying, ...link }: QueueProps 
   );
 }
 
-/** Dependants waiting on the desk to count for tax relief. */
-export function DependentsQueue({ params, filtered, ...link }: QueueProps) {
+/** Dependants registered for tax relief: the desk's queue, or every registration in the register. */
+export function DependentsQueue({ params, filtered, ledger, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const me = useTranslations("me");
   const common = useTranslations("common");
   const format = useFormatter();
   const notify = useNotify();
   const handled = useHandled();
-  const asked = useQueue<Dependent>(["dependents", "queue"], "/dependents", { ...params, state: "PENDING" });
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  const asked = useQueue<Dependent>(
+    ["dependents", ledger ? "ledger" : "queue"],
+    "/dependents",
+    ledger ? params : { ...params, state: "PENDING" },
+  );
   const { rows, paging } = usePaging(asked);
   const [open, setOpen] = useState<Dependent | null>(null);
   const decide = useSheetMutation<Verdict>(
@@ -1334,6 +1451,10 @@ export function DependentsQueue({ params, filtered, ...link }: QueueProps) {
     !row.state || row.state === "PENDING"
       ? null
       : { key: row.state === "REJECTED" ? "handledREJECTED" : "handledAPPROVED", who: row.decidedByName, at: row.decidedAt, note: row.decisionNote };
+  const ledgerColumns = useLedgerColumns<Dependent>(
+    (row) => row.createdAt,
+    (row) => [DEPENDENT_TONE[row.state ?? "PENDING"], me(`dependentState${row.state ?? "PENDING"}`)],
+  );
   const columns: Column<Dependent>[] = [
     ...personColumns<Dependent>(t("who"), t("department"), common("empty")),
     {
@@ -1347,21 +1468,23 @@ export function DependentsQueue({ params, filtered, ...link }: QueueProps) {
       ),
     },
     { id: "from", header: me("dependentFrom"), priority: 2, cell: month },
-    { id: "waited", header: t("waitedHeader"), numeric: true, cell: (row) => <Waited count={waitedSince(row)} /> },
+    ...(ledger
+      ? ledgerColumns
+      : [{ id: "waited", header: t("waitedHeader"), numeric: true, cell: (row: Dependent) => <Waited count={waitedSince(row)} /> }]),
   ];
   return (
     <>
       <DataTable
-        id="inbox-dependents"
+        id={ledger ? "register-dependents" : "inbox-dependents"}
         columns={columns}
         rows={rows}
         keyOf={(row) => row.id}
         pending={asked.isPending}
         failed={asked.isError}
         onRetry={() => void asked.refetch()}
-        empty={filtered ? t("queueNoMatch") : t("queueEmpty")}
+        empty={filtered ? t("queueNoMatch") : ledger ? t("ledgerEmpty") : t("queueEmpty")}
         cardLead="person"
-        cardTrailing="waited"
+        cardTrailing={ledger ? "state" : "waited"}
         paging={paging}
         onRowClick={show}
       />
@@ -1374,7 +1497,7 @@ export function DependentsQueue({ params, filtered, ...link }: QueueProps) {
         approveLabel={t("approve")}
         busy={decide.mutation.isPending}
         fault={decide.fault}
-        handled={open ? handled(said(open)) : undefined}
+        handled={open ? (handled(said(open)) ?? (ledger ? waiting(inbox("dependents", open.id)) : undefined)) : undefined}
         onApprove={(note) => open && decide.mutation.mutate({ id: open.id, approve: true, note, name: open.employee.fullName })}
         onReject={(note) => open && decide.mutation.mutate({ id: open.id, approve: false, note, name: open.employee.fullName })}
       >
