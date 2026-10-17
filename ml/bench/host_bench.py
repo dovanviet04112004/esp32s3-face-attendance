@@ -188,10 +188,82 @@ def score_split(runner, run: Path, cfg, split: str) -> str:
     return f"n={live.size}  " + quant.headline(quant.metrics_of(live, np.array(truth)))
 
 
+FLOOR_BENCHMARKS = ("lfw", "cfp_ff", "calfw", "cfp_fp", "agedb_30", "cplfw")
+FLOORS = (0.30, 0.35, 0.40, 0.45, 0.50, 0.60)
+
+
+def locked_espdl(run: Path) -> Path:
+    """The ladder row's .espdl that contracts/models.lock.json deploys, found by its sha256."""
+    import hashlib
+    import json
+
+    from facepipe import REPO_ROOT, tasks
+
+    lock = json.loads((REPO_ROOT / "contracts" / "models.lock.json").read_text(encoding="utf-8"))
+    want = lock[tasks.branch_of(run)]["sha256"]
+    for path in sorted(run.glob("int8/*/*.espdl")):
+        if hashlib.sha256(path.read_bytes()).hexdigest() == want:
+            return path
+    raise SystemExit(f"{run}: no ladder row holds the .espdl the lock deploys")
+
+
+def floor_table(runner, cfg, top: int) -> str:
+    """The evidence for vision.match_min: how high strangers score, and what each floor keeps.
+
+    Every pair of six verification benchmarks, unflipped, as the kiosk compares (KEHOACH 4.5.5d).
+    """
+    from facepipe import ML_ROOT
+    from facepipe.tasks.recognition.eval import pair_scores, read_bin
+    from facepipe.tasks.recognition.quant import embeddings
+
+    root = ML_ROOT / cfg.data.params["benchmarks"]
+    size = int(cfg.model.input_hw[0])
+    found: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for name in FLOOR_BENCHMARKS:
+        if (root / f"{name}.bin").is_file():
+            encoded, issame = read_bin(root / f"{name}.bin")
+            vectors = embeddings(runner, encoded, size)
+            vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-10)
+            found[name] = (pair_scores(vectors), issame)
+    lines = ["benchmark  strangers  mean    std     highest  same-person mean"]
+    for name, (score, same) in found.items():
+        other = score[~same]
+        lines.append(
+            f"{name:9s}  {other.size:9d}  {other.mean():.3f}   {other.std():.3f}"
+            f"   {other.max():.3f}    {score[same].mean():.3f}"
+        )
+    ranked = sorted(
+        (
+            (float(s), name, int(i))
+            for name, (score, same) in found.items()
+            for i, s in enumerate(score)
+            if not same[i]
+        ),
+        reverse=True,
+    )[:top]
+    lines.append("highest strangers: " + "  ".join(f"{name}#{i} {s:.3f}" for s, name, i in ranked))
+    lines.append("floor  strangers over  same person kept: " + " · ".join(found))
+    for floor in FLOORS:
+        over = sum(int((score[~same] >= floor).sum()) for score, same in found.values())
+        kept = " · ".join(f"{(score[same] >= floor).mean():.3f}" for score, same in found.values())
+        lines.append(f"{floor:.2f}   {over:14d}  {kept}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", type=Path, required=True, help=".onnx, .tflite or .espdl")
+    parser.add_argument(
+        "--model", type=Path, help=".onnx, .tflite or .espdl; --floors finds the locked one"
+    )
     parser.add_argument("--run", type=Path, required=True, help="run whose split and config apply")
+    parser.add_argument(
+        "--floors",
+        action="store_true",
+        help="recognition: stranger scores and what each match_min floor keeps, six benchmarks",
+    )
+    parser.add_argument(
+        "--top", type=int, default=8, help="--floors: how many highest strangers to name"
+    )
     parser.add_argument("--runtime", choices=("tflite", "onnx", "espdl"), default="tflite")
     parser.add_argument("--split", default=None, help="anti-spoof: score this split")
     parser.add_argument(
@@ -213,6 +285,14 @@ def main(argv: list[str] | None = None) -> int:
     run = args.run.resolve()
     cfg = ladder.config_of(run)
     branch = tasks.branch_of(run)
+    if args.floors:
+        if branch != "recognition":
+            raise SystemExit("--floors measures the recognition floor; this run is " + branch)
+        model = args.model or locked_espdl(run)
+        print(f"{model}\n{floor_table(espdl_runner(model, run), cfg, args.top)}")
+        return 0
+    if args.model is None:
+        raise SystemExit("--model is needed unless --floors finds the locked one")
     on_split = branch == "antispoof" and not args.device_frames
     split = args.split or (cfg.data.params["test_split"] if on_split else None)
     if on_split and args.runtime == "tflite":
