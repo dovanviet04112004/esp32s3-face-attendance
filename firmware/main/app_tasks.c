@@ -150,6 +150,9 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define AUDIO_CLIP_PATH "/assets/snd/ok.wav"
 #define AUDIO_CLIP_CAP_BYTES (128 * 1024)
 #define WAV_HEADER_MIN 44
+#define WAV_FMT_MIN 16                    // PCM fmt body: format, channels, rate, rates, align, bits
+#define WAV_FORMAT_PCM 1
+#define WAV_BITS 16
 #define NVS_OTA_TO "ota_to"
 
 // ota_task sets it, then queues the report; sync_task reads it as it sends one.
@@ -2364,6 +2367,20 @@ static void ui_task(void *arg)
     }
 }
 
+// drv_audio plays 16 kHz 16-bit mono PCM as it stands, so any other clip is no clip (KEHOACH 6.2.8).
+static bool plays_as_is(const uint8_t *fmt)
+{
+    uint16_t format = 0;
+    uint16_t channels = 0;
+    uint32_t rate = 0;
+    uint16_t bits = 0;
+    memcpy(&format, fmt, sizeof(format));
+    memcpy(&channels, fmt + 2, sizeof(channels));
+    memcpy(&rate, fmt + 4, sizeof(rate));
+    memcpy(&bits, fmt + 14, sizeof(bits));
+    return format == WAV_FORMAT_PCM && channels == 1 && rate == DRV_AUDIO_SAMPLE_HZ && bits == WAV_BITS;
+}
+
 // The clip is read once and kept: a grant must not wait on a file, and the
 // header is walked rather than assumed because a wav carries optional chunks.
 static size_t pcm_of(const uint8_t *wav, size_t len, const int16_t **pcm)
@@ -2371,15 +2388,22 @@ static size_t pcm_of(const uint8_t *wav, size_t len, const int16_t **pcm)
     if (len < WAV_HEADER_MIN || memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0) {
         return 0;
     }
+    bool plays = false;
     size_t at = 12;
     while (at + 8 <= len) {
         uint32_t size = 0;
         memcpy(&size, wav + at + 4, sizeof(size));
         const uint8_t *body = wav + at + 8;
-        if (memcmp(wav + at, "data", 4) == 0) {
-            const size_t have = len - (at + 8);
+        const size_t have = len - (at + 8);
+        if (memcmp(wav + at, "fmt ", 4) == 0) {
+            plays = size >= WAV_FMT_MIN && have >= WAV_FMT_MIN && plays_as_is(body);
+        } else if (memcmp(wav + at, "data", 4) == 0) {
             *pcm = (const int16_t *)body;
-            return (size < have ? size : have) / sizeof(int16_t);
+            return plays ? (size < have ? size : have) / sizeof(int16_t) : 0;
+        }
+        // A chunk claiming more than the file holds ends the walk; adding it would wrap the cursor.
+        if (size > have) {
+            return 0;
         }
         at += 8 + size + (size & 1u);
     }
@@ -2393,12 +2417,17 @@ static void audio_task(void *arg)
     const int16_t *pcm = NULL;
     size_t samples = 0;
     size_t len = 0;
-    if (clip != NULL && sys_storage_read(AUDIO_CLIP_PATH, clip, AUDIO_CLIP_CAP_BYTES, &len) ==
-                            ESP_OK) {
+    const esp_err_t read = clip == NULL ? ESP_ERR_NO_MEM
+                                        : sys_storage_read(AUDIO_CLIP_PATH, clip, AUDIO_CLIP_CAP_BYTES, &len);
+    if (read == ESP_OK) {
         samples = pcm_of(clip, len, &pcm);
     }
-    ESP_LOGI(TAG, "audio: %s, %u samples", samples > 0 ? AUDIO_CLIP_PATH : "no clip",
-             (unsigned)samples);
+    if (samples > 0) {
+        ESP_LOGI(TAG, "audio: %s, %u samples", AUDIO_CLIP_PATH, (unsigned)samples);
+    } else {
+        ESP_LOGW(TAG, "audio: no clip, %s read %s at %u bytes, cap %u", AUDIO_CLIP_PATH, esp_err_to_name(read),
+                 (unsigned)len, (unsigned)AUDIO_CLIP_CAP_BYTES);
+    }
 
     for (;;) {
         app_sound_t sound = APP_SOUND_OK;
