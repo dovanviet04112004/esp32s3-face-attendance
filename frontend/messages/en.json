@@ -648,6 +648,7 @@
     "commandState_DONE": "Done",
     "commandState_REJECTED": "Refused",
     "commandState_EXPIRED": "Expired",
+    "commandLapsed": "The kiosk did not answer within {minutes} min, so the command lapsed; it is not kept for the kiosk, press again once it is online",
     "slotTitle": "Run {name} on models slot {target}?",
     "slotTitleUnknown": "Change the models slot of {name}",
     "slotWarn": "The kiosk restarts into slot {target} and runs it on trial. If that slot does not load, it goes back by itself to slot {running}, the one it runs now.",

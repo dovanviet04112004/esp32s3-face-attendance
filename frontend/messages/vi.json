@@ -648,6 +648,7 @@
     "commandState_DONE": "Đã chạy",
     "commandState_REJECTED": "Bị từ chối",
     "commandState_EXPIRED": "Hết hạn",
+    "commandLapsed": "Máy không trả lời trong {minutes} phút nên lệnh hết hạn; lệnh không được giữ lại chờ máy, bấm lại khi máy đã kết nối",
     "slotTitle": "Cho {name} chạy thử ngăn model {target}?",
     "slotTitleUnknown": "Đổi ngăn model của {name}",
     "slotWarn": "Máy khởi động lại vào ngăn {target} và chạy thử nó. Ngăn ấy không nạp được thì máy tự quay về ngăn {running}, ngăn đang chạy bây giờ.",

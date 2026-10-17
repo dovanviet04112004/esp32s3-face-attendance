@@ -215,6 +215,10 @@ export function KioskCommands({
   }
 
   const pressing = (action: Action) => send.isPending && send.variables?.action === action;
+  const lapsed = (row: CommandRow): string | null =>
+    row.state === "EXPIRED" && row.expiresAt
+      ? t("commandLapsed", { minutes: Math.max(1, Math.round((Date.parse(row.expiresAt) - Date.parse(row.createdAt)) / 60_000)) })
+      : null;
   const rows = recent.data ?? [];
   const target: Slot | null = activeSlot === null ? null : activeSlot === 0 ? 1 : 0;
 
@@ -285,7 +289,7 @@ export function KioskCommands({
           <ul className="-my-1 flex flex-col">
             {rows.map((row) => {
               const at = new Date(row.createdAt);
-              const said = [row.resultNote === null ? null : noteOf(row.resultNote), row.issuedBy].filter(Boolean).join(" · ");
+              const said = [row.resultNote === null ? lapsed(row) : noteOf(row.resultNote), row.issuedBy].filter(Boolean).join(" · ");
               return (
                 <li key={row.cmdId} className="flex items-start gap-3 border-b border-kumo-hairline py-2 last:border-0">
                   <span className="min-w-11 shrink-0 pt-0.5 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
