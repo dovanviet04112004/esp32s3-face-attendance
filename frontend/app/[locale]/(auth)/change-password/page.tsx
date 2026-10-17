@@ -5,6 +5,8 @@ import { CheckCircleIcon, WarningCircleIcon, WarningIcon } from "@phosphor-icons
 import { useTranslations } from "next-intl";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { CodeField } from "@/components/auth/code-field";
+import { useTwoStep } from "@/components/auth/two-step";
 import { pushHere } from "@/components/notifications/push-switch";
 import { PasswordField } from "@/components/ui/password-field";
 import { useRouter } from "@/i18n/navigation";
@@ -22,10 +24,15 @@ export default function ChangePasswordPage() {
   const faultOf = useFault();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [code, setCode] = useState("");
   const [shown, setShown] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const twoStep = useTwoStep();
+  const needsCode = Boolean(twoStep.data?.enabledAt);
+  const mismatch = again !== "" && next !== again;
 
   // Signing this session out is the point, so the done card outlives the token.
   useEffect(() => {
@@ -41,15 +48,17 @@ export default function ChangePasswordPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) {
+    if (busy || mismatch) {
       return;
     }
     setBusy(true);
     setRefused(null);
     try {
-      await api.post("/auth/change-password", { current, next });
+      await api.post("/auth/change-password", { current, next, ...(needsCode ? { code } : {}) });
       setCurrent("");
       setNext("");
+      setAgain("");
+      setCode("");
       setDone(true);
       // Every session just closed, so this device stops showing the account's notices too, as on a sign-out.
       const device = await pushHere().catch(() => null);
@@ -103,13 +112,35 @@ export default function ChangePasswordPage() {
           autoComplete="new-password"
           required
           minLength={SHORTEST}
+          strength
           value={next}
           onChange={(event) => setNext(event.target.value)}
         />
+        <PasswordField
+          size="lg"
+          label={t("again")}
+          error={mismatch ? t("mismatch") : undefined}
+          shown={shown}
+          toggle={false}
+          autoComplete="new-password"
+          required
+          minLength={SHORTEST}
+          aria-invalid={mismatch}
+          value={again}
+          onChange={(event) => setAgain(event.target.value)}
+        />
+        {needsCode ? <CodeField value={code} onChange={setCode} autoFocus={false} /> : null}
       </div>
       <Banner variant="alert" size="sm" icon={<WarningIcon weight="fill" />} description={t("warn")} />
       {refused ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={refused} /> : null}
-      <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full justify-center">
+      <Button
+        type="submit"
+        variant="primary"
+        size="lg"
+        loading={busy}
+        disabled={mismatch || again === "" || (needsCode && code === "")}
+        className="w-full justify-center"
+      >
         {t("submit")}
       </Button>
       <p className="text-base">

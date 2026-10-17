@@ -64,7 +64,7 @@ function renewAtOf(accessToken: string): number | null {
 /** Which way this browser last went, "in" or "out": a cookie, so the proxy reads it too (KEHOACH 9.12). */
 export const SIGNED_COOKIE = "signed";
 /** The pages a browser without a session may open; the proxy sends a signed-out browser anywhere else to the form. */
-export const SIGNED_OUT_PAGES: ReadonlySet<string> = new Set(["login", "forgot-password", "set-password", "change-password"]);
+export const SIGNED_OUT_PAGES: ReadonlySet<string> = new Set(["login", "forgot-password", "set-password", "change-password", "not-me"]);
 /** The two-step ticket the sign-in page keeps for a reload; a sign-out drops it with the rest. */
 export const PENDING_SIGN_IN_KEY = "login-waiting";
 /** Every localStorage key holding one account's work starts with this, so a sign-out can sweep it unseen. */

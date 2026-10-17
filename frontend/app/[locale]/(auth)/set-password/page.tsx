@@ -83,6 +83,7 @@ function SetPasswordForm() {
           autoComplete="new-password"
           required
           minLength={SHORTEST}
+          strength
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />

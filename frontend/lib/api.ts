@@ -53,7 +53,7 @@ export function reopenSession(): Promise<string | null> {
 }
 
 // A door's answer about the password or code given; renewing and sending it again would count one guess twice.
-const ANSWERED = new Set(["CREDENTIALS_REJECTED", "MFA_CODE_REJECTED", "MFA_CHALLENGE_SPENT", "SETUP_LINK_SPENT"]);
+const ANSWERED = new Set(["CREDENTIALS_REJECTED", "MFA_CODE_REJECTED", "MFA_CHALLENGE_SPENT", "SETUP_LINK_SPENT", "ALARM_SPENT"]);
 
 api.interceptors.response.use(
   (res) => res,
