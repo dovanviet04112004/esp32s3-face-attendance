@@ -176,7 +176,8 @@ make fw-log PORT=/dev/ttyACM0       # in log của board trong 30 s
 - Test app trên board: `make fw-app APP=<đường dẫn>`, rồi `make fw-app-flash APP=<đường dẫn>`.
 - Đối chứng ba runtime (KẾ HOẠCH §3 lớp 5): `make fw-bench-ai RUNTIME=espdl|tflm|tflm_ansi` dựng
   `test_apps/bench_ai` vào `build_<RUNTIME>` riêng, `make fw-bench-ai-run RUNTIME=… PORT=…` nạp rồi giữ
-  log cả lượt. `make runtime-image` đóng ảnh model TFLM từ ba run trên lock, `make runtime-score` chấm
+  log cả lượt cùng cỡ ảnh, sdkconfig và phiên bản component của chính bản build đó (`make
+  fw-bench-ai-facts`). `make runtime-image` đóng ảnh model TFLM từ ba run trên lock, `make runtime-score` chấm
   độ chính xác trên máy, `make runtime-check` so board với máy, `make runtime-report` sinh
   `docs/measurements/runtime_compare.md`.
 

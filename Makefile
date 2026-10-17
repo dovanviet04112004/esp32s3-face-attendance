@@ -5,6 +5,7 @@ SHELL := /bin/bash
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors detect-floors password-list \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
+        fw-bench-ai fw-bench-ai-facts fw-bench-ai-run runtime-image runtime-score runtime-check runtime-report \
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
@@ -237,7 +238,8 @@ pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 ##@ Firmware (ESP-IDF from IDF_EXPORT when the shell has none; PORT=/dev/ttyACM0 picks the port)
 IDF_EXPORT ?= $(HOME)/esp/esp-idf/export.sh
 IDF_GOALS := idf fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write \
-  fw-part-erase fw-app fw-app-flash fw-app-test fw-bench-ai fw-bench-ai-run fw-assets release ai-unit speed board-save board-restore $(if $(PORT),pack)
+  fw-part-erase fw-app fw-app-flash fw-app-test fw-bench-ai fw-bench-ai-facts fw-bench-ai-run fw-assets release ai-unit speed \
+  board-save board-restore $(if $(PORT),pack)
 # Sourced once and exported, so a goal needing the tools runs from any shell, its sub-makes included.
 ifneq ($(filter $(IDF_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(shell command -v idf.py 2>/dev/null),)
@@ -335,7 +337,9 @@ fw-app-test: idf ## Flash a built test app and run its pytest_*.py on the board 
 bench_idf = cd firmware/test_apps/bench_ai && SDKCONFIG_DEFAULTS=$(CURDIR)/firmware/test_apps/bench_ai/sdkconfig.$(RUNTIME) \
   idf.py -B build_$(RUNTIME) -D SDKCONFIG=build_$(RUNTIME)/sdkconfig
 RUNTIME_WORK := ml/artifacts/device/runtime_compare
+bench_run = $(RUNTIME_WORK)/$(RUNTIME)
 BENCH_S ?= 7200
+unity_summary := [0-9]+ Tests [0-9]+ Failures
 
 fw-bench-ai: idf ## Build test_apps/bench_ai on one runtime (RUNTIME=espdl, tflm or tflm_ansi) into build_<RUNTIME>
 	$(call need,RUNTIME,espdl, tflm or tflm_ansi)
@@ -343,14 +347,22 @@ fw-bench-ai: idf ## Build test_apps/bench_ai on one runtime (RUNTIME=espdl, tflm
 	  [ $$f -nt firmware/test_apps/bench_ai/build_$(RUNTIME)/sdkconfig ] && rm -f firmware/test_apps/bench_ai/build_$(RUNTIME)/sdkconfig; done; true
 	$(bench_idf) reconfigure && ninja -C build_$(RUNTIME) -j$(JOBS)
 
-# A run on esp-nn's C kernels takes up to an hour, so the log stops at Unity's summary, BENCH_S only caps it.
-fw-bench-ai-run: idf ## Flash build_<RUNTIME> of bench_ai and keep its whole run in ml/artifacts/device/runtime_compare/<RUNTIME>.log (PORT=)
+fw-bench-ai-facts: idf ## Keep the size, sdkconfig and component versions of build_<RUNTIME> in ml/artifacts/device/runtime_compare/<RUNTIME>/
 	$(call need,RUNTIME,espdl, tflm or tflm_ansi)
+	mkdir -p $(bench_run)
+	$(bench_idf) size --format json2 --output-file $(CURDIR)/$(bench_run)/size.json
+	$(bench_idf) size-components --format json2 --output-file $(CURDIR)/$(bench_run)/components.json
+	cd firmware/test_apps/bench_ai && cp build_$(RUNTIME)/sdkconfig build_$(RUNTIME)/project_description.json \
+	  dependencies.lock $(CURDIR)/$(bench_run)/
+
+# The board falls silent after Unity's summary, so the monitor stops once the log holds it; BENCH_S caps a hung run.
+fw-bench-ai-run: idf fw-bench-ai-facts ## Flash build_<RUNTIME> of bench_ai, keep its run beside its facts in ml/artifacts/device/runtime_compare/<RUNTIME>/ (PORT=)
 	$(call need,PORT,the board's serial port)
 	$(bench_idf) $(PORT_FLAG) flash
-	mkdir -p $(RUNTIME_WORK)
-	-timeout $(BENCH_S) script -qfec "$(bench_idf) $(PORT_FLAG) monitor" /dev/null \
-	  | tee $(RUNTIME_WORK)/$(RUNTIME).log | grep --line-buffered -m1 -E "[0-9]+ Tests [0-9]+ Failures"
+	log=$(bench_run)/bench.log; rm -f $$log; \
+	timeout $(BENCH_S) script -qfec "$(bench_idf) $(PORT_FLAG) monitor" /dev/null > $$log & monitor=$$!; \
+	until grep -q -a -E "$(unity_summary)" $$log 2>/dev/null || ! kill -0 $$monitor 2>/dev/null; do sleep 5; done; \
+	kill $$monitor 2>/dev/null; wait $$monitor; grep -a -E "$(unity_summary)" $$log
 
 runtime-image: ## E9-T51: the lock's runs as Q1 .tflite in an experimental lock, packed into models_tflm.bin (ARENA_FAST= ARENA_BIG= bytes)
 	cd ml && $(ML_PY) bench/runtime_report.py image --arena-fast $(or $(ARENA_FAST),0) --arena-big $(or $(ARENA_BIG),0)
