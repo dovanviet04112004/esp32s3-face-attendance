@@ -7,7 +7,7 @@ import {
   randomUUID,
 } from "node:crypto";
 
-import { ConflictException, Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { ThrottlerException } from "@nestjs/throttler";
@@ -192,6 +192,18 @@ export class MfaService {
     });
     await this.audit.record({ actorId: userId, action: AUDIT_ACTIONS.USER_MFA_CODES, subject: AUDIT_SUBJECTS.USER, subjectId: userId });
     return backupCodes;
+  }
+
+  /** A working code from an account with an authenticator, for a change only its owner may make (KEHOACH 9.4). */
+  async confirmOwner(userId: string, code: string | undefined): Promise<void> {
+    const held = await this.db.userMfa.findUnique({ where: { userId }, select: { secret: true } });
+    if (!held?.secret || this.keys === null) {
+      return;
+    }
+    if (!code) {
+      throw new BadRequestException("MFA_CODE_NEEDED");
+    }
+    await this.check(userId, held.secret, code);
   }
 
   async status(userId: string, role: Role): Promise<MfaStatus> {

@@ -1,10 +1,11 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsEmail, IsString, MaxLength, MinLength } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 const TOKEN_MAX = 128;
 const PASSWORD_MIN = 12;
 const PASSWORD_MAX = 200;
 const EMAIL_MAX = 254;
+const CODE_MAX = 32;
 
 export class SetPasswordDto {
   @ApiProperty({
@@ -52,6 +53,27 @@ export class ChangePasswordDto {
   @MinLength(PASSWORD_MIN)
   @MaxLength(PASSWORD_MAX)
   next!: string;
+
+  @ApiPropertyOptional({
+    description: "Six digits from the authenticator app, or one backup code; asked of an account that has an authenticator",
+    maxLength: CODE_MAX,
+    example: "492039",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(CODE_MAX)
+  code?: string;
+}
+
+export class NotMeDto {
+  @ApiProperty({
+    description: "The one-use token from the \"not me\" link of a password-changed mail; it expires and works once",
+    maxLength: TOKEN_MAX,
+    example: "Yk2vR8pQe1xWm4tN7sLc0aZb3dF6gH9jK5uI2oP8yT1",
+  })
+  @IsString()
+  @MaxLength(TOKEN_MAX)
+  token!: string;
 }
 
 export class ForgotPasswordDto {

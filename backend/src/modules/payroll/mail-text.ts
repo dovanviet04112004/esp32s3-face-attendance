@@ -100,6 +100,20 @@ const SETUP: Record<MailLocale, Record<SetupReason, (facts: SetupMailFacts) => M
         "Nếu không phải bạn thì bỏ qua thư này: mật khẩu đang dùng vẫn nguyên.",
       ].join("\n"),
     }),
+    alarm: (facts) => ({
+      subject: "Đặt lại mật khẩu chấm công sau khi bạn báo không phải mình",
+      text: [
+        `Chào ${facts.fullName},`,
+        "",
+        "Bạn vừa bấm \"Không phải tôi\" ở thư báo đổi mật khẩu, nên mọi thiết bị đang đăng nhập",
+        "tài khoản này đã bị đăng xuất. Mở đường dẫn dưới đây để chọn mật khẩu mới:",
+        "",
+        facts.url,
+        "",
+        `Đường dẫn dùng được một lần và hết hạn sau ${facts.minutes} phút.`,
+        "Báo cho bộ phận nhân sự để họ xem lại những gì đã xảy ra với tài khoản.",
+      ].join("\n"),
+    }),
   },
   en: {
     opened: (facts) => ({
@@ -130,6 +144,20 @@ const SETUP: Record<MailLocale, Record<SetupReason, (facts: SetupMailFacts) => M
         "If it was not you, ignore this letter: the password you have still works.",
       ].join("\n"),
     }),
+    alarm: (facts) => ({
+      subject: "Set a new attendance password after your \"not me\"",
+      text: [
+        `Hello ${facts.fullName},`,
+        "",
+        "You pressed \"Not me\" in a password-changed letter, so every device signed in to",
+        "this account is signed out. Open the link below to choose a new password:",
+        "",
+        facts.url,
+        "",
+        `The link works once and expires in ${facts.minutes} minutes.`,
+        "Tell your HR team, so they can look into what happened to the account.",
+      ].join("\n"),
+    }),
   },
 };
 
@@ -137,34 +165,50 @@ export function setupMail(locale: string, facts: SetupMailFacts): MailBody {
   return SETUP[readsAs(locale)][facts.reason](facts);
 }
 
-/** Names no password and no link, only the fact (KEHOACH 9.4). */
-const CHANGED_PASSWORD: Record<MailLocale, (fullName: string) => MailBody> = {
-  vi: (fullName) => ({
+export interface ChangedMailFacts {
+  fullName: string;
+  url: string;
+  hours: number;
+}
+
+/** Names the fact and the one "not me" link, never a password (KEHOACH 9.4). */
+const CHANGED_PASSWORD: Record<MailLocale, (facts: ChangedMailFacts) => MailBody> = {
+  vi: (facts) => ({
     subject: "Mật khẩu chấm công của bạn vừa được đổi",
     text: [
-      `Chào ${fullName},`,
+      `Chào ${facts.fullName},`,
       "",
       "Mật khẩu của tài khoản này vừa được đổi, và mọi thiết bị đang đăng nhập đã bị đăng xuất.",
       "",
       "Nếu là bạn thì không cần làm gì thêm.",
-      "Nếu không phải bạn, xin lại mật khẩu ngay ở trang đăng nhập và báo cho bộ phận nhân sự.",
+      "Nếu không phải bạn, mở đường dẫn dưới đây và bấm \"Không phải tôi\": mọi thiết bị bị đăng xuất",
+      "và bạn nhận ngay một liên kết đặt lại mật khẩu.",
+      "",
+      facts.url,
+      "",
+      `Đường dẫn dùng được một lần và hết hạn sau ${facts.hours} giờ. Rồi báo cho bộ phận nhân sự.`,
     ].join("\n"),
   }),
-  en: (fullName) => ({
+  en: (facts) => ({
     subject: "Your attendance password was just changed",
     text: [
-      `Hello ${fullName},`,
+      `Hello ${facts.fullName},`,
       "",
       "The password of this account has just changed, and every device signed in to it is signed out.",
       "",
       "If that was you, there is nothing more to do.",
-      "If it was not, ask for a new password from the sign-in page now and tell your HR team.",
+      "If it was not, open the link below and press \"Not me\": every device is signed out and a link",
+      "to set a new password reaches you at once.",
+      "",
+      facts.url,
+      "",
+      `The link works once and expires in ${facts.hours} hours. Then tell your HR team.`,
     ].join("\n"),
   }),
 };
 
-export function passwordChangedMail(locale: string, fullName: string): MailBody {
-  return CHANGED_PASSWORD[readsAs(locale)](fullName);
+export function passwordChangedMail(locale: string, facts: ChangedMailFacts): MailBody {
+  return CHANGED_PASSWORD[readsAs(locale)](facts);
 }
 
 export interface MfaMailFacts {

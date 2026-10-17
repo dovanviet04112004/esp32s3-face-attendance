@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
-import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
@@ -21,10 +21,11 @@ import {
   type SessionsCut,
 } from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type PasswordChangedJob, type PasswordSetupJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type PasswordChangedJob, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
 import { MfaService, type PendingCode } from "./mfa.service.js";
+import { passwordFault } from "./password-policy.js";
 import { hashPassword, LINK_BYTES, needsRehash, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -176,6 +177,7 @@ export class AuthService {
     if (!setup || setup.usedAt !== null || setup.expiresAt <= now || !setup.user.active) {
       throw new UnauthorizedException("SETUP_LINK_SPENT");
     }
+    await this.refuseWeak(setup.user.id, password);
     const passwordHash = await hashPassword(password);
     await this.db.$transaction([
       this.db.passwordSetup.update({ where: { id: setup.id }, data: { usedAt: now } }),
@@ -195,7 +197,7 @@ export class AuthService {
   /** Asks for the password in hand: a session somebody else is holding must
    *  not be able to shut the owner out of their own account (KEHOACH 9.4).
    */
-  async changePassword(userId: string, current: string, next: string, address?: string): Promise<void> {
+  async changePassword(userId: string, current: string, next: string, code?: string, address?: string): Promise<void> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user || !user.active) {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
@@ -212,6 +214,11 @@ export class AuthService {
       throw new UnauthorizedException("CREDENTIALS_REJECTED");
     }
     await this.lockout.clear(user.email);
+    await this.mfa.confirmOwner(userId, code);
+    if (next === current) {
+      throw new BadRequestException("PASSWORD_UNCHANGED");
+    }
+    await this.refuseWeak(userId, next);
     const passwordHash = await hashPassword(next);
     const now = new Date();
     await this.db.$transaction([
@@ -247,21 +254,75 @@ export class AuthService {
       this.log.log("a setup link was asked for by an address with no account");
       return;
     }
+    await this.sendLink(user.id, user.employee?.locale, "forgot");
+  }
+
+  /** The owner's "not me" to a new-password mail: every session closed and a reset link on its way (KEHOACH 9.4). */
+  async notMe(token: string): Promise<string> {
+    const now = new Date();
+    const alarm = await this.db.passwordAlarm.findUnique({
+      where: { tokenHash: fingerprint(token) },
+      select: {
+        id: true,
+        userId: true,
+        expiresAt: true,
+        usedAt: true,
+        user: { select: { active: true, employee: { select: { locale: true } } } },
+      },
+    });
+    if (!alarm || alarm.usedAt !== null || alarm.expiresAt <= now || !alarm.user.active) {
+      throw new UnauthorizedException("ALARM_SPENT");
+    }
+    // The claim and the close share one transaction, so a second press finds the alarm spent.
+    await this.db.$transaction(async (tx) => {
+      const claimed = await tx.passwordAlarm.updateMany({ where: { id: alarm.id, usedAt: null }, data: { usedAt: now } });
+      if (claimed.count !== 1) {
+        throw new UnauthorizedException("ALARM_SPENT");
+      }
+      await tx.passwordAlarm.updateMany({ where: { userId: alarm.userId, usedAt: null }, data: { usedAt: now } });
+      await tx.session.updateMany({ where: { userId: alarm.userId, revokedAt: null }, data: { revokedAt: now } });
+    });
+    await this.cutAccess([alarm.userId]);
+    await this.sendLink(alarm.userId, alarm.user.employee?.locale, "alarm");
+    this.log.warn(`account ${alarm.userId} answered a password-changed mail with "not me"`);
+    return alarm.userId;
+  }
+
+  // The one way a reset link leaves: a new link closes the others, so an account keeps one live link (KEHOACH 9.4).
+  private async sendLink(userId: string, locale: string | null | undefined, reason: SetupReason): Promise<void> {
     const link = randomBytes(LINK_BYTES).toString("base64url");
     const now = new Date();
     const lifetimeMs = this.config.get("PASSWORD_RESET_TTL_MINUTES", { infer: true }) * UNIT_MS.m;
     const expiresAt = new Date(now.getTime() + lifetimeMs);
     await this.db.$transaction([
-      this.closeLinks(user.id, now),
-      this.db.passwordSetup.create({ data: { userId: user.id, tokenHash: fingerprint(link), expiresAt } }),
+      this.closeLinks(userId, now),
+      this.db.passwordSetup.create({ data: { userId, tokenHash: fingerprint(link), expiresAt } }),
     ]);
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     await this.queues[QUEUE.notify].add(JOB.passwordSetup, {
       type: JOB.passwordSetup,
-      userId: user.id,
-      link: `${root}/${user.employee?.locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
-      reason: "forgot",
+      userId,
+      link: `${root}/${locale ?? DEFAULT_MAIL_LOCALE}/set-password?token=${link}`,
+      reason,
     } satisfies PasswordSetupJob);
+  }
+
+  // Both doors refuse the same passwords, read off the account they are for (KEHOACH 9.4).
+  private async refuseWeak(userId: string, password: string): Promise<void> {
+    const owner = await this.db.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true, passwordHash: true, employee: { select: { fullName: true, code: true } } },
+    });
+    if (await verifyPassword(password, owner.passwordHash)) {
+      throw new BadRequestException("PASSWORD_UNCHANGED");
+    }
+    const fault = passwordFault(password, { email: owner.email, ...owner.employee });
+    if (fault === "PASSWORD_COMMON") {
+      throw new BadRequestException("PASSWORD_COMMON");
+    }
+    if (fault === "PASSWORD_PERSONAL") {
+      throw new BadRequestException("PASSWORD_PERSONAL");
+    }
   }
 
   // An account keeps one live link; the others close by running out (KEHOACH 9.4).
@@ -272,10 +333,20 @@ export class AuthService {
     });
   }
 
+  // The plain "not me" link leaves once, in the mail; the row keeps its hash (KEHOACH 9.4).
   private async tellOwner(userId: string): Promise<void> {
+    const link = randomBytes(LINK_BYTES).toString("base64url");
+    const hours = this.config.get("PASSWORD_ALARM_TTL_HOURS", { infer: true });
+    const account = await this.db.user.findUnique({ where: { id: userId }, select: { employee: { select: { locale: true } } } });
+    await this.db.passwordAlarm.create({
+      data: { userId, tokenHash: fingerprint(link), expiresAt: new Date(Date.now() + hours * UNIT_MS.h) },
+    });
+    const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     await this.queues[QUEUE.notify].add(JOB.passwordChanged, {
       type: JOB.passwordChanged,
       userId,
+      link: `${root}/${account?.employee?.locale ?? DEFAULT_MAIL_LOCALE}/not-me?token=${link}`,
+      hours,
     } satisfies PasswordChangedJob);
   }
 

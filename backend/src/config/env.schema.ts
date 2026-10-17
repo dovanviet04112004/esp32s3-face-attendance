@@ -70,6 +70,7 @@ export const envSchema = z
     PROVISION_BATCH: z.coerce.number().int().positive().max(10000).default(2000),
     PASSWORD_SETUP_TTL_HOURS: z.coerce.number().int().positive().default(72),
     PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().max(1440).default(60),
+    PASSWORD_ALARM_TTL_HOURS: z.coerce.number().int().positive().max(720).default(72),
     FORGOT_PER_EMAIL_PER_HOUR: z.coerce.number().int().min(1).max(20).default(3),
     DISPUTE_ANSWER_DAYS: z.coerce.number().int().positive().default(5),
     BACKUP_STALE_HOURS: z.coerce.number().int().min(0).max(168).default(0),

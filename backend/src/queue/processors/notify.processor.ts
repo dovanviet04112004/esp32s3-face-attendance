@@ -196,7 +196,8 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const locale = account.employee?.locale ?? DEFAULT_MAIL_LOCALE;
-    await this.mailer.send(account.email, passwordChangedMail(locale, account.employee?.fullName ?? account.email));
+    const fullName = account.employee?.fullName ?? account.email;
+    await this.mailer.send(account.email, passwordChangedMail(locale, { fullName, url: job.link, hours: job.hours }));
   }
 
   private async mailMfa(job: MfaChangedJob): Promise<void> {

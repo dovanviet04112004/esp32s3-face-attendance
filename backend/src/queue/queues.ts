@@ -128,7 +128,7 @@ export interface NoticeGatherJob {
 }
 
 /** What the letter around the link says: a welcome, or a recovery (KEHOACH 9.4). */
-export type SetupReason = "opened" | "forgot";
+export type SetupReason = "opened" | "forgot" | "alarm";
 
 /** The plain link rides here, so the notify queue keeps no finished job (queue.module.ts). */
 export interface PasswordSetupJob {
@@ -141,6 +141,8 @@ export interface PasswordSetupJob {
 export interface PasswordChangedJob {
   type: typeof JOB.passwordChanged;
   userId: string;
+  link: string;
+  hours: number;
 }
 
 /** What happened to an account's second factor; the letter names the fact, never a code (KEHOACH 9.4). */

@@ -82,6 +82,7 @@ model User {
   employee       Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   sessions       Session[]
   passwordSetups PasswordSetup[]
+  passwordAlarms PasswordAlarm[]
   issuedCommands DeviceCommand[]
   auditLogs      AuditLog[]
   assetMoves     AssetTransfer[]
@@ -167,6 +168,19 @@ model PasswordSetup {
 
   @@index([userId, usedAt])
   @@index([expiresAt])
+}
+
+/** The one-use "not me" link a new-password mail carries; only its hash is kept (KEHOACH 9.4). */
+model PasswordAlarm {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
 }
 
 /**

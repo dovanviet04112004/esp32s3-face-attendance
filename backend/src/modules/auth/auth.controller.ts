@@ -47,6 +47,7 @@ import {
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
+  NotMeDto,
   SetPasswordDto,
 } from "./dto/set-password.dto.js";
 import { MfaService } from "./mfa.service.js";
@@ -191,7 +192,16 @@ export class AuthController {
     @CurrentViewer() viewer: Viewer,
     @Req() req: Request,
   ): Promise<void> {
-    await this.auth.changePassword(viewer.userId, body.current, body.next, req.ip);
+    await this.auth.changePassword(viewer.userId, body.current, body.next, body.code, req.ip);
+  }
+
+  @Post("not-me")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RateBucket(THROTTLE.forgot)
+  @ApiOperation({ summary: "Answer a password-changed mail with \"not me\": every device signed out, a reset link sent" })
+  @ApiNoContentResponse()
+  async notMe(@Body() body: NotMeDto, @Req() req: Request): Promise<void> {
+    actedAs(req, await this.auth.notMe(body.token));
   }
 
   @Post("refresh")
