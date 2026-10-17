@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: help setup git-hooks ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
-        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors password-list \
+        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors detect-floors password-list \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
@@ -216,6 +216,10 @@ eval-recog: ## Score recognition: LFW, CFP-FP, AgeDB, TAR@FAR (ARGS passed to it
 recog-floors: BRANCH = recognition
 recog-floors: ## The evidence for match_min: strangers' scores and the pairs each floor keeps, through the locked recog (RUN=, TOP=)
 	$(need_run)cd ml && $(ml_capped) $(ML_PY) bench/host_bench.py --floors --run $(quant_run) $(if $(TOP),--top $(TOP))
+
+detect-floors: BRANCH = detection
+detect-floors: ## The evidence for detect_min: the face of each OV5640 test frame and the rest it scores, through the locked detector (RUN=)
+	$(need_run)cd ml && $(ml_capped) $(ML_PY) bench/host_bench.py --floors --run $(quant_run)
 
 golden: ## Golden vectors of the three branches into contracts/golden/
 	$(ML_PY) -m facepipe.tasks.detection.postproc.emit_golden

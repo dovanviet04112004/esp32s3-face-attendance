@@ -250,6 +250,62 @@ def floor_table(runner, cfg, top: int) -> str:
     return "\n".join(lines)
 
 
+DETECT_FLOORS = (0.25, 0.30, 0.35, 0.40, 0.45, 0.50)
+FACE_IOU = 0.5
+# Boxes overlapping the face less than this are something else the frame holds.
+APART_IOU = 0.3
+
+
+def detect_floor_table(runner, run: Path, cfg) -> str:
+    """The evidence for vision.detect_min: the face each kiosk frame holds, and the rest it scores.
+
+    Every OV5640 frame of test_device; the face is where the float detector the anti-spoof eval
+    cuts with finds it, and the locked detector's boxes are scored against that place.
+    """
+    import torch
+
+    from facepipe.compress.quant.ladder import data_path, device_frames, hooks_of
+    from facepipe.tasks.antispoof.eval import largest_detection, load_detector
+    from facepipe.tasks.detection.data import letterbox_params
+    from facepipe.tasks.detection.eval import decode_batch, iou_xyxy, to_original
+    from facepipe.tasks.detection.model.anchors import feature_sizes, pyramid_priors
+    from facepipe.tasks.detection.model.head import HeadOutput
+    from facepipe.tasks.detection.model.yunet import STRIDES
+
+    cpu = torch.device("cpu")
+    reference, reference_priors = load_detector(data_path("antispoof.detector"), cpu)
+    frames = device_frames()
+    inputs = hooks_of(run).probe_inputs(cfg, frames, len(frames))
+    input_hw = tuple(int(v) for v in cfg.model.input_hw)
+    priors = torch.cat(pyramid_priors(feature_sizes(input_hw, STRIDES), STRIDES))
+    faces, rest, faceless = [], [], 0
+    for (_name, _label, rgb), x in zip(frames, inputs, strict=True):
+        truth = largest_detection(reference, reference_priors, rgb, cpu)
+        if truth is None:
+            faceless += 1
+            continue
+        outs = [torch.from_numpy(o) for o in runner(np.ascontiguousarray(x[None]))]
+        found = decode_batch(HeadOutput(cls=outs[0:3], bbox=outs[3:6], kps=outs[6:9]), priors)[0]
+        mapped = to_original(found, *letterbox_params(rgb.shape[:2], input_hw))
+        overlap = iou_xyxy(mapped.boxes, truth[0]) if mapped.scores.size else np.zeros(0)
+        on, apart = overlap >= FACE_IOU, overlap < APART_IOU
+        faces.append(float(mapped.scores[on].max()) if on.any() else 0.0)
+        rest.append(float(mapped.scores[apart].max()) if apart.any() else 0.0)
+    face, other = np.array(faces), np.array(rest)
+    lines = [
+        f"frames {face.size} with a face, {faceless} without one the reference finds",
+        f"face: min {face.min():.3f}  median {np.median(face):.3f}  max {face.max():.3f}",
+        f"everything else: highest {other.max():.3f}"
+        f"  median of each frame's highest {np.median(other):.3f}",
+        "floor  faces kept  frames scoring something else over",
+    ]
+    for floor in DETECT_FLOORS:
+        lines.append(
+            f"{floor:.2f}   {int((face >= floor).sum()):10d}  {int((other >= floor).sum()):d}"
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -259,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--floors",
         action="store_true",
-        help="recognition: stranger scores and what each match_min floor keeps, six benchmarks",
+        help="recognition: what each match_min floor keeps; detection: the same for detect_min",
     )
     parser.add_argument(
         "--top", type=int, default=8, help="--floors: how many highest strangers to name"
@@ -286,10 +342,18 @@ def main(argv: list[str] | None = None) -> int:
     cfg = ladder.config_of(run)
     branch = tasks.branch_of(run)
     if args.floors:
-        if branch != "recognition":
-            raise SystemExit("--floors measures the recognition floor; this run is " + branch)
+        if branch not in ("recognition", "detection"):
+            raise SystemExit(
+                "--floors measures the recognition or detection floor; this run is " + branch
+            )
         model = args.model or locked_espdl(run)
-        print(f"{model}\n{floor_table(espdl_runner(model, run), cfg, args.top)}")
+        runner = espdl_runner(model, run)
+        table = (
+            floor_table(runner, cfg, args.top)
+            if branch == "recognition"
+            else detect_floor_table(runner, run, cfg)
+        )
+        print(f"{model}\n{table}")
         return 0
     if args.model is None:
         raise SystemExit("--model is needed unless --floors finds the locked one")
