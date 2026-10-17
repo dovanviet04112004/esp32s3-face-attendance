@@ -55,16 +55,14 @@
     "config": {
       "type": "object",
       "additionalProperties": false,
-      "description": "SET_CONFIG only. Every field is optional; absent means leave unchanged.",
+      "description": "SET_CONFIG only: the operating settings of KEHOACH 4.9. Every field is optional; absent means leave unchanged. The model thresholds travel in the models image, never here.",
       "properties": {
-        "brightness": { "type": "integer", "minimum": 0, "maximum": 255 },
-        "volume": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "brightness": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Backlight percent; the kiosk keeps its own floor." },
+        "volume": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Speaker percent." },
         "lang": { "type": "string", "enum": ["vi", "en"] },
-        "detectThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "matchThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "livenessThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "dedupWindowMinutes": { "type": "integer", "minimum": 0, "maximum": 1440 },
-        "wakeDistanceCm": { "type": "integer", "minimum": 10, "maximum": 200 }
+        "dedupWindowMinutes": { "type": "integer", "minimum": 1, "maximum": 720, "description": "Minutes a second stamp of one person writes no record." },
+        "faceMinPx": { "type": "integer", "minimum": 16, "maximum": 480, "description": "Smallest face box, in frame pixels, the pipeline verifies." },
+        "wakeDistanceCm": { "type": "integer", "minimum": 4, "maximum": 130, "description": "Distance under which someone counts as standing at the kiosk." }
       }
     }
   }
