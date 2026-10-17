@@ -96,7 +96,7 @@ def embeddings(runner, encoded: list[bytes], size: int) -> np.ndarray:
 
 
 def score(runner, cfg: object) -> dict[str, float]:
-    """Accuracy and TAR at FAR 1e-3 and 1e-4 on each verification benchmark, from the runner."""
+    """Accuracy, TAR at FAR 1e-3 and 1e-4, and EER on each verification benchmark."""
     from facepipe import ML_ROOT
 
     from .eval import BENCHMARKS, evaluate_pairs, pair_scores, read_bin
@@ -115,6 +115,7 @@ def score(runner, cfg: object) -> dict[str, float]:
         found[f"{key}_acc"] = float(result["accuracy"])
         found[f"{key}_tar3"] = float(result["tar@far0.001"])
         found[f"{key}_tar4"] = float(result["tar@far0.0001"])
+        found[f"{key}_eer"] = float(result["eer"])
     return found
 
 

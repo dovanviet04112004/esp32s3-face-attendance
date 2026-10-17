@@ -121,11 +121,25 @@ def tar_at_far(scores: np.ndarray, issame: np.ndarray, far_target: float) -> flo
     return float((scores[issame] >= threshold).mean())
 
 
+def equal_error_rate(scores: np.ndarray, issame: np.ndarray) -> float:
+    """The rate where false accepts and false rejects meet, over every threshold of the scores."""
+    positives = np.sort(scores[issame])
+    negatives = np.sort(scores[~issame])
+    if not len(positives) or not len(negatives):
+        return float("nan")
+    candidates = np.unique(scores)
+    false_accepts = 1.0 - np.searchsorted(negatives, candidates, side="left") / len(negatives)
+    false_rejects = np.searchsorted(positives, candidates, side="left") / len(positives)
+    crossing = int(np.argmin(np.abs(false_accepts - false_rejects)))
+    return float((false_accepts[crossing] + false_rejects[crossing]) / 2)
+
+
 def evaluate_pairs(scores: np.ndarray, issame: np.ndarray) -> dict[str, float]:
     """Every number one benchmark yields, from its pair scores."""
     result = kfold_accuracy(scores, issame)
     for target in FAR_TARGETS:
         result[f"tar@far{target:g}"] = tar_at_far(scores, issame, target)
+    result["eer"] = equal_error_rate(scores, issame)
     return result
 
 

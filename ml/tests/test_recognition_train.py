@@ -16,6 +16,7 @@ from facepipe.core.trainer import CKPT_BEST, CKPT_LAST
 from facepipe.data.prepare.images_to_wds import ShardWriter
 from facepipe.tasks.recognition import train
 from facepipe.tasks.recognition.eval import (
+    equal_error_rate,
     evaluate_all,
     kfold_accuracy,
     pair_scores,
@@ -157,6 +158,15 @@ def test_tar_at_far_holds_the_false_accept_rate_it_promises() -> None:
     issame[:1000] = True
     scores = np.where(issame, 0.8, 0.1) + rng.normal(0, 0.05, 2000)
     assert tar_at_far(scores, issame, 1e-3) > 0.9
+
+
+def test_equal_error_rate_sits_where_false_accepts_and_rejects_cross() -> None:
+    """At 0.6 one of four strangers is accepted and one of four matches is refused."""
+    issame = np.array([True, True, True, True, False, False, False, False])
+    scores = np.array([0.9, 0.8, 0.7, 0.2, 0.6, 0.3, 0.1, 0.05])
+    assert equal_error_rate(scores, issame) == pytest.approx(0.25)
+    apart = np.array([0.9, 0.8, 0.7, 0.6, 0.4, 0.3, 0.1, 0.05])
+    assert equal_error_rate(apart, issame) == pytest.approx(0.0)
 
 
 def test_tar_at_far_reports_zero_when_no_threshold_is_strict_enough() -> None:
