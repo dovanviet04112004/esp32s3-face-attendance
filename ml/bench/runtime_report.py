@@ -858,7 +858,10 @@ def runtime_memory_rows(logs: dict) -> list[list[str]]:
         ["PSRAM còn trống / khối liền lớn nhất (KB)", *(free_psram(c) for c in CONFIGS)],
         ["Đỉnh stack một lượt ba model / stack của task thăm dò", *(stack(c) for c in CONFIGS)],
         [f"Heap sau {passes} lượt so với lượt đầu", *(heap(c) for c in CONFIGS)],
-        ["Chép cả ba payload từ flash sang PSRAM", *(copy(c) for c in CONFIGS)],
+        [
+            "Chép cả ba payload từ flash sang PSRAM, việc ESP-DL làm khi dựng",
+            *(copy(c) for c in CONFIGS),
+        ],
         ["CRC32 trên bản chép ở PSRAM (ms)", *(crc(c) for c in CONFIGS)],
     ]
 
@@ -962,7 +965,7 @@ def match_rows(logs: dict, checked: dict) -> list[list[str]]:
     host = checked.get("host", {})
     if a and host:
         live = "trùng" if abs(a["live"] - host["spoof_live"]) < 5e-7 else "**LỆCH**"
-        pair = f"{a['live']:.6f} · {host['spoof_live']:.6f}"
+        pair = f"{num(a['live'], 6)} · {num(host['spoof_live'], 6)}"
         rows.append(["Điểm live: board với TFLite trên máy", pair, live])
         if a["recog"] == host["recog_hash_fused"]:
             recog = "trùng (tổng bình phương làm tròn một lần mỗi bước, như lệnh nhân-cộng)"
@@ -1068,7 +1071,7 @@ def render(args: argparse.Namespace) -> int:
     lines += ["", "## Độ chính xác trên máy, cùng thước với thang lượng tử", ""]
     lines += [
         "Hai cấu hình TFLM chạy cùng một file `.tflite`, nên chung một cột; mục So khớp bên dưới",
-        "cho thấy board ra đúng số của máy.",
+        "đo board lệch máy bao nhiêu.",
     ]
     for branch in BRANCHES:
         lines += ["", f"### `{ENTRY[branch]}`", ""]
