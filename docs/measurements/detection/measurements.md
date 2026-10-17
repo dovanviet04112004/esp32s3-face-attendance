@@ -297,3 +297,33 @@ này chưa từng được train nhưng box của nó đã chọn epoch.
 
 **Đây là ảnh WIDER, không phải khung OV5640**, nên số này không đóng cổng E4-T6: cổng đo trên
 ảnh board, và khung board chưa có nhãn 5 landmark.
+
+## 11. Ngưỡng `detect_min` cho model detect đang khoá — đo 17/10
+
+Model: `detection.espdl` trên `contracts/models.lock.json`, hàng `mse+clip_as_relu` của run
+`20260831-1616_cc931df_36fbea` (ADR-0006). Đo bằng `make detect-floors`: mọi khung OV5640 của
+`test_device` qua mô phỏng ESP-PPQ của đúng hàng ấy dưới đúng patch của nó, letterbox như firmware.
+Chỗ của mặt lấy từ detector float mà bài chấm anti-spoof dùng để cắt mặt; hộp INT8 trùng chỗ ấy
+(IoU ≥ 0,5) là điểm của mặt, hộp INT8 lệch hẳn (IoU < 0,3) là "thứ khác".
+
+| | Số khung | Thấp nhất | Trung vị | Cao nhất |
+|---|---:|---:|---:|---:|
+| Mặt người trước kiosk (thật và giả) | 87 | 0,438 | 0,679 | 0,852 |
+| Thứ khác cao nhất của mỗi khung | 87 | — | 0,107 | 0,378 |
+
+38 khung còn lại không có mặt nào để detector tham chiếu tìm thấy, nên không vào bảng.
+
+| Sàn | Mặt còn giữ | Khung có thứ khác vượt sàn |
+|---|---:|---:|
+| 0,25 | 87 | 1 |
+| 0,30 | 87 | 1 |
+| **0,35** | **87** | **1** |
+| 0,40 | 87 | 0 |
+| 0,45 | 86 | 0 |
+| 0,50 | 84 | 0 |
+
+**350‰ giữ nguyên.** Nó giữ đủ 87 mặt với biên 0,088 dưới mặt thấp nhất. Đúng một khung có thứ khác
+(0,378) vượt sàn; ứng viên ấy còn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine
+(KẾ HOẠCH §4.5.5d), nên một sàn cao hơn không thêm độ an toàn mà chỉ ăn vào biên phía mặt: 400‰ chặn
+được khung ấy nhưng biên dưới mặt thấp nhất chỉ còn 0,038. Số 13/09 trên board (mặt 0,45–0,59, nền
+0,14–0,37) đo model detect cũ; model này chấm mặt cao hơn hẳn.
