@@ -1093,8 +1093,7 @@ esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *si
             return ESP_ERR_INVALID_SIZE;
         }
         const uint8_t *payload = s_models_base + entry->offset;
-        // A payload names its runtime by its own magic: .tflite at byte 4, .espdl at byte 0 (KEHOACH 6.2.2).
-        if (entry->size < 8 || (memcmp(payload + 4, "TFL3", 4) != 0 && memcmp(payload, "EDL2", 4) != 0)) {
+        if (!storage_model_is_tflite(payload, entry->size) && !storage_model_is_espdl(payload, entry->size)) {
             ESP_LOGE(TAG, "%s is neither a tflite flatbuffer nor an espdl model", name);
             return ESP_ERR_INVALID_SIZE;
         }

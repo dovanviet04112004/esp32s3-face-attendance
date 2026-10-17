@@ -30,7 +30,7 @@ TEST_CASE("every espdl graph reproduces the test vector it was exported with", "
             printf("%s: absent from the image\n", branch);
             continue;
         }
-        TEST_ASSERT_EQUAL_MEMORY_MESSAGE("EDL2", data, 4, branch);
+        TEST_ASSERT_TRUE_MESSAGE(storage_model_is_espdl(static_cast<const uint8_t *>(data), size), branch);
         dl::Model model(static_cast<const char *>(data), fbs::MODEL_LOCATION_IN_FLASH_RODATA, 0,
                         dl::MEMORY_MANAGER_GREEDY, nullptr, true);
         TEST_ASSERT_FALSE_MESSAGE(model.get_outputs().empty(), branch);

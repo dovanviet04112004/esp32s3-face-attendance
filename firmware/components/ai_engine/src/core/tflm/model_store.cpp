@@ -1,7 +1,5 @@
 #include "core/tflm/model_store.hpp"
 
-#include <string.h>
-
 #include "esp_log.h"
 #include "sys_storage.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
@@ -45,7 +43,7 @@ const tflite::Model *ModelStore::find(const char *name) const noexcept
         return nullptr;
     }
     // The partition also carries .espdl payloads (KEHOACH 6.2.2); GetModel would read one as offsets.
-    if (memcmp(static_cast<const uint8_t *>(data) + 4, "TFL3", 4) != 0) {
+    if (!storage_model_is_tflite(static_cast<const uint8_t *>(data), size)) {
         ESP_LOGE(TAG, "%s is not a .tflite entry and this build runs TFLM", name);
         return nullptr;
     }

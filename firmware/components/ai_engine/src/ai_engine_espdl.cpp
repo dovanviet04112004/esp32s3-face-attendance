@@ -47,7 +47,7 @@ esp_err_t load(ai::EspdlModel &model, const char *name, bool copy_weights, size_
     if (found != ESP_OK) {
         return found;
     }
-    if (memcmp(data, "EDL2", 4) != 0) {
+    if (!storage_model_is_espdl(static_cast<const uint8_t *>(data), size)) {
         ESP_LOGE(TAG, "%s is not an .espdl entry and this build runs ESP-DL", name);
         return ESP_ERR_NOT_SUPPORTED;
     }

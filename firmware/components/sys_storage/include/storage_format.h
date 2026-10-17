@@ -4,8 +4,10 @@
 #pragma once
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define STORAGE_MODELS_MAGIC 0x534C444Du  // 'MDLS'
 #define STORAGE_MODELS_VER 2u
@@ -14,6 +16,11 @@
 #define STORAGE_MODEL_NAME_LEN 16
 #define STORAGE_SHA256_LEN 32
 #define STORAGE_MODEL_ALIGN 16            // esp-nn reads the weights aligned
+#define STORAGE_MODEL_MAGIC_LEN 4
+#define STORAGE_MODEL_TFLITE_MAGIC "TFL3" // FlatBuffer identifier of a .tflite
+#define STORAGE_MODEL_TFLITE_AT 4         // past the root table offset
+#define STORAGE_MODEL_ESPDL_MAGIC "EDL2"  // head of an .espdl graph
+#define STORAGE_MODEL_ESPDL_AT 0
 
 #define STORAGE_FACES_PATH "/lfs/db/faces.bin"  // KEHOACH 6.2.3
 #define STORAGE_ATTEND_DIR "/lfs/log"             // KEHOACH 6.2.5
@@ -71,6 +78,24 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved[38];
     uint32_t crc32;
 } storage_models_header_t;
+
+/** True when a models entry is a .tflite FlatBuffer; the payload names its runtime (KEHOACH 6.2.2).
+ *  @ctx any | non-blocking
+ */
+static inline bool storage_model_is_tflite(const uint8_t *payload, size_t size)
+{
+    return size >= STORAGE_MODEL_TFLITE_AT + STORAGE_MODEL_MAGIC_LEN &&
+           memcmp(payload + STORAGE_MODEL_TFLITE_AT, STORAGE_MODEL_TFLITE_MAGIC, STORAGE_MODEL_MAGIC_LEN) == 0;
+}
+
+/** True when a models entry is an .espdl graph (KEHOACH 6.2.2).
+ *  @ctx any | non-blocking
+ */
+static inline bool storage_model_is_espdl(const uint8_t *payload, size_t size)
+{
+    return size >= STORAGE_MODEL_ESPDL_AT + STORAGE_MODEL_MAGIC_LEN &&
+           memcmp(payload + STORAGE_MODEL_ESPDL_AT, STORAGE_MODEL_ESPDL_MAGIC, STORAGE_MODEL_MAGIC_LEN) == 0;
+}
 
 /** Head of a record file. The attendance log reuses it with its own magic.
  */

@@ -109,7 +109,7 @@ const char *blob_of(const std::string &name, size_t *size)
 {
     const void *data = nullptr;
     TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, sys_storage_model_find(name.c_str(), &data, size, nullptr), name.c_str());
-    TEST_ASSERT_EQUAL_MEMORY_MESSAGE("EDL2", data, 4, name.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(storage_model_is_espdl(static_cast<const uint8_t *>(data), *size), name.c_str());
     return static_cast<const char *>(data);
 }
 
