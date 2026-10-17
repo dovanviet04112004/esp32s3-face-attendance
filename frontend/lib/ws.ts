@@ -85,6 +85,7 @@ const QUEUE_LISTS: Record<string, string[]> = {
   disputes: ["payslip-disputes"],
   dependents: ["dependents"],
   attendance: ["timesheet"],
+  recapture: ["me"],
 };
 
 // What a group's news makes stale beyond the bell itself.

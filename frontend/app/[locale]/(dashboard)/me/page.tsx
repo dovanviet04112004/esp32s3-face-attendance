@@ -1,7 +1,16 @@
 "use client";
 
 import { Button, Empty, LayerCard } from "@cloudflare/kumo";
-import { CalendarPlusIcon, CaretRightIcon, CheckCircleIcon, FileTextIcon, ListChecksIcon, UserCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import {
+  CalendarPlusIcon,
+  CaretRightIcon,
+  CheckCircleIcon,
+  FileTextIcon,
+  ListChecksIcon,
+  ScanSmileyIcon,
+  UserCircleIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
@@ -74,6 +83,12 @@ interface Person {
   id: number;
   code: string;
   fullName: string;
+}
+
+interface Kiosk {
+  id: string;
+  name: string | null;
+  location: string | null;
 }
 
 interface TeamToday {
@@ -306,6 +321,37 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
           </li>
         </ul>
       )}
+    </HomeCard>
+  );
+}
+
+/** The kiosks that run a newer recognition model than any face the viewer holds, and how to capture there (KEHOACH 9.21.4). */
+function RecaptureCard() {
+  const t = useTranslations("me");
+  const kiosks = useQuery({
+    queryKey: ["me", "recapture"],
+    queryFn: () => unlessMissing<Kiosk[]>("/enrollments/me"),
+  });
+  if (!kiosks.data || kiosks.data.length === 0) {
+    return null;
+  }
+  return (
+    <HomeCard truncate title={t("recaptureTitle")}>
+      <div className="flex flex-col gap-1 px-4 pt-3.5 pb-3 text-pretty">
+        <p>{t("recaptureLead", { count: kiosks.data.length })}</p>
+        <p className="text-sm text-kumo-subtle">{t("recaptureHow")}</p>
+      </div>
+      <ul className="flex flex-col">
+        {kiosks.data.map((one) => (
+          <li key={one.id} className="flex min-h-12 items-center gap-3 border-t border-kumo-hairline px-4 py-2.5">
+            <ScanSmileyIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">{one.name ?? one.id}</span>
+              {one.location ? <span className="truncate text-sm text-kumo-subtle">{one.location}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
     </HomeCard>
   );
 }
@@ -567,6 +613,8 @@ export default function MyPage() {
   const main = (
     <div className="flex flex-col gap-4">
       <TodayCard employeeId={employeeId} week={week} />
+
+      <RecaptureCard />
 
       {role === "MANAGER" ? (
         <>

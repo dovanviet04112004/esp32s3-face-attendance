@@ -51,7 +51,8 @@ export type NoticeKind =
   | "TIMESHEET_MONTH_CLOSED"
   | "PUNCH_RECORDED"
   | "RELEASE_AVAILABLE"
-  | "UPDATE_FINISHED";
+  | "UPDATE_FINISHED"
+  | "FACE_RECAPTURE";
 
 type NoticeCategory = "REQUESTS" | "PAY" | "PEOPLE" | "ATTENDANCE" | "SYSTEM";
 
@@ -136,6 +137,7 @@ export type NoticeSentence =
   | "kindKIOSK_ALERT_unknown"
   | "kindRELEASE_AVAILABLE"
   | "kindUPDATE_FINISHED"
+  | "kindFACE_RECAPTURE"
   | "kindTASK_ASSIGNED"
   | "kindTASK_ASSIGNED_due"
   | "kindTASK_ASSIGNED_late"
@@ -395,6 +397,13 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     label: { key: "kindUPDATE_FINISHED" },
     sentence: () => ({ key: "kindUPDATE_FINISHED" }),
     path: (notice) => (notice.subject?.id && !notice.subject.hidden ? `/devices/${notice.subject.id}` : "/devices"),
+  },
+  FACE_RECAPTURE: {
+    icon: ScanSmileyIcon,
+    category: "ATTENDANCE",
+    label: { key: "kindFACE_RECAPTURE" },
+    sentence: () => ({ key: "kindFACE_RECAPTURE" }),
+    path: () => "/me",
   },
   TASK_ASSIGNED: {
     icon: ListChecksIcon,
