@@ -1695,7 +1695,11 @@ static void ai_task(void *arg)
     bool working = true;
 
     for (;;) {
-        if (rest_level() == REST_ALL || ui_kiosk_update_covers()) {
+        // An operator screen holds the kiosk for its operator: nobody is checked in under it (KEHOACH 5.4).
+        const char *off = rest_level() == REST_ALL ? "resting"
+                          : ui_kiosk_update_covers() ? "updating"
+                          : ui_kiosk_screen_covers() ? "under an operator screen" : NULL;
+        if (off != NULL) {
             esp_task_wdt_reset();
             camera_fb_t *stale = NULL;
             // Holding one of four buffers for a minute starves the sensor.
@@ -1708,7 +1712,7 @@ static void ai_task(void *arg)
                 s_seen_width = 0;
                 ui_kiosk_on_faces(NULL, 0, 0, 0, 0.0f, 0);
                 ui_kiosk_on_stage(UI_KIOSK_STAGE_NO_FACE);
-                ESP_LOGI(TAG, "models asleep, %lld ms since %s", (long long)asleep_for_ms(),
+                ESP_LOGI(TAG, "models off, %s, %lld ms since %s", off, (long long)asleep_for_ms(),
                          atomic_load(&s_awake_by));
             }
             vTaskDelay(pdMS_TO_TICKS(REST_POLL_MS));
@@ -2615,7 +2619,8 @@ static void attend_task(void *arg)
         }
         svc_vision_result_t result;
         // Intervals run on esp_timer: the wall clock steps when a source lands (KEHOACH 4.5).
-        if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE) {
+        if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE &&
+            !ui_kiosk_screen_covers()) {
             svc_attendance_said_t said = SVC_ATTENDANCE_SAID_NOTHING;
             svc_attendance_on_vision(&result, esp_timer_get_time() / 1000, &said);
             tell(wiring, &result, said);
