@@ -344,6 +344,27 @@ describe("two-step sign-in for the desk roles (e2e)", () => {
     assert.equal(status.body.backupCodesLeft, 9);
   });
 
+  it("asks an account with an authenticator for a code to change its password, and counts a wrong one", async () => {
+    const holder = await enroll("change", "HR");
+    const change = (extra: object) =>
+      request(http)
+        .post("/auth/change-password")
+        .set("X-Forwarded-For", fresh())
+        .set("Authorization", `Bearer ${holder.access}`)
+        .send({ current: PASSWORD, next: `a-fresh-phrase-${RUN}`, ...extra });
+    const bare = await change({});
+    assert.equal(bare.status, 400, JSON.stringify(bare.body));
+    assert.equal(bare.body.message, "MFA_CODE_NEEDED");
+    const wrong = await change({ code: wrongFor(holder.secret) });
+    assert.equal(wrong.status, 401, JSON.stringify(wrong.body));
+    assert.equal(wrong.body.message, "MFA_CODE_REJECTED");
+    const held = await db.userMfa.findUniqueOrThrow({ where: { userId: holder.id }, select: { misses: true } });
+    assert.equal(held.misses, 1, "a wrong code at the password change went uncounted");
+    // The enrolment spent this step's code, so the next step's is the one a change can use.
+    const right = await change({ code: codeFor(holder.secret, 1) });
+    assert.equal(right.status, 204, JSON.stringify(right.body));
+  });
+
   it("lets an ADMIN reset someone else with a trail line, and nobody themselves", async () => {
     const admin = await enroll("admin", "ADMIN");
     const held = await enroll("held", "HR");

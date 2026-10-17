@@ -310,13 +310,19 @@ describe("first password (e2e)", () => {
     assert.ok(await opensWith(LAST_ONE));
   });
 
-  it("tells the owner by mail each time the password changes, naming neither password nor link", async () => {
+  it("tells the owner by mail each time the password changes, with one not-me link and no password", async () => {
     const jobs = await queues[QUEUE.notify].getJobs(["waiting", "delayed", "completed", "active", "failed"]);
     const told = jobs
-      .map((job) => job.data as { type: string; userId?: string })
+      .map((job) => job.data as { type: string; userId?: string; link?: string })
       .filter((data) => data.type === "password-changed" && data.userId === userId);
     assert.ok(told.length >= 3, `the owner heard of ${told.length} changes`);
-    assert.deepEqual(Object.keys(told[0]).sort(), ["type", "userId"], "the letter carries more than the account");
+    assert.deepEqual(Object.keys(told[0]).sort(), ["hours", "link", "type", "userId"], "the letter carries more than the account and its link");
+    const link = new URL(told[0].link ?? "");
+    assert.match(link.pathname, /\/not-me$/);
+    const alarm = await db.passwordAlarm.findUnique({
+      where: { tokenHash: createHash("sha256").update(link.searchParams.get("token") ?? "").digest("hex") },
+    });
+    assert.equal(alarm?.userId, userId, "the not-me link opens no alarm of this account");
   });
 
   it("gives a link asked for at the sign-in page an hour, and keeps one link alive per account", async () => {
