@@ -1,5 +1,4 @@
 #include <math.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -46,7 +45,6 @@ extern const uint8_t s_shipped_end[] asm("_binary_xincamon_1_1_wav_end");
 
 static const uint8_t LOOP_LEVELS[] = { DRV_AUDIO_VOLUME_MAX, KIOSK_VOLUME, QUIET_VOLUME };
 static int16_t s_clip[CLIP_SAMPLES];
-static bool s_up;
 
 static void fill_tone(size_t samples, int tone_hz)
 {
@@ -76,7 +74,6 @@ TEST_CASE("the amp comes up shut down and a second init is refused", "[drv_audio
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_init());
     TEST_ASSERT_EQUAL(ESP_OK, drv_audio_init());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, drv_audio_init());
-    s_up = true;
     TEST_ASSERT_EQUAL(0, sd_line());
     printf("listen: low tone 2 s, high tone 2 s, short loud tone; the gaps must be dead silent\n");
 }
@@ -170,14 +167,17 @@ static const int16_t *shipped_pcm(size_t *samples)
     return NULL;
 }
 
+static void up_or_already(esp_err_t err)
+{
+    TEST_ASSERT_TRUE_MESSAGE(err == ESP_OK || err == ESP_ERR_INVALID_STATE, esp_err_to_name(err));
+}
+
 TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audio][manual]")
 {
-    if (!s_up) {
-        TEST_ASSERT_EQUAL(ESP_OK, bsp_board_init());
-        TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_init());
-        TEST_ASSERT_EQUAL(ESP_OK, drv_audio_init());
-        s_up = true;
-    }
+    // The suite may have stopped part way up: what already answered stays, the rest comes up here.
+    up_or_already(bsp_board_init());
+    up_or_already(drv_ioexp_init());
+    up_or_already(drv_audio_init());
     size_t samples = 0;
     const int16_t *pcm = shipped_pcm(&samples);
     TEST_ASSERT_NOT_NULL(pcm);
