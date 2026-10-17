@@ -4569,12 +4569,12 @@ components/ai_engine/
 │   │   ├── antispoof.hpp                  # live_score, crop_face — chung hai runtime
 │   │   ├── live_score.cpp                 # softmax trên TensorView
 │   │   ├── preproc.cpp                    # crop 2,7× + resize về cạnh graph khai (80 hoặc 81)
-│   │   └── tflm/{spoof_model.hpp, ops.cpp}    # SpoofModel; MicroMutableOpResolver<10>, LOGISTIC + MEAN cho khối SE nhập
+│   │   └── tflm/{spoof_model.hpp, ops.cpp}    # SpoofModel; MicroMutableOpResolver<9>: PRELU của V1SE, LOGISTIC + MEAN của khối SE
 │   └── recognition/
 │       ├── recognition.hpp                # align_face, normalized_int8 — chung hai runtime
 │       ├── align.cpp                      # affine warp 5 landmark → cạnh graph khai (112 hoặc 113)
 │       ├── l2norm.cpp
-│       └── tflm/{recog_model.hpp, ops.cpp}    # RecogModel; MicroMutableOpResolver<4>, đếm trên graph thật
+│       └── tflm/{recog_model.hpp, ops.cpp}    # RecogModel; MicroMutableOpResolver<10>: PRELU, khối ECA (MEAN, RESHAPE, LOGISTIC, MUL)
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
     ├── antispoof/{main/{test_spoof.c, test_preproc.c}, CMakeLists.txt, pytest_preproc.py}
