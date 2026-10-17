@@ -31,8 +31,7 @@ esp_err_t TfliteModelBase::init(const tflite::Model *model, Arena &arena) noexce
     interpreter_ = new (storage_)
         tflite::MicroInterpreter(model, resolver(), arena.allocator(), nullptr, profiler());
     if (interpreter_->AllocateTensors() != kTfLiteOk) {
-        // TFLM logs which operator or arena limit it tripped on; a
-        // half-allocated interpreter faults inside its own destructor.
+        // TFLM has logged the operator or arena limit; a half-built interpreter faults in its destructor.
         ESP_LOGE(TAG, "%s: AllocateTensors rejected the graph, arena %u KB", name(),
                  static_cast<unsigned>(arena.size() / 1024));
         interpreter_ = nullptr;

@@ -58,8 +58,7 @@ void area_rows(const ai_engine_frame_t &frame, const int *col_first, const int *
             high = high > mean[2] ? high : mean[2];
             unsigned low = mean[0] < mean[1] ? mean[0] : mean[1];
             low = low < mean[2] ? low : mean[2];
-            // The plane carries the same 0..1 range as the three beside it, so
-            // it goes through the same table rather than a scale of its own.
+            // This plane spans 0..1 like the three beside it, so it shares their table.
             *out++ = quant.byte(high > 0 ? ((high - low) * (kByteLevels - 1) + high / 2) / high : 0);
         }
     }

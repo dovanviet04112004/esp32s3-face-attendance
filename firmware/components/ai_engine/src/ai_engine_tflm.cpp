@@ -48,12 +48,10 @@ size_t arena_bytes(const char *arena_name, size_t ceiling, std::initializer_list
     if (wanted == 0) {
         return ceiling;
     }
-    // arena_used_bytes() is a lower bound: TFLM's alignment padding depends on
-    // the arena's own base and size, so detect refuses at exactly its own used.
+    // arena_used_bytes() is a floor: TFLM pads by the arena's own base, so exactly that size fails.
     wanted = (wanted + kArenaRoundBytes - 1) / kArenaRoundBytes * kArenaRoundBytes;
     if (wanted > ceiling) {
-        // Allocating the ceiling instead would only move the failure into
-        // AllocateTensors, where the message names an operator, not the cause.
+        // The ceiling would only fail later in AllocateTensors, whose message names an operator.
         ESP_LOGE(TAG, "%s: image asks %u B, %s caps it at %u B", arena_name,
                  static_cast<unsigned>(wanted), arena_name, static_cast<unsigned>(ceiling));
         return 0;
@@ -110,8 +108,7 @@ extern "C" esp_err_t ai_engine_init(void)
              static_cast<unsigned>(fast_bytes), s_fast.internal() ? "sram" : "psram",
              static_cast<unsigned>(big_bytes), static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    // Detect alone runs every frame, so internal ram goes to it and the other
-    // two share one psram allocator (KEHOACH 3.8).
+    // Detect runs every frame, so it gets internal RAM; spoof and recog share one PSRAM allocator (KEHOACH 3.8).
     struct {
         ai::ITfliteModel &model;
         const char *name;
@@ -128,8 +125,7 @@ extern "C" esp_err_t ai_engine_init(void)
         if (err == ESP_OK) {
             continue;
         }
-        // An image carrying fewer than three branches is valid (KEHOACH 6.2.2),
-        // and detect is the one the pipeline cannot start without.
+        // Fewer than three branches is a valid image (KEHOACH 6.2.2), but nothing starts without detect.
         if (branch.required || err != ESP_ERR_NOT_FOUND) {
             ESP_LOGE(TAG, "%s branch: %s", branch.name, esp_err_to_name(err));
             return err;

@@ -110,8 +110,7 @@ extern "C" esp_err_t ai_engine_init(void)
         if (err == ESP_OK) {
             continue;
         }
-        // An image carrying fewer than three branches is valid (KEHOACH 6.2.2),
-        // and detect is the one the pipeline cannot start without.
+        // Fewer than three branches is a valid image (KEHOACH 6.2.2), but nothing starts without detect.
         if (branch.required || err != ESP_ERR_NOT_FOUND) {
             ESP_LOGE(TAG, "%s branch: %s", branch.name, esp_err_to_name(err));
             return err;
