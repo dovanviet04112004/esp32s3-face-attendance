@@ -383,6 +383,9 @@ esp_err_t app_boot(void)
     if (amplifier != ESP_OK) {
         ESP_LOGW(TAG, "audio down: %s", esp_err_to_name(amplifier));
     }
+    if (drv_audio_set_volume(loud) != ESP_OK) {
+        ESP_LOGW(TAG, "volume %u out of range, playing at full", (unsigned)loud);
+    }
     const svc_attendance_policy_t policy = attend_policy();
     ESP_ERROR_CHECK(svc_attendance_init(svc_door_servo(), &policy));
     // A kiosk with no network still opens doors (KEHOACH 6.2.5).
