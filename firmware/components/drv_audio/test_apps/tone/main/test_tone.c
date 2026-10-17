@@ -5,6 +5,7 @@
 #include "app_config.h"
 #include "bsp_board.h"
 #include "driver/gpio.h"
+#include "driver/i2s_std.h"
 #include "drv_audio.h"
 #include "drv_ioexp.h"
 #include "esp_timer.h"
@@ -38,6 +39,7 @@
 #define LOOP_GAP_MS 1500
 #define WAV_RIFF_BYTES 12
 #define WAV_CHUNK_BYTES 8
+#define BARE_WRITE_TIMEOUT_MS (CLIP_MS * 2)
 
 // The recording assets/build_assets.py ships as snd/ok.wav, byte for byte.
 extern const uint8_t s_shipped_start[] asm("_binary_xincamon_1_1_wav_start");
@@ -68,9 +70,14 @@ static uint8_t sd_line(void)
     return port & SD_BIT;
 }
 
+static void up_or_already(esp_err_t err)
+{
+    TEST_ASSERT_TRUE_MESSAGE(err == ESP_OK || err == ESP_ERR_INVALID_STATE, esp_err_to_name(err));
+}
+
 TEST_CASE("the amp comes up shut down and a second init is refused", "[drv_audio]")
 {
-    TEST_ASSERT_EQUAL(ESP_OK, bsp_board_init());
+    up_or_already(bsp_board_init());
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_init());
     TEST_ASSERT_EQUAL(ESP_OK, drv_audio_init());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, drv_audio_init());
@@ -167,9 +174,45 @@ static const int16_t *shipped_pcm(size_t *samples)
     return NULL;
 }
 
-static void up_or_already(esp_err_t err)
+static void bare_loop(void)
 {
-    TEST_ASSERT_TRUE_MESSAGE(err == ESP_OK || err == ESP_ERR_INVALID_STATE, esp_err_to_name(err));
+    i2s_chan_handle_t tx = NULL;
+    i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    // The gap would replay the last buffer unless the driver zeroes each one it has sent.
+    chan.auto_clear_after_cb = true;
+    ESP_ERROR_CHECK(i2s_new_channel(&chan, &tx, NULL));
+    const i2s_std_config_t std = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(DRV_AUDIO_SAMPLE_HZ),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = APP_AUDIO_BCLK_GPIO,
+            .ws = APP_AUDIO_LRC_GPIO,
+            .dout = APP_AUDIO_DIN_GPIO,
+            .din = I2S_GPIO_UNUSED,
+        },
+    };
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx, &std));
+    ESP_ERROR_CHECK(i2s_channel_enable(tx));
+    size_t samples = 0;
+    const int16_t *pcm = shipped_pcm(&samples);
+    if (pcm == NULL || samples > CLIP_SAMPLES) {
+        printf("bare: the shipped recording is missing or longer than %d samples\n", CLIP_SAMPLES);
+        return;
+    }
+    printf("bare: no expander answered, so SD has to sit on 3V3; the shipped recording straight on I2S, "
+           "%u samples at %u, %u and %u %% in turn, %d ms of silence between\n",
+           (unsigned)samples, LOOP_LEVELS[0], LOOP_LEVELS[1], LOOP_LEVELS[2], LOOP_GAP_MS);
+    for (unsigned round = 0;; ++round) {
+        const uint8_t level = LOOP_LEVELS[round % sizeof(LOOP_LEVELS)];
+        for (size_t i = 0; i < samples; ++i) {
+            s_clip[i] = (int16_t)(((int32_t)pcm[i] * level) / DRV_AUDIO_VOLUME_MAX);
+        }
+        printf("round %u at %u %%\n", round, level);
+        size_t written = 0;
+        ESP_ERROR_CHECK(i2s_channel_write(tx, s_clip, samples * sizeof(int16_t), &written, BARE_WRITE_TIMEOUT_MS));
+        vTaskDelay(pdMS_TO_TICKS(LOOP_GAP_MS));
+    }
 }
 
 TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audio][manual]")
@@ -194,6 +237,11 @@ TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audi
 
 void app_main(void)
 {
+    // A rig of the amp alone carries no expander, so SD sits on 3V3 and only the loop can play.
+    if (bsp_board_init() == ESP_ERR_NOT_FOUND) {
+        bare_loop();
+        return;
+    }
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
