@@ -2152,8 +2152,11 @@ ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách l�
   chu kỳ CPU ở từng cấu hình.
 - **Độ chính xác chấm trên máy**, cùng thước với thang lượng tử (`ml/bench/host_bench.py`). ESP-DL
   qua mô phỏng ESP-PPQ, mà `model->test()` giữ khớp chip từng bit; TFLite qua kernel tham chiếu
-  (`BUILTIN_REF`), mà điểm live và CRC embedding trên board phải trùng khi máy chạy cùng đầu vào
-  tổng hợp của `bench_ai` — nên số trên máy là số của board. Detect: AP từng mức và AP ≥ 38 px.
+  (`BUILTIN_REF`). Board chạy đúng kernel tham chiếu của TFLM; `BUILTIN_REF` trùng TFLM từng tensor
+  ở detect và spoof, còn ở recog lệch FC cuối vài đầu ra một bậc (`latency.md` §17). `bench_ai` in
+  điểm live và cả embedding trên đầu vào tổng hợp của nó, nên mục So khớp đo được board lệch máy bao
+  nhiêu; kernel mặc định của TFLite làm tròn khác hẳn nên không dùng để chấm. Detect: AP từng mức và
+  AP ≥ 38 px.
   Spoof: AUC, APCER, BPCER và EER trên CelebA-Spoof, cùng 87 khung OV5640. Recog: accuracy,
   TAR@1e-3, TAR@1e-4 và EER trên LFW, CFP-FP, AgeDB-30. Hàng ESP-DL phải ra lại đúng số đã ghi
   ở `docs/measurements/<nhánh>/quant_ladder.md`.
