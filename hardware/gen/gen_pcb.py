@@ -307,6 +307,13 @@ EDGE_KEEP = 0.4
 # An M3 washer is Ø7.0 and presses on the mask, not on the hole edge DRC measures.
 SCREW_KEEP = 3.5
 TURN_COST, VIA_COST, WRONG_SIDE = 6, 30, 1
+# With no plane under them, an edge on one track lands on its neighbour: the I2S clock
+# must not run beside its own data, and no audio line beside the I2C pair (KEHOACH 2.5).
+I2S = {"AUDIO_BCLK", "AUDIO_LRC", "AUDIO_DIN"}
+I2C = {"I2C_SDA", "I2C_SCL"}
+I2S_APART, I2C_APART, SD_APART = 2.0, 3.0, 1.0
+# Header pins sit 2.54 mm apart, so the rule starts this far from the pads an edge joins.
+APART_FREE = 4.0
 NX = int(BOARD_W / GRID) + 1
 NY = int(BOARD_H / GRID) + 1
 
@@ -398,6 +405,28 @@ def pad_tag(pad_id: str, net: str) -> str:
 def net_clear(net: str) -> float:
     """A pad answers to its own class too, and KiCad keeps the wider of the two."""
     return POWER_CLEAR if net and (net[0] == "+" or net == "GND") else SIGNAL_CLEAR
+
+
+def apart(one: str, other: str) -> float:
+    """The extra gap two signal nets keep along their runs, 0 when the classes suffice."""
+    pair = {one, other}
+    if len(pair) < 2:
+        return 0.0
+    if pair <= I2S:
+        return I2S_APART
+    if pair & I2C and (pair & I2S or "AMP_SD" in pair) and not pair <= I2C:
+        return I2C_APART if pair & I2S else SD_APART
+    return 0.0
+
+
+def apart_cells(run: dict, layer: str, gap: float, probe: float) -> set:
+    cells = set()
+    for a, b, side in run["legs"]:
+        if side == layer:
+            cells |= line_cells(a, b, run["width"] / 2 + gap + probe)
+    for at in run["holes"]:
+        cells.update(disc_cells(at[0], at[1], VIA[run["width"]][0] / 2 + gap + probe))
+    return cells
 
 
 def wire_class(tag: str) -> tuple:
@@ -609,6 +638,7 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
     """Corners with the layer each sits on, or None when there is no way through."""
     tag, src, dst = job
     width, clear, want = wire_class(tag)
+    free = set(disc_cells(*pads[src][:2], APART_FREE)) | set(disc_cells(*pads[dst][:2], APART_FREE))
     blocked, room = {}, {}
     for probe, into in ((width / 2, blocked), (VIA[width][0] / 2, room)):
         for layer in LAYERS:
@@ -630,6 +660,10 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
                     continue
                 for cell in run["halo"][layer][(clear, probe)]:
                     field[cell] = 1
+                gap = apart(tag, run["tag"])
+                if gap:
+                    for cell in apart_cells(run, layer, gap, probe) - free:
+                        field[cell] = 1
             # Copper on the two pads an edge joins is shared by what else lands there.
             for pad_id in (src, dst):
                 x, y, half, _ = pads[pad_id]
