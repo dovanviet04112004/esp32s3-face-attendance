@@ -3733,7 +3733,9 @@ public:
     virtual ~Screen() = default;
     virtual void on_enter() {}
     virtual void on_exit()  {}
-    virtual bool on_touch(int x, int y, bool down) { return false; }   // true = vẽ lại
+    virtual bool on_touch(int x, int y, bool down) { return false; }   // đặt xuống · nhấc lên; true = vẽ lại
+    virtual bool drags() const { return false; }                       // true = cú bấm này đang kéo
+    virtual bool on_drag(int x, int y) { return false; }                // điểm giữa của một cú kéo
     virtual bool tick(uint32_t dt_ms, const Sight& seen) { return false; }
     virtual void paint(Canvas& to, const Sight& seen) = 0;   // cover map, không phải lv_obj
     virtual bool opaque() const { return false; }             // true = phủ kín panel, không video
@@ -3748,6 +3750,17 @@ public:
 ```
 
 Chín màn hình cùng vòng đời, thêm màn hình mới không đụng `ScreenManager`. Đây là chỗ virtual đáng giá nhất và cũng rẻ nhất (mỗi lần chuyển màn mới gọi 1 lần).
+
+**Chạm và kéo là hai thứ khác nhau, và `ui_kiosk` phân xử cho mọi màn.** Một lần bấm tới màn dưới
+dạng `on_touch(x, y, true)` đúng một lần, tại chỗ ngón đặt xuống. Ngón còn nằm trong `kTapSlopPx`
+quanh chỗ ấy thì vẫn là chạm: lúc nhấc, màn nhận `on_touch(x, y, false)` tại **chỗ đặt xuống**, nên
+nút và dòng nào nhận cú đặt thì chính nó kích hoạt, dù ngón run vài pixel. Ngón trượt ra ngoài thì
+cú bấm thành kéo. Màn nào đang kéo thật (`drags()` đúng — thanh trượt độ sáng và âm lượng khi cú
+bấm đặt lên chúng) nhận mọi điểm giữa qua `on_drag` rồi nhận cú nhấc như thường. Màn còn lại nhận
+ngay `on_touch(-1, -1, false)`: nút sáng tắt, không gì kích hoạt, và phần còn lại của cú kéo bị bỏ.
+Không có luật này thì một cú vuốt qua danh sách Wi-Fi chọn mạng nằm dưới chỗ ngón dừng, một cú vuốt
+qua danh sách lấy mặt mở chụp cho người ở cuối đường vuốt, còn ngón lướt qua thanh trượt thì kéo
+luôn thanh ấy. Kiosk không có danh sách cuộn, nên kéo không có nghĩa gì ngoài thanh trượt.
 
 **Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
 thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
@@ -5771,7 +5784,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 **Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
 
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × 156 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
-| `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả từ điểm cuối |
+| `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả: tại chỗ ngón đặt xuống nếu ngón chưa trượt quá `kTapSlopPx`, còn trượt xa hơn là kéo, chỉ thanh trượt nhận (§4.5.5h) |
 | `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `sound_id_t` | 4 × 4 B | `attend_task`, `ui_task` | `audio_task` | Phát âm không được chặn nghiệp vụ |
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
