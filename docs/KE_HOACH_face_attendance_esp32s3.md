@@ -5196,9 +5196,11 @@ frontend/
 │   │                                 #   bulk.tsx là thanh chọn của danh bạ và bốn việc làm
 │   │                                 #   trên nhiều người một lúc (§9.20); import.tsx là xuất,
 │   │                                 #   tải mẫu và nhập danh bạ, chạy thử rồi mới ghi (§9.20)
-│   ├── requests/{request-card.tsx, request-form.tsx, inbox-preview.tsx}
+│   ├── requests/{request-card.tsx, request-form.tsx, inbox-preview.tsx, queues.tsx}
 │   │                                 # ★ §9.10 — năm việc chờ cũ nhất, quyết ngay tại
-│   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản
+│   │                                 #   chỗ; trang chủ nào cũng dùng đúng một bản;
+│   │                                 #   queues.tsx là bảng và tấm xem của từng hàng đợi,
+│   │                                 #   dùng chung cho hộp và cho sổ đơn từ (§9.15)
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── devices/release-notes.tsx     # ★ §7.7 — câu tóm tắt và ghi chú của một bản phát hành,
 │   │                                 #   dùng chung cho trang Thiết bị và trang một máy
@@ -9149,10 +9151,18 @@ có đủ bối cảnh để quyết. Một sổ không bấm vào được thì
 đang treo rồi không cho làm gì với nó, mà trang duy nhất làm được lại **không có đường nào dẫn
 tới**.
 
-**Sổ đơn từ mang đủ năm loại, nên tên nó không phải `Nghỉ phép`.** Cùng một bảng `Request` giữ
-nghỉ phép, tăng ca, giải trình công, công tác và làm từ xa — gọi sổ ấy theo loại đông nhất là
-dạy người dùng rằng bốn loại kia nằm ở đâu đó khác, rồi bắt họ đi tìm. Sổ **lọc theo loại**, và
-tên nó nói đúng thứ nó chứa.
+**Sổ đơn từ giữ mọi việc người ta nộp lên bàn, mỗi bảng một tab.** Sáu bảng giữ những việc ấy:
+`Request` (nghỉ phép, tăng ca, giải trình công, công tác, làm từ xa), `ProfileChange`, `Dependent`,
+`Certificate`, `SalaryAdvance` và `PayslipDispute`. Hộp chờ duyệt chia chúng thành hàng đợi, mà hàng
+đợi chỉ giữ việc đang chờ: quyết xong là việc rời mọi màn của bàn, chỉ còn trong nhật ký. Nên sổ có
+một tab cho mỗi bảng, cùng thứ tự với hộp, và tab nào cũng mang **mọi trạng thái**. Tab *Đơn từ*
+lọc theo năm loại của `Request` — gọi cả sổ theo loại đông nhất là dạy người dùng rằng bốn loại kia
+nằm ở đâu đó khác, nên tên sổ nói đúng thứ nó chứa. Năm tab còn lại dùng chính bảng và tấm xem của
+hàng đợi cùng loại (`components/requests/queues.tsx`), chỉ đổi cột *đã chờ* thành *ngày nộp* cộng
+*trạng thái*; xuất CSV ở lại tab *Đơn từ*. Một tab chỉ hiện cho vai có hàng đợi ấy: năm bảng kia là
+dữ liệu lương nên đọc theo `deskOrSelfEmployeeIds` (§9.4), và một tab chỉ chứa đơn của chính trưởng
+phòng là một tab thừa. Sổ vẫn không quyết (đoạn trên): việc đang chờ mở tấm xem kèm đường sang
+đúng dòng ấy trong hộp, việc đã xong mở đúng kết quả của nó.
 
 **Vệt điều hướng nằm ở thanh trên, như product header của Cloudflare.** Nó dựng từ chính bảng
 này: nhóm, rồi mục, rồi tab hay trang con, rồi tên bản ghi đang mở — tên ấy do chính trang báo
