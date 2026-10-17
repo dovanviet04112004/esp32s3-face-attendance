@@ -80,8 +80,10 @@ export class ReleaseDetailsDto {
   requiresModels?: string | null;
 }
 
-/** An update of the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
-export class UpdateAllDto {
+/** An update of one kiosk or the fleet; `recapture` is the admin's word that people lacking a face on the new
+ *  recognition model capture again (KEHOACH 7.5).
+ */
+export class UpdateDto {
   @ApiPropertyOptional({ example: false, description: "Required when a step changes recognition" })
   @IsOptional()
   @IsBoolean()
@@ -105,8 +107,10 @@ export class UpdateView {
   next!: ReleaseStepView | null;
 }
 
-/** An offer to the whole fleet; `recapture` is the admin's word that everyone is captured again (KEHOACH 7.5). */
-export class OfferAllDto {
+/** An offer to one kiosk or the fleet; `recapture` is the admin's word that people lacking a face on the new
+ *  recognition model capture again (KEHOACH 7.5).
+ */
+export class OfferDto {
   @ApiPropertyOptional({ example: false, description: "Required when the release changes recognition" })
   @IsOptional()
   @IsBoolean()
@@ -238,12 +242,12 @@ export class FleetUpdateView {
     description: "Behind, but offline, so an offer to all leaves them out",
   })
   offline!: string[];
-  @ApiProperty({ example: false, description: "Installing it drops every template on the kiosks behind" })
+  @ApiProperty({ example: false, description: "Installing it moves an online kiosk behind to another recognition model" })
   changesRecognition!: boolean;
   @ApiProperty({
     type: [String],
     example: [],
-    description: "Kiosks it moves to another recognition model, offered only with the fleet",
+    description: "Kiosks it moves to another recognition model, offered only with the recapture word",
   })
   recapture!: string[];
 }

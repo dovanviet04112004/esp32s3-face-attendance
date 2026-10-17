@@ -543,7 +543,7 @@ describe("releases (e2e)", () => {
     assert.equal(res.body.release.embeddingVersion, recogName(NEW_RECOG));
   });
 
-  it("moves no single kiosk to another recognition model, and the fleet only on the admin's word", async () => {
+  it("moves no kiosk to another recognition model without the admin's word, one kiosk as the fleet", async () => {
     await db.device.create({
       data: {
         id: MODELS_DOOR,
@@ -564,11 +564,26 @@ describe("releases (e2e)", () => {
     }[];
     const row = fleet.find((one) => one.release.releaseId === modelsId);
     assert.equal(row?.changesRecognition, true, "the dashboard is not told to ask");
-    assert.ok(row?.recapture.includes(MODELS_DOOR), "the kiosk page is not told to hold its own update button");
+    assert.ok(row?.recapture.includes(MODELS_DOOR), "the kiosk page is not told to ask before its update");
     const unasked = await asAdmin("post", `/releases/${modelsId}/offer`);
     assert.equal(unasked.status, 409);
     assert.equal(unasked.body.message, "RELEASE_CHANGES_RECOGNITION");
+    const pressed = await asAdmin("post", `/releases/update/${MODELS_DOOR}`).send({});
+    assert.equal(pressed.status, 409, JSON.stringify(pressed.body));
+    assert.equal(pressed.body.message, "RELEASE_CHANGES_RECOGNITION");
     assert.equal(offers.length, 0, "a recognition change reached a kiosk without the admin's word");
+
+    const alone = await asAdmin("post", `/releases/${modelsId}/offer/${MODELS_DOOR}`).send({ recapture: true });
+    assert.equal(alone.status, 201, JSON.stringify(alone.body));
+    assert.equal(offers.length, 1, "one kiosk was not offered the release on the admin's word");
+    await db.device.update({ where: { id: MODELS_DOOR }, data: { otaOfferedAt: null, otaReleaseId: null, otaPressedAt: null } });
+    const walked = await asAdmin("post", `/releases/update/${MODELS_DOOR}`).send({ recapture: true });
+    assert.equal(walked.status, 201, JSON.stringify(walked.body));
+    assert.equal(walked.body.next?.target ?? walked.body.offered.target, "MODELS", "the press does not reach the new models");
+    await db.device.update({
+      where: { id: MODELS_DOOR },
+      data: { otaOfferedAt: null, otaReleaseId: null, otaNextReleaseId: null, otaPressedAt: null, otaPressedById: null },
+    });
     const told = await asAdmin("post", `/releases/${modelsId}/offer`).send({ recapture: true });
     assert.equal(told.status, 201, JSON.stringify(told.body));
     assert.ok((told.body.offered as string[]).includes(MODELS_DOOR));

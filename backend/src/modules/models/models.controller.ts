@@ -35,7 +35,7 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import {
   FleetUpdateView,
   ImageLinkDto,
-  OfferAllDto,
+  OfferDto,
   OfferAllView,
   OfferView,
   OfferStatusView,
@@ -44,7 +44,7 @@ import {
   PublishResultView,
   ReleaseDetailsDto,
   ReleaseViewDto,
-  UpdateAllDto,
+  UpdateDto,
   UpdateView,
 } from "./dto/release.dto.js";
 import { ModelsService, type FleetUpdate, type OfferStatus, type ReleaseStep, type ReleaseView } from "./models.service.js";
@@ -99,7 +99,7 @@ export class ModelsController {
   @ApiCreatedResponse({ type: OfferAllView })
   @ApiErrors(HttpStatus.CONFLICT)
   updateAll(
-    @Body() body: UpdateAllDto,
+    @Body() body: UpdateDto,
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
     return this.models.updateAll(viewer.userId, body.recapture ?? false);
@@ -114,9 +114,10 @@ export class ModelsController {
   @ApiParam({ name: "deviceId", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
   update(
     @Param("deviceId") deviceId: string,
+    @Body() body: UpdateDto,
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }> {
-    return this.models.update(deviceId, viewer.userId);
+    return this.models.update(deviceId, viewer.userId, body.recapture ?? false);
   }
 
   @Post(":releaseId/offer")
@@ -127,7 +128,7 @@ export class ModelsController {
   @ApiParam({ name: "releaseId", description: "Release id (UUID)", example: "ae489569-fcc0-4393-9669-2d459d7c57bd" })
   offerAll(
     @Param("releaseId") releaseId: string,
-    @Body() body: OfferAllDto,
+    @Body() body: OfferDto,
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ offered: string[]; failed: string[]; busy: string[]; offline: string[] }> {
     return this.models.offerAll(releaseId, viewer.userId, body.recapture ?? false);
@@ -144,9 +145,10 @@ export class ModelsController {
   offer(
     @Param("releaseId") releaseId: string,
     @Param("deviceId") deviceId: string,
+    @Body() body: OfferDto,
     @CurrentViewer() viewer: Viewer,
   ): Promise<{ deviceId: string; offeredAt: Date }> {
-    return this.models.offer(releaseId, deviceId, viewer.userId);
+    return this.models.offer(releaseId, deviceId, viewer.userId, body.recapture ?? false);
   }
 }
 

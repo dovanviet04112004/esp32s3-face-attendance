@@ -80,9 +80,9 @@ export interface FleetUpdate {
   updating: string[];
   /** Behind too, but offline: an offer is not kept for it, so it is left out of an offer to all (KEHOACH 7.7). */
   offline: string[];
-  /** Installing it drops every template on the kiosks behind, so it goes to all of them, confirmed (KEHOACH 7.5). */
+  /** Installing it moves an online kiosk behind to another recognition model, so it goes only confirmed (KEHOACH 7.5). */
   changesRecognition: boolean;
-  /** The kiosks, behind or updating, this release moves to another recognition model; none of them takes it alone. */
+  /** The kiosks, behind or updating, this release moves to another recognition model. */
   recapture: string[];
 }
 
@@ -450,7 +450,7 @@ export class ModelsService implements OnModuleInit {
    * Offer a release to one kiosk. The kiosk re-checks everything on its own,
    * so this is an offer and not an instruction.
    */
-  async offer(releaseId: string, deviceId: string, actorId: string): Promise<{ deviceId: string; offeredAt: Date }> {
+  async offer(releaseId: string, deviceId: string, actorId: string, recapture = false): Promise<{ deviceId: string; offeredAt: Date }> {
     const release = await this.offerable(releaseId);
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
     if (!device) {
@@ -463,8 +463,8 @@ export class ModelsService implements OnModuleInit {
     if (runs(device, release)) {
       throw new ConflictException("RELEASE_ALREADY_RUNNING");
     }
-    // One door on another model would refuse every face captured at the rest (KEHOACH 7.5).
-    if (changesRecognition(device, release)) {
+    // People lacking a face on the new model capture again, which the presser confirms (KEHOACH 7.5).
+    if (!recapture && changesRecognition(device, release)) {
       throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
     }
     // One ota_task per kiosk, and Device keeps only the newest offer (KEHOACH 7.7).
@@ -483,7 +483,7 @@ export class ModelsService implements OnModuleInit {
   }
 
   /** Offer a release to every approved, online kiosk running something older and not installing already.
-   *  One that changes recognition needs `recapture`, the admin's word that everyone is captured again.
+   *  One that changes recognition needs `recapture`, the admin's word that people lacking a face on it capture again.
    */
   async offerAll(
     releaseId: string,
@@ -542,9 +542,14 @@ export class ModelsService implements OnModuleInit {
   }
 
   /** Bring one kiosk to the newest firmware and models in the order their claims allow: the first step is
-   *  offered now and each next one once a heartbeat shows the one ahead installed (KEHOACH 7.7).
+   *  offered now and each next one once a heartbeat shows the one ahead installed. A path that changes the
+   *  kiosk's recognition model needs `recapture` (KEHOACH 7.7, 7.5).
    */
-  async update(deviceId: string, actorId: string): Promise<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }> {
+  async update(
+    deviceId: string,
+    actorId: string,
+    recapture = false,
+  ): Promise<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }> {
     const device = await this.db.device.findUnique({ where: { id: deviceId } });
     if (!device) {
       throw new NotFoundException("DEVICE_NOT_FOUND");
@@ -557,8 +562,7 @@ export class ModelsService implements OnModuleInit {
     if (!path) {
       throw new ConflictException("RELEASE_ALREADY_RUNNING");
     }
-    // One door on another model would refuse every face captured at the rest (KEHOACH 7.5).
-    if (path.some((step) => changesRecognition(device, step))) {
+    if (!recapture && path.some((step) => changesRecognition(device, step))) {
       throw new ConflictException("RELEASE_CHANGES_RECOGNITION");
     }
     if ((await this.status(deviceId))?.busyUntil) {
