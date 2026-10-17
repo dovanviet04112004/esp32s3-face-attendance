@@ -36,9 +36,8 @@ type Listed = Prisma.CertificateGetPayload<{ include: { employee: typeof PERSON_
 
 export interface CertificateRow extends Listed {
   waitedDays: number;
+  decidedByName: string | null;
 }
-
-export type CertificateDetail = CertificateRow & { decidedByName: string | null };
 
 @Injectable()
 export class CertificatesService {
@@ -105,20 +104,20 @@ export class CertificatesService {
         skip: query.cursor ? 0 : query.skip,
         take: query.take,
         orderBy: sortedBy("createdAt", order) as Prisma.CertificateOrderByWithRelationInput[],
-        include: { employee: PERSON_VIEW },
+        include: { employee: PERSON_VIEW, issuedBy: NAMED },
       }),
       this.db.certificate.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     const now = new Date();
     return {
-      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      rows: rows.map(({ issuedBy, ...row }) => ({ ...row, waitedDays: waitedDays(row.createdAt, now), decidedByName: nameOf(issuedBy) })),
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
-  async one(viewer: Viewer, id: string): Promise<CertificateDetail> {
+  async one(viewer: Viewer, id: string): Promise<CertificateRow> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.certificate.findUnique({ where: { id }, include: { employee: PERSON_VIEW, issuedBy: NAMED } });
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {

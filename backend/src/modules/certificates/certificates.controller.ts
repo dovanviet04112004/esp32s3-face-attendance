@@ -20,11 +20,11 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
-import { CertificatesService, type CertificateDetail, type CertificateRow } from "./certificates.service.js";
+import { CertificatesService, type CertificateRow } from "./certificates.service.js";
 import {
   AskCertificateDto,
-  CertificateDetailView,
   CertificatePageView,
+  CertificateRowView,
   CertificateView,
   DecideCertificateDto,
   LetterView,
@@ -64,8 +64,8 @@ export class CertificatesController {
   @Get(":id")
   @ApiOperation({ summary: "One letter request, in the same scope as the list, with who answered it" })
   @ApiParam(CERTIFICATE_ID)
-  @ApiOkResponse({ type: CertificateDetailView })
-  one(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<CertificateDetail> {
+  @ApiOkResponse({ type: CertificateRowView })
+  one(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<CertificateRow> {
     return this.certificates.one(viewer, id);
   }
 

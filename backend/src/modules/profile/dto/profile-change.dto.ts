@@ -231,9 +231,7 @@ export class ProfileChangeRowView extends ProfileChangeView {
 
   @ApiProperty({ description: "Whole days since it was asked for", example: 1 })
   waitedDays!: number;
-}
 
-export class ProfileChangeDetailView extends ProfileChangeRowView {
   @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who approved or turned it down; null otherwise" })
   decidedByName!: string | null;
 }

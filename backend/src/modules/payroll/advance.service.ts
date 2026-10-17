@@ -21,7 +21,7 @@ import {
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
-import { NAMED, nameOf } from "../notifications/notifications.service.js";
+import { namesOf } from "../notifications/notifications.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const SORT_FIELD = "requestedAt";
@@ -30,12 +30,11 @@ const OWED: SalaryAdvance["state"][] = ["APPROVED", "PAID"];
 
 type Listed = Prisma.SalaryAdvanceGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
-export type AdvanceDetail = AdvanceRow & { decidedByName: string | null };
-
 export interface AdvanceRow extends Listed {
   waitedDays: number;
   baseSalary: string | null;
   outstanding: string | null;
+  decidedByName: string | null;
 }
 
 @Injectable()
@@ -88,10 +87,11 @@ export class AdvanceService {
     };
   }
 
-  // What the desk weighs an advance against (KEHOACH 9.15); never computed for anyone else.
+  // Pay and debts are what the desk weighs an advance against (KEHOACH 9.15), computed for nobody else.
   private async withContext(rows: Listed[], desk: boolean): Promise<AdvanceRow[]> {
     const now = new Date();
     const people = [...new Set(rows.map((row) => row.employeeId))];
+    const named = await namesOf(this.db, rows.map((row) => row.decidedById));
     const [pay, owed] =
       desk && people.length > 0
         ? await Promise.all([
@@ -118,21 +118,19 @@ export class AdvanceService {
             .reduce((sum, one) => sum + Number(one.amount), 0)
             .toFixed(0)
         : null,
+      decidedByName: row.decidedById ? (named.get(row.decidedById) ?? null) : null,
     }));
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
-  async one(viewer: Viewer, id: string): Promise<AdvanceDetail> {
+  async one(viewer: Viewer, id: string): Promise<AdvanceRow> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.salaryAdvance.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("ADVANCE_NOT_FOUND");
     }
-    const [[row], decider] = await Promise.all([
-      this.withContext([held], visible === null),
-      held.decidedById ? this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null,
-    ]);
-    return { ...row, decidedByName: nameOf(decider) };
+    const [row] = await this.withContext([held], visible === null);
+    return row;
   }
 
   async submit(viewer: Viewer, body: RequestAdvanceDto): Promise<SalaryAdvance> {

@@ -35,9 +35,8 @@ type Listed = Prisma.PayslipDisputeGetPayload<{ include: typeof DISPUTE_VIEW }>;
 
 export interface DisputeRow extends Listed {
   waitedDays: number;
+  decidedByName: string | null;
 }
-
-export type DisputeDetail = DisputeRow & { decidedByName: string | null };
 const HOURS_PER_DAY = 24;
 const MS_PER_HOUR = 3_600_000;
 const RETRO_CODE = "DISPUTE";
@@ -127,20 +126,20 @@ export class DisputesService {
         skip: query.cursor ? 0 : query.skip,
         take: query.take,
         orderBy: sortedBy("createdAt", order) as Prisma.PayslipDisputeOrderByWithRelationInput[],
-        include: DISPUTE_VIEW,
+        include: { ...DISPUTE_VIEW, answeredBy: NAMED },
       }),
       this.db.payslipDispute.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     const now = new Date();
     return {
-      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      rows: rows.map(({ answeredBy, ...row }) => ({ ...row, waitedDays: waitedDays(row.createdAt, now), decidedByName: nameOf(answeredBy) })),
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
-  async one(viewer: Viewer, id: string): Promise<DisputeDetail> {
+  async one(viewer: Viewer, id: string): Promise<DisputeRow> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.payslipDispute.findUnique({ where: { id }, include: { ...DISPUTE_VIEW, answeredBy: NAMED } });
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {

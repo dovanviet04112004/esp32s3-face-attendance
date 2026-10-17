@@ -157,6 +157,16 @@ export function nameOf(login: { email: string; employee: { fullName: string } | 
   return login ? (login.employee?.fullName ?? login.email) : null;
 }
 
+/** The names of the logins a page of rows points at, read in one query (KEHOACH 9.10). */
+export async function namesOf(db: PrismaService, ids: (string | null)[]): Promise<Map<string, string | null>> {
+  const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
+  if (wanted.length === 0) {
+    return new Map();
+  }
+  const logins = await db.user.findMany({ where: { id: { in: wanted } }, select: { id: true, ...NAMED.select } });
+  return new Map(logins.map((login) => [login.id, nameOf(login)]));
+}
+
 const ITEM_SUMMARY = {
   key: true,
   level: true,

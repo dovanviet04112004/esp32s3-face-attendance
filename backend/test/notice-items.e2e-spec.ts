@@ -317,6 +317,13 @@ describe("work a group shares, closed once for all (e2e)", () => {
       const held = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get(one.holder)}`);
       assert.equal(held.status, 200, `${one.holder} could not open ${one.path}`);
       assert.equal(held.body.decidedByName, nameOf(one.decidedBy), `${one.path} does not say who handled it`);
+      const cut = one.path.lastIndexOf("/");
+      const listed = await request(http)
+        .get(`${one.path.slice(0, cut)}?employeeId=${idOf.get("asker")}`)
+        .set("Authorization", `Bearer ${tokenOf.get(one.holder)}`);
+      assert.equal(listed.status, 200, JSON.stringify(listed.body));
+      const row = (listed.body.rows as { id: string; decidedByName: string | null }[]).find((each) => each.id === one.path.slice(cut + 1));
+      assert.equal(row?.decidedByName, nameOf(one.decidedBy), `the register row of ${one.path} does not say who handled it`);
       const outside = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get("orphan")}`);
       assert.equal(outside.status, 404, `somebody outside opened ${one.path}`);
       const own = await request(http).get(one.path).set("Authorization", `Bearer ${tokenOf.get("asker")}`);

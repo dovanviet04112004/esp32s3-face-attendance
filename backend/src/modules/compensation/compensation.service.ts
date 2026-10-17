@@ -32,7 +32,7 @@ import { AuditService, trail, type AuditEntry } from "../audit/audit.service.js"
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
-import { NAMED, nameOf } from "../notifications/notifications.service.js";
+import { namesOf } from "../notifications/notifications.service.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -55,9 +55,9 @@ import {
 
 export type PayRecord = CompensationRecord & { allowances: CompensationAllowance[] };
 
-export type QueuedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+type ListedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
-export type DependentDetail = QueuedDependent & { decidedByName: string | null };
+export type QueuedDependent = ListedDependent & { decidedByName: string | null };
 
 /** A first pay record an import line asks for; no `from` takes the hire date, then the fallback day. */
 export interface FirstPay {
@@ -466,18 +466,23 @@ export class CompensationService {
       }),
       this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
     ]);
-    return { rows, ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
+    return { rows: await this.named(rows), ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
+  }
+
+  private async named(rows: ListedDependent[]): Promise<QueuedDependent[]> {
+    const names = await namesOf(this.db, rows.map((row) => row.decidedById));
+    return rows.map((row) => ({ ...row, decidedByName: row.decidedById ? (names.get(row.decidedById) ?? null) : null }));
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
-  async oneDependent(viewer: Viewer, id: string): Promise<DependentDetail> {
+  async oneDependent(viewer: Viewer, id: string): Promise<QueuedDependent> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.dependent.findUnique({ where: { id }, include: { employee: PERSON_VIEW } });
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
-    const decider = held.decidedById ? await this.db.user.findUnique({ where: { id: held.decidedById }, ...NAMED }) : null;
-    return { ...held, decidedByName: nameOf(decider) };
+    const [row] = await this.named([held]);
+    return row;
   }
 
   async addDependent(viewer: Viewer, body: CreateDependentDto): Promise<Dependent> {

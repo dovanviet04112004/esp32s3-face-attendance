@@ -139,9 +139,7 @@ export class CertificateRowView extends CertificateView {
 
   @ApiProperty({ description: "Whole days since it was asked for", example: 2 })
   waitedDays!: number;
-}
 
-export class CertificateDetailView extends CertificateRowView {
   @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who issued or turned it down; null while it waits" })
   decidedByName!: string | null;
 }

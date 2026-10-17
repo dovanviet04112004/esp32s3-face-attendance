@@ -150,9 +150,7 @@ export class AdvanceRowView extends AdvanceView {
     description: "Desk only: other advances approved or paid and not yet deducted, dong",
   })
   outstanding!: string | null;
-}
 
-export class AdvanceDetailView extends AdvanceRowView {
   @ApiProperty({ type: String, nullable: true, example: "Trần Thị B", description: "Who approved or turned it down; null while it waits" })
   decidedByName!: string | null;
 }

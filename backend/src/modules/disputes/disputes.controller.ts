@@ -20,11 +20,11 @@ import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
-import { DisputesService, type DisputeDetail, type DisputeRow } from "./disputes.service.js";
+import { DisputesService, type DisputeRow } from "./disputes.service.js";
 import {
   AnswerDisputeDto,
-  DisputeDetailView,
   DisputePageView,
+  DisputeRowView,
   DisputeView,
   ListDisputesDto,
   RaiseDisputeDto,
@@ -64,9 +64,9 @@ export class DisputesController {
   @Get(":id")
   @ApiOperation({ summary: "One dispute, in the same scope as the list, with who answered it" })
   @ApiParam({ name: "id", description: "Dispute id (UUID)", example: "5d0f8a8e-6a43-4f2e-9e43-3b54b6bf3a10" })
-  @ApiOkResponse({ type: DisputeDetailView })
+  @ApiOkResponse({ type: DisputeRowView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "DISPUTE_NOT_FOUND, also outside the viewer's scope" })
-  one(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<DisputeDetail> {
+  one(@Param("id") id: string, @CurrentViewer() viewer: Viewer): Promise<DisputeRow> {
     return this.disputes.one(viewer, id);
   }
 

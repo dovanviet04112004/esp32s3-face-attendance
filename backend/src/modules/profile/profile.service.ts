@@ -56,9 +56,8 @@ type Listed = Prisma.ProfileChangeGetPayload<{ include: { employee: typeof PERSO
 
 export interface ProfileChangeRow extends Listed {
   waitedDays: number;
+  decidedByName: string | null;
 }
-
-export type ProfileChangeDetail = ProfileChangeRow & { decidedByName: string | null };
 
 @Injectable()
 export class ProfileService {
@@ -150,20 +149,20 @@ export class ProfileService {
         skip: query.cursor ? 0 : query.skip,
         take: query.take,
         orderBy: sortedBy("createdAt", order) as Prisma.ProfileChangeOrderByWithRelationInput[],
-        include: { employee: PERSON_VIEW },
+        include: { employee: PERSON_VIEW, decidedBy: NAMED },
       }),
       this.db.profileChange.count({ where, take: COUNT_CEILING + 1 }),
     ]);
     const now = new Date();
     return {
-      rows: rows.map((row) => ({ ...row, waitedDays: waitedDays(row.createdAt, now) })),
+      rows: rows.map(({ decidedBy, ...row }) => ({ ...row, waitedDays: waitedDays(row.createdAt, now), decidedByName: nameOf(decidedBy) })),
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */
-  async one(viewer: Viewer, id: string): Promise<ProfileChangeDetail> {
+  async one(viewer: Viewer, id: string): Promise<ProfileChangeRow> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const held = await this.db.profileChange.findUnique({ where: { id }, include: { employee: PERSON_VIEW, decidedBy: NAMED } });
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
