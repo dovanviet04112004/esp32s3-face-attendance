@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { BiometricConsent, Device, DeviceEnrollment, FaceTemplate, Prisma } from "@prisma/client";
 import pg from "pg";
@@ -8,6 +8,8 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { isPrismaCode, PrismaService, RECORD_NOT_FOUND } from "../../database/prisma.service.js";
+import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
+import { JOB, QUEUE } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
@@ -20,6 +22,8 @@ const FIRST_TEMPLATE = 0;
 // First key of pg_advisory_xact_lock, so one person's captures are taken one at a time.
 const CAPTURE_LOCK = 75;
 const SCRUB_LOCK_WAIT_MS = 5000;
+// Ten to three in the morning in APP_TIMEZONE, after the notice cleanup at 02:40.
+const kUnusedSetsCron = "50 2 * * *";
 
 type Named = { fullName: string; code: string; embeddingVersion: string | null };
 type Holder = { employeeId: number; employee: Named };
@@ -31,14 +35,14 @@ type Erased<T> = { widen: string[] } | { widen: null; value: T; doors: Door[] };
 // A kiosk's newest resync: its first number, when its last message left, the number heard since.
 type Run = { from: number; endedAt: number; heard?: number };
 
-// A kiosk refuses a template of another recognition model; a side that cannot say is taken to match (KEHOACH 7.5).
-function otherModel(kiosk: string | null, held: string | null): boolean {
-  return kiosk !== null && held !== null && kiosk !== held;
+// The set a door is sent: its own model's, or the last capture's when it never named one (KEHOACH 7.5).
+function setFor(door: string | null, lastCapture: string | null): string | null {
+  return door ?? lastCapture;
 }
 
-// A door new to a person is handed their face only when both sides name one model (KEHOACH 7.5).
+// A door new to a person is handed their face only when it names its model (KEHOACH 7.5).
 function heldOn(model: string, employeeIds: readonly number[]): Prisma.FaceTemplateWhereInput {
-  return { employeeId: { in: [...employeeIds] }, employee: { embeddingVersion: model } };
+  return { employeeId: { in: [...employeeIds] }, embeddingVersion: model };
 }
 
 // The kiosk fonts hold precomposed Vietnamese letters only, so a name typed decomposed loses its marks.
@@ -58,7 +62,7 @@ export interface KioskStanding extends AssignableDevice {
 }
 
 @Injectable()
-export class EnrollmentService {
+export class EnrollmentService implements OnModuleInit {
   private readonly log = new Logger(EnrollmentService.name);
   // One sender per kiosk (KEHOACH 9.23). Held in this process: one api holds the broker session.
   // Lock order: kiosks in id order, then a person's CAPTURE_LOCK, then their Employee row.
@@ -74,7 +78,17 @@ export class EnrollmentService {
     private readonly config: ConfigService<Env, true>,
     private readonly feed: RealtimeGateway,
     private readonly scope: ScopeService,
+    @Inject(QUEUE_TOKEN) private readonly queues: Queues,
   ) {}
+
+  // Upserting by scheduler id: a restart re-states it, never adds a second.
+  async onModuleInit(): Promise<void> {
+    await this.queues[QUEUE.people].upsertJobScheduler(
+      "faces-unused-nightly",
+      { pattern: kUnusedSetsCron, tz: this.config.get("APP_TIMEZONE", { infer: true }) },
+      { name: JOB.facesUnused, data: { type: JOB.facesUnused } },
+    );
+  }
 
   /** The kiosks a person can be put on, by name (KEHOACH 7.5). */
   assignable(): Promise<AssignableDevice[]> {
@@ -365,6 +379,41 @@ export class EnrollmentService {
     `;
   }
 
+  /** Erase every set of a recognition model no approved kiosk runs, or none while one has not named its model (KEHOACH 7.5, 9.19).
+   *  @ctx job | nightly; one audit row per person whose set went
+   */
+  async dropUnusedSets(): Promise<{ people: number; templates: number }> {
+    const fleet = await this.db.device.findMany({ where: { status: "APPROVED" }, select: { id: true, embeddingVersion: true } });
+    const unnamed = fleet.filter((one) => one.embeddingVersion === null).map((one) => one.id);
+    if (unnamed.length > 0) {
+      this.log.warn(`no face set erased: ${unnamed.join(", ")} never named its recognition model`);
+      return { people: 0, templates: 0 };
+    }
+    const runs = [...new Set(fleet.map((one) => one.embeddingVersion as string))];
+    const gone = await this.db.$queryRaw<{ employeeId: number; embeddingVersion: string | null }[]>`
+      DELETE FROM "FaceTemplate"
+       WHERE "embeddingVersion" IS NULL OR NOT ("embeddingVersion" = ANY(${runs}::text[]))
+      RETURNING "employeeId", "embeddingVersion"
+    `;
+    const models = new Map<number, Set<string>>();
+    for (const one of gone) {
+      models.set(one.employeeId, (models.get(one.employeeId) ?? new Set()).add(one.embeddingVersion ?? "unknown"));
+    }
+    if (gone.length > 0) {
+      await this.scrubTemplates();
+    }
+    for (const [employeeId, sets] of models) {
+      await this.audit.record({
+        action: AUDIT_ACTIONS.BIOMETRIC_ERASE,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(employeeId),
+        meta: { models: [...sets], why: "no approved kiosk runs the model" },
+      });
+    }
+    this.log.log(`erased ${gone.length} template(s) of ${models.size} person(s) on models no kiosk runs`);
+    return { people: models.size, templates: gone.length };
+  }
+
   private async noteErased(employeeId: number, doors: Door[], actorId: string | undefined, why: string): Promise<void> {
     await this.scrubTemplates();
     await this.audit.record({
@@ -409,6 +458,9 @@ export class EnrollmentService {
       return;
     }
     const employeeId = report.employeeId;
+    const door = await this.db.device.findUnique({ where: { id: deviceId }, select: { embeddingVersion: true } });
+    const model = report.embeddingVersion ?? door?.embeddingVersion ?? null;
+    const setOf = model ? { employeeId, embeddingVersion: model } : null;
     const session = new Date(report.updatedAt);
     const sealed = sealTemplate(Buffer.from(report.embedding, "base64"), this.key());
     let overwrote = false;
@@ -424,7 +476,10 @@ export class EnrollmentService {
       if ((await tx.biometricConsent.count({ where: { employeeId, state: "GRANTED" } })) === 0) {
         return "unconsented" as const;
       }
-      const held = await tx.faceTemplate.findFirst({ where: { employeeId }, select: { capturedAt: true } });
+      if (!setOf) {
+        return "unplaced" as const;
+      }
+      const held = await tx.faceTemplate.findFirst({ where: setOf, select: { capturedAt: true } });
       const current = held?.capturedAt.getTime() === session.getTime();
       const waiting = pair.state === "ASSIGNED" || pair.state === "RETAKE";
       if (waiting && current) {
@@ -434,9 +489,9 @@ export class EnrollmentService {
         return "refused" as const;
       }
       if (waiting && held) {
-        await tx.faceTemplate.deleteMany({ where: { employeeId } });
+        await tx.faceTemplate.deleteMany({ where: setOf });
       } else {
-        overwrote = (await tx.faceTemplate.count({ where: { employeeId, templateIdx: report.templateIdx } })) > 0;
+        overwrote = (await tx.faceTemplate.count({ where: { ...setOf, templateIdx: report.templateIdx } })) > 0;
       }
       const sample = {
         embedding: sealed,
@@ -445,9 +500,9 @@ export class EnrollmentService {
         capturedAt: session,
       };
       await tx.faceTemplate.upsert({
-        where: { employeeId_templateIdx: { employeeId, templateIdx: report.templateIdx } },
+        where: { employeeId_embeddingVersion_templateIdx: { ...setOf, templateIdx: report.templateIdx } },
         update: sample,
-        create: { employeeId, templateIdx: report.templateIdx, ...sample },
+        create: { ...setOf, templateIdx: report.templateIdx, ...sample },
       });
       await tx.deviceEnrollment.update({
         where: { deviceId_employeeId: { deviceId, employeeId } },
@@ -457,9 +512,7 @@ export class EnrollmentService {
           ...(waiting ? { sessionAt: session, sessionOpenedAt: new Date() } : {}),
         },
       });
-      if (report.embeddingVersion) {
-        await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: report.embeddingVersion } });
-      }
+      await tx.employee.update({ where: { id: employeeId }, data: { embeddingVersion: model } });
       return waiting && held ? ("replaced" as const) : ("added" as const);
     });
     switch (verdict) {
@@ -474,11 +527,14 @@ export class EnrollmentService {
       case "refused":
         this.log.warn(`${deviceId} captured ${employeeId} outside its turn, sending it the held samples`);
         return this.refuse(deviceId, employeeId);
+      case "unplaced":
+        this.log.warn(`${deviceId} captured ${employeeId} without naming its model, sending it the held samples`);
+        return this.refuse(deviceId, employeeId);
       default:
         if (verdict === "replaced" || overwrote) {
           await this.scrubTemplates();
         }
-        await this.spread(deviceId, employeeId, report.templateIdx, verdict === "replaced");
+        await this.spread(deviceId, { employeeId, embeddingVersion: model as string, templateIdx: report.templateIdx }, verdict === "replaced");
         this.log.log(`${deviceId} enrolled employee ${employeeId} sample ${report.templateIdx}`);
     }
   }
@@ -537,11 +593,14 @@ export class EnrollmentService {
     await this.tell(deviceId, async (tx) => {
       const pair = await tx.deviceEnrollment.findUnique({
         where: { deviceId_employeeId: { deviceId, employeeId } },
-        include: { employee: { select: { fullName: true, code: true, embeddingVersion: true } } },
+        include: {
+          employee: { select: { fullName: true, code: true, embeddingVersion: true } },
+          device: { select: { embeddingVersion: true } },
+        },
       });
       const builds: Build[] = [(version, to) => this.dropAll(employeeId, version, to)];
       if (pair && pair.state !== "REVOKED") {
-        builds.push(...(await this.samplesFor(tx, pair)));
+        builds.push(...(await this.samplesFor(tx, pair, pair.device.embeddingVersion)));
         // A drop and an upsert both take a person off the pending list, so the ask goes last.
         if (pair.state !== "ENROLLED") {
           builds.push((version, to) => this.expect(employeeId, pair.employee, version, to));
@@ -577,17 +636,19 @@ export class EnrollmentService {
       include: { employee: { select: { fullName: true, code: true, embeddingVersion: true } } },
       orderBy: { employeeId: "asc" },
     });
-    // A person whose templates the kiosk would refuse is asked for again.
-    const usable = (row: (typeof rows)[number]) =>
-      row.employee.embeddingVersion !== null && !otherModel(device.embeddingVersion, row.employee.embeddingVersion);
+    // A person with no set on the kiosk's model is asked for again.
     const held = await this.db.faceTemplate.findMany({
-      where: { employeeId: { in: rows.filter(usable).map((row) => row.employeeId) } },
+      where: { employeeId: { in: rows.map((row) => row.employeeId) }, embeddingVersion: { not: null } },
       orderBy: [{ employeeId: "asc" }, { templateIdx: "asc" }],
     });
     const builds: Build[] = [];
     const waiting: number[] = [];
     for (const row of rows) {
-      const samples = usable(row) ? this.buildsFor(row, held.filter((sample) => sample.employeeId === row.employeeId)) : [];
+      const model = setFor(device.embeddingVersion, row.employee.embeddingVersion);
+      const samples = this.buildsFor(
+        row,
+        held.filter((sample) => sample.employeeId === row.employeeId && sample.embeddingVersion === model),
+      );
       builds.push(...samples);
       // An upsert takes a person off the pending list, so the ask goes after it.
       if (row.state !== "ENROLLED" || samples.length === 0) {
@@ -651,23 +712,24 @@ export class EnrollmentService {
     await this.resync(deviceId, reported);
   }
 
-  /** One builder per sample the server holds for this person, each an audited read (KEHOACH 9.19). */
-  private async samplesFor(db: Prisma.TransactionClient, row: Holder): Promise<Build[]> {
-    if (!row.employee.embeddingVersion) {
+  /** One builder per sample of the set the server holds for this person on the door's model, each an audited read (KEHOACH 9.19). */
+  private async samplesFor(db: Prisma.TransactionClient, row: Holder, door: string | null): Promise<Build[]> {
+    const model = setFor(door, row.employee.embeddingVersion);
+    if (!model) {
       return [];
     }
     const held = await db.faceTemplate.findMany({
-      where: { employeeId: row.employeeId },
+      where: { employeeId: row.employeeId, embeddingVersion: model },
       orderBy: { templateIdx: "asc" },
     });
     return this.buildsFor(row, held);
   }
 
+  // A sample whose model is unknown is one no kiosk can be told to compare against.
   private buildsFor(row: Holder, held: FaceTemplate[]): Build[] {
-    if (!row.employee.embeddingVersion) {
-      return [];
-    }
-    return held.map((sample) => (version: number, to: string) => this.upsertOf(row, sample, version, to));
+    return held
+      .filter((sample) => sample.embeddingVersion !== null)
+      .map((sample) => (version: number, to: string) => this.upsertOf(row, sample, version, to));
   }
 
   private async upsertOf(
@@ -689,7 +751,7 @@ export class EnrollmentService {
       updatedAt: held.capturedAt.getTime(),
       embedding: openTemplate(held.embedding, this.key()).toString("base64"),
       scale: held.scale,
-      embeddingVersion: row.employee.embeddingVersion ?? undefined,
+      embeddingVersion: held.embeddingVersion ?? undefined,
       fullName: onGlass(row.employee.fullName),
       rosterVersion: version,
       deviceId,
@@ -724,10 +786,15 @@ export class EnrollmentService {
     };
   }
 
-  /** Each door would otherwise hold only what it captured itself, and no
-   *  heartbeat reports that difference (KEHOACH 9.23 rule 7).
+  /** Each door on the sample's model would otherwise hold only what it captured itself, and no
+   *  heartbeat reports that difference; a door on another model keeps its own set (KEHOACH 9.23 rule 7, 7.5).
    */
-  private async spread(fromDeviceId: string, employeeId: number, templateIdx: number, replaced: boolean): Promise<void> {
+  private async spread(
+    fromDeviceId: string,
+    at: { employeeId: number; embeddingVersion: string; templateIdx: number },
+    replaced: boolean,
+  ): Promise<void> {
+    const { employeeId, templateIdx } = at;
     const others = await this.db.deviceEnrollment.findMany({
       where: { employeeId, deviceId: { not: fromDeviceId }, state: { not: "REVOKED" } },
       include: {
@@ -735,15 +802,12 @@ export class EnrollmentService {
         device: { select: { embeddingVersion: true } },
       },
     });
-    const sample = await this.db.faceTemplate.findUnique({
-      where: { employeeId_templateIdx: { employeeId, templateIdx } },
-    });
+    const sample = await this.db.faceTemplate.findUnique({ where: { employeeId_embeddingVersion_templateIdx: at } });
     if (!sample) {
       return;
     }
     for (const row of others) {
-      if (otherModel(row.device.embeddingVersion, row.employee.embeddingVersion)) {
-        await this.unservable(row.deviceId, employeeId);
+      if (setFor(row.device.embeddingVersion, at.embeddingVersion) !== at.embeddingVersion) {
         continue;
       }
       await this.tell(row.deviceId, async (tx) => {
@@ -763,17 +827,6 @@ export class EnrollmentService {
         return { value: undefined, builds };
       });
     }
-  }
-
-  // The door keeps the face of its own model; the server has none of that model left to send it.
-  private async unservable(deviceId: string, employeeId: number): Promise<void> {
-    await this.tell(deviceId, async (tx) => {
-      await tx.deviceEnrollment.updateMany({
-        where: { deviceId, employeeId, state: { in: ["ENROLLED", "RETAKE"] } },
-        data: { state: "ASSIGNED" },
-      });
-      return { value: undefined, builds: [] };
-    });
   }
 
   /** Write and reserve one number per message in one transaction, then publish them in order (KEHOACH 9.23). */

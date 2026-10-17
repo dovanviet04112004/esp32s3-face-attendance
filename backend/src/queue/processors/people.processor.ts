@@ -3,6 +3,7 @@ import { Worker } from "bullmq";
 
 import { RedisService } from "../../database/redis.service.js";
 import { EmployeesService } from "../../modules/employees/employees.service.js";
+import { EnrollmentService } from "../../modules/enrollment/enrollment.service.js";
 import { FEED, RealtimeGateway } from "../../modules/realtime/realtime.gateway.js";
 import { JOB, QUEUE, type PeopleJob } from "../queues.js";
 
@@ -14,6 +15,7 @@ export class PeopleProcessor implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly redis: RedisService,
     private readonly employees: EmployeesService,
+    private readonly enrollment: EnrollmentService,
     private readonly feed: RealtimeGateway,
   ) {}
 
@@ -22,6 +24,10 @@ export class PeopleProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.people,
       async (job) => {
         const body = job.data as PeopleJob;
+        if (body.type === JOB.facesUnused) {
+          await this.enrollment.dropUnusedSets();
+          return;
+        }
         const closed =
           body.type === JOB.leavingsNow
             ? await this.employees.closeMany(body.employeeIds, body.through, body.actorId)

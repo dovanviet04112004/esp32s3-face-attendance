@@ -333,6 +333,8 @@ model Employee {
 model FaceTemplate {
   id          String   @id @default(uuid())
   employeeId  Int
+  // The recognition model that made it: a person keeps one set per model (KEHOACH 7.5).
+  embeddingVersion String?
   templateIdx Int
   // Biometric data: encrypted at rest and never returned by a read API
   // (KEHOACH 7.5).
@@ -343,7 +345,7 @@ model FaceTemplate {
   updatedAt   DateTime @updatedAt
   employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  @@unique([employeeId, templateIdx])
+  @@unique([employeeId, embeddingVersion, templateIdx])
 }
 
 model Device {

@@ -40,6 +40,7 @@ export const JOB = {
   rebuild: "rebuild",
   leavingsDue: "leavings-due",
   leavingsNow: "leavings-now",
+  facesUnused: "faces-unused",
   leaveYear: "leave-year",
 } as const;
 
@@ -226,7 +227,12 @@ export interface LeavingsNowJob {
   actorId: string;
 }
 
-export type PeopleJob = LeavingsDueJob | LeavingsNowJob;
+/** Erases the face sets of models no approved kiosk runs; a rerun finds nothing left to erase (KEHOACH 7.5). */
+export interface FacesUnusedJob {
+  type: typeof JOB.facesUnused;
+}
+
+export type PeopleJob = LeavingsDueJob | LeavingsNowJob | FacesUnusedJob;
 
 /** Opens a year's balances; with no year it is the year today falls in. A closed year never carries twice. */
 export interface LeaveYearJob {

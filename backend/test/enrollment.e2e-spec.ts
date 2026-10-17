@@ -137,9 +137,7 @@ describe("enrollment (e2e)", () => {
   async function settled() {
     for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_POLL_MS) {
       const [row, pair] = await Promise.all([
-        db.faceTemplate.findUnique({
-          where: { employeeId_templateIdx: { employeeId, templateIdx: 0 } },
-        }),
+        db.faceTemplate.findFirst({ where: { employeeId, templateIdx: 0 } }),
         db.deviceEnrollment.findUnique({
           where: { deviceId_employeeId: { deviceId: DEVICE_ID, employeeId } },
         }),

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { after, before, describe, it, mock } from "node:test";
 
@@ -25,6 +26,9 @@ const DOOR_HOME = "e2e-door-home";
 const DOOR_SAME = "e2e-door-same-model";
 const DOOR_OTHER = "e2e-door-other-model";
 const DOOR_BLIND = "e2e-door-no-model";
+const DOOR_PAST = "e2e-door-past-model";
+const DOOR_PAST_TOO = "e2e-door-past-model-2";
+const DOOR_NEXT = "e2e-door-next-model";
 const DOORS = [DOOR_A, DOOR_B];
 const CODE = "NV9200";
 const CROWD = ["NV9201", "NV9202", "NV9203", "NV9204"];
@@ -34,6 +38,10 @@ const FRESH = "NV9207";
 const FOREIGN = "NV9208";
 const NEWCOMERS = [MOVER, HELD, FRESH, FOREIGN];
 const DECOMPOSED = "NV9209";
+const BETWEEN = ["NV9210", "NV9211", "NV9212", "NV9213"];
+const PAST_MODEL = "recog-e2e92100000000a1";
+const NEXT_MODEL = "recog-e2e92100000000b2";
+const MODEL_RELEASES = ["img-e2e921a1", "img-e2e921b2"];
 const EMBEDDING_BYTES = 512;
 const PUBLISH_MS = 25;
 const AHEAD_BY = 50;
@@ -74,10 +82,15 @@ describe("roster sync across doors (e2e)", () => {
   let entityId = "";
 
   async function sweep(): Promise<void> {
-    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS, DECOMPOSED] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, ...CROWD, ...NEWCOMERS, DECOMPOSED, ...BETWEEN] } } });
     await db.device.deleteMany({
-      where: { id: { in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW, DOOR_HOME, DOOR_SAME, DOOR_OTHER, DOOR_BLIND] } },
+      where: {
+        id: {
+          in: [...DOORS, DOOR_C, DOOR_OLD, DOOR_NEW, DOOR_HOME, DOOR_SAME, DOOR_OTHER, DOOR_BLIND, DOOR_PAST, DOOR_PAST_TOO, DOOR_NEXT],
+        },
+      },
     });
+    await db.release.deleteMany({ where: { target: "MODELS", version: { in: MODEL_RELEASES } } });
   }
 
   // Every roster message the run sends, in the order it left; each takes PUBLISH_MS on the wire.
@@ -404,7 +417,7 @@ describe("roster sync across doors (e2e)", () => {
     assert.equal(await stateOf(DOOR_A), "ASSIGNED", "the dashboard still shows a face the kiosk has dropped");
   });
 
-  it("sends a new face to the doors on its model only, and stops showing the others a face it cannot send", async () => {
+  it("sends a new face to the doors on its model only, and leaves a door on another model its own set", async () => {
     await db.device.createMany({
       data: [
         { id: DOOR_OLD, name: DOOR_OLD, status: "APPROVED", embeddingVersion: "r1" },
@@ -421,9 +434,11 @@ describe("roster sync across doors (e2e)", () => {
     const sent = await recorded(() => enrollment.takeReport(DOOR_A, report(DOOR_A, employeeId, 0x88, RETAKEN + 120_000, 0, "r2")));
     assert.deepEqual(sent.filter((one) => one.to === DOOR_OLD), [], "a door on the old model was sent a template it must refuse");
     assert.equal(await versionOf(DOOR_OLD), oldAt);
-    assert.equal(await stateOf(DOOR_OLD), "ASSIGNED", "the dashboard still shows a face the server cannot give that door");
-    assert.deepEqual(sent.filter((one) => one.to === DOOR_NEW).map((one) => one.op), ["DELETE_EMPLOYEE", "UPSERT"]);
+    assert.equal(await stateOf(DOOR_OLD), "ENROLLED", "a door lost the face its own model's set still gives it");
+    assert.deepEqual(sent.filter((one) => one.to === DOOR_NEW).map((one) => one.op), ["UPSERT"]);
     assert.equal(await stateOf(DOOR_NEW), "ENROLLED");
+    const sets = await db.faceTemplate.findMany({ where: { employeeId }, select: { embeddingVersion: true } });
+    assert.deepEqual([...new Set(sets.map((one) => one.embeddingVersion))].sort(), ["r1", "r2"], "a capture on one model erased the other's set");
   });
 
   describe("a door new to a person the server holds a face for", () => {
@@ -582,6 +597,111 @@ describe("roster sync across doors (e2e)", () => {
         [["ASSIGN", id(MOVER), wasAt + 1]],
       );
       assert.equal(await db.faceTemplate.count({ where: { employeeId: id(MOVER) } }), 2, "a retake threw the held face away");
+    });
+  });
+  describe("a person between two recognition models", () => {
+    const people = new Map<string, number>();
+    const who = (code: string): number => people.get(code) as number;
+    const [BOTH] = BETWEEN;
+    const PAST_AT = FIRST + 3_600_000;
+    const NEXT_AT = PAST_AT + 60_000;
+    const PAST_AGAIN = NEXT_AT + 60_000;
+
+    async function pairOf(deviceId: string, code: string): Promise<string> {
+      const row = await db.deviceEnrollment.findUnique({ where: { deviceId_employeeId: { deviceId, employeeId: who(code) } } });
+      return row?.state ?? "MISSING";
+    }
+
+    async function setsOf(code: string): Promise<[string | null, number][]> {
+      const rows = await db.faceTemplate.findMany({
+        where: { employeeId: who(code) },
+        orderBy: [{ embeddingVersion: "asc" }, { templateIdx: "asc" }],
+      });
+      return rows.map((row) => [row.embeddingVersion, row.capturedAt.getTime()]);
+    }
+
+    before(async () => {
+      const day = 86_400_000;
+      for (const [at, version, model] of [
+        [2 * day, MODEL_RELEASES[0], PAST_MODEL],
+        [day, MODEL_RELEASES[1], NEXT_MODEL],
+      ] as const) {
+        await db.release.create({
+          data: {
+            releaseId: randomUUID(),
+            target: "MODELS",
+            version,
+            sha256: "0".repeat(64),
+            sizeBytes: 1,
+            embeddingVersion: model,
+            createdAt: new Date(Date.now() - at),
+          },
+        });
+      }
+      await db.device.createMany({
+        data: [
+          { id: DOOR_PAST, name: DOOR_PAST, status: "APPROVED", embeddingVersion: PAST_MODEL },
+          { id: DOOR_PAST_TOO, name: DOOR_PAST_TOO, status: "APPROVED", embeddingVersion: PAST_MODEL },
+          { id: DOOR_NEXT, name: DOOR_NEXT, status: "APPROVED", embeddingVersion: NEXT_MODEL },
+        ],
+      });
+      const one = await db.employee.create({ data: { code: BOTH, fullName: `Người ${BOTH}`, active: true, legalEntityId: entityId } });
+      await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
+      people.set(BOTH, one.id);
+      for (const door of [DOOR_PAST, DOOR_PAST_TOO, DOOR_NEXT]) {
+        await enrollment.assign(door, who(BOTH));
+      }
+    });
+
+    it("keeps both sets when doors on two models capture one person while offline", async () => {
+      await enrollment.takeReport(DOOR_PAST, report(DOOR_PAST, who(BOTH), 0x41, PAST_AT, 0, PAST_MODEL));
+      const told = await recorded(() =>
+        enrollment.takeReport(DOOR_NEXT, report(DOOR_NEXT, who(BOTH), 0x42, NEXT_AT, 0, NEXT_MODEL)),
+      );
+      assert.deepEqual(await setsOf(BOTH), [
+        [PAST_MODEL, PAST_AT],
+        [NEXT_MODEL, NEXT_AT],
+      ]);
+      assert.deepEqual(told.filter((one) => one.to !== DOOR_NEXT), [], "a door on the past model heard of the next model's face");
+      assert.deepEqual(
+        await Promise.all([DOOR_PAST, DOOR_PAST_TOO, DOOR_NEXT].map((door) => pairOf(door, BOTH))),
+        ["ENROLLED", "ENROLLED", "ENROLLED"],
+      );
+    });
+
+    it("lets a capture at a door on the past model replace only that model's set", async () => {
+      const put = await request(http).post("/enrollments").set("Authorization", `Bearer ${token}`).send({ deviceId: DOOR_PAST, employeeId: who(BOTH) });
+      assert.equal(put.body.state, "RETAKE");
+      const told = await recorded(() =>
+        enrollment.takeReport(DOOR_PAST, report(DOOR_PAST, who(BOTH), 0x43, PAST_AGAIN, 3, PAST_MODEL)),
+      );
+      assert.deepEqual(await setsOf(BOTH), [
+        [PAST_MODEL, PAST_AGAIN],
+        [NEXT_MODEL, NEXT_AT],
+      ], "a capture on the past model erased the next model's face");
+      assert.deepEqual(
+        told.map((one) => [one.to, one.op]),
+        [
+          [DOOR_PAST_TOO, "DELETE_EMPLOYEE"],
+          [DOOR_PAST_TOO, "UPSERT"],
+        ],
+      );
+    });
+
+    it("resyncs a door on the past model with the past model's set", async () => {
+      const models: (string | undefined)[] = [];
+      const spy = mock.method(app.get(MqttService), "publishDown", async (_name: string, _to: string, payload: EnrollPayload) => {
+        if (payload.employeeId === who(BOTH)) {
+          models.push(`${payload.op}:${payload.embeddingVersion ?? ""}`);
+        }
+      });
+      try {
+        await enrollment.resync(DOOR_PAST_TOO);
+      } finally {
+        spy.mock.restore();
+      }
+      assert.deepEqual(models, [`UPSERT:${PAST_MODEL}`], "the door was asked to capture again, or sent the next model's face");
+      assert.equal(await pairOf(DOOR_PAST_TOO, BOTH), "ENROLLED");
     });
   });
 });
