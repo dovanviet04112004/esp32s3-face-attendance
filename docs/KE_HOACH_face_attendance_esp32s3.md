@@ -9068,7 +9068,7 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Pháp nhân` | ✓ | – | – | – | – | – |
 | `Phụ cấp` | ✓ | ✓ đọc | ✓ | – | – | – |
 | `Bảng công` · `Chấm công` | ✓ | ✓ | ✓ | ✓ | – | – |
-| `Đơn từ` (sổ toàn bộ, mọi loại) | ✓ | ✓ | – | ✓ | – | – |
+| `Đơn từ` (sổ toàn bộ, mọi loại) | ✓ | ✓ | ✓ bàn lương | ✓ | – | – |
 | `Tài sản` (sổ cấp phát và thu hồi) | ✓ | ✓ | – | – | – | – |
 | `Nhận việc` (danh sách việc chưa xong) | ✓ | ✓ | – | ✓ | – | – |
 | `Nhật ký` (§9.24) · `Tài khoản` (§9.4) | ✓ | – | – | – | – | – |
@@ -9161,7 +9161,9 @@ nằm ở đâu đó khác, nên tên sổ nói đúng thứ nó chứa. Năm ta
 hàng đợi cùng loại (`components/requests/queues.tsx`), chỉ đổi cột *đã chờ* thành *ngày nộp* cộng
 *trạng thái*; xuất CSV ở lại tab *Đơn từ*. Một tab chỉ hiện cho vai có hàng đợi ấy: năm bảng kia là
 dữ liệu lương nên đọc theo `deskOrSelfEmployeeIds` (§9.4), và một tab chỉ chứa đơn của chính trưởng
-phòng là một tab thừa. Sổ vẫn không quyết (đoạn trên): việc đang chờ mở tấm xem kèm đường sang
+phòng là một tab thừa. Vì thế `PAYROLL` cũng mở sổ — khiếu nại, tạm ứng chờ chi và người phụ thuộc là
+hàng đợi của chính bàn lương — nhưng không có tab *Đơn từ*, vì sổ `Request` theo cây chỉ trả cho
+`ADMIN`, `HR`, `MANAGER`. Sổ vẫn không quyết (đoạn trên): việc đang chờ mở tấm xem kèm đường sang
 đúng dòng ấy trong hộp, việc đã xong mở đúng kết quả của nó.
 
 **Vệt điều hướng nằm ở thanh trên, như product header của Cloudflare.** Nó dựng từ chính bảng
