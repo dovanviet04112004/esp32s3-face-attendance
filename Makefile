@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: help setup git-hooks ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
-        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors \
+        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors password-list \
         idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
@@ -720,6 +720,40 @@ be-plans: ## EXPLAIN the reads that touch a big table; fail on an unexcused scan
 
 be-backfill: ## Move rows in batches, one transaction each; dry unless ARGS has --apply (KEHOACH 9.22.3)
 	python3 tools/backfill.py $(ARGS)
+
+PASSWORD_SOURCE := https://raw.githubusercontent.com/danielmiessler/SecLists/c205c36a445bff37f8e58a9ec829105cd4975c58/Passwords/Common-Credentials/xato-net-10-million-passwords-1000000.txt
+PASSWORD_SOURCE_SHA256 := 424a3e03a17df0a2bc2b3ca749d81b04e79d59cb7aeec8876a5a3f308d0caf51
+PASSWORD_LIST := backend/src/modules/auth/common-passwords.generated.ts
+
+# Keeps what the shortest allowed password could match, read from the DTO so the number lives once.
+define PASSWORD_LIST_PY
+import json, re, sys
+source, dto, out = sys.argv[1:4]
+shortest = int(re.search(r"PASSWORD_MIN = (\d+)", open(dto, encoding="utf-8").read())[1])
+longest = int(re.search(r"PASSWORD_MAX = (\d+)", open(dto, encoding="utf-8").read())[1])
+kept = set()
+for raw in open(source, "rb"):
+    try:
+        word = raw.decode("utf-8").rstrip("\r\n").lower()
+    except UnicodeDecodeError:
+        continue
+    if shortest <= len(word) <= longest:
+        kept.add(word)
+head = ["// GENERATED FILE - DO NOT EDIT.",
+        "// Source: SecLists c205c36a Passwords/Common-Credentials/xato-net-10-million-passwords-1000000.txt",
+        "// Regenerate: make password-list"]
+body = ["export const COMMON_PASSWORDS: readonly string[] = ["]
+body += ["  " + json.dumps(word, ensure_ascii=False) + "," for word in sorted(kept)]
+open(out, "w", encoding="utf-8").write("\n".join(head + body + ["];", ""]))
+print(f"{out}: {len(kept)} passwords of {shortest}-{longest} characters")
+endef
+export PASSWORD_LIST_PY
+
+password-list: ## Regenerate the common passwords both password doors refuse, from SecLists pinned by sha256 (KEHOACH 9.4)
+	@set -euo pipefail; source="$$(mktemp)"; trap 'rm -f "$$source"' EXIT; \
+	curl -sSfL --max-time 300 -o "$$source" "$(PASSWORD_SOURCE)"; \
+	echo "$(PASSWORD_SOURCE_SHA256)  $$source" | sha256sum -c --quiet; \
+	python3 -c "$$PASSWORD_LIST_PY" "$$source" backend/src/modules/auth/dto/set-password.dto.ts $(PASSWORD_LIST)
 
 fe-dev: ## Next.js dev server
 	cd frontend && npm run dev
