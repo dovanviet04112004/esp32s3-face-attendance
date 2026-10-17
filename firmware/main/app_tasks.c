@@ -1426,7 +1426,8 @@ static void sync_task(void *arg)
     app_event_t booted = { 0 };
     booted.type = DEVICE_EVENT_TYPE_BOOTED;
     booted.severity = DEVICE_EVENT_SEVERITY_INFO;
-    snprintf(booted.note, sizeof(booted.note), "boot %" PRIu32, sys_storage_boot_count());
+    snprintf(booted.note, sizeof(booted.note), "boot %" PRIu32 ", reset by %s", sys_storage_boot_count(),
+             app_boot_reset_cause());
     note_event(&booted);
     const esp_err_t models = app_boot_models_error();
     if (models != ESP_OK) {

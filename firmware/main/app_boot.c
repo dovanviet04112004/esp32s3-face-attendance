@@ -324,6 +324,28 @@ esp_err_t app_boot_models_error(void)
     return models_error;
 }
 
+const char *app_boot_reset_cause(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power on";
+    case ESP_RST_EXT: return "external pin";
+    case ESP_RST_SW: return "esp_restart";
+    case ESP_RST_PANIC: return "panic";
+    case ESP_RST_INT_WDT: return "interrupt watchdog";
+    case ESP_RST_TASK_WDT: return "task watchdog";
+    case ESP_RST_WDT: return "other watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT: return "brownout";
+    case ESP_RST_SDIO: return "sdio";
+    case ESP_RST_USB: return "usb";
+    case ESP_RST_JTAG: return "jtag";
+    case ESP_RST_EFUSE: return "efuse";
+    case ESP_RST_PWR_GLITCH: return "power glitch";
+    case ESP_RST_CPU_LOCKUP: return "cpu lockup";
+    default: return "unknown";
+    }
+}
+
 esp_err_t app_boot(void)
 {
     ESP_ERROR_CHECK(sys_storage_init());
@@ -331,7 +353,8 @@ esp_err_t app_boot(void)
     if (sys_storage_device_id(device_id, sizeof(device_id)) != ESP_OK) {
         ESP_LOGE(TAG, "no device id: nothing this kiosk records can be attributed");
     }
-    ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32, device_id, sys_storage_boot_count());
+    ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32 ", reset by %s", device_id, sys_storage_boot_count(),
+             app_boot_reset_cause());
     // The arena needs one contiguous run the drivers below would fragment (KEHOACH 3.8).
     load_models();
     ESP_ERROR_CHECK(app_wiring_init());
