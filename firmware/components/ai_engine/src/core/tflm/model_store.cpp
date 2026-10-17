@@ -34,28 +34,29 @@ uint32_t ModelStore::arena_hint_bytes(const char *name) const noexcept
     return hint;
 }
 
-const tflite::Model *ModelStore::find(const char *name) const noexcept
+esp_err_t ModelStore::find(const char *name, const tflite::Model **graph) const noexcept
 {
     const void *data = nullptr;
     size_t size = 0;
-    if (sys_storage_model_find(name, &data, &size, nullptr) != ESP_OK) {
-        ESP_LOGE(TAG, "no model named %s", name);
-        return nullptr;
+    const esp_err_t found = sys_storage_model_find(name, &data, &size, nullptr);
+    if (found != ESP_OK) {
+        return found;
     }
     // The partition also carries .espdl payloads (KEHOACH 6.2.2); GetModel would read one as offsets.
     if (!storage_model_is_tflite(static_cast<const uint8_t *>(data), size)) {
         ESP_LOGE(TAG, "%s is not a .tflite entry and this build runs TFLM", name);
-        return nullptr;
+        return ESP_ERR_NOT_SUPPORTED;
     }
     const tflite::Model *model = tflite::GetModel(data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         // A schema mismatch misreads tensors rather than failing outright.
         ESP_LOGE(TAG, "%s is schema %u, this build reads %u", name,
                  static_cast<unsigned>(model->version()), TFLITE_SCHEMA_VERSION);
-        return nullptr;
+        return ESP_ERR_NOT_SUPPORTED;
     }
     ESP_LOGI(TAG, "%s: %u KB", name, static_cast<unsigned>(size / 1024));
-    return model;
+    *graph = model;
+    return ESP_OK;
 }
 
 }  // namespace ai

@@ -63,9 +63,10 @@ size_t arena_bytes(const char *arena_name, size_t ceiling, std::initializer_list
 
 esp_err_t load(ai::ITfliteModel &model, const char *name, ai::Arena &arena, size_t *input_len)
 {
-    const tflite::Model *graph = s_store.find(name);
-    if (graph == nullptr) {
-        return ESP_ERR_NOT_FOUND;
+    const tflite::Model *graph = nullptr;
+    const esp_err_t found = s_store.find(name, &graph);
+    if (found != ESP_OK) {
+        return found;
     }
     const esp_err_t err = model.init(graph, arena);
     if (err != ESP_OK) {

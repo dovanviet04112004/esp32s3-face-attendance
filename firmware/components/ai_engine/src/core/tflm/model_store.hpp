@@ -16,10 +16,11 @@ public:
     /** Map the active slot through sys_storage and read its header. */
     esp_err_t open() noexcept;
 
-    /** The graph packed under one entry name, or nullptr when it is absent
-     *  or carries a schema this build of TFLM does not read.
+    /** The graph packed under one entry name, checked to be a .tflite this build reads.
+     *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the image carries no such entry
+     *       | ESP_ERR_NOT_SUPPORTED for an .espdl payload or a schema TFLM does not read
      */
-    const tflite::Model *find(const char *name) const noexcept;
+    esp_err_t find(const char *name, const tflite::Model **graph) const noexcept;
 
     /** Bytes the entry asks its arena for, 0 when the image carries no
      *  measurement or no such entry (KEHOACH 3.8).
