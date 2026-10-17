@@ -15,6 +15,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { ConsentService } from "./consent.service.js";
+import { recaptureDue } from "./recapture.js";
 import { openTemplate, sealTemplate } from "./template-crypto.js";
 
 const NO_EMPLOYEE = 0;
@@ -412,6 +413,19 @@ export class EnrollmentService implements OnModuleInit {
     }
     this.log.log(`erased ${gone.length} template(s) of ${models.size} person(s) on models no kiosk runs`);
     return { people: models.size, templates: gone.length };
+  }
+
+  /** The kiosks a person must capture at again, for a recognition model newer than every face they hold (KEHOACH 9.21.4). */
+  async recaptureAt(employeeId: number): Promise<AssignableDevice[]> {
+    const due = await recaptureDue(this.db, [employeeId]);
+    if (due.length === 0) {
+      return [];
+    }
+    return this.db.device.findMany({
+      where: { id: { in: due.map((one) => one.deviceId) } },
+      select: { id: true, name: true, location: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    });
   }
 
   private async noteErased(employeeId: number, doors: Door[], actorId: string | undefined, why: string): Promise<void> {

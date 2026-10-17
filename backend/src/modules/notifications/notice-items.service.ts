@@ -39,6 +39,7 @@ export const QUEUE_SUBJECT: Record<NoticeQueue, NoticeSubject> = {
   ATTENDANCE: "PERSON_DAY",
   TEAM_ATTENDANCE: "LOGIN",
   RELEASES: "RELEASE",
+  RECAPTURE: "EMPLOYEE",
 };
 
 /** The kind a queue's work is told as. */
@@ -59,6 +60,7 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   ATTENDANCE: "ATTENDANCE_EXCEPTION",
   TEAM_ATTENDANCE: "TEAM_ATTENDANCE",
   RELEASES: "RELEASE_AVAILABLE",
+  RECAPTURE: "FACE_RECAPTURE",
 };
 
 // Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
@@ -118,7 +120,7 @@ interface Seated {
 }
 
 // A condition that comes and goes on one subject, so its closed work makes way for the next (KEHOACH 9.21.4).
-const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIOSK"]);
+const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIOSK", "RECAPTURE"]);
 
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
 export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
@@ -427,7 +429,7 @@ export class NoticeItemsService {
    */
   async regroupRescoped(from: string[], to: string[]): Promise<void> {
     const items = await this.db.noticeItem.findMany({
-      where: { state: "OPEN", queue: { notIn: ["DOCUMENTS", "ATTENDANCE"] }, employee: { is: movedPeople(from, to) } },
+      where: { state: "OPEN", queue: { notIn: ["DOCUMENTS", "ATTENDANCE", "RECAPTURE"] }, employee: { is: movedPeople(from, to) } },
     });
     for (const item of items) {
       await this.regroup(item, "quiet");

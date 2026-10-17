@@ -18,7 +18,8 @@ export type ItemKind =
   | "DOCUMENT_TO_SIGN"
   | "ATTENDANCE_EXCEPTION"
   | "TEAM_ATTENDANCE"
-  | "RELEASE_AVAILABLE";
+  | "RELEASE_AVAILABLE"
+  | "FACE_RECAPTURE";
 
 export type NewsKind = Exclude<NoticeKind, ItemKind>;
 
@@ -186,6 +187,15 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: true,
     defaults: { IN_APP: true, PUSH: true },
     facts: { target: "string", version: "string", recognition: "boolean" },
+  },
+  // The model it asks for, so a capture on that model or a newer one closes it DONE (KEHOACH 9.21.4).
+  FACE_RECAPTURE: {
+    category: "ATTENDANCE",
+    level: "ACTION",
+    receivers: "self",
+    item: true,
+    defaults: { IN_APP: true, PUSH: true },
+    facts: { model: "string" },
   },
   // What the kiosk runs once the press is done, so its next update is said again (KEHOACH 9.21.4).
   UPDATE_FINISHED: {

@@ -16,6 +16,7 @@ import { ContractsSweep } from "../../modules/notifications/sweeps/contracts.swe
 import { DocumentsSweep } from "../../modules/notifications/sweeps/documents.sweep.js";
 import { KioskSweep } from "../../modules/notifications/sweeps/kiosk.sweep.js";
 import { ProbationSweep } from "../../modules/notifications/sweeps/probation.sweep.js";
+import { RecaptureSweep } from "../../modules/notifications/sweeps/recapture.sweep.js";
 import { ReconcileSweep } from "../../modules/notifications/sweeps/reconcile.sweep.js";
 import { ReleaseSweep } from "../../modules/notifications/sweeps/release.sweep.js";
 import { StalledSweep } from "../../modules/notifications/sweeps/stalled.sweep.js";
@@ -50,6 +51,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly cleanup: CleanupSweep,
     private readonly kiosk: KioskSweep,
     private readonly releases: ReleaseSweep,
+    private readonly recapture: RecaptureSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
     private readonly attendance: AttendanceSweep,
@@ -91,6 +93,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         if (body.type === JOB.kioskAlerts) {
           await this.kiosk.sweep();
           await this.releases.sweep();
+          await this.recapture.sweep();
           return;
         }
         if (body.type === JOB.tasksDue) {

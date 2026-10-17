@@ -14,6 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import type { EnrollPlan } from "../src/modules/employees/bulk.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
+import { RecaptureSweep } from "../src/modules/notifications/sweeps/recapture.sweep.js";
 import type { EnrollPayload } from "../src/common/generated/enroll_payload.js";
 import { seedEntityId } from "./fixtures.js";
 
@@ -602,7 +603,7 @@ describe("roster sync across doors (e2e)", () => {
   describe("a person between two recognition models", () => {
     const people = new Map<string, number>();
     const who = (code: string): number => people.get(code) as number;
-    const [BOTH] = BETWEEN;
+    const [BOTH, PAST_ONLY, LEAVER, NEVER] = BETWEEN;
     const PAST_AT = FIRST + 3_600_000;
     const NEXT_AT = PAST_AT + 60_000;
     const PAST_AGAIN = NEXT_AT + 60_000;
@@ -619,6 +620,15 @@ describe("roster sync across doors (e2e)", () => {
       });
       return rows.map((row) => [row.embeddingVersion, row.capturedAt.getTime()]);
     }
+
+    async function reminder(code: string): Promise<{ state: string; outcome: string | null; facts: unknown } | null> {
+      return db.noticeItem.findUnique({
+        where: { key: `recapture:${who(code)}` },
+        select: { state: true, outcome: true, facts: true },
+      });
+    }
+
+    const sweepThem = () => app.get(RecaptureSweep).sweep(BETWEEN.map(who));
 
     before(async () => {
       const day = 86_400_000;
@@ -645,12 +655,20 @@ describe("roster sync across doors (e2e)", () => {
           { id: DOOR_NEXT, name: DOOR_NEXT, status: "APPROVED", embeddingVersion: NEXT_MODEL },
         ],
       });
-      const one = await db.employee.create({ data: { code: BOTH, fullName: `Người ${BOTH}`, active: true, legalEntityId: entityId } });
-      await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
-      people.set(BOTH, one.id);
+      for (const code of BETWEEN) {
+        const one = await db.employee.create({ data: { code, fullName: `Người ${code}`, active: true, legalEntityId: entityId } });
+        await db.biometricConsent.create({ data: { employeeId: one.id, noticeVersion: "e2e", method: "PAPER" } });
+        people.set(code, one.id);
+      }
       for (const door of [DOOR_PAST, DOOR_PAST_TOO, DOOR_NEXT]) {
         await enrollment.assign(door, who(BOTH));
       }
+      for (const code of [PAST_ONLY, LEAVER]) {
+        await enrollment.assign(DOOR_PAST, who(code));
+        await enrollment.takeReport(DOOR_PAST, report(DOOR_PAST, who(code), 0x31, PAST_AT, 0, PAST_MODEL));
+        await enrollment.assign(DOOR_NEXT, who(code));
+      }
+      await enrollment.assign(DOOR_NEXT, who(NEVER));
     });
 
     it("keeps both sets when doors on two models capture one person while offline", async () => {
@@ -702,6 +720,38 @@ describe("roster sync across doors (e2e)", () => {
       }
       assert.deepEqual(models, [`UPSERT:${PAST_MODEL}`], "the door was asked to capture again, or sent the next model's face");
       assert.equal(await pairOf(DOOR_PAST_TOO, BOTH), "ENROLLED");
+    });
+
+    it("reminds a person whose kiosk runs a newer model than every face they hold, and only them", async () => {
+      await sweepThem();
+      assert.deepEqual(await reminder(PAST_ONLY), { state: "OPEN", outcome: null, facts: { model: NEXT_MODEL } });
+      assert.equal(await reminder(BOTH), null, "a person holding the next model's face was reminded");
+      assert.equal(await reminder(NEVER), null, "a first capture, the desk's work, was given to the person");
+      assert.deepEqual(
+        (await enrollment.recaptureAt(who(PAST_ONLY))).map((one) => one.id),
+        [DOOR_NEXT],
+        "the /me card does not name the kiosk to capture at",
+      );
+    });
+
+    it("keeps reminding once the night erased the set of the last capture", async () => {
+      await db.faceTemplate.deleteMany({ where: { employeeId: who(LEAVER) } });
+      await sweepThem();
+      assert.equal((await reminder(LEAVER))?.state, "OPEN", "the reminder went with the erased set");
+    });
+
+    it("closes the reminder as done once the person captures on the newer model", async () => {
+      await enrollment.takeReport(DOOR_NEXT, report(DOOR_NEXT, who(PAST_ONLY), 0x44, NEXT_AT + 5_000, 0, NEXT_MODEL));
+      await sweepThem();
+      assert.deepEqual(await reminder(PAST_ONLY), { state: "DONE", outcome: "COMPLETED", facts: { model: NEXT_MODEL } });
+      assert.deepEqual(await enrollment.recaptureAt(who(PAST_ONLY)), []);
+    });
+
+    it("clears the reminder of a person taken off the newer kiosk", async () => {
+      const res = await request(http).delete(`/enrollments/${DOOR_NEXT}/${who(LEAVER)}`).set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      await sweepThem();
+      assert.deepEqual(await reminder(LEAVER), { state: "CLEARED", outcome: null, facts: { model: NEXT_MODEL } });
     });
   });
 });

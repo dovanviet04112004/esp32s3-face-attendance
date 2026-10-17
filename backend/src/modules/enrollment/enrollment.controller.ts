@@ -39,6 +39,13 @@ export class EnrollmentController {
     return this.enrollment.assignable();
   }
 
+  @Get("me")
+  @ApiOperation({ summary: "The kiosks where I must capture my face again, for a newer recognition model" })
+  @ApiOkResponse({ type: [AssignableDeviceView], description: "Empty when none needs it, or for an account with no employee record" })
+  mine(@CurrentViewer() viewer: Viewer): Promise<AssignableDevice[]> {
+    return viewer.employeeId === null ? Promise.resolve([]) : this.enrollment.recaptureAt(viewer.employeeId);
+  }
+
   @Get("employees/:employeeId")
   @Roles("ADMIN", "HR")
   @Reach("person")

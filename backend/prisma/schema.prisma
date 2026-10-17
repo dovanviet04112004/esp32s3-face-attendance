@@ -1475,6 +1475,7 @@ enum NoticeKind {
   PUNCH_RECORDED
   RELEASE_AVAILABLE
   UPDATE_FINISHED
+  FACE_RECAPTURE
 }
 
 enum NoticeChannel {
@@ -1501,6 +1502,7 @@ enum NoticeQueue {
   ATTENDANCE
   TEAM_ATTENDANCE
   RELEASES
+  RECAPTURE
 }
 
 enum NoticeSubject {
@@ -1521,6 +1523,7 @@ enum NoticeSubject {
   LOGIN
   PAYROLL_PERIOD
   RELEASE
+  EMPLOYEE
 }
 
 enum NoticeOutcome {

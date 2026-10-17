@@ -161,7 +161,7 @@ export class AudienceService {
     if (queue === "TASKS") {
       return this.taskAudience(subjectId);
     }
-    if (queue === "DOCUMENTS" || queue === "ATTENDANCE") {
+    if (queue === "DOCUMENTS" || queue === "ATTENDANCE" || queue === "RECAPTURE") {
       return this.ownLogins(employeeId);
     }
     if (queue === "TEAM_ATTENDANCE") {

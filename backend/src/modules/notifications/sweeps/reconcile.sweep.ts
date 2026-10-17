@@ -13,6 +13,7 @@ import { AttendanceSweep } from "./attendance.sweep.js";
 import { ContractsSweep } from "./contracts.sweep.js";
 import { DocumentsSweep } from "./documents.sweep.js";
 import { KioskSweep } from "./kiosk.sweep.js";
+import { RecaptureSweep } from "./recapture.sweep.js";
 import { ReleaseSweep } from "./release.sweep.js";
 import { ProbationSweep } from "./probation.sweep.js";
 import { TasksSweep } from "./tasks.sweep.js";
@@ -95,6 +96,7 @@ export class ReconcileSweep implements OnModuleInit {
     private readonly probation: ProbationSweep,
     private readonly kiosk: KioskSweep,
     private readonly releases: ReleaseSweep,
+    private readonly recapture: RecaptureSweep,
     private readonly tasks: TasksSweep,
     private readonly documents: DocumentsSweep,
     private readonly attendance: AttendanceSweep,
@@ -137,6 +139,8 @@ export class ReconcileSweep implements OnModuleInit {
     tally.KIOSK.closed = await this.kiosk.closeVanished();
     tally.RELEASES.closed = await this.releases.closeVanished();
     tally.RELEASES.opened = await this.releases.openMissing();
+    tally.RECAPTURE.closed = await this.recapture.closeVanished();
+    tally.RECAPTURE.opened = await this.recapture.openMissing();
     tally.TASKS.closed = await this.tasks.closeVanished();
     tally.TASKS.opened = await this.tasks.openMissing();
     tally.DOCUMENTS.closed = await this.documents.closeVanished();
