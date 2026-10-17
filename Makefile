@@ -194,7 +194,7 @@ trainctl: ## Start, pause, resume or check a branch's training (ARGS="check dete
 
 quantize: ## Q0 and Q1 rungs, TFLite and ESP-DL, of RUN="<run directory> ..."
 	$(call need,RUN,make quantize RUN=artifacts/<branch>/runs/<run>)
-	cd ml && ./scripts/30_quantize.sh $(RUN)
+	cd ml && $(ml_capped) ./scripts/30_quantize.sh $(RUN)
 
 export: ## Deploy one exported model and lock it (BRANCH MODEL RUN_ID ARENA_BYTES)
 	$(call need,BRANCH,detection | antispoof | recognition)
