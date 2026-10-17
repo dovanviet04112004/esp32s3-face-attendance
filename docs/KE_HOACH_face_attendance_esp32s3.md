@@ -5088,6 +5088,14 @@ hiện đúng những tình huống hợp đồng liệt kê, và cả bốn đ�
 `attend_task` thấy `SPOOF`/`UNKNOWN`, và đường ghi log hỏng (`STORAGE_FAULT`). Nên chúng bỏ một
 bản ghi 72 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
 
+**`BOOTED` nói vì sao máy vừa khởi động.** `message` mang số lần khởi động cùng lý do
+`esp_reset_reason()` của lần ấy — sụt nguồn, watchdog, crash, `esp_restart`, USB — và dòng log lúc lên
+nói cùng câu. Thiếu nó thì một lần sụt áp, một lần crash và một lần nạp lại trông y hệt nhau trên
+server, vì coredump đang tắt và console không phải lúc nào cũng có người mở: chiều 17/10 kiosk bàn
+tự khởi động lại hai lần mà không ai biết vì đâu. `ts` của nó là lúc `sync_task` phát, sau khi nối
+broker, nên nó đến **sau** lượt chấm mà máy vừa lên đã kịp ghi cho người còn đứng trước kính; đọc
+giờ của hai thứ ấy là đọc ngược thứ tự.
+
 **Và phải có van, vì lỗi phần cứng thì lặp.** Một camera hỏng sinh sự kiện mỗi 2 giây, tức
 1.800 gói mỗi giờ cho đúng một sự thật. Mỗi loại sự kiện vì thế có **khoảng cách tối thiểu
 riêng**: 60 s cho nhóm hỏng hóc — đủ để server thấy nó dai dẳng mà không bị ngập — và 2 s cho
