@@ -71,6 +71,20 @@ def test_the_eca_port_carries_frbench_parameter_names() -> None:
     assert sum(p.numel() for p in MobileFaceNetECA().parameters()) == 1_200_577
 
 
+def test_the_tflite_form_of_eca_computes_what_the_espdl_form_does() -> None:
+    """onnx2tf needs ECA over [N,1,C,1]; the weights and the sum stay those of the Conv1d."""
+    torch.manual_seed(0)
+    model = MobileFaceNetECA().eval()
+    x = torch.randn(2, 3, 112, 112)
+    with torch.no_grad():
+        espdl = model(x)
+        for module in model.modules():
+            if hasattr(module, "tflite_layout"):
+                module.tflite_layout = True
+        tflite = model(x)
+    assert torch.allclose(espdl, tflite, atol=1e-5, rtol=0)
+
+
 def test_the_eca_port_refuses_an_input_its_kernel_cannot_close() -> None:
     with pytest.raises(ValueError):
         MobileFaceNetECA(input_size=113)

@@ -176,17 +176,22 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     return cfg, model
 
 
-def export_spec(run: Path, model: torch.nn.Module | None = None):
+def export_spec(run: Path, model: torch.nn.Module | None = None, runtime: str = "espdl"):
     """The module to trace, one example input, and the names of both ends.
 
-    model overrides the run's own weights, which is how the quantisation
-    passes export the graph they just rewrote.
+    model overrides the run's own weights, which is how the quantisation passes export
+    the graph they just rewrote; runtime "tflite" traces ECA in its NHWC-safe form.
     """
     from facepipe.core.config import load_run_config
+
+    from .model.mobilefacenet_eca import ECAModule
 
     cfg = load_run_config(run)
     traced = model if model is not None else load_run(run)[1]
     traced.eval()
+    for module in traced.modules():
+        if isinstance(module, ECAModule):
+            module.tflite_layout = runtime == "tflite"
     height, width = cfg.model.input_hw
     return cfg, traced, (torch.zeros(1, 3, height, width),), ["face"], ["embedding"]
 

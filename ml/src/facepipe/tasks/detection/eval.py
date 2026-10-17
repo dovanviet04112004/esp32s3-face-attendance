@@ -535,12 +535,13 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     return cfg, load_model(run / "ckpt" / "best.pth", cfg.model.params)
 
 
-def export_spec(run: Path, model: torch.nn.Module | None = None):
+def export_spec(run: Path, model: torch.nn.Module | None = None, runtime: str = "espdl"):
     """The module to trace, one example input, and the names of both ends.
 
-    model overrides the run's own weights, which is how the quantisation
-    passes export the graph they just rewrote.
+    model overrides the run's own weights, which is how the quantisation passes export
+    the graph they just rewrote; this branch traces one graph whatever the runtime.
     """
+    del runtime
     from facepipe.core.config import load_run_config
 
     from .model.yunet import STRIDES

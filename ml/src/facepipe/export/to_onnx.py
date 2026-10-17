@@ -52,10 +52,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True, help="a run directory under artifacts")
     parser.add_argument("--out", type=Path, required=True, help="where the .onnx file goes")
+    parser.add_argument(
+        "--runtime",
+        choices=("tflite", "espdl"),
+        default="tflite",
+        help="the runtime the graph is traced for; this graph feeds onnx2tf by default",
+    )
     args = parser.parse_args(argv)
 
     _cfg, model, example, input_names, output_names = module_of(args.run, "eval").export_spec(
-        args.run
+        args.run, runtime=args.runtime
     )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

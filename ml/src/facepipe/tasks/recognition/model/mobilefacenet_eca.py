@@ -20,20 +20,34 @@ FINAL_MAP = 7
 
 
 class ECAModule(nn.Module):
-    """Channel weights from a 1-D convolution across the pooled channels."""
+    """Channel weights from a 1-D convolution across the pooled channels.
+
+    tflite_layout traces the same convolution over [N,1,C,1], the form onnx2tf moves to NHWC
+    intact; the ESP-DL graph keeps squeeze and transpose, which its modules match (KEHOACH 3).
+    """
 
     def __init__(self, channels: int, gamma: int = 2, b: int = 1) -> None:
         super().__init__()
         t = int(abs((math.log2(channels) + b) / gamma))
         k = max(t if t % 2 else t + 1, 3)
+        self.channels = channels
+        self.tflite_layout = False
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv = nn.Conv1d(1, 1, kernel_size=k, padding=k // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.tflite_layout:
+            return x * self.sigmoid(self.across_channels_2d(self.avg_pool(x)))
         y = self.avg_pool(x).squeeze(-1).transpose(-1, -2)
         y = self.conv(y).transpose(-1, -2).unsqueeze(-1)
         return x * self.sigmoid(y)
+
+    def across_channels_2d(self, pooled: torch.Tensor) -> torch.Tensor:
+        kernel = self.conv.weight.unsqueeze(-1)
+        column = pooled.reshape(-1, 1, self.channels, 1)
+        y = nn.functional.conv2d(column, kernel, padding=(self.conv.padding[0], 0))
+        return y.reshape(-1, self.channels, 1, 1)
 
 
 class ConvBlock(nn.Module):

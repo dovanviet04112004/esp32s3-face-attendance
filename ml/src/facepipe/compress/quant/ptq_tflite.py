@@ -56,7 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     args.work.mkdir(parents=True, exist_ok=True)
     onnx_path = args.work / "prepared.onnx"
     evaluator = tasks.module_of(args.run, "eval")
-    _, traced, example, input_names, output_names = evaluator.export_spec(args.run, model)
+    _, traced, example, input_names, output_names = evaluator.export_spec(
+        args.run, model, runtime="tflite"
+    )
     torch.onnx.export(
         traced,
         example,
