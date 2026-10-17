@@ -1551,7 +1551,7 @@ hành về giữa cửa sổ của **bộ căn**. Vì thế bộ căn quyết đ
 kiosk sẽ chấm (qua `square_fits` và `face_min_px`) và phía giả phải có đòn khó nhất định chống. Bộ
 87 khung hiện có chỉ có màn hình kề ống kính ở phía giả, nên hằng số nó sinh ra đẩy tờ tiền lên trên
 0,5 (`measurements.md` §43.7); student cần căn (cửa sổ 19‰ trước, 320‰ sau), V1SE **không** căn (hằng
-số 0) vì 500‰ đã nằm giữa tiền và mặt thật ở thang gốc. `live_min` gieo **500‰** cho mọi đời model.
+số 0) vì 500‰ đã nằm giữa tiền và mặt thật ở thang gốc. `live_min` là **500‰** cho mọi đời model.
 
 #### Trọng số nhập từ Silent-Face-Anti-Spoofing, đọc crop ngữ cảnh 2,7×
 
@@ -3234,7 +3234,7 @@ firmware/
 │   ├── README.md                     # ✅ lệnh kéo model từ ml/artifacts về
 │   ├── detection/
 │   │   ├── yunet_s8.espdl            # artifact của ml/, KHÔNG commit — đúng runtime của lock
-│   │   └── meta.json                 # ✅ in_h, in_w, arena_hint, sha256, run_id
+│   │   └── meta.json                 # ✅ in_h, in_w, arena_hint, threshold_permille, sha256, run_id
 │   ├── antispoof/{minifasnet_s8.espdl, meta.json}
 │   └── recognition/{mobilefacenet_s8.espdl, meta.json}
 │
@@ -3532,9 +3532,9 @@ hộp mặt với khung. Tỉ lệ một nửa là ngưỡng nghiệp vụ: NVS 
 
 **Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OFF_GUIDE`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Mỗi kết quả mang **số hiệu track** của khuôn mặt nó nói về, đúng con số bộ quan sát nhận trong cùng bước: phán quyết đi đường chậm qua `svc_attendance`, và tới màn khi người khác có thể đã bước vào (§4.5.5h.1). Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
-Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) là ngưỡng nghiệp vụ theo §4.9: `main` đọc từ NVS namespace `vision` (§6.2.1) và truyền vào `svc_vision_init()`; lần boot đầu chưa có key thì `main` gieo từ `Kconfig` của `svc_vision`. `live_min` gieo **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` gieo **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
+Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) đi vào `svc_vision_init()` từ `main`, theo hai loại của §4.9. Ba ngưỡng đầu là của model: `main` đọc chúng từ header ngăn model đang chạy (§6.2.2), nên chúng đổi cùng model và lùi cùng ngăn. `face_min_px` là ngưỡng vận hành: `main` đọc từ NVS namespace `vision` (§6.2.1), gieo từ `Kconfig` của `svc_vision` ở lần boot đầu, `SET_CONFIG` đổi được. `live_min` là **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` là **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
 
-`match_min` gieo **450‰**, đo 24/09 bằng đúng file recog `.espdl` trên `models.lock.json` (mô phỏng ESP-PPQ) trên 18.998 cặp khác người có mặt thật của sáu benchmark độc lập (`docs/measurements/recognition` §8): người lạ dồn quanh 0,02 với độ lệch chuẩn 0,07–0,08, cặp khác người cao nhất là hai người thật trông giống nhau ở CALFW, **0,387**. 450‰ đứng trên cặp ấy 0,063, không cặp khác người nào lọt, và giữ 92–94% cặp cùng người ở hai tập chính diện. Ngưỡng nghiêng về phía loại oan vì hai kiểu sai không cùng giá: loại oan tốn thêm một nhịp (`kUnknownTries`), nhận nhầm mở cửa và ghi công cho người khác. Seed đi theo model recog: đổi model thì đo lại ngưỡng, vì 600‰ của `1750` loại oan một phần ba người thật trên LFW với model này. 0 trên 18.998 chỉ chặn tỉ lệ nhận nhầm mỗi phép so dưới ~1,6·10⁻⁴, và kiosk so 1:N; tỉ lệ nhận trên OV5640 là E8-T12 🔬.
+`match_min` là **450‰**, đo 24/09 bằng đúng file recog `.espdl` trên `models.lock.json` (mô phỏng ESP-PPQ) trên 18.998 cặp khác người có mặt thật của sáu benchmark độc lập (`docs/measurements/recognition` §8): người lạ dồn quanh 0,02 với độ lệch chuẩn 0,07–0,08, cặp khác người cao nhất là hai người thật trông giống nhau ở CALFW, **0,387**. 450‰ đứng trên cặp ấy 0,063, không cặp khác người nào lọt, và giữ 92–94% cặp cùng người ở hai tập chính diện. Ngưỡng nghiêng về phía loại oan vì hai kiểu sai không cùng giá: loại oan tốn thêm một nhịp (`kUnknownTries`), nhận nhầm mở cửa và ghi công cho người khác. Ngưỡng đi theo model recog, nằm trong chính ảnh của nó: đổi model thì đo lại ngưỡng, vì 600‰ của `1750` loại oan một phần ba người thật trên LFW với model này. 0 trên 18.998 chỉ chặn tỉ lệ nhận nhầm mỗi phép so dưới ~1,6·10⁻⁴, và kiosk so 1:N; tỉ lệ nhận trên OV5640 là E8-T12 🔬.
 
 Header công khai `svc_vision.h` chỉ có C: `svc_vision_init(thresholds)`, `svc_vision_step(const camera_fb_t*, svc_vision_result_t*)`, `svc_vision_reset()`. Khung do `ai_task` (C) giữ suốt `step()` rồi trả bằng `drv_camera_release()`; `svc_vision` không sở hữu khung và không chép khung.
 
@@ -4885,6 +4885,19 @@ của §7.5 cần chỗ đứng trước khi có template: máy hiện danh sác
 quay về `up/event` kèm đúng `cmdId`. Không lưu lệnh thì kết quả là một dòng mồ côi, và câu hỏi
 "ai bấm mở cửa lúc chín giờ, lệnh có chạy không" không có nơi nào trả lời.
 
+Chỉ `ADMIN` gửi lệnh, qua `POST /devices/:id/commands` với đúng các trường của
+`device_cmd.schema.json` trừ ba trường server tự điền: `cmdId`, `ts` và `expiresAt` = lúc gửi cộng
+`DEVICE_COMMAND_TTL_SECONDS`. Server ghi dòng `QUEUED` trước, publish QoS 1 không retained theo ba luật
+của `down/cmd` (§4.8), broker nhận thì dòng thành `SENT`. Máy chưa duyệt hay đã thu hồi bị từ chối bằng
+`DEVICE_NOT_APPROVED`; máy offline bằng `DEVICE_OFFLINE`, vì phiên sạch của kiosk không giữ tin chờ nó.
+`COMMAND_DONE` hay `COMMAND_REJECTED` trên `up/event` nối về dòng qua `cmdId`, đổi `state` và ghi
+`resultNote` bằng `message` của kiosk; dòng đã đóng không đổi nữa, nên một kết quả giao lại không viết
+đè. Dòng `SENT` quá `expiresAt` mà chưa có kết quả đọc là `EXPIRED` lúc đọc, không cần lượt quét. Mỗi
+lệnh một dòng audit mang người bấm. Trang một máy có khối *Lệnh*: mở cửa, đồng bộ giờ, chẩn đoán, đổi
+vé, khởi động lại (hỏi xác nhận vì máy gián đoạn), và *Đổi cấu hình* mở một form `SET_CONFIG` mà ô để
+trống là giữ nguyên; dưới đó là các lệnh gần đây với trạng thái, tự cập nhật qua feed `event`.
+`SET_ACTIVE_SLOT` chỉ đi qua API: lùi ngăn model là việc chẩn đoán, không phải nút cho ngày thường.
+
 **`DeviceEvent` tách khỏi `AuditLog` vì hai bảng trả lời hai câu khác nhau.** `AuditLog` ghi việc
 **người** làm nên luôn có `actorId`; `up/event` là việc **máy** gặp — `CAMERA_FAULT`,
 `STORAGE_FAULT` — và không có actor nào. Trộn chung là đẻ ra một cột `actorId` rỗng ở phân nửa
@@ -4987,13 +5000,30 @@ nhưng **chỉ xả log mỗi 5 s** hoặc khi `q_uplink` nhắc: `svc_sync_drai
 LittleFS mỗi lần gọi, nên gọi 4 lần mỗi giây là đọc flash 4 lần/giây để hỏi một câu hầu như
 luôn có cùng câu trả lời.
 
-**Lệnh nào chạy được bây giờ là lệnh có sẵn API đã kiểm.** `OPEN_DOOR` (`svc_door_open`),
+**Lệnh nào chạy được là lệnh có sẵn API đã kiểm.** `OPEN_DOOR` (`svc_door_open`),
 `REBOOT` (`esp_restart`), `SYNC_TIME` (`sys_time_sync_start`) và `DIAGNOSTICS` — cái cuối phát
 ngay một `heartbeat` thay vì đẻ định dạng mới, vì heartbeat **đã là** ảnh chụp sức khoẻ của máy.
 `ROTATE_TOKEN` giương bit `RENEW_TICKET` để `ota_task` đổi vé ngay, không chờ tới mốc 7 ngày
-(§7.3 bước 5). Bốn lệnh còn lại trả `COMMAND_REJECTED` kèm tên việc sẽ mở chúng: `SET_CONFIG` và
-`RELOAD_FACEDB` (chưa có API nạp lại), `CLEAR_LOGS`, `SET_ACTIVE_SLOT` (E13-T2). Từ chối có lý do đọc được hơn hẳn im lặng: server biết lệnh **tới nơi** và biết vì sao
-không chạy.
+(§7.3 bước 5). Hai lệnh còn lại trả `COMMAND_REJECTED` kèm tên việc sẽ mở chúng: `RELOAD_FACEDB`
+(chưa có API nạp lại) và `CLEAR_LOGS`. Từ chối có lý do đọc được hơn hẳn im lặng: server biết lệnh
+**tới nơi** và biết vì sao không chạy.
+
+**`SET_CONFIG` đổi ngưỡng vận hành, không đổi ngưỡng của model.** Lệnh mang những trường của §4.9 loại
+vận hành — độ sáng và âm lượng theo phần trăm, ngôn ngữ, phút chống trùng, cỡ mặt tối thiểu, khoảng
+cách "có người" — mỗi trường tuỳ chọn, vắng là giữ nguyên. Ba ngưỡng của model không có chỗ trong hợp
+đồng: chúng đi trong ảnh model (§6.2.2), và một ô trên dashboard hạ được `match_min` là một ô mở cửa
+cho người lạ. Kiosk kiểm mọi trường với dải của `Kconfig` gieo chúng trước khi ghi trường nào, nên một
+trường sai là cả lệnh bị từ chối và máy giữ nguyên cấu hình cũ. Qua kiểm thì ghi NVS (§6.2.1) rồi áp
+ngay, không chờ khởi động lại: đèn nền và loa qua chính đường của màn Cài đặt, ngôn ngữ qua
+`ui_kiosk_set_language`, chống trùng qua `svc_attendance_set_policy`, cỡ mặt qua `svc_vision`, khoảng
+cách qua cổng của `tof_task`. `COMMAND_DONE` mang giá trị máy đang dùng sau lệnh, nên server đọc lại
+được thứ kiosk thật sự áp chứ không đoán từ thứ nó đã gửi. Ghi `SET_CONFIG` không chạm `sys.seed_ver`:
+lần nâng `APP_SEED_VER` sau vẫn đè các khoá này một lần như §6.2.1 đã nói.
+
+**`SET_ACTIVE_SLOT` là lùi ngăn model bằng tay, đi qua đúng chốt của OTA model.** Kiosk đặt
+`model/active_slot`, ghi `sys/last_ota_result` = 1 như lúc vừa cài một ảnh mới, báo `COMMAND_DONE`
+rồi khởi động lại; ngăn ấy không nạp được thì đường lùi tự động của §6.2.2 đưa máy về ngăn cũ. Ngăn
+đang chạy, hay ngăn không chứa ảnh hợp lệ, bị từ chối trước khi đụng NVS.
 
 **`device_event` phải mọc thêm chỗ để mang kết quả.** `mqtt_topics.yaml` mô tả `up/event` là
 "spoof attempts, hardware faults, manual door opens, **command results**" — nhưng schema không
@@ -5172,6 +5202,8 @@ frontend/
 │   ├── search/global-search.tsx      # ★ §9.20 — một ô ra người, phòng ban, đơn, phiếu
 │   ├── devices/release-notes.tsx     # ★ §7.7 — câu tóm tắt và ghi chú của một bản phát hành,
 │   │                                 #   dùng chung cho trang Thiết bị và trang một máy
+│   ├── devices/kiosk-commands.tsx    # ★ §4.6 — khối Lệnh của trang một máy: nút lệnh, form
+│   │                                 #   đổi cấu hình, lệnh gần đây với trạng thái
 │   ├── notifications/{bell.tsx, notice-list.tsx, notice-row.tsx, notice-prefs.tsx,
 │   │                  push-switch.tsx, push-devices.tsx, kinds.ts}
 │   │                                 # ★ §9.21.4 — kinds.ts là bảng tra mỗi loại: biểu tượng, câu,
@@ -5619,13 +5651,14 @@ nhớ tới. Bảng dưới là nơi duy nhất được phép khai từng loạ
 | URL và credential trên kiosk | NVS `device/*` (§6.2.1), giá trị lùi khai ở `Kconfig` của component | đọc qua `sys_storage`, **không gõ vào `.c`** |
 | Token bootstrap của lô firmware | `firmware/sdkconfig.secrets` — **gitignore**, người build tự đặt, giá trị trùng `DEVICE_BOOTSTRAP_TOKEN` của `api` (§7.3) | Makefile nối file vào `SDKCONFIG_DEFAULTS`, ra `CONFIG_NET_PROVISION_BOOTSTRAP_TOKEN`; `make fw-prod` **dừng** khi file vắng |
 | Số hiệu firmware | `PROJECT_VER` trong `firmware/CMakeLists.txt` | `esp_app_get_description()->version`, **không gõ lại ở đâu** |
-| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất, tuổi tối đa của một lượt chấm công được tự tính (`PUNCH_REVIEW_AFTER_DAYS`, 7 ngày, §9.8) | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
+| Hạn vận hành: hạn liên kết đặt mật khẩu, hạn trả lời khiếu nại, tuổi tối đa của bản sao lưu mới nhất, tuổi tối đa của một lượt chấm công được tự tính (`PUNCH_REVIEW_AFTER_DAYS`, 7 ngày, §9.8), hạn của một lệnh gửi kiosk (`DEVICE_COMMAND_TTL_SECONDS`, 120 s, §4.6) | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — đây là thoả thuận nội bộ, đổi theo công ty chứ không theo luật, nên **không** nằm ở `PayrollPolicy` |
 | Nhịp và ngưỡng của thông báo: giữ tin bao lâu, gom đẩy cho bàn bao lâu, giữ chỗ *tôi nhận việc này* bao lâu, kiosk mất kết nối bao lâu thì báo, bao nhiêu lượt giả mạo hay mặt lạ trong bao lâu thì thành một loạt, lượt đối soát chạy lúc nào | biến môi trường `NOTICE_KEEP_DAYS` (180 ngày), `NOTICE_PUSH_GATHER_SECONDS` (120), `NOTICE_CLAIM_HOURS` (24), `KIOSK_OFFLINE_ALERT_MINUTES` (60), `KIOSK_SPOOF_BURST` (5), `KIOSK_UNKNOWN_BURST` (20), `KIOSK_BURST_WINDOW_MINUTES` (10), `NOTICE_RECONCILE_CRON` (`0 * * * *`; rỗng là tắt, và rỗng là mặc định khi `NODE_ENV=test`, vì bộ e2e tự gọi lượt đối soát), khai ở `.env.example` | `config/env.schema.ts` — thoả thuận vận hành của từng công ty, cùng loại với hạn trả lời khiếu nại (§9.21.4) |
 | Mốc nhắc, giờ gửi gom và khoảng yên của từng loại thông báo | `backend/src/modules/notifications/notice-kinds.ts` | import — cùng bảng tra nói ai nhận và khi nào việc đóng (§9.21.4), nên phía vẽ không giữ bản thứ hai của mốc nào |
 | Phiên bản văn bản đồng ý sinh trắc đang phát | biến môi trường, khai ở `.env.example` | `config/env.schema.ts` — **máy chủ điền, client không gửi**: giá trị ghi vào `BiometricConsent` phải là bản mà chính máy chủ đang phát, nên để client gửi kèm là mở đường ghi một phiên bản không tồn tại |
 | Tên khoá cache, TTL | `backend/src/common/cache/cache-keys.ts` | import |
 | Tên hàng đợi, kiểu job | `backend/src/queue/queues.ts` | import |
-| Ngưỡng nghiệp vụ (**tin cậy phát hiện mặt**, khớp mặt, liveness, chống trùng) | NVS trên kiosk, `SET_CONFIG` từ server | đọc cấu hình lúc chạy |
+| Ngưỡng của model: tin cậy phát hiện mặt, liveness, khớp mặt | `threshold_permille` trong khối của từng nhánh ở `ml/configs/common/quant.yaml`; số đo đứng sau nó ở `docs/measurements/<nhánh>/` | `quant-deploy` chép vào `meta.json` và `contracts/models.lock.json`, `pack` ghi vào header ảnh model (§6.2.2), kiosk đọc từ ngăn model đang chạy — không gõ lại ở đâu |
+| Ngưỡng vận hành: chống trùng, cỡ mặt tối thiểu, khoảng cách "có người", độ sáng, âm lượng, ngôn ngữ | NVS trên kiosk (§6.2.1), `SET_CONFIG` từ trang một máy (§7.3) | đọc cấu hình lúc chạy |
 | Giảm trừ gia cảnh, tỷ lệ BHXH/BHYT/BHTN, trần đóng | bảng `PayrollPolicy`, có `effectiveFrom` (§9.7) | đọc chính sách **hiệu lực tại ngày cuối kỳ**, không đọc "hiện tại" |
 | Biểu thuế luỹ tiến từng phần | bảng `TaxBracket`, có `effectiveFrom` (§9.7) | như trên |
 | Lương cơ bản, lương đóng bảo hiểm, phụ cấp | `CompensationRecord`, có `effectiveFrom` (§9.6) | **thêm dòng mới**, không sửa đè dòng cũ |
