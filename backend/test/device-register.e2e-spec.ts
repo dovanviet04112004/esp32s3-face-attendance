@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { AuthService } from "../src/modules/auth/auth.service.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
 import { seedEntityId } from "./fixtures.js";
 
@@ -74,6 +75,10 @@ describe("device registration (e2e)", () => {
 
   async function held(id: string): Promise<{ status: string; tokenHash: string | null } | null> {
     return db.device.findUnique({ where: { id }, select: { status: true, tokenHash: true } });
+  }
+
+  async function dated(id: string): Promise<{ tokenIssuedAt: Date | null; tokenExpiresAt: Date | null } | null> {
+    return db.device.findUnique({ where: { id }, select: { tokenIssuedAt: true, tokenExpiresAt: true } });
   }
 
   // The machines whose broker session the run asked to close, in order.
@@ -184,6 +189,7 @@ describe("device registration (e2e)", () => {
     const row = await held(DEVICE);
     assert.equal(row?.status, "APPROVED");
     assert.ok(row?.tokenHash, "nothing recorded which token this machine holds");
+    assert.deepEqual(await dated(DEVICE), app.get(AuthService).ticketTimes(answer.token), "the row does not date the ticket it handed");
   });
 
   it("sends a machine that asks again while holding a token back for approval", async () => {
@@ -196,6 +202,7 @@ describe("device registration (e2e)", () => {
       { status: "PENDING", tokenHash: null },
       "the machine kept its standing although its storage is gone",
     );
+    assert.deepEqual(await dated(DEVICE), { tokenIssuedAt: null, tokenExpiresAt: null }, "the row dates a ticket it no longer holds");
     assert.deepEqual(closed, [DEVICE], "the session of the lost ticket stayed open");
   });
 

@@ -173,6 +173,13 @@ describe("broker login and device tickets (e2e)", () => {
     ticket = second;
   });
 
+  it("dates every ticket it hands, so the kiosk page can show a renewal", async () => {
+    const fresh = await renewed(ticket);
+    const dated = await db.device.findUnique({ where: { id: KIOSK }, select: { tokenIssuedAt: true, tokenExpiresAt: true } });
+    assert.deepEqual(dated, auth.ticketTimes(fresh), "the row does not date the ticket it hashes");
+    ticket = fresh;
+  });
+
   it("will not renew a ticket that has run out, nor one it never issued", async () => {
     const stale = app.get(JwtService).sign(
       { deviceId: KIOSK, exp: Math.floor(Date.now() / 1000) - 60 },

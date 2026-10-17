@@ -371,6 +371,9 @@ model Device {
   tokenHash     String?
   // The ticket before a renewal, good until the new one is first used (KEHOACH 7.3).
   prevTokenHash String?
+  // Written and cleared with tokenHash, so they always describe the ticket it hashes (KEHOACH 7.3).
+  tokenIssuedAt  DateTime?
+  tokenExpiresAt DateTime?
   // sha256(deviceId:code) of the code a pending kiosk shows (KEHOACH 7.3).
   claimHash     String?
   claimFailures Int                @default(0)
@@ -392,6 +395,15 @@ model Device {
   fwOnTrial     Boolean?
   // Heartbeat ts less receipt time, live beats only; a double because int4 ms overruns at 24 days.
   clockSkewMs   Float?
+  // The last live heartbeat's health, overwritten whole: a field it lacked reads null (KEHOACH 4.8).
+  rssiDbm            Int?
+  heapFreeBytes      Int?
+  heapMinFreeBytes   Int?
+  psramFreeBytes     Int?
+  pendingUplinkCount Int?
+  activeSlot         Int?
+  bootCount          Int?
+  healthAt           DateTime?
   // The newest update offer only: its status is read against the heartbeat (KEHOACH 7.7).
   otaReleaseId  String?            @db.Uuid
   otaOfferedAt  DateTime?

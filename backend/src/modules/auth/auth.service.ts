@@ -466,6 +466,14 @@ export class AuthService {
     });
   }
 
+  /** The issue and expiry of a kiosk ticket, read off its own claims (KEHOACH 7.3).
+   *  @ctx any | non-blocking
+   */
+  ticketTimes(token: string): { tokenIssuedAt: Date; tokenExpiresAt: Date } {
+    const { iat, exp } = this.jwt.decode<{ iat: number; exp: number }>(token);
+    return { tokenIssuedAt: new Date(iat * 1000), tokenExpiresAt: new Date(exp * 1000) };
+  }
+
   /** Whether a kiosk ticket still stands: live, this device's, approved, and
    *  either the ticket on the row or, mid-renewal, the one it replaced. The first
    *  use of the new ticket retires the old one (KEHOACH 7.3, 7.4).

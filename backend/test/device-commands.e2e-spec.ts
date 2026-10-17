@@ -9,6 +9,7 @@ import request from "supertest";
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
 import type { DeviceCommand } from "../src/common/generated/device_cmd.js";
+import type { Heartbeat } from "../src/common/generated/heartbeat.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { KIOSK_EVENT } from "../src/modules/mqtt/mqtt.events.js";
@@ -41,6 +42,22 @@ describe("commands to one kiosk (e2e)", () => {
       receivedAt: at,
       payload: { deviceId, ts: at.getTime(), type, severity: "INFO", cmdId, message },
     });
+  }
+
+  async function beat(extra: Partial<Heartbeat>, retained: boolean, receivedAt = new Date()): Promise<void> {
+    await app.get(EventEmitter2).emitAsync(KIOSK_EVENT.heartbeat, {
+      topic: "heartbeat",
+      deviceId: DOOR,
+      receivedAt,
+      retained,
+      payload: { deviceId: DOOR, ts: receivedAt.getTime(), uptimeSeconds: 600, fwVersion: "0.0.0-e2e", modelVersion: "e2e", ...extra },
+    });
+  }
+
+  async function shown(): Promise<Record<string, unknown>> {
+    const res = await request(http).get(`/devices/${DOOR}`).set("Authorization", `Bearer ${admin}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body as Record<string, unknown>;
   }
 
   async function stateOf(cmdId: string): Promise<{ state: string; resultNote: string | null }> {
@@ -158,5 +175,29 @@ describe("commands to one kiosk (e2e)", () => {
     }
     const row = await db.deviceCommand.findFirstOrThrow({ where: { deviceId: DOOR }, orderBy: { createdAt: "desc" } });
     assert.equal(row.state, "REJECTED");
+  });
+
+  it("shows the health of the last live heartbeat, the answer a diagnostics press waits for", async () => {
+    const heard = new Date();
+    await beat(
+      { rssiDbm: -61, heapFreeBytes: 41_216, heapMinFreeBytes: 24_576, psramFreeBytes: 3_407_872, pendingUplinkCount: 2, activeSlot: 1, bootCount: 129 },
+      false,
+      heard,
+    );
+    await beat({ rssiDbm: -90, activeSlot: 0, bootCount: 3 }, true);
+    const live = await shown();
+    assert.deepEqual(
+      [live.rssiDbm, live.heapFreeBytes, live.heapMinFreeBytes, live.psramFreeBytes, live.pendingUplinkCount, live.activeSlot, live.bootCount],
+      [-61, 41_216, 24_576, 3_407_872, 2, 1, 129],
+      "the broker's retained copy overwrote what the kiosk said live",
+    );
+    assert.equal(live.healthAt, heard.toISOString());
+    assert.equal(live.bootedAt, new Date(heard.getTime() - 600_000).toISOString());
+
+    await beat({ activeSlot: 0 }, false);
+    const next = await shown();
+    assert.equal(next.activeSlot, 0);
+    assert.equal(next.rssiDbm, null, "a number the newest beat lacked stayed from an older one");
+    assert.equal(next.pendingUplinkCount, null);
   });
 });

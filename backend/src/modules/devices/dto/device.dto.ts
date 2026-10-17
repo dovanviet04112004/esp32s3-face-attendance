@@ -161,6 +161,62 @@ export class DeviceView {
     type: String,
     format: "date-time",
     nullable: true,
+    example: "2026-10-17T01:32:05.000Z",
+    description: "When it last started: a live heartbeat's arrival less its uptime; null before any",
+  })
+  bootedAt!: string | null;
+  @ApiProperty({ type: Number, nullable: true, example: -61, description: "Wi-Fi signal at its last live heartbeat, in dBm" })
+  rssiDbm!: number | null;
+  @ApiProperty({ type: Number, nullable: true, example: 41_216, description: "Internal RAM free at its last live heartbeat, in bytes" })
+  heapFreeBytes!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 24_576,
+    description: "The least internal RAM free since it started, at its last live heartbeat, in bytes",
+  })
+  heapMinFreeBytes!: number | null;
+  @ApiProperty({ type: Number, nullable: true, example: 3_407_872, description: "PSRAM free at its last live heartbeat, in bytes" })
+  psramFreeBytes!: number | null;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 0,
+    description: "Punches on its flash the broker has not acknowledged yet, at its last live heartbeat",
+  })
+  pendingUplinkCount!: number | null;
+  @ApiProperty({ type: Number, enum: [0, 1], nullable: true, example: 0, description: "The models slot it runs, models_0 or models_1" })
+  activeSlot!: 0 | 1 | null;
+  @ApiProperty({ type: Number, nullable: true, example: 129, description: "How many times it has started, by its own count" })
+  bootCount!: number | null;
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    example: "2026-10-17T04:45:02.000Z",
+    description: "When the live heartbeat these health numbers come from arrived; null before any",
+  })
+  healthAt!: string | null;
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    example: "2026-10-17T04:44:34.000Z",
+    description: "When the ticket it holds was issued; null while it holds none",
+  })
+  tokenIssuedAt!: string | null;
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    example: "2027-01-15T04:44:34.000Z",
+    description: "When the ticket it holds expires; the kiosk renews it some days before",
+  })
+  tokenExpiresAt!: string | null;
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
     example: "2026-08-02T04:00:00.000Z",
     description: "When a person approved it; null while pending or revoked",
   })

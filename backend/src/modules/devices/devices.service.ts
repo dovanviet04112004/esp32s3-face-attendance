@@ -14,7 +14,7 @@ import { Prisma, type Device, type DeviceStatus } from "@prisma/client";
 
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
-import { heartbeatSchema } from "../../common/generated/heartbeat.js";
+import { heartbeatSchema, type Heartbeat } from "../../common/generated/heartbeat.js";
 import type { Env } from "../../config/env.schema.js";
 import { codeHas, foldedHas, PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-actions.js";
@@ -29,14 +29,7 @@ import type {
   UpdateDeviceDto,
 } from "./dto/device.dto.js";
 
-interface HeartbeatFacts {
-  ts: number;
-  fwVersion: string;
-  modelVersion: string;
-  uptimeSeconds: number;
-  embeddingVersion?: string;
-  onTrial?: boolean;
-}
+type HeartbeatFacts = Omit<Heartbeat, "deviceId" | "rosterVersion">;
 
 /** `accepted` is the 202 of KEHOACH 7.3: ask again in `pollIntervalS`. The
  *  token only ever rides on the 200, once a person has said yes; `claimRenew`
@@ -69,6 +62,17 @@ const SHOWN = {
   lastSeenAt: true,
   online: true,
   clockSkewMs: true,
+  bootedAt: true,
+  rssiDbm: true,
+  heapFreeBytes: true,
+  heapMinFreeBytes: true,
+  psramFreeBytes: true,
+  pendingUplinkCount: true,
+  activeSlot: true,
+  bootCount: true,
+  healthAt: true,
+  tokenIssuedAt: true,
+  tokenExpiresAt: true,
   approvedAt: true,
   revokedAt: true,
   readmittedAt: true,
@@ -108,9 +112,10 @@ export type PublicDevice = Omit<
   | "otaNextActorId"
   | "otaPressedAt"
   | "otaPressedById"
-  | "bootedAt"
   | "fwOnTrial"
 >;
+
+const NO_TICKET = { tokenHash: null, prevTokenHash: null, tokenIssuedAt: null, tokenExpiresAt: null } as const;
 
 @Injectable()
 export class DevicesService {
@@ -170,8 +175,7 @@ export class DevicesService {
         where: { id: held.id },
         data: {
           status: "PENDING",
-          tokenHash: null,
-          prevTokenHash: null,
+          ...NO_TICKET,
           approvedAt: null,
           online: false,
           claimHash: claim,
@@ -195,8 +199,7 @@ export class DevicesService {
         where: { id: held.id },
         data: {
           status: "PENDING",
-          tokenHash: null,
-          prevTokenHash: null,
+          ...NO_TICKET,
           approvedAt: null,
           claimHash: claim,
           claimFailures: 0,
@@ -242,6 +245,7 @@ export class DevicesService {
       data: {
         tokenHash: deviceFingerprint(token),
         prevTokenHash: null,
+        ...this.auth.ticketTimes(token),
         claimHash: null,
         ...(fwVersion ? { fwVersion } : {}),
       },
@@ -285,6 +289,7 @@ export class DevicesService {
       data: {
         tokenHash: deviceFingerprint(token),
         prevTokenHash: current ? held.tokenHash : held.prevTokenHash,
+        ...this.auth.ticketTimes(token),
       },
     });
     if (moved.count === 0) {
@@ -417,8 +422,7 @@ export class DevicesService {
       where: { id },
       data: {
         status: "REVOKED",
-        tokenHash: null,
-        prevTokenHash: null,
+        ...NO_TICKET,
         online: false,
         revokedAt: new Date(),
         readmittedAt: null,
@@ -459,9 +463,26 @@ export class DevicesService {
     await this.seen(deviceId, at);
     // A clock still near 1970 is unset, not decades of skew, and leaves the last reading standing.
     const skew = beat.ts >= EARLIEST_BELIEVABLE_MS ? { clockSkewMs: beat.ts - at.getTime() } : {};
+    const health = {
+      rssiDbm: beat.rssiDbm ?? null,
+      heapFreeBytes: beat.heapFreeBytes ?? null,
+      heapMinFreeBytes: beat.heapMinFreeBytes ?? null,
+      psramFreeBytes: beat.psramFreeBytes ?? null,
+      pendingUplinkCount: beat.pendingUplinkCount ?? null,
+      activeSlot: beat.activeSlot ?? null,
+      bootCount: beat.bootCount ?? null,
+      healthAt: at,
+    };
     await this.db.device.update({
       where: { id: deviceId },
-      data: { ...runs, ...skew, bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000), lastSeenAt: at, online: true },
+      data: {
+        ...runs,
+        ...skew,
+        ...health,
+        bootedAt: new Date(at.getTime() - beat.uptimeSeconds * 1000),
+        lastSeenAt: at,
+        online: true,
+      },
     });
     this.bus.emit(DEVICE_BEAT, { deviceId } satisfies DeviceBeat);
   }
