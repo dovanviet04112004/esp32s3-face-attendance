@@ -37,6 +37,11 @@ static inline bool attendance_record_direction_parse(const char *s, attendance_r
     return false;
 }
 
+#define ATTENDANCE_RECORD_EMPLOYEE_ID_MIN 0
+#define ATTENDANCE_RECORD_EMPLOYEE_ID_MAX 2147483647
+#define ATTENDANCE_RECORD_MODEL_VERSION_MIN 0
+#define ATTENDANCE_RECORD_MODEL_VERSION_MAX 65535
+
 typedef struct {
     char device_id[33];
     char local_id[21];
@@ -173,22 +178,29 @@ static inline bool device_command_config_lang_parse(const char *s, device_comman
     return false;
 }
 
+#define DEVICE_COMMAND_CONFIG_BRIGHTNESS_MIN 1
+#define DEVICE_COMMAND_CONFIG_BRIGHTNESS_MAX 100
+#define DEVICE_COMMAND_CONFIG_VOLUME_MIN 0
+#define DEVICE_COMMAND_CONFIG_VOLUME_MAX 100
+#define DEVICE_COMMAND_CONFIG_DEDUP_WINDOW_MINUTES_MIN 1
+#define DEVICE_COMMAND_CONFIG_DEDUP_WINDOW_MINUTES_MAX 720
+#define DEVICE_COMMAND_CONFIG_FACE_MIN_PX_MIN 16
+#define DEVICE_COMMAND_CONFIG_FACE_MIN_PX_MAX 480
+#define DEVICE_COMMAND_CONFIG_WAKE_DISTANCE_CM_MIN 4
+#define DEVICE_COMMAND_CONFIG_WAKE_DISTANCE_CM_MAX 130
+
 typedef struct {
     uint8_t brightness;
     uint8_t volume;
     device_command_config_lang_t lang;
-    float detect_threshold;
-    float match_threshold;
-    float liveness_threshold;
     uint16_t dedup_window_minutes;
+    uint16_t face_min_px;
     uint8_t wake_distance_cm;
     bool has_brightness;
     bool has_volume;
     bool has_lang;
-    bool has_detect_threshold;
-    bool has_match_threshold;
-    bool has_liveness_threshold;
     bool has_dedup_window_minutes;
+    bool has_face_min_px;
     bool has_wake_distance_cm;
 } device_command_config_t;
 
@@ -212,25 +224,15 @@ static inline bool device_command_config_from_json(const cJSON *root, device_com
         if (!device_command_config_lang_parse(item->valuestring, &out->lang)) { return false; }
         out->has_lang = true;
     }
-    item = cJSON_GetObjectItemCaseSensitive(root, "detectThreshold");
-    if (cJSON_IsNumber(item)) {
-        out->detect_threshold = (float) item->valuedouble;
-        out->has_detect_threshold = true;
-    }
-    item = cJSON_GetObjectItemCaseSensitive(root, "matchThreshold");
-    if (cJSON_IsNumber(item)) {
-        out->match_threshold = (float) item->valuedouble;
-        out->has_match_threshold = true;
-    }
-    item = cJSON_GetObjectItemCaseSensitive(root, "livenessThreshold");
-    if (cJSON_IsNumber(item)) {
-        out->liveness_threshold = (float) item->valuedouble;
-        out->has_liveness_threshold = true;
-    }
     item = cJSON_GetObjectItemCaseSensitive(root, "dedupWindowMinutes");
     if (cJSON_IsNumber(item)) {
         out->dedup_window_minutes = (uint16_t) item->valuedouble;
         out->has_dedup_window_minutes = true;
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "faceMinPx");
+    if (cJSON_IsNumber(item)) {
+        out->face_min_px = (uint16_t) item->valuedouble;
+        out->has_face_min_px = true;
     }
     item = cJSON_GetObjectItemCaseSensitive(root, "wakeDistanceCm");
     if (cJSON_IsNumber(item)) {
@@ -254,17 +256,11 @@ static inline cJSON *device_command_config_to_json(const device_command_config_t
     if (in->has_lang) {
         cJSON_AddStringToObject(root, "lang", device_command_config_lang_str(in->lang));
     }
-    if (in->has_detect_threshold) {
-        cJSON_AddNumberToObject(root, "detectThreshold", (double) in->detect_threshold);
-    }
-    if (in->has_match_threshold) {
-        cJSON_AddNumberToObject(root, "matchThreshold", (double) in->match_threshold);
-    }
-    if (in->has_liveness_threshold) {
-        cJSON_AddNumberToObject(root, "livenessThreshold", (double) in->liveness_threshold);
-    }
     if (in->has_dedup_window_minutes) {
         cJSON_AddNumberToObject(root, "dedupWindowMinutes", (double) in->dedup_window_minutes);
+    }
+    if (in->has_face_min_px) {
+        cJSON_AddNumberToObject(root, "faceMinPx", (double) in->face_min_px);
     }
     if (in->has_wake_distance_cm) {
         cJSON_AddNumberToObject(root, "wakeDistanceCm", (double) in->wake_distance_cm);
@@ -315,6 +311,9 @@ static inline bool device_command_action_parse(const char *s, device_command_act
     if (strcmp(s, "DIAGNOSTICS") == 0) { *out = DEVICE_COMMAND_ACTION_DIAGNOSTICS; return true; }
     return false;
 }
+
+#define DEVICE_COMMAND_OPEN_MS_MIN 100
+#define DEVICE_COMMAND_OPEN_MS_MAX 30000
 
 typedef struct {
     char cmd_id[37];
@@ -509,6 +508,9 @@ static inline bool device_event_severity_parse(const char *s, device_event_sever
     return false;
 }
 
+#define DEVICE_EVENT_EMPLOYEE_ID_MIN 0
+#define DEVICE_EVENT_EMPLOYEE_ID_MAX 2147483647
+
 typedef struct {
     char device_id[33];
     int64_t seq;
@@ -658,6 +660,13 @@ static inline bool enroll_payload_op_parse(const char *s, enroll_payload_op_t *o
     return false;
 }
 
+#define ENROLL_PAYLOAD_EMPLOYEE_ID_MIN 0
+#define ENROLL_PAYLOAD_EMPLOYEE_ID_MAX 2147483647
+#define ENROLL_PAYLOAD_TEMPLATE_IDX_MIN 0
+#define ENROLL_PAYLOAD_TEMPLATE_IDX_MAX 65535
+#define ENROLL_PAYLOAD_QUALITY_MIN 0
+#define ENROLL_PAYLOAD_QUALITY_MAX 255
+
 typedef struct {
     enroll_payload_op_t op;
     uint32_t employee_id;
@@ -788,6 +797,9 @@ static inline cJSON *enroll_payload_to_json(const enroll_payload_t *in)
     }
     return root;
 }
+
+#define HEARTBEAT_RSSI_DBM_MIN -127
+#define HEARTBEAT_RSSI_DBM_MAX 0
 
 typedef struct {
     char device_id[33];

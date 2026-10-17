@@ -19,15 +19,18 @@ export interface DeviceCommand {
   openMs?: number;
   /** SET_ACTIVE_SLOT only: which models partition to boot from next. */
   activeSlot?: 0 | 1;
-  /** SET_CONFIG only. Every field is optional; absent means leave unchanged. */
+  /** SET_CONFIG only: the operating settings of KEHOACH 4.9. Every field is optional; absent means leave unchanged. The model thresholds travel in the models image, never here. */
   config?: {
+    /** Backlight percent; the kiosk keeps its own floor. */
     brightness?: number;
+    /** Speaker percent. */
     volume?: number;
     lang?: "vi" | "en";
-    detectThreshold?: number;
-    matchThreshold?: number;
-    livenessThreshold?: number;
+    /** Minutes a second stamp of one person writes no record. */
     dedupWindowMinutes?: number;
+    /** Smallest face box, in frame pixels, the pipeline verifies. */
+    faceMinPx?: number;
+    /** Distance under which someone counts as standing at the kiosk. */
     wakeDistanceCm?: number;
   };
 }
@@ -41,13 +44,11 @@ export const deviceCmdSchema = z.strictObject({
   openMs: z.number().int().min(100).max(30000).optional(),
   activeSlot: z.union([z.literal(0), z.literal(1)]).optional(),
   config: z.object({
-  brightness: z.number().int().min(0).max(255).optional(),
-  volume: z.number().int().min(0).max(255).optional(),
+  brightness: z.number().int().min(1).max(100).optional(),
+  volume: z.number().int().min(0).max(100).optional(),
   lang: z.enum(["vi", "en"]).optional(),
-  detectThreshold: z.number().min(0).max(1).optional(),
-  matchThreshold: z.number().min(0).max(1).optional(),
-  livenessThreshold: z.number().min(0).max(1).optional(),
-  dedupWindowMinutes: z.number().int().min(0).max(1440).optional(),
-  wakeDistanceCm: z.number().int().min(10).max(200).optional(),
+  dedupWindowMinutes: z.number().int().min(1).max(720).optional(),
+  faceMinPx: z.number().int().min(16).max(480).optional(),
+  wakeDistanceCm: z.number().int().min(4).max(130).optional(),
 }).optional(),
 });
