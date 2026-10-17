@@ -1116,12 +1116,110 @@ static void take_events(const app_wiring_t *wiring)
 static const char *unsupported(device_command_action_t action)
 {
     switch (action) {
-    case DEVICE_COMMAND_ACTION_SET_CONFIG: return "SET_CONFIG has no config path yet";
     case DEVICE_COMMAND_ACTION_RELOAD_FACEDB: return "svc_facedb loads once at boot";
     case DEVICE_COMMAND_ACTION_CLEAR_LOGS: return "no log erase api yet";
-    case DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT: return "waits on model A/B, E13-T2";
     default: return NULL;
     }
+}
+
+static bool within(bool present, int64_t value, int64_t lo, int64_t hi)
+{
+    return !present || (value >= lo && value <= hi);
+}
+
+// Every field is checked against the contract ahead of any write, so a refused
+// command changes nothing on the kiosk (KEHOACH 4.6).
+static bool config_fits(const device_command_config_t *c)
+{
+    return within(c->has_brightness, c->brightness, DEVICE_COMMAND_CONFIG_BRIGHTNESS_MIN,
+                  DEVICE_COMMAND_CONFIG_BRIGHTNESS_MAX) &&
+           within(c->has_volume, c->volume, DEVICE_COMMAND_CONFIG_VOLUME_MIN,
+                  DEVICE_COMMAND_CONFIG_VOLUME_MAX) &&
+           within(c->has_dedup_window_minutes, c->dedup_window_minutes,
+                  DEVICE_COMMAND_CONFIG_DEDUP_WINDOW_MINUTES_MIN,
+                  DEVICE_COMMAND_CONFIG_DEDUP_WINDOW_MINUTES_MAX) &&
+           within(c->has_face_min_px, c->face_min_px, DEVICE_COMMAND_CONFIG_FACE_MIN_PX_MIN,
+                  DEVICE_COMMAND_CONFIG_FACE_MIN_PX_MAX) &&
+           within(c->has_wake_distance_cm, c->wake_distance_cm,
+                  DEVICE_COMMAND_CONFIG_WAKE_DISTANCE_CM_MIN,
+                  DEVICE_COMMAND_CONFIG_WAKE_DISTANCE_CM_MAX);
+}
+
+static esp_err_t set_config(const device_command_config_t *c, char *note, size_t cap)
+{
+    if (!config_fits(c)) {
+        strlcpy(note, "a field lies outside the contract's range", cap);
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = ESP_OK;
+    uint32_t volume = 0;
+    sys_storage_get_u32(STORAGE_NS_UI, STORAGE_KEY_VOLUME, &volume);
+    if (c->has_brightness) {
+        const uint8_t lamp = c->brightness < CONFIG_UI_MIN_BRIGHTNESS ? CONFIG_UI_MIN_BRIGHTNESS : c->brightness;
+        atomic_store(&s_brightness, lamp);
+        // A resting panel takes the new level as it wakes.
+        if (rest_level() != REST_ALL) {
+            drv_lcd_backlight(lamp);
+        }
+        err = err != ESP_OK ? err : sys_storage_set_u32(STORAGE_NS_UI, STORAGE_KEY_BRIGHTNESS, lamp);
+    }
+    if (c->has_volume) {
+        volume = c->volume;
+        drv_audio_set_volume(c->volume);
+        err = err != ESP_OK ? err : sys_storage_set_u32(STORAGE_NS_UI, STORAGE_KEY_VOLUME, volume);
+    }
+    if (c->has_brightness || c->has_volume) {
+        ui_kiosk_set_levels(atomic_load(&s_brightness), (uint8_t)volume);
+    }
+    if (c->has_lang) {
+        const char *code = device_command_config_lang_str(c->lang);
+        ui_kiosk_set_language(code);
+        err = err != ESP_OK ? err : sys_storage_set_str(STORAGE_NS_UI, STORAGE_KEY_LANG, code);
+    }
+    if (c->has_dedup_window_minutes) {
+        svc_attendance_policy_t policy = { 0 };
+        err = err != ESP_OK ? err : svc_attendance_policy(&policy);
+        policy.dedup_min = c->dedup_window_minutes;
+        err = err != ESP_OK ? err : svc_attendance_set_policy(&policy);
+        err = err != ESP_OK ? err
+                            : sys_storage_set_u32(STORAGE_NS_ATTEND, STORAGE_KEY_DEDUP_MIN, policy.dedup_min);
+    }
+    if (c->has_face_min_px) {
+        err = err != ESP_OK ? err : svc_vision_set_face_min_px(c->face_min_px);
+        err = err != ESP_OK ? err : sys_storage_set_u32(STORAGE_NS_VISION, STORAGE_KEY_FACE_MIN_PX, c->face_min_px);
+    }
+    if (c->has_wake_distance_cm) {
+        const uint32_t gate_mm = (uint32_t)c->wake_distance_cm * 10u;
+        atomic_store(&s_gate_mm, gate_mm);
+        err = err != ESP_OK ? err : sys_storage_set_u32(STORAGE_NS_VISION, STORAGE_KEY_PRESENT_MM, gate_mm);
+    }
+    svc_attendance_policy_t now = { 0 };
+    svc_attendance_policy(&now);
+    char lang[8] = "vi";
+    sys_storage_get_str(STORAGE_NS_UI, STORAGE_KEY_LANG, lang, sizeof(lang));
+    snprintf(note, cap, "light %u vol %" PRIu32 " %s dedup %" PRIu32 " face %d wake %" PRIu32,
+             (unsigned)atomic_load(&s_brightness), volume, lang, now.dedup_min, svc_vision_face_min_px(),
+             atomic_load(&s_gate_mm) / 10);
+    return err;
+}
+
+// The other slot boots on trial as an OTA'd one does, so a pack that will not load sends it back (KEHOACH 6.2.2).
+static esp_err_t set_active_slot(const device_command_t *cmd, char *note, size_t cap)
+{
+    const uint8_t running = sys_storage_models_slot();
+    if (!cmd->has_active_slot || cmd->active_slot == running) {
+        snprintf(note, cap, "slot %u is the one running", (unsigned)running);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t held = sys_storage_models_check(cmd->active_slot);
+    if (held != ESP_OK) {
+        snprintf(note, cap, "slot %u holds no whole image", (unsigned)cmd->active_slot);
+        return held;
+    }
+    esp_err_t err = sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_ON_TRIAL);
+    err = err != ESP_OK ? err : sys_storage_models_activate();
+    snprintf(note, cap, "slot %u on trial, rebooting", (unsigned)cmd->active_slot);
+    return err;
 }
 
 static void run_command(const device_command_t *cmd, svc_door_t door)
@@ -1170,11 +1268,23 @@ static void run_command(const device_command_t *cmd, svc_door_t door)
         vTaskDelay(pdMS_TO_TICKS(REBOOT_DRAIN_MS));
         esp_restart();
         return;
+    case DEVICE_COMMAND_ACTION_SET_CONFIG:
+        done = cmd->has_config ? set_config(&cmd->config, note, sizeof(note)) : ESP_ERR_INVALID_ARG;
+        break;
+    case DEVICE_COMMAND_ACTION_SET_ACTIVE_SLOT:
+        done = set_active_slot(cmd, note, sizeof(note));
+        if (done == ESP_OK) {
+            publish_event(DEVICE_EVENT_TYPE_COMMAND_DONE, DEVICE_EVENT_SEVERITY_WARN, cmd->cmd_id, note);
+            vTaskDelay(pdMS_TO_TICKS(REBOOT_DRAIN_MS));
+            esp_restart();
+            return;
+        }
+        break;
     default:
         done = ESP_ERR_NOT_SUPPORTED;
         break;
     }
-    if (done != ESP_OK) {
+    if (done != ESP_OK && note[0] == '\0') {
         snprintf(note, sizeof(note), "%s", esp_err_to_name(done));
     }
     publish_event(done == ESP_OK ? DEVICE_EVENT_TYPE_COMMAND_DONE
@@ -2320,8 +2430,7 @@ static void tof_task(void *arg)
 {
     const app_wiring_t *wiring = arg;
     SemaphoreHandle_t ready = drv_tof_ready_signal();
-    const uint32_t gate_mm = presence_gate_mm();
-    atomic_store(&s_gate_mm, gate_mm);
+    atomic_store(&s_gate_mm, presence_gate_mm());
     bool present = false;
     int settling = TOF_SETTLE_POLLS;
     int away = PRESENCE_AWAY_SAMPLES;
@@ -2366,6 +2475,8 @@ static void tof_task(void *arg)
         // An empty field reads 65535 mm with the status clear (E7-T7), so a bad
         // status is nobody standing there rather than nothing to report.
         const uint32_t reading_mm = status_ok ? distance_mm : UINT16_MAX;
+        // SET_CONFIG may move the gate while the sensor runs (KEHOACH 4.6).
+        const uint32_t gate_mm = atomic_load(&s_gate_mm);
         const uint32_t edge_mm = present ? gate_mm + PRESENCE_HYSTERESIS_MM : gate_mm;
         // One bad range status is not an answer to whether somebody is standing
         // there, so absence has to hold for a run of samples (KEHOACH 5.4).
