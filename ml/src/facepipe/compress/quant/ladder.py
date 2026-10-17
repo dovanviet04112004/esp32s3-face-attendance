@@ -425,6 +425,8 @@ def step_deploy(run: Path, row: str) -> None:
             run_id,
             "--arena-bytes",
             "0",
+            "--threshold-permille",
+            str(ptq_espdl.threshold_permille(branch)),
             "--artifacts",
             str(ML_ROOT / "artifacts"),
             "--lock",

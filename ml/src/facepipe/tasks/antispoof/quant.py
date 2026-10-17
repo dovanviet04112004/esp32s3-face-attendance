@@ -19,9 +19,7 @@ RULER = "celeba-auc"
 RESOLUTION = 0.001
 XDOMAIN_SHARDS = "antispoof.xdomain_shards"
 PREPROC_CPP = "firmware/components/ai_engine/src/antispoof/preproc.cpp"
-VISION_KCONFIG = "firmware/components/svc_vision/Kconfig"
 FACE_SCALE = re.compile(r"kFaceScale\s*=\s*([0-9.]+)f?;")
-LIVE_MIN = re.compile(r"config VISION_SEED_LIVE_MIN_PERMILLE.*?default\s+(\d+)", re.S)
 CROPS: dict[tuple, tuple[np.ndarray, np.ndarray]] = {}
 
 
@@ -145,10 +143,10 @@ def shard_scores(
 
 
 def live_floor() -> float:
-    """The kiosk's live_min as a probability, read from the Kconfig that seeds it."""
-    from facepipe.compress.quant.ladder import firmware_constant
+    """The kiosk's live_min as a probability, the one the models image carries."""
+    from facepipe.compress.quant.ptq_espdl import threshold_permille
 
-    return firmware_constant(VISION_KCONFIG, LIVE_MIN) / 1000.0
+    return threshold_permille("antispoof") / 1000.0
 
 
 def rates_at_floor(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:

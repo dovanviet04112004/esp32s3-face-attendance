@@ -11,6 +11,7 @@ timing: {equalization: null, bias_correction: false, calibration: minmax}
 
 branches:
   detection:
+    threshold_permille: 350  # detect_min, measured on the board (KEHOACH 4.5.5d)
     rungs: {}
     ladder:
       calib_samples: 300
@@ -24,6 +25,7 @@ branches:
     probe: {cuts: 4, frames: 8}
     chosen: null
   antispoof:
+    threshold_permille: 500  # live_min, antispoof measurements.md 42.2
     rungs: {}
     ladder:
       calib_samples: 300
@@ -37,6 +39,7 @@ branches:
     probe: {cuts: 4, frames: 40}
     chosen: null
   recognition:
+    threshold_permille: 450  # match_min, recognition measurements.md 8
     rungs: {}
     ladder:
       calib_samples: 300

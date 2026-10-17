@@ -340,13 +340,14 @@ lock = json.load(open(sys.argv[2]))
 if image[:4] != b"MDLS" or zlib.crc32(image[:252]) != struct.unpack_from("<I", image, 252)[0]:
     sys.exit(f"{sys.argv[1]} is no whole models image")
 entries = {}
+carried = struct.unpack_from("<3H", image, 0xD0) if struct.unpack_from("<I", image, 4)[0] >= 2 else (0, 0, 0)
 for at in range(min(struct.unpack_from("<I", image, 8)[0], 3)):
     name, _, _, sha, _, _, _ = struct.unpack_from("<16sII32sHHI", image, 16 + 64 * at)
-    entries[name.rstrip(b"\0").decode()] = sha.hex()
+    entries[name.rstrip(b"\0").decode()] = (sha.hex(), carried[at])
 names = {"detection": "detect", "antispoof": "spoof", "recognition": "recog"}
-locked = {names[branch]: lock[branch]["sha256"] for branch in names if branch in lock}
+locked = {names[b]: (lock[b]["sha256"], lock[b].get("threshold_permille", 0)) for b in names if b in lock}
 version = "img-%08x" % struct.unpack_from("<I", image, 252)[0]
-print(version, "recog-" + entries.get("recog", "?")[:16], "locked" if entries == locked else "stale")
+print(version, "recog-" + entries.get("recog", ("?",))[0][:16], "locked" if entries == locked else "stale")
 endef
 export MODELS_INFO_PY
 

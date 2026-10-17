@@ -119,7 +119,7 @@ def image_of(entries: list[tuple[str, Path]], hw: tuple[int, int], built_at: int
     models = [
         pack_models_partition.Model(
             branch=name, entry_name=name, path=path, sha256=pack_models_partition.sha256_of(path),
-            in_h=hw[0], in_w=hw[1], arena_hint=0,
+            in_h=hw[0], in_w=hw[1], arena_hint=0, threshold_permille=0,
         )
         for name, path in entries
     ]  # fmt: skip

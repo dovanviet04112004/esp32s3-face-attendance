@@ -23,11 +23,12 @@ from pathlib import Path
 BRANCH_ENTRY = {"detection": "detect", "antispoof": "spoof", "recognition": "recog"}
 
 MAGIC = b"MDLS"
-FORMAT_VER = 1
+FORMAT_VER = 2
 HEADER_BYTES = 256
 ENTRY_BYTES = 64
 ENTRY_SLOTS = 3
 ENTRY_FORMAT = "<16sII32sHHI"
+THRESHOLD_FORMAT = "<3H"
 CRC_OFFSET = 252
 PAYLOAD_ALIGN = 16  # esp-nn reads weights aligned; ESP-DL copies otherwise
 # Each runtime is told apart by its file's own magic, never by a header field (KEHOACH 6.2.2).
@@ -45,6 +46,7 @@ class Model:
     in_h: int
     in_w: int
     arena_hint: int
+    threshold_permille: int
 
 
 def payload_runtime(path: Path) -> str:
@@ -97,10 +99,26 @@ def deployed(lock_path: Path, models_dir: Path) -> list[Model]:
                 f"{branch}: {path.name} hashes {digest[:12]}, lock says {record['sha256'][:12]}"
             )
         meta = json.loads((models_dir / branch / "meta.json").read_text(encoding="utf-8"))
-        if meta["sha256"] != digest or meta["arena_hint"] != record["arena_bytes"]:
+        threshold = meta.get("threshold_permille")
+        if (
+            meta["sha256"] != digest
+            or meta["arena_hint"] != record["arena_bytes"]
+            or threshold != record.get("threshold_permille")
+        ):
             raise SystemExit(f"{branch}: meta.json and the lock file disagree, rerun update_lock")
+        if not isinstance(threshold, int) or not 0 < threshold < 1000:
+            raise SystemExit(f"{branch}: no threshold to carry, lock it again with quant-deploy")
         models.append(
-            Model(branch, entry_name, path, digest, meta["in_h"], meta["in_w"], meta["arena_hint"])
+            Model(
+                branch,
+                entry_name,
+                path,
+                digest,
+                meta["in_h"],
+                meta["in_w"],
+                meta["arena_hint"],
+                threshold,
+            )
         )
     if not models:
         raise SystemExit(f"{lock_path} deploys nothing")
@@ -131,6 +149,8 @@ def build_image(models: list[Model], built_at: int) -> bytes:
 
     header = struct.pack("<4sIII", MAGIC, FORMAT_VER, len(models), built_at)
     header += entries + bytes(ENTRY_BYTES * (ENTRY_SLOTS - len(models)))
+    thresholds = [model.threshold_permille for model in models]
+    header += struct.pack(THRESHOLD_FORMAT, *thresholds, *([0] * (ENTRY_SLOTS - len(models))))
     header += bytes(CRC_OFFSET - len(header))
     # esp_rom_crc32_le(0, ...) is zlib's crc32: same table, same inversions.
     header += struct.pack("<I", zlib.crc32(header))
@@ -181,7 +201,8 @@ def main(argv: list[str] | None = None) -> int:
     for model in models:
         print(
             f"{model.entry_name:8s} {model.path.name:28s} {model.in_h}x{model.in_w}  "
-            f"{model.path.stat().st_size / 1024.0:8.1f} KB  arena {model.arena_hint}"
+            f"{model.path.stat().st_size / 1024.0:8.1f} KB  arena {model.arena_hint}  "
+            f"threshold {model.threshold_permille} per mille"
         )
     print(
         f"{args.out}  {len(image) / 1024.0:.1f} KB of {capacity / 1024.0:.0f} KB "

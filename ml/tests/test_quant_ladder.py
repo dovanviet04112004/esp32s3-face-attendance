@@ -142,6 +142,8 @@ def test_a_row_reaches_the_repo_s_lock_from_whatever_directory(
     monkeypatch.chdir(tmp_path)
     ladder.step_deploy(tmp_path, "kl")
     (args,) = seen
+    threshold = args[args.index("--threshold-permille") + 1]
+    assert threshold == str(ptq_espdl.threshold_permille("recognition"))
     paths = {
         flag: Path(args[args.index(flag) + 1]) for flag in ("--artifacts", "--lock", "--models-dir")
     }
@@ -372,6 +374,18 @@ def test_recognition_holds_cfp_fp_within_one_percent_of_q0() -> None:
 
 def test_the_firmware_constants_the_hooks_read_are_still_there() -> None:
     face_scale = ladder.firmware_constant(antispoof_quant.PREPROC_CPP, antispoof_quant.FACE_SCALE)
-    live_min = ladder.firmware_constant(antispoof_quant.VISION_KCONFIG, antispoof_quant.LIVE_MIN)
     assert face_scale > 1.0
-    assert 0 < live_min < 1000
+
+
+def test_every_branch_declares_the_threshold_its_image_carries() -> None:
+    for branch in ("detection", "antispoof", "recognition"):
+        assert 0 < ptq_espdl.threshold_permille(branch) < 1000
+    assert antispoof_quant.live_floor() == ptq_espdl.threshold_permille("antispoof") / 1000.0
+
+
+def test_a_branch_with_no_threshold_is_never_locked(monkeypatch) -> None:
+    held = ptq_espdl.load_ladder()
+    del held["branches"]["recognition"]["threshold_permille"]
+    monkeypatch.setattr(ptq_espdl, "load_ladder", lambda: held)
+    with pytest.raises(SystemExit, match="threshold_permille"):
+        ptq_espdl.threshold_permille("recognition")

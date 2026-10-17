@@ -63,6 +63,14 @@ def block(branch: str) -> dict:
     return found
 
 
+def threshold_permille(branch: str) -> int:
+    """The kiosk's threshold for the branch's model in thousandths, as its image carries it."""
+    value = load_ladder()["branches"][branch].get("threshold_permille")
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 < value < 1000:
+        raise SystemExit(f"{branch}: quant.yaml has no threshold_permille in 1..999, measure one")
+    return value
+
+
 def ladder(branch: str) -> dict:
     """The branch's rungs over the default ones."""
     cfg = load_ladder()

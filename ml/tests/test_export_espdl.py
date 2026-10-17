@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
+import zlib
 from pathlib import Path
 
 import pytest
@@ -54,12 +55,26 @@ def write_model(models_dir: Path, branch: str, name: str, blob: bytes, lock: dic
     folder.mkdir(parents=True, exist_ok=True)
     (folder / name).write_bytes(blob)
     digest = hashlib.sha256(blob).hexdigest()
-    meta = {"in_h": 112, "in_w": 112, "arena_hint": 0, "sha256": digest, "run_id": f"{branch}/x"}
+    meta = {
+        "in_h": 112,
+        "in_w": 112,
+        "arena_hint": 0,
+        "threshold_permille": THRESHOLD,
+        "sha256": digest,
+        "run_id": f"{branch}/x",
+    }
     (folder / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    lock[branch] = {"file": name, "sha256": digest, "run_id": f"{branch}/x", "arena_bytes": 0}
+    lock[branch] = {
+        "file": name,
+        "sha256": digest,
+        "run_id": f"{branch}/x",
+        "arena_bytes": 0,
+        "threshold_permille": THRESHOLD,
+    }
 
 
 ESPDL_BLOB = b"EDL2" + bytes(60)
+THRESHOLD = 450
 TFLITE_BLOB = b"\x1c\x00\x00\x00TFL3" + bytes(56)
 
 
@@ -202,3 +217,26 @@ def test_the_op_check_catches_expand_and_the_digest_ignores_export_noise(tmp_pat
     assert espdl_op_check.main(["--model", str(first), "--creator", str(header)]) == 1
     assert espdl_op_check.input_shape(first) == [1, 8, 8, 3]
     assert espdl_op_check.content_digest(first) == espdl_op_check.content_digest(second)
+
+
+def test_the_models_image_carries_each_entry_s_threshold(tmp_path: Path) -> None:
+    lock: dict = {}
+    write_model(tmp_path, "recognition", "mobilefacenet_s8.espdl", ESPDL_BLOB, lock)
+    (tmp_path / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+    image = build_image(deployed(tmp_path / "models.lock.json", tmp_path), built_at=0)
+    assert struct.unpack_from("<4sII", image, 0) == (MAGIC, 2, 1)
+    assert struct.unpack_from("<3H", image, 0xD0) == (THRESHOLD, 0, 0)
+    assert struct.unpack_from("<I", image, 0xFC)[0] == zlib.crc32(image[:0xFC])
+
+
+def test_a_lock_that_names_no_threshold_packs_no_image(tmp_path: Path) -> None:
+    lock: dict = {}
+    write_model(tmp_path, "recognition", "mobilefacenet_s8.espdl", ESPDL_BLOB, lock)
+    del lock["recognition"]["threshold_permille"]
+    meta_path = tmp_path / "recognition" / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    del meta["threshold_permille"]
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    (tmp_path / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+    with pytest.raises(SystemExit, match="no threshold"):
+        deployed(tmp_path / "models.lock.json", tmp_path)

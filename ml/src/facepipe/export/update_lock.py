@@ -61,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="bytes of the arena the branch runs in, 0 only while nobody has measured it",
     )
+    parser.add_argument(
+        "--threshold-permille",
+        type=int,
+        required=True,
+        help="the kiosk's threshold for this model in thousandths, which the image carries",
+    )
     parser.add_argument("--artifacts", type=Path, default=Path("ml/artifacts"))
     parser.add_argument("--lock", type=Path, default=Path("contracts/models.lock.json"))
     parser.add_argument("--models-dir", type=Path, default=Path("firmware/models"))
@@ -68,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         "--creator", type=Path, default=None, help="dl_module_creator.hpp for the ESP-DL op check"
     )
     args = parser.parse_args(argv)
+    if not 0 < args.threshold_permille < 1000:
+        raise SystemExit(f"a threshold of {args.threshold_permille} per mille judges nothing")
     runtime = payload_runtime(args.model)
     if runtime == "espdl" and args.arena_bytes != 0:
         raise SystemExit(
@@ -100,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         "in_h": height,
         "in_w": width,
         "arena_hint": args.arena_bytes,
+        "threshold_permille": args.threshold_permille,
         "sha256": digest,
         "run_id": args.run_id,
     }
@@ -111,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         "sha256": digest,
         "run_id": args.run_id,
         "arena_bytes": args.arena_bytes,
+        "threshold_permille": args.threshold_permille,
     }
     ordered = {branch: lock[branch] for branch in BRANCH_ENTRY if branch in lock}
     args.lock.parent.mkdir(parents=True, exist_ok=True)
