@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useReadSubject } from "@/components/notifications/notice-row";
 import { KioskCommands } from "@/components/devices/kiosk-commands";
+import { KioskHealth, type KioskHealthFacts } from "@/components/devices/kiosk-health";
 import { ReleaseNotesDialog, ReleaseSummary, type ReleaseNotesFacts } from "@/components/devices/release-notes";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -31,7 +32,7 @@ import { useFault } from "@/lib/fault";
 import { clockDrifts, stampOptions } from "@/lib/format";
 import { isDeviceEvent, useFeed, type FeedItem } from "@/lib/ws";
 
-interface Device {
+interface Device extends KioskHealthFacts {
   id: string;
   name: string | null;
   location: string | null;
@@ -413,7 +414,12 @@ export default function DevicePage() {
             </LayerCard>
           ) : null}
 
-          {role === "ADMIN" && it?.status === "APPROVED" ? <KioskCommands deviceId={id} name={title} online={it.online} /> : null}
+          {role === "ADMIN" && it?.status === "APPROVED" ? (
+            <>
+              <KioskHealth it={it} online={it.online} />
+              <KioskCommands deviceId={id} name={title} online={it.online} activeSlot={it.activeSlot} />
+            </>
+          ) : null}
 
           <LayerCard>
             <LayerCard.Secondary>{t("eventsTitle")}</LayerCard.Secondary>
