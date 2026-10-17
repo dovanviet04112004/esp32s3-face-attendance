@@ -2,6 +2,7 @@
   "in_h": 112,
   "in_w": 112,
   "arena_hint": 0,
+  "threshold_permille": 450,
   "sha256": "5af1965fd06144772ad03bc25208bf35cda0c45e8c912d4ab832d53ed7639084",
   "run_id": "recognition/20260923-2106_59828c4_9a6954"
 }

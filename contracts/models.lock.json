@@ -3,18 +3,21 @@
     "file": "yunet_s8.espdl",
     "sha256": "6832ba59ca6117533f2bc3387fa9c898476d8f5d3bff7f783710eee121bbb9b2",
     "run_id": "detection/20260831-1616_cc931df_36fbea",
-    "arena_bytes": 0
+    "arena_bytes": 0,
+    "threshold_permille": 350
   },
   "antispoof": {
     "file": "minifasnet_s8.espdl",
     "sha256": "ed94406b317d351716f01097a82aa8bf90885dbe84097f46fee4b5a380cc89fc",
     "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35",
-    "arena_bytes": 0
+    "arena_bytes": 0,
+    "threshold_permille": 500
   },
   "recognition": {
     "file": "mobilefacenet_s8.espdl",
     "sha256": "5af1965fd06144772ad03bc25208bf35cda0c45e8c912d4ab832d53ed7639084",
     "run_id": "recognition/20260923-2106_59828c4_9a6954",
-    "arena_bytes": 0
+    "arena_bytes": 0,
+    "threshold_permille": 450
   }
 }

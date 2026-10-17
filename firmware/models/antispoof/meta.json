@@ -2,6 +2,7 @@
   "in_h": 80,
   "in_w": 80,
   "arena_hint": 0,
+  "threshold_permille": 500,
   "sha256": "ed94406b317d351716f01097a82aa8bf90885dbe84097f46fee4b5a380cc89fc",
   "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35"
 }
