@@ -150,8 +150,8 @@ def live_floor() -> float:
 
 
 def rates_at_floor(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
-    """APCER and BPCER at the kiosk's threshold, and AUC when both classes are present."""
-    from .eval import auc
+    """APCER and BPCER at the kiosk's threshold, and AUC and EER when both classes are present."""
+    from .eval import auc, equal_error_rate
     from .losses.task_loss import LIVE
 
     floor = live_floor()
@@ -163,6 +163,7 @@ def rates_at_floor(live: np.ndarray, truth: np.ndarray) -> dict[str, float]:
         rates["bpcer"] = float((real < floor).mean())
     if real.size and fake.size:
         rates["auc"] = float(auc(live, truth))
+        rates["eer"] = float(equal_error_rate(live, truth).acer)
     return rates
 
 

@@ -184,9 +184,9 @@ def test_antispoof_rates_are_read_at_the_kiosk_threshold() -> None:
     assert rates["n"] == 4
     assert rates["bpcer"] == pytest.approx(0.5)
     assert rates["apcer"] == pytest.approx(0.5)
-    assert "auc" in rates
+    assert "auc" in rates and "eer" in rates
     only_attacks = antispoof_quant.rates_at_floor(live[2:], truth[2:])
-    assert "auc" not in only_attacks and "bpcer" not in only_attacks
+    assert "auc" not in only_attacks and "bpcer" not in only_attacks and "eer" not in only_attacks
 
 
 def test_a_set_of_shards_is_read_whole_or_folder_by_folder(tmp_path: Path) -> None:
