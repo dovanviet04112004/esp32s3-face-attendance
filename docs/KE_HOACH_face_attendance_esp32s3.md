@@ -1152,6 +1152,19 @@ vừa khít. Kết quả: khe đồng hẹp nhất toàn board **0,255 mm** thay
 0,25 mm, và lại còn **ít via hơn** (46 thay vì 53) vì đường đi đơn giản hơn. Đi sát đúng mức tối
 thiểu thì DRC vẫn qua, nhưng không còn chỗ nào cho sai số ăn mòn của xưởng.
 
+**Ba dây I²S giữ xa nhau và giữ xa I²C, vì board không có mặt đất.** Đồng mặt sau là những nhánh
+nguồn rời, không phải một mặt phẳng, nên dòng về của một dây tín hiệu chạy rất xa nó và mỗi cạnh
+xung in sang dây nằm cạnh. Cặp nguy nhất là `AUDIO_BCLK` cạnh `AUDIO_DIN`: hai dây cùng đi từ devkit
+tới `J7`, nên xung in sang DIN tới amp đúng lúc cạnh BCLK lấy mẫu nó. Đổ đồng làm mặt đất không
+phải lối ra: một mặt `GND` liền nối hai đất ở mọi chỗ, phá thẳng luật 1 và 2. Router vì thế giữ
+thêm khoảng hở dọc đường chạy: **2,0 mm** giữa hai dây I²S bất kỳ; **3,0 mm** giữa dây I²S và
+`I2C_SDA`/`I2C_SCL`, vì WS lật 32.000 lần mỗi giây không ngừng mà master I²C chỉ lọc xung ngắn hơn
+7 chu kỳ; **1,0 mm** giữa `AMP_SD` và cặp I²C, vì SD ở mức cao chỉ là nguồn ~100 µA của PCF8574. Luật
+bỏ qua trong bán kính 4 mm quanh hai chân một đoạn dây nối, vì chân header cách nhau 2,54 mm. Đo
+trên đồng đã đi: BCLK và DIN chạy trong 2 mm của nhau **4,2 mm** thay vì 85,5 mm, chỉ còn ở chỗ vào
+chân `J7`; SD cách SDA hẹp nhất **1,17 mm** thay vì 0,37 mm; số via vẫn 49, khe đồng hẹp nhất vẫn
+0,255 mm.
+
 **Không đồng nào trong bán kính 3,5 mm quanh tám lỗ vít.** Luật này không phải luật điện, nên DRC
 không bao giờ bắt: khoảng cách đồng tới **mép lỗ** thì DRC chấm, còn thứ đè lên mặt board là **đầu
 vít và trụ đồng**, rộng hơn lỗ nhiều. Vít M3 pan head Ø5,6; trụ lục giác M3 Ø5,2–5,8; long đen M3
