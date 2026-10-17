@@ -44,7 +44,6 @@ public:
     TensorView output(size_t index) noexcept;
     size_t output_count() noexcept;
     esp_err_t invoke() noexcept;
-    bool ready() const noexcept { return model_ != nullptr; }
 
 private:
     dl::Model *model_ = nullptr;

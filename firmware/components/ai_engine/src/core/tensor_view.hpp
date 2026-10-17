@@ -21,7 +21,6 @@ struct TensorView {
     int zero_point = 0;
 
     bool valid() const noexcept { return data != nullptr; }
-    int dim(int axis) const noexcept { return axis >= 0 && axis < rank ? dims[axis] : 0; }
 };
 
 }  // namespace ai
