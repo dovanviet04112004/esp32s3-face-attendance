@@ -1,9 +1,9 @@
-#include "detect_model.hpp"
+#include "detection/detection.hpp"
 
 #include <math.h>
 #include <string.h>
 
-#include "pixels.hpp"
+#include "core/pixels.hpp"
 
 namespace ai {
 

@@ -1,31 +1,17 @@
-/** The detection branch: one letterboxed frame in, raw head tensors out.
- *  @ctx task | invoke blocks | layer 2 of the pipeline in KEHOACH 3
+/** The detection branch on either runtime: one frame letterboxed in, faces out of the heads.
+ *  @ctx task | layer 2 of the pipeline in KEHOACH 3
  */
 #pragma once
 
 #include <stddef.h>
 
 #include "ai_engine.h"
-#include "tensor_view.hpp"
-#include "tflite_model.hpp"
+#include "core/tensor_view.hpp"
 
 namespace ai {
 
 // YuNet's three heads at three strides; the graph may list them in any order.
 constexpr size_t kDetectHeads = 9;
-
-/** The operators this graph carries, registered once and kept for good.
- *  @ctx task | non-blocking after the first call
- */
-tflite::MicroOpResolver &detect_ops() noexcept;
-
-class DetectModel final : public TfliteModelBase {
-public:
-    const char *name() const noexcept override { return "detect"; }
-
-protected:
-    tflite::MicroOpResolver &resolver() noexcept override { return detect_ops(); }
-};
 
 /** Faces from the head tensors of the run that just finished, best first and
  *  already suppressed; boxes and landmarks in detector input pixels.

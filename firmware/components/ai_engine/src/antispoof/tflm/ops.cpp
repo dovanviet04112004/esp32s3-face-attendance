@@ -1,4 +1,4 @@
-#include "spoof_model.hpp"
+#include "antispoof/tflm/spoof_model.hpp"
 
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 

@@ -1,4 +1,4 @@
-#include "espdl_spatial_mean.hpp"
+#include "core/espdl/espdl_spatial_mean.hpp"
 
 #include <cstddef>
 #include <cstdint>

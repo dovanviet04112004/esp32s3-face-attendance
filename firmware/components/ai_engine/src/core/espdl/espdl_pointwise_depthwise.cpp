@@ -1,4 +1,4 @@
-#include "espdl_pointwise_depthwise.hpp"
+#include "core/espdl/espdl_pointwise_depthwise.hpp"
 
 #include <algorithm>
 #include <array>

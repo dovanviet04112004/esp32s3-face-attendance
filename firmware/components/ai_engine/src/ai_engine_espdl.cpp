@@ -2,11 +2,11 @@
 
 #include <string.h>
 
-#include "antispoof/spoof_model.hpp"
-#include "detection/detect_model.hpp"
+#include "antispoof/antispoof.hpp"
+#include "core/espdl/espdl_model.hpp"
+#include "detection/detection.hpp"
 #include "esp_log.h"
-#include "espdl_model.hpp"
-#include "recognition/recog_model.hpp"
+#include "recognition/recognition.hpp"
 #include "sdkconfig.h"
 #include "sys_storage.h"
 

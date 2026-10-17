@@ -1,20 +1,20 @@
-#include "espdl_model.hpp"
+#include "core/espdl/espdl_model.hpp"
 
 #include <iterator>
 #include <new>
 
+#include "core/espdl/espdl_channel_conv.hpp"
+#include "core/espdl/espdl_conv_im2col.hpp"
+#include "core/espdl/espdl_conv_prelu.hpp"
+#include "core/espdl/espdl_conv_slices.hpp"
+#include "core/espdl/espdl_mul_add.hpp"
+#include "core/espdl/espdl_pointwise_depthwise.hpp"
+#include "core/espdl/espdl_spatial_mean.hpp"
 #include "dl_model_base.hpp"
 #include "dl_module_creator.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "espdl_channel_conv.hpp"
-#include "espdl_conv_im2col.hpp"
-#include "espdl_conv_prelu.hpp"
-#include "espdl_conv_slices.hpp"
-#include "espdl_mul_add.hpp"
-#include "espdl_pointwise_depthwise.hpp"
-#include "espdl_spatial_mean.hpp"
 #include "sdkconfig.h"
 
 namespace ai {

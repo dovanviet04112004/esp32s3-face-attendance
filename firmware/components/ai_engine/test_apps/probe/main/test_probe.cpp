@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "core/espdl/espdl_model.hpp"
 #include "dl_model_base.hpp"
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_vfs.h"
@@ -13,7 +14,6 @@
 #include "esp_heap_caps.h"
 #include "esp_private/esp_psram_extram.h"
 #include "esp_timer.h"
-#include "espdl_model.hpp"
 #include "sys_storage.h"
 #include "unity.h"
 

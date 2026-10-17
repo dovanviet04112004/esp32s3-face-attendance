@@ -5,9 +5,9 @@
 
 #include <stddef.h>
 
-#include "arena.hpp"
+#include "core/tensor_view.hpp"
+#include "core/tflm/arena.hpp"
 #include "esp_err.h"
-#include "tensor_view.hpp"
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/micro/micro_op_resolver.h"
 #include "tensorflow/lite/micro/micro_profiler_interface.h"

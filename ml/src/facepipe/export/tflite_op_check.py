@@ -69,7 +69,7 @@ def verdict(counts: dict[str, int]) -> tuple[list[str], list[str], list[str]]:
     return fast, slow, unknown
 
 
-OPS_CPP = "firmware/components/ai_engine/src/{branch}/ops.cpp"
+OPS_CPP = "firmware/components/ai_engine/src/{branch}/tflm/ops.cpp"
 _ADD_CALL = re.compile(r"s_resolver\.Add([A-Za-z0-9]+)\(\)")
 _TOKEN = re.compile(r"[A-Z][a-z]*|\d+[A-Z]*")
 

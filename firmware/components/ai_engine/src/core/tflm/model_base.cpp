@@ -1,4 +1,4 @@
-#include "tflite_model.hpp"
+#include "core/tflm/tflite_model.hpp"
 
 #include <new>
 

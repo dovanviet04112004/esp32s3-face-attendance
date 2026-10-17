@@ -1,4 +1,4 @@
-#include "arena.hpp"
+#include "core/tflm/arena.hpp"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"

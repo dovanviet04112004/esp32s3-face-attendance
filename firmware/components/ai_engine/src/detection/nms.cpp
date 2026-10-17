@@ -1,4 +1,4 @@
-#include "detect_model.hpp"
+#include "detection/detection.hpp"
 
 namespace ai {
 

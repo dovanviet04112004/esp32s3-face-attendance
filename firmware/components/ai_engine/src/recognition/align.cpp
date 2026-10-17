@@ -1,8 +1,8 @@
-#include "recog_model.hpp"
+#include "recognition/recognition.hpp"
 
 #include <math.h>
 
-#include "pixels.hpp"
+#include "core/pixels.hpp"
 
 namespace ai {
 

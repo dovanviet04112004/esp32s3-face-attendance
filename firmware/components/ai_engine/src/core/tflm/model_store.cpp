@@ -1,4 +1,4 @@
-#include "model_store.hpp"
+#include "core/tflm/model_store.hpp"
 
 #include <string.h>
 

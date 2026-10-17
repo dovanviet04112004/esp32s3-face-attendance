@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 #include "ai_engine.h"
-#include "tensor_view.hpp"
+#include "core/tensor_view.hpp"
 
 namespace ai {
 

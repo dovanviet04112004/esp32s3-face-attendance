@@ -1,8 +1,8 @@
-#include "spoof_model.hpp"
+#include "antispoof/antispoof.hpp"
 
 #include <math.h>
 
-#include "pixels.hpp"
+#include "core/pixels.hpp"
 
 namespace ai {
 

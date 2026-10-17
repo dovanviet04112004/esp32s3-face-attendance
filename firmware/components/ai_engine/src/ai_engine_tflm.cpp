@@ -4,13 +4,14 @@
 #include <initializer_list>
 #include <string.h>
 
-#include "antispoof/spoof_model.hpp"
-#include "detection/detect_model.hpp"
-#include "arena.hpp"
+#include "antispoof/tflm/spoof_model.hpp"
+#include "core/tflm/arena.hpp"
+#include "core/tflm/model_store.hpp"
+#include "detection/detection.hpp"
+#include "detection/tflm/detect_model.hpp"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "model_store.hpp"
-#include "recognition/recog_model.hpp"
+#include "recognition/tflm/recog_model.hpp"
 #include "sdkconfig.h"
 
 namespace {

@@ -7,8 +7,8 @@
 
 #include <stddef.h>
 
+#include "core/tensor_view.hpp"
 #include "esp_err.h"
-#include "tensor_view.hpp"
 
 namespace dl {
 class Model;

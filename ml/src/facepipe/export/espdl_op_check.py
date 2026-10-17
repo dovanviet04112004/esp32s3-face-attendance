@@ -22,7 +22,7 @@ CREATOR_HPP = (
     "firmware/managed_components/espressif__esp-dl/dl/module/include/dl_module_creator.hpp"
 )
 # ai_engine registers its own modules beside esp-dl's (KEHOACH 3.7).
-AI_ENGINE_CORE = "firmware/components/ai_engine/src/core"
+AI_ENGINE_CORE = "firmware/components/ai_engine/src/core/espdl"
 _REGISTER = re.compile(r'register_module\(\s*"([A-Za-z0-9_]+)"')
 
 

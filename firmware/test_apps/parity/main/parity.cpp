@@ -10,10 +10,10 @@
 #include "svc_facedb.h"
 #include "unity.h"
 
-#include "antispoof/spoof_model.hpp"
-#include "detection/detect_model.hpp"
-#include "recognition/recog_model.hpp"
-#include "tensor_view.hpp"
+#include "antispoof/antispoof.hpp"
+#include "core/tensor_view.hpp"
+#include "detection/detection.hpp"
+#include "recognition/recognition.hpp"
 
 #define GOLD_ROOT "/lfs"
 #define GOLD_MAGIC 0x444C4F47u
