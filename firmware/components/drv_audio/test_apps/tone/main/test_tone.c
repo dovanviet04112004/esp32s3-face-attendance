@@ -1,5 +1,7 @@
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "app_config.h"
 #include "bsp_board.h"
@@ -33,8 +35,18 @@
 #define NOTE_E5_HZ 659
 #define NOTE_G5_HZ 784
 #define NOTE_VOLUME 50
+#define KIOSK_VOLUME 60                   // the desk kiosk's level after SET_CONFIG
+#define LOOP_GAP_MS 1500
+#define WAV_RIFF_BYTES 12
+#define WAV_CHUNK_BYTES 8
 
+// The recording assets/build_assets.py ships as snd/ok.wav, byte for byte.
+extern const uint8_t s_shipped_start[] asm("_binary_xincamon_1_1_wav_start");
+extern const uint8_t s_shipped_end[] asm("_binary_xincamon_1_1_wav_end");
+
+static const uint8_t LOOP_LEVELS[] = { DRV_AUDIO_VOLUME_MAX, KIOSK_VOLUME, QUIET_VOLUME };
 static int16_t s_clip[CLIP_SAMPLES];
+static bool s_up;
 
 static void fill_tone(size_t samples, int tone_hz)
 {
@@ -64,6 +76,7 @@ TEST_CASE("the amp comes up shut down and a second init is refused", "[drv_audio
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_init());
     TEST_ASSERT_EQUAL(ESP_OK, drv_audio_init());
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, drv_audio_init());
+    s_up = true;
     TEST_ASSERT_EQUAL(0, sd_line());
     printf("listen: low tone 2 s, high tone 2 s, short loud tone; the gaps must be dead silent\n");
 }
@@ -142,9 +155,50 @@ TEST_CASE("a loud half second burst leaves the board running", "[drv_audio]")
     printf("main task stack left %u bytes\n", (unsigned)uxTaskGetStackHighWaterMark(NULL));
 }
 
+static const int16_t *shipped_pcm(size_t *samples)
+{
+    const uint8_t *at = s_shipped_start + WAV_RIFF_BYTES;
+    while (at + WAV_CHUNK_BYTES <= s_shipped_end) {
+        uint32_t size = 0;
+        memcpy(&size, at + 4, sizeof(size));
+        if (memcmp(at, "data", 4) == 0) {
+            *samples = size / sizeof(int16_t);
+            return (const int16_t *)(at + WAV_CHUNK_BYTES);
+        }
+        at += WAV_CHUNK_BYTES + size + (size & 1u);
+    }
+    return NULL;
+}
+
+TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audio][manual]")
+{
+    if (!s_up) {
+        TEST_ASSERT_EQUAL(ESP_OK, bsp_board_init());
+        TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_init());
+        TEST_ASSERT_EQUAL(ESP_OK, drv_audio_init());
+        s_up = true;
+    }
+    size_t samples = 0;
+    const int16_t *pcm = shipped_pcm(&samples);
+    TEST_ASSERT_NOT_NULL(pcm);
+    printf("listen: the shipped recording, %u samples, at %u, %u and %u %% in turn, %d ms of silence between\n",
+           (unsigned)samples, LOOP_LEVELS[0], LOOP_LEVELS[1], LOOP_LEVELS[2], LOOP_GAP_MS);
+    for (unsigned round = 0;; ++round) {
+        const uint8_t level = LOOP_LEVELS[round % sizeof(LOOP_LEVELS)];
+        TEST_ASSERT_EQUAL(ESP_OK, drv_audio_set_volume(level));
+        printf("round %u at %u %%\n", round, level);
+        TEST_ASSERT_EQUAL(ESP_OK, drv_audio_play_pcm(pcm, samples));
+        vTaskDelay(pdMS_TO_TICKS(LOOP_GAP_MS));
+    }
+}
+
 void app_main(void)
 {
     UNITY_BEGIN();
-    unity_run_all_tests();
+    unity_run_tests_by_tag("[manual]", true);
+    UNITY_END();
+    // A bench has nobody to pick a case, so the listening loop starts once the suite is through.
+    UNITY_BEGIN();
+    unity_run_tests_by_tag("[manual]", false);
     UNITY_END();
 }
