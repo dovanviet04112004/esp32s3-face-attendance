@@ -25,6 +25,7 @@ import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { Facts } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
 import { useRouter } from "@/i18n/navigation";
 import { api, queryOf } from "@/lib/api";
 import { useSession } from "@/lib/auth";
@@ -276,26 +277,59 @@ function useWaiting(): (go: (() => void) | null) => ReactNode {
   );
 }
 
-/** The register's two columns in place of the queue's wait: the filing day, and where the item stands. */
-function useLedgerColumns<T>(filedOf: (row: T) => string, stateOf: (row: T) => [Tone, string]): Column<T>[] {
+/** Who decided an item and when, or a null name while nobody has. */
+export interface Decider {
+  name: string | null | undefined;
+  at: string | null | undefined;
+}
+
+/** The three columns every register tab ends on, in place of the queue's wait (KEHOACH 9.15). */
+export function useLedgerColumns<T>(
+  filedOf: (row: T) => string,
+  stateOf: (row: T) => ReactNode,
+  deciderOf: (row: T) => Decider,
+): Column<T>[] {
   const t = useTranslations("requests");
+  const common = useTranslations("common");
   const format = useFormatter();
   return [
     {
       id: "filed",
       header: t("filed"),
       priority: 2,
+      sortKey: "createdAt",
       cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(filedOf(row)), "day")}</span>,
     },
+    { id: "state", header: t("state"), cell: stateOf },
     {
-      id: "state",
-      header: t("state"),
+      id: "decidedBy",
+      header: t("decidedBy"),
+      priority: 3,
       cell: (row) => {
-        const [tone, label] = stateOf(row);
-        return <StatePill tone={tone}>{label}</StatePill>;
+        const { name, at } = deciderOf(row);
+        return name ? (
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate">{name}</span>
+            {at ? <span className="text-sm text-kumo-subtle tabular-nums">{format.dateTime(new Date(at), "day")}</span> : null}
+          </div>
+        ) : (
+          common("empty")
+        );
       },
     },
   ];
+}
+
+/** The register's order by filing day, which the filed header flips. */
+export interface LedgerOrder {
+  dir: "asc" | "desc";
+  onDir: (dir: "asc" | "desc") => void;
+}
+
+function sortedLedger(order: LedgerOrder | undefined) {
+  return order
+    ? { sort: { key: "createdAt", dir: order.dir }, onSortChange: (next: { key: string; dir: "asc" | "desc" }) => order.onDir(next.dir) }
+    : {};
 }
 
 /** What a handled item came to, in place of its decision; a 409 lands here too (KEHOACH 9.21.4). */
@@ -384,7 +418,8 @@ function BalanceAfter({ row }: { row: InboxRow }) {
   return <>{row.balanceAfter === null ? common("empty") : days(row.balanceAfter, locale)}</>;
 }
 
-function personColumns<T extends { employee: Who | null }>(who: string, department: string, empty: string): Column<T>[] {
+/** Who filed it and their department, the two columns every queue and register tab opens with. */
+export function personColumns<T extends { employee: Who | null }>(who: string, department: string, empty: string): Column<T>[] {
   return [
     { id: "person", header: who, cell: (row) => <PersonCell name={row.employee?.fullName ?? empty} code={row.employee?.code} /> },
     {
@@ -490,6 +525,76 @@ export interface QueueProps extends Linked {
   filtered: boolean;
   /** The register's view: every state, the filing day in place of the wait, no decision (KEHOACH 9.15). */
   ledger?: boolean;
+  order?: LedgerOrder;
+}
+
+/** Who else is off across a leave: named once the request's record is read, counted or held until then. */
+function TeamOff({ detail, counted }: { detail: RequestDetail | undefined; counted?: number }) {
+  const t = useTranslations("requests");
+  const words = useRequestWords();
+  return (
+    <div>
+      <p className="mb-1 text-sm font-medium">{t("teamOffTitle")}</p>
+      {detail ? (
+        detail.overlapping.length === 0 ? (
+          <p className="text-kumo-subtle">{t("teamOffNone")}</p>
+        ) : (
+          <ul className="flex flex-col">
+            {detail.overlapping.map((one) => (
+              <li key={one.id} className="flex items-center justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
+                <span className="min-w-0 truncate">{one.employee.fullName}</span>
+                <span className="shrink-0 text-sm text-kumo-subtle tabular-nums">{words.span(one)}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : counted === undefined ? (
+        <SkeletonLine minWidth={30} maxWidth={50} />
+      ) : (
+        <p className="text-kumo-subtle">{t("people", { count: counted })}</p>
+      )}
+    </div>
+  );
+}
+
+/** One request opened from the register, read-only: what came of it, or where it waits (KEHOACH 9.15). */
+export function RequestLedgerSheet({ row, onClose }: { row: RequestRow | null; onClose: () => void }) {
+  const t = useTranslations("requests");
+  const common = useTranslations("common");
+  const words = useRequestWords();
+  const waiting = useWaiting();
+  const inbox = useInboxLink();
+  useReadSubject("REQUEST", row?.id);
+  const detail = useQuery({
+    queryKey: ["requests", "one", row?.id],
+    enabled: row !== null,
+    queryFn: async () => (await api.get<RequestDetail>(`/requests/${row?.id ?? ""}`)).data,
+  });
+  const shown = detail.data ?? row;
+  return (
+    <LayerDialog.Root open={row !== null} onOpenChange={(next) => !next && onClose()}>
+      <LayerDialog.Content size="lg" closeLabel={common("close")}>
+        <LayerDialog.Title>{row?.employee?.fullName ?? t("title")}</LayerDialog.Title>
+        <LayerDialog.Description>
+          {shown ? [shown.employee?.code, shown.employee?.department?.name, words.kind(shown)].filter(Boolean).join(" · ") : ""}
+        </LayerDialog.Description>
+        <LayerDialog.Body>
+          {shown ? (
+            <div className="flex flex-col gap-4">
+              <RequestFacts row={shown} />
+              <p className="break-words">{shown.reason}</p>
+              {shown.kind === "LEAVE" ? <TeamOff detail={detail.data} /> : null}
+            </div>
+          ) : null}
+          {!shown ? null : shown.state === "PENDING" ? (
+            waiting(detail.data?.mayDecide ? inbox("requests", shown.id) : null)
+          ) : (
+            <Handled row={shown} />
+          )}
+        </LayerDialog.Body>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
+  );
 }
 
 /** The requests waiting on this viewer, decided in a sheet with the balance and who else is off. */
@@ -660,27 +765,7 @@ export function RequestsQueue({ params, filtered, openId, onOpened }: QueueProps
               extra={handled ? [] : [...balanceFacts(open), [t("waitedHeader"), <Waited key="waited" count={open.waitedDays} />]]}
             />
             <p className="break-words">{shown.reason}</p>
-            {open.kind === "LEAVE" ? (
-              <div>
-                <p className="mb-1 text-sm font-medium">{t("teamOffTitle")}</p>
-                {detail.data ? (
-                  detail.data.overlapping.length === 0 ? (
-                    <p className="text-kumo-subtle">{t("teamOffNone")}</p>
-                  ) : (
-                    <ul className="flex flex-col">
-                      {detail.data.overlapping.map((one) => (
-                        <li key={one.id} className="flex items-center justify-between gap-3 border-b border-kumo-hairline py-1.5 last:border-0">
-                          <span className="min-w-0 truncate">{one.employee.fullName}</span>
-                          <span className="shrink-0 text-sm text-kumo-subtle tabular-nums">{words.span(one)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                ) : (
-                  <p className="text-kumo-subtle">{t("people", { count: open.overlapCount ?? 0 })}</p>
-                )}
-              </div>
-            ) : null}
+            {open.kind === "LEAVE" ? <TeamOff detail={detail.data} counted={open.overlapCount ?? 0} /> : null}
           </div>
         ) : null}
       </DecisionSheet>
@@ -886,7 +971,7 @@ export function PunchesQueue({ params, filtered }: QueueProps) {
 }
 
 /** Letters asked for: the desk's queue, or every letter in the register. */
-export function LettersQueue({ params, filtered, ledger, ...link }: QueueProps) {
+export function LettersQueue({ params, filtered, ledger, order, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const c = useTranslations("certificates");
   const common = useTranslations("common");
@@ -926,7 +1011,8 @@ export function LettersQueue({ params, filtered, ledger, ...link }: QueueProps) 
   const kindOf = (row: Letter) => (row.kind === "INCOME" && row.months ? `${c(row.kind)} · ${c("monthsN", { count: row.months })}` : c(row.kind));
   const ledgerColumns = useLedgerColumns<Letter>(
     (row) => row.createdAt,
-    (row) => [LETTER_TONE[row.state ?? "REQUESTED"], c(row.state ?? "REQUESTED")],
+    (row) => <StatePill tone={LETTER_TONE[row.state ?? "REQUESTED"]}>{c(row.state ?? "REQUESTED")}</StatePill>,
+    (row) => ({ name: row.decidedByName, at: row.state === "ISSUED" ? row.issuedAt : row.state === "REJECTED" ? row.updatedAt : null }),
   );
   const columns: Column<Letter>[] = [
     ...personColumns<Letter>(t("who"), t("department"), common("empty")),
@@ -939,6 +1025,7 @@ export function LettersQueue({ params, filtered, ledger, ...link }: QueueProps) 
   return (
     <>
       <DataTable
+        {...sortedLedger(ledger ? order : undefined)}
         id={ledger ? "register-letters" : "inbox-letters"}
         columns={columns}
         rows={rows}
@@ -985,7 +1072,7 @@ function reads(values: Record<string, string | null> | null, blank: string): str
 }
 
 /** Changes to a record asked for: the desk's queue, or every change in the register. */
-export function ChangesQueue({ params, filtered, ledger, ...link }: QueueProps) {
+export function ChangesQueue({ params, filtered, ledger, order, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const p = useTranslations("profile");
   const common = useTranslations("common");
@@ -1023,7 +1110,8 @@ export function ChangesQueue({ params, filtered, ledger, ...link }: QueueProps) 
         : { key: `handled${row.state}`, who: row.decidedByName, at: row.decidedAt, note: row.note };
   const ledgerColumns = useLedgerColumns<Change>(
     (row) => row.createdAt,
-    (row) => [CHANGE_TONE[row.state ?? "PENDING"], p(`state${row.state ?? "PENDING"}`)],
+    (row) => <StatePill tone={CHANGE_TONE[row.state ?? "PENDING"]}>{p(`state${row.state ?? "PENDING"}`)}</StatePill>,
+    (row) => ({ name: row.decidedByName, at: row.decidedAt }),
   );
   const columns: Column<Change>[] = [
     ...personColumns<Change>(t("who"), t("department"), common("empty")),
@@ -1042,6 +1130,7 @@ export function ChangesQueue({ params, filtered, ledger, ...link }: QueueProps) 
   return (
     <>
       <DataTable
+        {...sortedLedger(ledger ? order : undefined)}
         id={ledger ? "register-changes" : "inbox-changes"}
         columns={columns}
         rows={rows}
@@ -1083,7 +1172,7 @@ export function ChangesQueue({ params, filtered, ledger, ...link }: QueueProps) 
 }
 
 /** Payslip disputes: the pay desk's queue, or every dispute in the register. */
-export function DisputesQueue({ params, filtered, ledger, ...link }: QueueProps) {
+export function DisputesQueue({ params, filtered, ledger, order, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const d = useTranslations("disputes");
   const common = useTranslations("common");
@@ -1138,7 +1227,8 @@ export function DisputesQueue({ params, filtered, ledger, ...link }: QueueProps)
   const deciding = open !== null && closed === null && !ledger;
   const ledgerColumns = useLedgerColumns<Claim>(
     (row) => row.createdAt,
-    (row) => [CLAIM_TONE[row.state ?? "OPEN"], d(`state${row.state ?? "OPEN"}`)],
+    (row) => <StatePill tone={CLAIM_TONE[row.state ?? "OPEN"]}>{d(`state${row.state ?? "OPEN"}`)}</StatePill>,
+    (row) => ({ name: row.decidedByName, at: row.answeredAt }),
   );
   const columns: Column<Claim>[] = [
     ...personColumns<Claim>(t("who"), t("department"), common("empty")),
@@ -1180,6 +1270,7 @@ export function DisputesQueue({ params, filtered, ledger, ...link }: QueueProps)
   return (
     <>
       <DataTable
+        {...sortedLedger(ledger ? order : undefined)}
         id={ledger ? "register-disputes" : "inbox-disputes"}
         columns={columns}
         rows={rows}
@@ -1263,7 +1354,7 @@ export function DisputesQueue({ params, filtered, ledger, ...link }: QueueProps)
 }
 
 /** Salary advances: the desk's queue to decide or to pay, or every advance in the register. */
-export function AdvancesQueue({ params, filtered, paying, ledger, ...link }: QueueProps & { paying: boolean }) {
+export function AdvancesQueue({ params, filtered, paying, ledger, order, ...link }: QueueProps & { paying: boolean }) {
   const t = useTranslations("requests");
   const pay = useTranslations("payroll");
   const common = useTranslations("common");
@@ -1315,7 +1406,8 @@ export function AdvancesQueue({ params, filtered, paying, ledger, ...link }: Que
   const closed = open ? said(open) : null;
   const ledgerColumns = useLedgerColumns<Advance>(
     (row) => row.requestedAt,
-    (row) => [ADVANCE_TONE[row.state ?? "PENDING"], pay(`advance${row.state ?? "PENDING"}`)],
+    (row) => <StatePill tone={ADVANCE_TONE[row.state ?? "PENDING"]}>{pay(`advance${row.state ?? "PENDING"}`)}</StatePill>,
+    (row) => ({ name: row.decidedByName, at: row.decidedAt }),
   );
   const columns: Column<Advance>[] = [
     ...personColumns<Advance>(t("who"), t("department"), common("empty")),
@@ -1343,6 +1435,7 @@ export function AdvancesQueue({ params, filtered, paying, ledger, ...link }: Que
   return (
     <>
       <DataTable
+        {...sortedLedger(ledger ? order : undefined)}
         id={ledger ? "register-advances" : paying ? "inbox-to-pay" : "inbox-advances"}
         columns={columns}
         rows={rows}
@@ -1415,7 +1508,7 @@ export function AdvancesQueue({ params, filtered, paying, ledger, ...link }: Que
 }
 
 /** Dependants registered for tax relief: the desk's queue, or every registration in the register. */
-export function DependentsQueue({ params, filtered, ledger, ...link }: QueueProps) {
+export function DependentsQueue({ params, filtered, ledger, order, ...link }: QueueProps) {
   const t = useTranslations("requests");
   const me = useTranslations("me");
   const common = useTranslations("common");
@@ -1453,7 +1546,8 @@ export function DependentsQueue({ params, filtered, ledger, ...link }: QueueProp
       : { key: row.state === "REJECTED" ? "handledREJECTED" : "handledAPPROVED", who: row.decidedByName, at: row.decidedAt, note: row.decisionNote };
   const ledgerColumns = useLedgerColumns<Dependent>(
     (row) => row.createdAt,
-    (row) => [DEPENDENT_TONE[row.state ?? "PENDING"], me(`dependentState${row.state ?? "PENDING"}`)],
+    (row) => <StatePill tone={DEPENDENT_TONE[row.state ?? "PENDING"]}>{me(`dependentState${row.state ?? "PENDING"}`)}</StatePill>,
+    (row) => ({ name: row.decidedByName, at: row.decidedAt }),
   );
   const columns: Column<Dependent>[] = [
     ...personColumns<Dependent>(t("who"), t("department"), common("empty")),
@@ -1475,6 +1569,7 @@ export function DependentsQueue({ params, filtered, ledger, ...link }: QueueProp
   return (
     <>
       <DataTable
+        {...sortedLedger(ledger ? order : undefined)}
         id={ledger ? "register-dependents" : "inbox-dependents"}
         columns={columns}
         rows={rows}

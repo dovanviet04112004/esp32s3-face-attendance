@@ -3,7 +3,7 @@
 import { Banner, Button } from "@cloudflare/kumo";
 import { DownloadSimpleIcon, InfoIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { QUEUE_ROLES, type Queue } from "@/components/nav/waiting-count";
@@ -22,8 +22,12 @@ import {
   LETTER_KINDS,
   LettersQueue,
   PROFILE_FIELDS,
+  RequestLedgerSheet,
+  personColumns,
+  useLedgerColumns,
+  type LedgerOrder,
 } from "@/components/requests/queues";
-import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
+import { DataTable, type Column } from "@/components/tables/data-table";
 import { FilterBar, useSettled, type Filter } from "@/components/ui/filter-bar";
 import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
@@ -77,13 +81,13 @@ function Register() {
   const me = useTranslations("me");
   const pay = useTranslations("payroll");
   const common = useTranslations("common");
-  const format = useFormatter();
   const words = useRequestWords();
   const notify = useNotify();
   // Every state by default: filtering to pending here would repeat the
   // approvals inbox under a second sidebar entry (KEHOACH 9.15).
   const [url, setUrl] = useUrlState(DEFAULTS);
   const [typed, setTyped] = useState(url.q);
+  const [open, setOpen] = useState<RequestRow | null>(null);
   const settled = useSettled(typed.trim());
 
   useEffect(() => {
@@ -196,17 +200,6 @@ function Register() {
       onChange: (next) => setUrl({ dept: next }),
       items: { "": t("anyDepartment"), ...Object.fromEntries((departments.data ?? []).map((one) => [one.id, one.name])) },
     },
-    ...(onRequests
-      ? []
-      : [
-          {
-            key: "order",
-            label: t("order"),
-            value: url.order,
-            onChange: (next: string) => setUrl({ order: next }),
-            items: { "": t("orderNewest"), asc: t("orderOldest") },
-          },
-        ]),
   ];
 
   const params = {
@@ -220,20 +213,17 @@ function Register() {
     ...(tab === "profileChanges" && url.kind ? { field: url.kind } : {}),
   };
 
+  const ledgerOrder: LedgerOrder = {
+    dir: url.order === "asc" ? "asc" : "desc",
+    onDir: (dir) => setUrl({ order: dir === "desc" ? "" : "asc" }),
+  };
+  const closing = useLedgerColumns<RequestRow>(
+    (row) => row.createdAt,
+    (row) => <StatePill state={row.state} />,
+    (row) => ({ name: row.decidedBy?.fullName ?? row.decidedBy?.email, at: row.decidedAt }),
+  );
   const columns: Column<RequestRow>[] = [
-    {
-      id: "who",
-      header: t("who"),
-      cell: (row) => <PersonCell name={row.employee?.fullName ?? common("empty")} code={row.employee?.code} />,
-    },
-    {
-      id: "department",
-      header: t("department"),
-      priority: 3,
-      truncate: true,
-      maxWidthPx: 180,
-      cell: (row) => row.employee?.department?.name ?? common("empty"),
-    },
+    ...personColumns<RequestRow>(t("who"), t("department"), common("empty")),
     {
       id: "request",
       header: t("request"),
@@ -246,30 +236,7 @@ function Register() {
       ),
     },
     { id: "extent", header: t("extent"), numeric: true, priority: 2, cell: (row) => words.extent(row) },
-    { id: "state", header: t("state"), cell: (row) => <StatePill state={row.state} /> },
-    {
-      id: "filed",
-      header: t("filed"),
-      priority: 2,
-      sortKey: "createdAt",
-      cell: (row) => <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(row.createdAt), "day")}</span>,
-    },
-    {
-      id: "decidedBy",
-      header: t("decidedBy"),
-      priority: 3,
-      cell: (row) =>
-        row.decidedBy ? (
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate">{row.decidedBy.fullName ?? row.decidedBy.email}</span>
-            {row.decidedAt ? (
-              <span className="text-sm text-kumo-subtle tabular-nums">{format.dateTime(new Date(row.decidedAt), "day")}</span>
-            ) : null}
-          </div>
-        ) : (
-          common("empty")
-        ),
-    },
+    ...closing,
   ];
 
   return (
@@ -312,7 +279,7 @@ function Register() {
         {onRequests ? (
           <DataTable
             id="requests"
-            cardLead="who"
+            cardLead="person"
             cardTrailing="state"
             columns={columns}
             rows={listed}
@@ -320,7 +287,7 @@ function Register() {
             pending={rows.isPending}
             failed={rows.isError}
             onRetry={() => void rows.refetch()}
-            rowHref={(row) => `/leave/${row.id}`}
+            onRowClick={setOpen}
             sort={{ key: order.sort, dir: order.order === "asc" ? "asc" : "desc" }}
             onSortChange={(next) => setUrl({ sort: next.key === "createdAt" ? "" : next.key, dir: next.dir === "desc" ? "" : next.dir })}
             empty={filtered ? t("registerNoMatch") : t("registerEmpty")}
@@ -338,12 +305,15 @@ function Register() {
             }
           />
         ) : null}
-        {tab === "disputes" ? <DisputesQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
-        {tab === "certificates" ? <LettersQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
-        {tab === "profileChanges" ? <ChangesQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
-        {tab === "dependents" ? <DependentsQueue ledger params={params} filtered={filtered} {...NO_LINK} /> : null}
-        {tab === "advances" ? <AdvancesQueue ledger paying={false} params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "disputes" ? <DisputesQueue ledger order={ledgerOrder} params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "certificates" ? <LettersQueue ledger order={ledgerOrder} params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "profileChanges" ? <ChangesQueue ledger order={ledgerOrder} params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "dependents" ? <DependentsQueue ledger order={ledgerOrder} params={params} filtered={filtered} {...NO_LINK} /> : null}
+        {tab === "advances" ? (
+          <AdvancesQueue ledger order={ledgerOrder} paying={false} params={params} filtered={filtered} {...NO_LINK} />
+        ) : null}
       </PageLayout>
+      <RequestLedgerSheet row={open} onClose={() => setOpen(null)} />
     </>
   );
 }
