@@ -2052,6 +2052,14 @@ tensor `embedding` không tồn tại, `test()` FAIL và app đọc con trỏ r�
 `[N,C,1,1]` × `[N,C,H,W]`, nên bỏ `expand_as` ra đúng cùng hàm — đo trên host lệch **0,0**.
 Đây là chỗ duy nhất port khác kho gốc, và nó chỉ đổi đồ thị ONNX, không đổi trọng số.
 
+**Đường TFLite xuất ECA trên `[N,1,C,1]`.** Bản `squeeze(-1) → transpose → Conv1d` không qua được
+onnx2tf: đổi NCHW sang NHWC xong, nó đặt `Squeeze` sau `GlobalAveragePool` lên trục kênh thay vì
+trục W, và xuất run `2106` dừng ở `wa/conv_23/eca/Squeeze` ("expected a dimension of 1, got 64").
+Khi `export_spec` được gọi với `runtime="tflite"` (`to_onnx`, `ptq_tflite`), `ECAModule` dàn
+`[N,C,1,1]` thành `[N,1,C,1]` bằng `Reshape`, chập bằng chính trọng số `Conv1d` dựng thành
+`[1,1,k,1]` với đệm `(k//2, 0)`, rồi dàn về: cùng trọng số, cùng phép cộng, test host khớp dưới
+1e-5. Đồ thị ESP-DL giữ dạng `squeeze/transpose` vì `ChannelConv` và `MulAdd` (§3.7) bắt đúng mẫu ấy.
+
 **Nhập bằng `import_frbench.py`, theo đúng khuôn `import_minifasnet.py`.** Script viết run đúng
 cấu trúc §4.2 — `config.resolved.yaml`, `split.lock`, `env.txt`, `ckpt/{best,last}.pth` ở định
 dạng checkpoint của `Trainer` — với tag `imported` và `run.notes` mang tên file cùng sha256 của
