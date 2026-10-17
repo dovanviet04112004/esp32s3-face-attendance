@@ -275,8 +275,7 @@ export class ListDependentsDto extends QueueQueryDto {
   @ApiPropertyOptional({
     enum: DependentState,
     enumName: "DependentState",
-    default: DependentState.PENDING,
-    description: "Registrations in this state; PENDING is the queue to decide",
+    description: "Registrations in this state, every state when absent; PENDING is the queue to decide",
   })
   @IsOptional()
   @IsEnum(DependentState)

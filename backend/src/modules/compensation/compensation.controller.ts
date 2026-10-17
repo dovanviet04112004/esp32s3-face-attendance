@@ -172,7 +172,7 @@ export class CompensationController {
   @Get("dependents")
   @Roles("ADMIN", "HR", "PAYROLL")
   @Reach("person")
-  @ApiOperation({ summary: "Registrations in a state, in this viewer's scope; the desk's own waiting ones left out" })
+  @ApiOperation({ summary: "Registrations in this viewer's scope, in one state or in every state; the desk's own waiting ones left out" })
   @ApiOkResponse({ type: DependentPageView })
   queue(
     @CurrentViewer() viewer: Viewer,

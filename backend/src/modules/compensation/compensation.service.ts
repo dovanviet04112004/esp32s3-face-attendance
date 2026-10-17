@@ -437,22 +437,22 @@ export class CompensationService {
     });
   }
 
-  /** What is waiting on a decision, narrowed to this viewer's people. An
-   *  approval nobody can find is an approval that never happens.
+  /** Registrations narrowed to this viewer's people: the queue to decide with PENDING, the register
+   *  with every state (KEHOACH 9.15). An approval nobody can find is an approval that never happens.
    */
   async dependentQueue(viewer: Viewer, query: ListDependentsDto): Promise<Page<QueuedDependent>> {
-    const state = query.state ?? "PENDING";
-    const order = query.order ?? "asc";
+    const waiting = query.state === "PENDING";
+    const order = query.order ?? (waiting ? "asc" : "desc");
     const [visible, person] = await Promise.all([
       this.scope.deskOrSelfEmployeeIds(viewer),
       personWhere(this.db, query),
     ]);
     const where: Prisma.DependentWhereInput = {
       AND: [
-        { state },
+        query.state ? { state: query.state } : {},
         ScopeService.ownedWhere(viewer, visible),
         query.employeeId === undefined ? {} : { employeeId: query.employeeId },
-        await this.audience.inboxNarrowing(viewer, "DEPENDENTS", state === "PENDING", query.employeeId),
+        await this.audience.inboxNarrowing(viewer, "DEPENDENTS", waiting, query.employeeId),
         person ? { employee: person } : {},
         filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
       ],
