@@ -4705,6 +4705,8 @@ backend/
     │   │                             #   throttler.storage.ts: bộ đếm hạn mức nằm ở Redis (§7.2)
     │   │                             #   mfa.service.ts · totp.ts: bước mã sáu số, mã dự phòng,
     │   │                             #   khoá sai mã — xác minh hai bước (§9.4)
+    │   │                             #   password-policy.ts · common-passwords.generated.ts: mật
+    │   │                             #   khẩu mới phải mới, không phổ biến, không chứa chính người ấy (§9.4)
     │   ├── users/    ├── devices/    ├── enrollment/
     │   ├── employees/                # import.ts đọc dòng và lập việc của từng dòng · workbook.ts đọc và ghi .xlsx (§9.20)
     │   │                             #   bulk.service.ts: thao tác trên một nhóm người đã chọn
@@ -5109,15 +5111,17 @@ frontend/
 │       ├── error.tsx                 # ★ §9.21.6 — trang lỗi của hệ, có thử lại và về trang chủ
 │       ├── not-found.tsx             # ★ §9.21.6 — trang "không có địa chỉ này" của hệ, đúng thứ tiếng
 │       ├── [...rest]/page.tsx        # địa chỉ không route nào nhận → not-found ở trên, không phải của Next
-│       ├── (auth)/{layout.tsx, {login, set-password, forgot-password, change-password}/page.tsx}
+│       ├── (auth)/{layout.tsx, {login, set-password, forgot-password, change-password, not-me}/page.tsx}
 │       │                                 # ★ §9.4 — một liên kết dùng một lần phục vụ
-│       │                                 #   cả lần đặt đầu lẫn lần quên. Cả bốn cửa
+│       │                                 #   cả lần đặt đầu lẫn lần quên. Cả năm cửa
 │       │                                 #   đứng ngoài vỏ dashboard: mỗi cửa kết thúc
 │       │                                 #   bằng một phiên mới, và đổi mật khẩu đóng
 │       │                                 #   cả phiên đang mở chính nó (§9.23). layout
-│       │                                 #   giữ một thẻ đặt giữa màn cho cả bốn. login
+│       │                                 #   giữ một thẻ đặt giữa màn cho cả năm. login
 │       │                                 #   đi tiếp bước mã hoặc lần ghi danh khi vai
-│       │                                 #   thuộc MFA_ROLES (§9.4), vẫn trong một trang
+│       │                                 #   thuộc MFA_ROLES (§9.4), vẫn trong một trang;
+│       │                                 #   not-me là nút "Không phải tôi" của thư
+│       │                                 #   mật khẩu vừa đổi
 │       └── (dashboard)/
 │           ├── layout.tsx            # sidebar + guard
 │           ├── overview/page.tsx     # §9.10 — việc chờ, việc của bàn, hôm nay
@@ -7972,9 +7976,17 @@ liên kết khôi phục nằm lâu trong hộp thư là một cửa sau. Hết 
 viên phát lại, và chính người ấy tự xin từ màn đăng nhập. Một luồng khôi phục thứ hai là một chỗ
 nữa để quên vá.
 
-**Mật khẩu đổi thì chủ nhận thư báo.** Đặt qua liên kết hay đổi tại chỗ đều gửi một thư "mật
-khẩu vừa đổi" tới địa chỉ của tài khoản: người bị chiếm tài khoản biết ngay để xin lại, thay vì
-phát hiện khi không đăng nhập được nữa.
+**Mật khẩu đổi thì chủ nhận thư báo, và thư cho chủ một nút "Không phải tôi".** Đặt qua liên kết
+hay đổi tại chỗ đều gửi một thư "mật khẩu vừa đổi" tới địa chỉ của tài khoản: người bị chiếm tài
+khoản biết ngay, thay vì phát hiện khi không đăng nhập được nữa. Thư mang đúng một liên kết, tới
+trang `not-me`: dùng một lần, sống `PASSWORD_ALARM_TTL_HOURS` (72), máy chủ giữ băm của nó ở bảng
+`PasswordAlarm` chứ không giữ bản rõ, như liên kết đặt mật khẩu. Mở liên kết **chưa làm gì**: trang
+hỏi lại bằng một nút, vì bộ lọc thư của nhiều hộp mở sẵn mọi liên kết để soi. Bấm nút thì trong một
+lượt máy chủ đóng mọi phiên, đóng mọi liên kết đặt mật khẩu còn sống, rồi gửi ngay một liên kết đặt
+lại sống `PASSWORD_RESET_TTL_MINUTES` — tức là đúng luồng xin lại, theo đúng luật một liên kết sống,
+không phải một luồng khôi phục thứ hai. Bấm lần hai, hay bấm khi đã hết hạn, nhận `ALARM_SPENT`. Kẻ
+chiếm tài khoản đổi mật khẩu thì chủ lấy lại bằng một cú bấm, mà kẻ ấy không chặn được thư vì địa
+chỉ nhận là thứ chỉ quản trị viên đổi được.
 
 **Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không.** Một câu trả lời
 khác đi biến nó thành chỗ dò danh sách nhân sự của công ty: gõ vào một tệp email và đọc xem cái
@@ -7988,7 +8000,25 @@ lương cũng dùng. Quá nhịp thì câu trả lời vẫn y như cũ, chỉ k
 cho nó đổi luôn mật khẩu là cho nó **khoá chủ tài khoản ra ngoài**, và người mất tài khoản hết
 đường tự lấy lại. Hỏi lại mật khẩu cũ không cứu được dữ liệu đã lộ — nó giữ cho cửa quay lại
 vẫn mở. Tài khoản chưa từng đặt mật khẩu không đi cửa này được: băm của nó không khớp với gì,
-nên đường duy nhất của nó vẫn là liên kết.
+nên đường duy nhất của nó vẫn là liên kết. Tài khoản đã có ứng dụng xác thực thì đưa thêm **một mã**
+của bước mã: thiếu mã là `401 MFA_REQUIRED`, mã sai đi qua đúng phép kiểm và đúng bộ đếm sai của
+lượt đăng nhập (luật 4 và 6 bên dưới), nên sai đủ lần thì bước mã khoá như ở cửa đăng nhập. Kẻ cầm
+một phiên và đoán trúng mật khẩu vẫn không đổi được mật khẩu khi thiếu điện thoại của chủ.
+
+**Mật khẩu mới phải mới, không phổ biến và không chứa chính người ấy**, ở cả hai cửa — đặt qua
+liên kết và đổi tại chỗ. Ngoài độ dài 12–200 ký tự, máy chủ từ chối bằng mã riêng:
+
+- `PASSWORD_UNCHANGED` — trùng mật khẩu đang dùng: đổi mà không đổi gì là để lại đúng cái đã lộ.
+- `PASSWORD_COMMON` — nằm trong danh sách mật khẩu phổ biến, so không phân biệt hoa thường. Danh
+  sách nằm sẵn trong repo (`common-passwords.generated.ts`), sinh bằng `make password-list` từ tệp
+  một triệu mật khẩu của SecLists (giấy phép MIT, sha256 ghim trong Makefile), giữ những mục từ 12
+  ký tự trở lên vì ngắn hơn đã bị độ dài chặn. Máy chủ **không gọi dịch vụ ngoài** để tra mật khẩu:
+  gửi mật khẩu, dù đã băm một phần, ra khỏi hệ là đúng thứ §7.2 cấm.
+- `PASSWORD_PERSONAL` — chứa phần trước `@` của email, họ tên viết liền bỏ dấu, hay mã nhân viên
+  của chính tài khoản ấy: những thứ kẻ đoán biết trước tiên.
+
+Form đổi có hai ô mật khẩu mới, nút chỉ bật khi hai ô khớp nhau, và một thanh độ mạnh chỉ để gợi ý;
+luật thật nằm ở máy chủ.
 
 Cả hai đường đều **đóng mọi phiên**, như §9.23 đòi ở cùng một câu với nghỉ việc và tắt tài khoản.
 
