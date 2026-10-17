@@ -2137,19 +2137,19 @@ ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách l�
 
 - **Trên board** (`test_apps/bench_ai`), bố trí lõi như kiosk: model chạy ở main task trên lõi 1
   như `ai_task`, task tải PSRAM của preview (một khung 480×320 RGB565 mỗi 70 ms) ở lõi 0 như
-  `cam_task`. Chung một lõi thì mỗi lần chép khung (~10 ms) giành CPU của model, và số "có tải" đo
-  thời gian bị chiếm CPU chứ không phải tranh chấp bus. Đo: latency từng model (median, p95, rảnh
-  và có tải), một lượt detect → spoof → recog, thời gian dựng, RAM nội và PSRAM lấy khi dựng (cả ba
-  và từng model), RAM còn trống và khối PSRAM liền lớn nhất, arena TFLM đã dùng, đỉnh stack của một
-  lượt ba model (task thăm dò riêng, không tính Unity), heap qua 50 lượt, giá chép trọng số từ flash
-  sang PSRAM, CRC đầu ra. Hai cấu hình TFLM phải ra cùng CRC: esp-nn khớp bản C của nó từng bit
-  (`NN_SKIP_NUDGE` tắt).
+  `cam_task`. Cùng lõi thì model đứng chờ mỗi lượt chép khung, khác lõi thì hai lõi chia bus PSRAM;
+  kiosk là trường hợp sau, dù hai cách ra cùng mức chậm (`latency.md` §16). Đo: latency từng model
+  (median, p95, rảnh và có tải), một lượt detect → spoof → recog, thời gian dựng, RAM nội và PSRAM
+  lấy khi dựng (cả ba và từng model), RAM còn trống và khối PSRAM liền lớn nhất, arena TFLM đã dùng,
+  đỉnh stack của một lượt ba model (task thăm dò riêng, không tính Unity), heap qua 50 lượt, giá chép
+  trọng số từ flash sang PSRAM, CRC đầu ra. Hai cấu hình TFLM phải ra cùng CRC: esp-nn khớp bản C của
+  nó từng bit (`NN_SKIP_NUDGE` tắt).
 - **Tài nguyên tĩnh và môi trường**, chụp từ đúng bản build vừa nạp (`make fw-bench-ai-run`): cỡ ảnh
-  app, flash code và rodata, IRAM, DRAM `.data` + `.bss`, phần của từng thư viện runtime
-  (`idf.py size`, `size-components`); sdkconfig, phiên bản ESP-IDF, GCC và component
-  (`dependencies.lock`); chip, xung CPU, flash, PSRAM đọc từ log khởi động. Độ phức tạp từng model —
-  tham số và MAC của conv, depthwise, FC — đếm trên file `.tflite`, quy ra MAC mỗi chu kỳ CPU ở từng
-  cấu hình.
+  app, flash code và rodata, IRAM, DRAM `.data` + `.bss`, mọi thư viện có cỡ khác nhau giữa các bản
+  build kể cả thứ runtime kéo theo (`idf.py size`, `size-components`); sdkconfig, phiên bản ESP-IDF,
+  GCC và component (`dependencies.lock`); chip, xung CPU, flash, PSRAM đọc từ log khởi động. Độ phức
+  tạp từng model — tham số và MAC của conv, depthwise, FC — đếm trên file `.tflite`, quy ra MAC mỗi
+  chu kỳ CPU ở từng cấu hình.
 - **Độ chính xác chấm trên máy**, cùng thước với thang lượng tử (`ml/bench/host_bench.py`). ESP-DL
   qua mô phỏng ESP-PPQ, mà `model->test()` giữ khớp chip từng bit; TFLite qua kernel tham chiếu
   (`BUILTIN_REF`), mà điểm live và CRC embedding trên board phải trùng khi máy chạy cùng đầu vào
