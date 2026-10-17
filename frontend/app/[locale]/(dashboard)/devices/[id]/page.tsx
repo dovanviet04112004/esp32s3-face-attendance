@@ -48,7 +48,7 @@ interface FleetUpdate {
   behind: string[];
   updating: string[];
   offline: string[];
-  /** Kiosks this release moves to another recognition model; the server takes it for them only fleet-wide. */
+  /** Kiosks this release moves to another recognition model; the server takes it for them only with the recapture word. */
   recapture: string[];
 }
 
@@ -108,6 +108,7 @@ export default function DevicePage() {
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [reading, setReading] = useState<ReleaseNotesFacts[] | null>(null);
+  const [asking, setAsking] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -146,9 +147,15 @@ export default function DevicePage() {
 
   const stepName = (step: ReleaseStep) => `${t(`target${step.target}`)} ${step.version}`;
   const install = useMutation({
-    mutationFn: async () =>
-      (await api.post<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }>(`/releases/update/${id}`, {})).data,
+    mutationFn: async (recapture: boolean) =>
+      (
+        await api.post<{ deviceId: string; offered: ReleaseStep; next: ReleaseStep | null }>(
+          `/releases/update/${id}`,
+          recapture ? { recapture: true } : {},
+        )
+      ).data,
     onSuccess: (done) => {
+      setAsking(false);
       notify.done(
         done.next
           ? t("updateStartedThen", { step: stepName(done.offered), next: stepName(done.next) })
@@ -156,7 +163,10 @@ export default function DevicePage() {
       );
       void cache.invalidateQueries({ queryKey: ["releases"] });
     },
-    onError: notify.failed,
+    onError: (fell: unknown) => {
+      setAsking(false);
+      notify.failed(fell);
+    },
   });
 
   const rename = useMutation({
@@ -220,7 +230,7 @@ export default function DevicePage() {
     (update) => update.behind.includes(id) || update.updating.includes(id) || update.offline.includes(id),
   );
   const parts = newer.map((update) => update.release);
-  const fleetOnly = newer.some((update) => update.recapture.includes(id));
+  const movesRecognition = newer.some((update) => update.recapture.includes(id));
   const told = offerStatus.data;
   const busy = told?.busyUntil ? Date.parse(told.busyUntil) > now : false;
   const stepAhead = told?.next && STEP_AHEAD.has(told.state) ? told.next : null;
@@ -374,19 +384,16 @@ export default function DevicePage() {
                     <span className="flex min-w-0 grow basis-60 flex-col gap-1">
                       <span>{t("otaNewer", { parts: parts.map(stepName).join(" · ") })}</span>
                       <ReleaseSummary releases={parts} onOpen={() => setReading(parts)} />
-                      {fleetOnly ? (
-                        <span id="ota-hint" className="text-sm text-pretty text-kumo-subtle">
-                          {t("otaRecaptureHint")}
-                        </span>
+                      {movesRecognition ? (
+                        <span className="text-sm text-pretty text-kumo-subtle">{t("otaRecaptureHint")}</span>
                       ) : null}
                     </span>
                     <Button
                       variant="secondary"
                       icon={ArrowsClockwiseIcon}
                       loading={install.isPending}
-                      disabled={install.isPending || updating || fleetOnly || it?.status !== "APPROVED" || !it?.online}
-                      aria-describedby={fleetOnly ? "ota-hint" : undefined}
-                      onClick={() => install.mutate()}
+                      disabled={install.isPending || updating || it?.status !== "APPROVED" || !it?.online}
+                      onClick={() => (movesRecognition ? setAsking(true) : install.mutate(false))}
                     >
                       {updating
                         ? t("otaUpdating")
@@ -481,6 +488,21 @@ export default function DevicePage() {
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary variant="destructive" loading={revoke.isPending} onClick={() => revoke.mutate()}>
               {t("revoke")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Alert>
+
+      <LayerDialog.Alert open={asking} onOpenChange={setAsking} dismissDisabled={install.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("otaRecaptureTitle", { name: title })}</LayerDialog.Title>
+          <LayerDialog.Description>{t("otaNewer", { parts: parts.map(stepName).join(" · ") })}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <Banner variant="alert" icon={<WarningIcon weight="fill" />} description={t("releaseRecaptureWarning")} className="text-pretty" />
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary variant="destructive" loading={install.isPending} onClick={() => install.mutate(true)}>
+              {t("otaRecaptureConfirm")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
