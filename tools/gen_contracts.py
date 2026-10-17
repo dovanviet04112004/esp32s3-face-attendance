@@ -327,6 +327,16 @@ def sub_models(model) -> list:
     ]
 
 
+def render_c_bounds(model: Model) -> str:
+    """The schema's range of each bounded integer, so C checks what the server validates."""
+    out = []
+    for field, spec in model.properties.items():
+        if spec.get("type") == "integer" and "minimum" in spec and "maximum" in spec:
+            name = f"{screaming(model.c_prefix)}_{screaming(field)}"
+            out.append(f"#define {name}_MIN {spec['minimum']}\n#define {name}_MAX {spec['maximum']}\n")
+    return "".join(out) + ("\n" if out else "")
+
+
 def render_c_struct(model: Model) -> str:
     fields = []
     presence = []
@@ -448,10 +458,12 @@ def render_payload_header(models: list[Model]) -> str:
     for model in models:
         for sub in sub_models(model):
             parts.append(render_c_enums(sub))
+            parts.append(render_c_bounds(sub))
             parts.append(render_c_struct(sub))
             parts.append(render_c_parse(sub))
             parts.append(render_c_serialize(sub))
         parts.append(render_c_enums(model))
+        parts.append(render_c_bounds(model))
         parts.append(render_c_struct(model))
         parts.append(render_c_parse(model))
         parts.append(render_c_serialize(model))
