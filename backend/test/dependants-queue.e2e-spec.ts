@@ -133,4 +133,17 @@ describe("the dependants queue says how much is waiting (e2e)", () => {
     assert.equal(told[0]?.user.employeeId, holderId);
     assert.equal(told[0]?.approved, true);
   });
+
+  it("keeps every registration in the register, decided ones beside the waiting, newest first", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/dependents?search=${HOLDER}&take=50`)
+      .set("Authorization", `Bearer ${token}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const rows = (res.body as { rows: { id: string; state: string; createdAt: string }[] }).rows;
+    assert.equal(rows.length, WAITING + 1, "the register dropped a registration");
+    assert.equal(rows.find((one) => one.id === filedId)?.state, "ACTIVE", "a decided registration left the register");
+    assert.equal(rows.filter((one) => one.state === "PENDING").length, WAITING);
+    const filed = rows.map((one) => Date.parse(one.createdAt));
+    assert.deepEqual(filed, [...filed].sort((a, b) => b - a), "the register is not newest first");
+  });
 });
