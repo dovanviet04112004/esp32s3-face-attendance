@@ -8,7 +8,8 @@
 #include <stdint.h>
 
 #define STORAGE_MODELS_MAGIC 0x534C444Du  // 'MDLS'
-#define STORAGE_MODELS_VER 1u
+#define STORAGE_MODELS_VER 2u
+#define STORAGE_MODELS_VER_OLDEST 1u      // v1 carries no thresholds
 #define STORAGE_MODEL_COUNT 3
 #define STORAGE_MODEL_NAME_LEN 16
 #define STORAGE_SHA256_LEN 32
@@ -66,7 +67,8 @@ typedef struct __attribute__((packed)) {
     uint32_t count;
     uint32_t built_at;
     storage_model_entry_t entry[STORAGE_MODEL_COUNT];
-    uint8_t reserved[44];
+    uint16_t threshold_permille[STORAGE_MODEL_COUNT]; // entry i's; 0 in v1
+    uint8_t reserved[38];
     uint32_t crc32;
 } storage_models_header_t;
 
@@ -180,6 +182,7 @@ typedef struct __attribute__((packed)) {
 static_assert(sizeof(storage_model_entry_t) == 64, "model entry must match KEHOACH 6.2.2");
 static_assert(sizeof(storage_models_header_t) == 256, "models header must match KEHOACH 6.2.2");
 static_assert(offsetof(storage_models_header_t, entry) == 0x10, "model entry offset drifted");
+static_assert(offsetof(storage_models_header_t, threshold_permille) == 0xD0, "threshold offset drifted");
 static_assert(offsetof(storage_models_header_t, crc32) == 0xFC, "models crc offset drifted");
 
 static_assert(sizeof(storage_file_header_t) == 32, "file header must match KEHOACH 6.2.4");

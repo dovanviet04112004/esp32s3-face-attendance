@@ -5983,7 +5983,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`, và có bản thứ hai ở `log/boot.bin` vì mất NVS không được làm nó đếm lại (§6.2.5); `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
-| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | năm ngưỡng của §4.5.5d cộng ngưỡng "có người" của §2.3D; boot đầu gieo từ `Kconfig` của `svc_vision`, đổi bằng `SET_CONFIG` |
+| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | `face_min_px`, `guide_min` của §4.5.5d cộng ngưỡng "có người" của §2.3D: boot đầu gieo từ `Kconfig` của `svc_vision`, `SET_CONFIG` đổi `face_min_px` và `present_mm`. Ba ngưỡng của model đi trong ảnh model (§6.2.2); `detect_min`, `live_min`, `match_min` chỉ còn được đọc khi ngăn đang chạy là ảnh định dạng 1, chưa mang ngưỡng, và `SET_CONFIG` không chạm tới chúng |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
 **`device/serial` là danh tính, không phải bí mật.** Thiếu khoá thì `sys_storage` dựng
@@ -6084,7 +6084,8 @@ offset 0x0000  header 256 B
              sha256  [32]
              in_h u16, in_w u16
              arena_hint u32              # arena model này chạy trong (byte); 0 = chưa đo
-   +0xD0  reserved                       (44B)
+   +0xD0  threshold[0..2] u16 ‰          # ngưỡng của entry cùng số thứ tự; 0 ở ảnh định dạng 1
+   +0xD6  reserved                       (38B)
    +0xFC  crc32 của 0x00..0xFB           (4B)
 
 offset 0x0100  detect   .tflite | .espdl
@@ -6096,13 +6097,29 @@ offset ...     recog    (căn 16 B)
 byte 4, `.espdl` mang `EDL2` ở byte 0; `sys_storage_model_find()` nhận cả hai và từ chối mọi thứ
 khác. **Một ảnh chỉ chứa file của một runtime**, và mặt tiền của runtime đang biên dịch từ chối
 entry mang magic của runtime kia kèm log — nạp nhầm ảnh TFLM cho firmware ESP-DL là lỗi lúc
-`ai_engine_init`, không phải một graph đọc rác. Header không đổi một byte nào, nên `format_ver`
-giữ **1** và ảnh TFLM cũ vẫn đọc được bằng firmware TFLM mới. `in_h`/`in_w` vẫn là cỡ đầu vào
-của graph; `arena_hint` của entry `.espdl` là **0**, vì ESP-DL tự lập kế hoạch bộ nhớ (§3.8).
+`ai_engine_init`, không phải một graph đọc rác. Runtime không đổi byte nào của header, nên ảnh TFLM
+cũ vẫn đọc được bằng firmware TFLM mới. `in_h`/`in_w` vẫn là cỡ đầu vào của graph; `arena_hint` của
+entry `.espdl` là **0**, vì ESP-DL tự lập kế hoạch bộ nhớ (§3.8).
 
 `sys_storage_models_open()` mmap toàn bộ partition một lần và kiểm crc header; `sys_storage_model_find()` tra theo `name` rồi trả `base + entry[i].offset` **cùng `arena_hint`** cho `ai_engine`. Tra theo tên chứ không theo vị trí, nên `count` nhỏ hơn 3 vẫn hợp lệ: khi một nhánh chưa có model, ảnh chỉ chứa những nhánh đã có và các entry còn lại để 0. **Verify sha256 chỉ chạy ngay sau OTA**, không chạy mỗi lần boot — băm 1.7 MB tốn ~200 ms mỗi lần khởi động mà không đổi lại được gì.
 
 `arena_hint` là **số byte của arena mà model đó chạy trong**, không phải phần riêng của nó. Hai nhánh dùng chung một `MicroAllocator` thì cả hai entry ghi **cùng một** con — tổng của nhóm — và `ai_engine` cấp `max` trên từng nhóm; §3.8 nói vì sao `max` đúng và vì sao không thêm field `arena_group`. Nhóm nào chung arena là hằng số kiến trúc khai ở `ai_engine` (§4.5.5c), không nằm trong ảnh.
+
+**Ngưỡng của model đi trong chính ảnh model.** `threshold[i]` là ngưỡng vận hành của entry `i`, tính
+bằng phần nghìn: `detect` mang `detect_min`, `spoof` mang `live_min`, `recog` mang `match_min`. Ngưỡng
+là tính chất của trọng số, không của firmware hay của chỗ đặt máy: đổi model mà giữ ngưỡng cũ là chạy
+một con số đo cho model khác mà không gì báo, và lùi ngăn model mà ngưỡng đứng yên cũng vậy. Nằm trong
+ảnh thì OTA model mang ngưỡng của nó, lùi ngăn là lùi luôn ngưỡng, và đổi ngưỡng là phát một bản models
+mới chứ không build lại firmware. Ba ngưỡng này không lên dashboard: hạ `match_min` là người lạ mở được
+cửa, hạ `live_min` là ảnh chụp lọt qua. Số đi từ `quant.yaml` qua `quant-deploy` vào `meta.json` và
+lock (§4.9); `quant-deploy` từ chối khoá một nhánh chưa khai ngưỡng, nên entry có mặt mà ngưỡng 0 là ảnh
+hỏng và `pack` không bao giờ ghi nó.
+
+Ngưỡng đưa `format_ver` lên **2**. Firmware đọc cả hai định dạng: ảnh định dạng 1 không mang ngưỡng, và
+gặp nó thì `main` lấy ba ngưỡng từ NVS `vision` như trước — chỉ xảy ra trong lúc đội máy chuyển sang ảnh
+mới, vì bước cập nhật đi firmware trước. Firmware cũ từ chối ảnh định dạng 2 (`sys_storage_models_open`
+trả `ESP_ERR_INVALID_CRC`) rồi lùi về ngăn cũ, nên bản models định dạng 2 khai `minFwVersion` là firmware
+đầu tiên đọc được nó (§7.7).
 
 Ảnh do `ml/src/facepipe/export/pack_models_partition.py` gộp: nó đọc `contracts/models.lock.json` để biết nhánh nào đang deploy, đối chiếu sha256 và `meta.json` của từng nhánh, từ chối lock trộn hai runtime, rồi ghi header + ba khối. `ml/scripts/50_pack_and_flash.sh` gọi nó và ghi kết quả xuống **cả `models_0` lẫn `models_1`**
 bằng `parttool.py`: sau một lần OTA model, máy đọc ngăn mà `model/active_slot` chỉ, nên nạp riêng

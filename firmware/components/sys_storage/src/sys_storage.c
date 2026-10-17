@@ -934,7 +934,8 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
     }
     const uint32_t crc = esp_crc32_le(0, (const uint8_t *)candidate,
                                       offsetof(storage_models_header_t, crc32));
-    if (crc != candidate->crc32 || candidate->format_ver != STORAGE_MODELS_VER) {
+    if (crc != candidate->crc32 || candidate->format_ver < STORAGE_MODELS_VER_OLDEST ||
+        candidate->format_ver > STORAGE_MODELS_VER) {
         esp_partition_munmap(s_models_map);
         ESP_LOGE(TAG, "models header v%" PRIu32 " crc %08" PRIx32 " vs %08" PRIx32,
                  candidate->format_ver, crc, candidate->crc32);
@@ -1015,8 +1016,8 @@ esp_err_t sys_storage_models_stage_end(void)
                                           offsetof(storage_models_header_t, crc32));
         // Read back from flash, not from the caller's buffer: what the next boot
         // mmaps is the only copy that matters.
-        if (head.magic != STORAGE_MODELS_MAGIC || head.format_ver != STORAGE_MODELS_VER ||
-            crc != head.crc32) {
+        if (head.magic != STORAGE_MODELS_MAGIC || head.format_ver < STORAGE_MODELS_VER_OLDEST ||
+            head.format_ver > STORAGE_MODELS_VER || crc != head.crc32) {
             ESP_LOGE(TAG, "staged image has no usable header");
             err = ESP_ERR_INVALID_CRC;
         }
@@ -1040,6 +1041,24 @@ esp_err_t sys_storage_models_activate(void)
     const uint8_t next = active_slot() == 0 ? 1 : 0;
     APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, next), TAG, "slot");
     ESP_LOGW(TAG, "models slot %u takes over at the next boot", (unsigned)next);
+    return ESP_OK;
+}
+
+esp_err_t sys_storage_models_check(uint8_t slot)
+{
+    const esp_partition_t *part = slot_partition(slot);
+    if (part == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    storage_models_header_t head;
+    APP_RETURN_ON_ERR(esp_partition_read(part, 0, &head, sizeof(head)), TAG, "read slot");
+    if (head.magic != STORAGE_MODELS_MAGIC) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    const uint32_t crc = esp_crc32_le(0, (const uint8_t *)&head, offsetof(storage_models_header_t, crc32));
+    if (crc != head.crc32 || head.format_ver < STORAGE_MODELS_VER_OLDEST || head.format_ver > STORAGE_MODELS_VER) {
+        return ESP_ERR_INVALID_CRC;
+    }
     return ESP_OK;
 }
 

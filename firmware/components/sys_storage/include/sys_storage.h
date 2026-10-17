@@ -41,6 +41,8 @@ esp_err_t sys_storage_init(void);
 #define STORAGE_KEY_ENROLL_OUT "enroll_out"  // left by kiosk-side removal, erased at boot
 #define STORAGE_KEY_ACTIVE_SLOT "active_slot"  // in STORAGE_NS_MODEL
 #define STORAGE_KEY_PRESENT_MM "present_mm"    // in STORAGE_NS_VISION
+#define STORAGE_KEY_FACE_MIN_PX "face_min_px"  // in STORAGE_NS_VISION, frame pixels
+#define STORAGE_KEY_DEDUP_MIN "dedup_min"      // in STORAGE_NS_ATTEND, minutes
 #define STORAGE_KEY_BRIGHTNESS "brightness"    // in STORAGE_NS_UI, percent
 #define STORAGE_KEY_VOLUME "volume"            // in STORAGE_NS_UI, percent
 #define STORAGE_KEY_LANG "lang"                // in STORAGE_NS_UI, "vi" or "en"
@@ -218,6 +220,12 @@ esp_err_t sys_storage_models_stage_abort(void);
  *  @ctx task | blocking | takes effect on reboot, nothing is remapped here
  */
 esp_err_t sys_storage_models_activate(void);
+
+/** Whether a slot holds a whole models image, read off the flash without mapping it.
+ *  @ctx task | blocking
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND for no such slot or no image | ESP_ERR_INVALID_CRC
+ */
+esp_err_t sys_storage_models_check(uint8_t slot);
 
 /** Put the previous slot back, for a boot that could not load what it found.
  *  @ctx task | blocking | takes effect on the next boot (KEHOACH 6.2.2)
