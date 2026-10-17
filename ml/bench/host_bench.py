@@ -133,18 +133,17 @@ class TfliteRunner:
 
 
 def espdl_runner(model: Path, run: Path):
-    """The ladder row that wrote model, simulated; refused unless it holds model's weights."""
-    from facepipe import tasks
-    from facepipe.compress.quant import export_espdl, ladder, ptq_espdl
+    """The ladder row that wrote model, run under its patches; refused unless it holds model."""
+    from facepipe.compress.quant import esp_ppq_patches, export_espdl, ladder, ptq_espdl
     from facepipe.export.espdl_op_check import content_digest
 
     native = model.with_name(ladder.GRAPH_FILE)
     if not native.is_file():
         raise SystemExit(f"{model}: no {native.name} beside it, so it is no ladder row's .espdl")
     graph = export_espdl.load_native(native)
-    patches = ptq_espdl.block(tasks.branch_of(run))["esp_ppq_patches"]
+    patches = ladder.row_patches(run, model.parent.name)
     test_input = ladder.real_inputs(run, graph, 1)
-    with tempfile.TemporaryDirectory() as work:
+    with tempfile.TemporaryDirectory() as work, esp_ppq_patches.applied(patches):
         check = export_espdl.export(graph, Path(work) / model.name, test_input)
         if content_digest(check) != content_digest(model):
             raise SystemExit(f"{model.name}: its weights are not those of {native}")
