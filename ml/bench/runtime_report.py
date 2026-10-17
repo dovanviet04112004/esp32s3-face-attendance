@@ -74,6 +74,7 @@ HASH = re.compile(
 )
 HEAP = re.compile(r"^after (\d+) passes: internal (-?\d+) B, psram (-?\d+) B")
 STACK = re.compile(r"^stack: one pass took (\d+) B of the probe's (\d+) B")
+EMBEDDING = re.compile(r"^embedding ([0-9a-f]+) scale ([0-9a-f]{8})")
 WEIGHTS = re.compile(
     r"^weights (\d+) KB: copy from flash (\d+) us, crc32 over the psram copy (\d+) us"
 )
@@ -191,11 +192,23 @@ def bench_input(size: int, seed: int) -> np.ndarray:
     return (((index * 31) + seed * 97) % 255 - 128).astype(np.int8)
 
 
-def first_output(branch: str) -> tuple[np.ndarray, float, int]:
-    """Output 0 of the branch's .tflite on bench_ai's input, on the kernels TFLM reproduces."""
-    import host_bench
+def first_output(branch: str, reference: bool = True) -> tuple[np.ndarray, float, int]:
+    """Output 0 of the branch's .tflite on bench_ai's input, on the kernels TFLM reproduces.
 
-    interpreter = host_bench.reference_interpreter(tflite_of(branch))
+    reference=False runs TFLite's default kernels instead, to show how far rounding alone moves it.
+    """
+    import host_bench
+    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+
+    path = tflite_of(branch)
+    interpreter = (
+        host_bench.reference_interpreter(path)
+        if reference
+        else Interpreter(
+            model_path=str(path),
+            experimental_op_resolver_type=OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES,
+        )
+    )
     interpreter.allocate_tensors()
     detail = interpreter.get_input_details()[0]
     size = int(np.prod(detail["shape"]))
@@ -246,21 +259,42 @@ def crc32(data: bytes) -> str:
     return f"{zlib.crc32(data):08x}"
 
 
+def apart(a: bytes, b: bytes) -> dict:
+    """How far two packed embeddings lie: elements that differ, the widest step, their cosine."""
+    qa = np.frombuffer(a[:-4], dtype=np.int8).astype(np.int32)
+    qb = np.frombuffer(b[:-4], dtype=np.int8).astype(np.int32)
+    va = qa * np.float64(struct.unpack("<f", a[-4:])[0])
+    vb = qb * np.float64(struct.unpack("<f", b[-4:])[0])
+    cosine = float(va @ vb / (np.linalg.norm(va) * np.linalg.norm(vb)))
+    widest = int(np.max(np.abs(qa - qb)))
+    return {
+        "differ": int(np.count_nonzero(qa != qb)),
+        "of": int(qa.size),
+        "widest": widest,
+        "cosine": cosine,
+    }
+
+
 def check(args: argparse.Namespace) -> int:
     logits, scale, zero = first_output("antispoof")
     live = live_score(logits, scale, zero)
     raw, raw_scale, raw_zero = first_output("recognition")
+    plain = normalized_int8(raw, raw_scale, raw_zero, fused=False)
+    other = normalized_int8(*first_output("recognition", reference=False), fused=False)
     host = {
         "spoof_live": float(live),
         "spoof_hash": crc32(struct.pack("<f", float(live))),
-        "recog_hash_plain": crc32(normalized_int8(raw, raw_scale, raw_zero, fused=False)),
+        "recog_hash_plain": crc32(plain),
         "recog_hash_fused": crc32(normalized_int8(raw, raw_scale, raw_zero, fused=True)),
+        "recog_default_kernels": apart(plain, other),
     }
     boards = {}
     for config in ("tflm", "tflm_ansi"):
         parsed = parse_log(args.out / config / "bench.log")
         if parsed.get("hash"):
-            boards[config] = parsed["hash"]
+            boards[config] = dict(parsed["hash"])
+        if parsed.get("embedding"):
+            boards[config]["embedding_vs_host"] = apart(plain, parsed["embedding"])
     result = {"host": host, "boards": boards}
     out = args.out / "check.json"
     out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -346,6 +380,8 @@ def parse_log(path: Path) -> dict:
         detect, faces, spoof, live, recog = got
         found["hash"] = {"detect": detect, "faces": int(faces), "spoof": spoof, "recog": recog}
         found["hash"]["live"] = float(live)
+    if got := first_hit(lines, EMBEDDING):
+        found["embedding"] = bytes.fromhex(got[0]) + struct.pack("<I", int(got[1], 16))
     if got := first_hit(lines, SUMMARY):
         found["summary"] = {"tests": int(got[0]), "failures": int(got[1])}
     return found
@@ -909,6 +945,13 @@ def ruler_rows(scores: dict) -> list[list[str]]:
     return rows
 
 
+def spread(found: dict) -> str:
+    return (
+        f"{found['differ']}/{found['of']} phần tử khác, lệch tối đa {found['widest']} bậc, "
+        f"cosine {num(found['cosine'], 6)}"
+    )
+
+
 def match_rows(logs: dict, checked: dict) -> list[list[str]]:
     rows = []
     a, b = logs["tflm"].get("hash"), logs["tflm_ansi"].get("hash")
@@ -925,7 +968,14 @@ def match_rows(logs: dict, checked: dict) -> list[list[str]]:
             recog = "trùng (tổng bình phương làm tròn một lần mỗi bước, như lệnh nhân-cộng)"
         else:
             recog = "trùng" if a["recog"] == host["recog_hash_plain"] else "**LỆCH**"
-        rows.append(["CRC embedding: board với TFLite trên máy", f"`{a['recog']}`", recog])
+        pair = f"`{a['recog']}` · `{host['recog_hash_plain']}`"
+        rows.append(["CRC embedding: board với TFLite trên máy", pair, recog])
+        board = checked.get("boards", {}).get("tflm", {}).get("embedding_vs_host")
+        if board:
+            rows.append(["Embedding: board với TFLite trên máy", spread(board), "—"])
+        if "recog_default_kernels" in host:
+            label = "Embedding trên máy: kernel tham chiếu với kernel mặc định của TFLite"
+            rows.append([label, spread(host["recog_default_kernels"]), "—"])
     tests = logs["espdl"].get("graph_test", {})
     if tests:
         rows.append(
