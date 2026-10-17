@@ -67,7 +67,8 @@ print(cfg.run.task, cfg.model.name)
 ladder() {
     local run="$1"
     local tag branch model art
-    tag="$(basename "${run}" | cut -d- -f2 | cut -d_ -f1)"
+    # Runs started in the same minute share the hour, so the config hash keeps their files apart.
+    tag="$(basename "${run}" | cut -d- -f2 | awk -F_ '{print $1 "_" $3}')"
     [[ -f "${run}/ckpt/best.pth" ]] || { warn "no checkpoint under ${run}"; return 1; }
     read -r branch model < <(read_branch "${run}") || return 1
     [[ -n "${branch}" ]] || { warn "cannot tell which branch ${run} belongs to"; return 1; }
