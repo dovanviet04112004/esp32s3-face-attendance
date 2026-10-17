@@ -172,7 +172,7 @@ make fw-log PORT=/dev/ttyACM0       # in log của board trong 30 s
 
 - `prod` và `fleet` đọc thêm `firmware/sdkconfig.secrets`, file không vào git, giữ token để kiosk
   xin vé lần đầu.
-- Board cắm vào Windows thì gắn sang WSL: `make usb-list`, rồi `make usb-attach BUSID=<id>`.
+- Board cắm vào Windows thì gắn sang WSL: `make usb-attach` tự tìm board `303a:1001` (cắm hai board cùng loại thì thêm `BUSID=` lấy từ `make usb-list`), rồi `make fw-mac PORT=/dev/ttyACM0` để chắc đó là board nào.
 - Test app trên board: `make fw-app APP=<đường dẫn>`, rồi `make fw-app-flash APP=<đường dẫn>`.
 
 ### Model

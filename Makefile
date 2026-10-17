@@ -686,9 +686,19 @@ board-restore: idf ## Write back and verify what board-save kept in DIR; NVS nev
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
 	$(USBIPD) list
 
-usb-attach: ## Attach BUSID=<id> to WSL; the busid follows the USB port, read usb-list
-	$(call need,BUSID,make usb-list shows it)
-	$(USBIPD) attach --wsl --busid $(BUSID)
+usb-attach: ## Attach the one ESP32-S3 (303a:1001) to WSL, or BUSID=<id>; then make fw-mac says whose board it is
+	@set -euo pipefail; busid="$(BUSID)"; \
+	rows=$$($(USBIPD) list | tr -d '\r' | awk '/^Persisted:/ {exit} $$2 == "303a:1001"'); \
+	if [ -z "$$busid" ]; then \
+	  count=$$(printf '%s\n' "$$rows" | grep -c . || true); \
+	  if [ "$$count" -ne 1 ]; then echo "$$count boards answer as 303a:1001: name one with BUSID=, make usb-list shows them"; exit 1; fi; \
+	  busid=$$(printf '%s\n' "$$rows" | awk '{print $$1}'); \
+	fi; \
+	if printf '%s\n' "$$rows" | awk -v b="$$busid" '$$1 == b' | grep -q 'Attached$$'; then \
+	  echo "$$busid is already attached"; \
+	else \
+	  echo "attaching $$busid"; $(USBIPD) attach --wsl --busid "$$busid"; \
+	fi
 	@for i in 1 2 3 4 5; do ls /dev/ttyACM* >/dev/null 2>&1 && break; sleep 1; done; ls -l /dev/ttyACM*
 
 usb-detach: ## Hand BUSID=<id> back to Windows
