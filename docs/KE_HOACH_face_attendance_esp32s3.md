@@ -4929,7 +4929,9 @@ nguyên, *Đổi ngăn model* và khởi động lại. Hai nút cuối làm má
 *Đổi ngăn model* nêu ngăn đang chạy, đọc từ `activeSlot` của nhịp sống gần nhất, nêu ngăn sẽ thử, và
 nói rằng ngăn ấy không nạp được thì máy tự về ngăn cũ (§4.8). Máy chưa từng báo ngăn thì nút khoá, vì
 đoán ngăn là gửi một lệnh chắc chắn bị từ chối. Dưới các nút là những lệnh gần đây với trạng thái,
-tự cập nhật qua feed `event`. `resultNote` là câu tiếng Anh của firmware, nên trang dịch những câu
+tự cập nhật qua feed `event`. Dòng hết hạn nói luôn vì sao: máy không trả lời trước hạn — thường vì nó
+vừa khởi động lại hay rớt mạng mà server chưa kịp thấy — và lệnh không được giữ lại chờ máy, nên bấm
+lại khi máy đã nối. `resultNote` là câu tiếng Anh của firmware, nên trang dịch những câu
 nó biết sang ngôn ngữ người xem và để nguyên câu lạ: hiện chữ gốc vẫn hơn đoán nghĩa. Hai lệnh có
 kết quả nằm ngoài câu ghi chú. *Chẩn đoán* làm máy phát ngay một nhịp sống, nên câu trả lời là thẻ
 *Sức khoẻ máy* đổi giờ đo (§4.8). *Đổi vé* chỉ xếp lượt; vé mới về sau vài giây qua
