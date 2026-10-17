@@ -17,11 +17,13 @@ static const char *TAG = "drv_ioexp";
 static i2c_master_dev_handle_t s_dev;
 static uint8_t s_shadow = IOEXP_POWER_UP_STATE;
 
-static esp_err_t write_port(uint8_t value)
+// The bus lock guards the shadow too: two tasks changing two lines must not start from one byte.
+static esp_err_t write_held(uint8_t value)
 {
-    APP_RETURN_ON_ERR(bsp_i2c_lock(IOEXP_LOCK_MS), TAG, "lock");
     const esp_err_t err = i2c_master_transmit(s_dev, &value, 1, IOEXP_TIMEOUT_MS);
-    bsp_i2c_unlock();
+    if (err == ESP_OK) {
+        s_shadow = value;
+    }
     return err;
 }
 
@@ -36,7 +38,10 @@ esp_err_t drv_ioexp_init(void)
         .scl_speed_hz = APP_I2C_HZ,
     };
     APP_RETURN_ON_ERR(i2c_master_bus_add_device(bsp_i2c_bus(), &cfg, &s_dev), TAG, "add device");
-    APP_RETURN_ON_ERR(write_port(s_shadow), TAG, "first write");
+    APP_RETURN_ON_ERR(bsp_i2c_lock(IOEXP_LOCK_MS), TAG, "lock");
+    const esp_err_t first = write_held(s_shadow);
+    bsp_i2c_unlock();
+    APP_RETURN_ON_ERR(first, TAG, "first write");
     ESP_LOGI(TAG, "pcf8574 at 0x%02X, shadow 0x%02X", APP_IOEXP_I2C_ADDR, s_shadow);
     return ESP_OK;
 }
@@ -46,12 +51,13 @@ esp_err_t drv_ioexp_set(uint8_t pin, bool high)
     if (pin >= IOEXP_PIN_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
-    // The chip takes all eight lines in one byte, so a single-line change has
-    // to carry the other seven with it.
+    APP_RETURN_ON_ERR(bsp_i2c_lock(IOEXP_LOCK_MS), TAG, "lock");
+    // The chip takes all eight lines in one byte, so a single-line change carries the other seven.
     const uint8_t next = high ? (s_shadow | (uint8_t)(1u << pin))
                               : (uint8_t)(s_shadow & ~(1u << pin));
-    APP_RETURN_ON_ERR(write_port(next), TAG, "set");
-    s_shadow = next;
+    const esp_err_t err = write_held(next);
+    bsp_i2c_unlock();
+    APP_RETURN_ON_ERR(err, TAG, "set");
     return ESP_OK;
 }
 
