@@ -1261,7 +1261,7 @@ static void run_command(const device_command_t *cmd, svc_door_t door)
         if (ticketed) {
             xEventGroupSetBits(wiring->flags, APP_EG_RENEW_TICKET);
         }
-        strlcpy(note, "ticket renewal queued", sizeof(note));
+        strlcpy(note, ticketed ? "ticket renewal queued" : "bench password holds no ticket", sizeof(note));
         break;
     }
     case DEVICE_COMMAND_ACTION_REBOOT:
