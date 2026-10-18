@@ -3255,6 +3255,7 @@ firmware/
 ├── sdkconfig.ci                      # build CI: tắt secure boot, bật assert
 ├── sdkconfig.prod                    # Flash Encryption + Secure Boot v2, chỉ nhận mqtts://
 ├── sdkconfig.fleet                   # chỉ build phát hành ghép thêm: panic và watchdog khởi động lại (§7.7)
+├── sdkconfig.tflm                    # ghép sau sdkconfig.bench: kiosk bàn chạy TFLM để đối chứng (§6.2.2)
 ├── sdkconfig.secrets                 # ❌ gitignore — token bootstrap của lô, người build tự đặt (§4.5.9)
 ├── partitions.dev.csv                # coredump lớn, không secure boot
 ├── partitions.prod.csv               # §6.1
@@ -4695,8 +4696,8 @@ idf.py -B build_prod -D SDKCONFIG=build_prod/sdkconfig \
 ```
 
 **Mỗi profile dựng trong thư mục của riêng nó**: `dev` ở `build/` với `firmware/sdkconfig`,
-`bench` ở `build_bench/`, `prod` ở `build_prod/`, bản phát cho đội (§7.7) ở `build_release/`
-như job release của CI. IDF chỉ lấy `SDKCONFIG_DEFAULTS` cho những khoá **chưa có** trong
+`bench` ở `build_bench/`, `bench_tflm` (bench ghép `sdkconfig.tflm`, §6.2.2) ở `build_bench_tflm/`,
+`prod` ở `build_prod/`, bản phát cho đội (§7.7) ở `build_release/` như job release của CI. IDF chỉ lấy `SDKCONFIG_DEFAULTS` cho những khoá **chưa có** trong
 `sdkconfig`, nên dựng một profile đè lên `sdkconfig` của profile khác là giữ nguyên khoá của
 profile kia: `bench` sau một lần `dev` vẫn chạy `-Og` với gdbstub, `prod` vẫn mang
 `CONFIG_APP_CONSOLE=y`. Cũng vì thế `make` bỏ `sdkconfig` của một profile khi một file defaults
@@ -6287,7 +6288,16 @@ trả `ESP_ERR_INVALID_CRC`) rồi lùi về ngăn cũ, nên bản models địn
 bằng `parttool.py`: sau một lần OTA model, máy đọc ngăn mà `model/active_slot` chỉ, nên nạp riêng
 `models_0` là nạp vào ngăn máy có thể không đọc, và phép đo trên bàn âm thầm chạy bộ model cũ.
 
-**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó, và ghi `models_0` bằng chính bước `--port` của nó chứ không `esptool` tay. `contracts/models.lock.json` giữ bộ `.espdl` deploy, **cùng runtime** với `AI_RUNTIME` mặc định của firmware, và hai thứ đổi trong hai commit liền nhau: lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Bộ `.tflite` đối chứng là lock thí nghiệm `ml/artifacts/device/locks/tflm/`; nội dung đầy đủ của nó còn trong lịch sử git của `contracts/`. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
+**So hai phiên bản model không được sửa contract.** Cả hai script nhận `--lock <file>`; mặc định là `contracts/models.lock.json`, tức bản đang deploy. Lock thí nghiệm nằm ở `ml/artifacts/<nhánh>/`, hoặc `ml/artifacts/device/locks/<bộ>/` khi nó gom cả ba nhánh — chỗ đã gitignore — chứ không ở `contracts/`, vì nó không phải hợp đồng mà là một lần đo; `50_pack_and_flash.sh --lock --models-dir` đóng ảnh từ đó, và ghi `models_0` bằng chính bước `--port` của nó chứ không `esptool` tay. `contracts/models.lock.json` giữ bộ `.espdl` deploy, **cùng runtime** với `AI_RUNTIME` mặc định của firmware, và hai thứ đổi trong hai commit liền nhau: lock và firmware mặc định mà lệch runtime thì ảnh đóng ra bị `ai_engine` từ chối. Bộ `.tflite` đối chứng là lock thí nghiệm `ml/artifacts/device/locks/tflm/`: Q1 TFLite của chính ba run trên `contracts/models.lock.json`, cùng `arena_hint` đo trên board, do `make runtime-image` đóng (§3 lớp 5); bộ cùng-model đo 23/09 (`1616` / `1050` / `1750`) nằm ở `locks/tflm_same/`. Nhờ vậy đo bản B là trỏ `--lock` sang file khác rồi flash lại `models_0`, không đụng `contracts/` và không build lại firmware: `ai_engine` đọc kích thước đầu vào từ chính graph và arena từ `arena_hint`, nên hai bản khác kích thước dùng cùng một binary. Giữ **cả hai** bản trên flash cùng lúc thì cần chọn slot lúc boot bằng `nvs:model/active_slot`, và đó là việc của E13-T2.
+
+**Đổi runtime của kiosk bàn là một lệnh.** `make kiosk-runtime RUNTIME=tflm|espdl PORT=…` build
+profile `bench` của runtime ấy — TFLM là `bench_tflm` — đóng ảnh model từ lock của runtime ấy
+(`contracts/models.lock.json` cho ESP-DL, `locks/tflm` cho TFLM), rồi ghi bootloader, bảng phân vùng,
+otadata, app và **cả hai** ngăn model trong một lần chạy esptool: không lần khởi động nào gặp app của
+runtime này với ảnh của runtime kia, thứ `ai_engine` từ chối và `app_boot` đáp bằng lùi ngăn. Đổi
+runtime là đổi model nhận diện, nên bảng mặt mang nhãn model khác bị bỏ lúc khởi động (§7.5): sang
+TFLM thì máy chưa nhận ra ai cho tới khi lấy mặt lại, về ESP-DL thì server gửi lại bộ mẫu của model
+ESP-DL.
 
 **Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
 `ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
