@@ -8434,10 +8434,11 @@ ai nhìn thấy: số tiền trên phiếu vẫn đúng từng đồng, chỉ c�
 
 **Thực lĩnh không bao giờ âm.** Khoản trừ có thể vượt thu nhập: tháng mới có một ngày công mà số ngày
 nghỉ chưa tới ngưỡng miễn đóng (§9.7) thì bảo hiểm vẫn trừ đủ trên lương đóng bảo hiểm, và một phiếu
-âm đi thẳng vào file ngân hàng thành một dòng chuyển tiền âm. Nên `calculate()` thêm dòng trừ
-`CARRY_OUT` mang **số âm** đúng bằng phần âm, đưa thực lĩnh về 0, còn phiếu vẫn kể đủ từng khoản.
-Chủ repo chốt 18/10: phần âm **chuyển sang kỳ sau**. Lúc chốt, mỗi phiếu có `CARRY_OUT` sinh một
-`RetroAdjustment` mã `CARRY` mang chính số âm ấy, và lượt thường kế tiếp của người đó trừ nó **sau
+âm đi thẳng vào file ngân hàng thành một dòng chuyển tiền âm. Nên `calculate()` ghi phần âm thành
+dòng thông tin `CARRY_OUT` mang **số dương** — dòng phiếu không bao giờ âm, §9.22.4 — để
+`deductionsTotal` chỉ giữ phần kỳ này thực trừ được và thực lĩnh về 0, còn phiếu vẫn kể đủ từng
+khoản trừ. Chủ repo chốt 18/10: phần âm **chuyển sang kỳ sau**. Lúc chốt, mỗi phiếu có `CARRY_OUT`
+sinh một `RetroAdjustment` mã `CARRY` mang đúng số ấy, và lượt thường kế tiếp của người đó trừ nó **sau
 thuế** thành dòng `RETRO_CARRY`, như trừ tạm ứng — bảo hiểm đã được trừ khỏi thu nhập chịu thuế của
 kỳ trước, trừ lần nữa là giảm thuế hai lần. Chốt kỳ sau đánh dấu nó `APPLIED` như mọi khoản truy
 lĩnh; kỳ sau vẫn âm thì phần âm mới lại chuyển tiếp. Phiếu chốt cuối âm (người rời đi còn nợ, như
