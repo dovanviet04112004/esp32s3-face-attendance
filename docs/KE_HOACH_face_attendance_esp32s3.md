@@ -3824,8 +3824,10 @@ Chín màn hình cùng vòng đời, thêm màn hình mới không đụng `Scre
 **Chạm và kéo là hai thứ khác nhau, và `ui_kiosk` phân xử cho mọi màn.** Một lần bấm tới màn dưới
 dạng `on_touch(x, y, true)` đúng một lần, tại chỗ ngón đặt xuống. Ngón còn nằm trong `kTapSlopPx`
 quanh chỗ ấy thì vẫn là chạm: lúc nhấc, màn nhận `on_touch(x, y, false)` tại **chỗ đặt xuống**, nên
-nút và dòng nào nhận cú đặt thì chính nó kích hoạt, dù ngón run vài pixel. Ngón trượt ra ngoài thì
-cú bấm thành kéo. Màn nào đang kéo thật (`drags()` đúng — thanh trượt độ sáng và âm lượng khi cú
+nút và dòng nào nhận cú đặt thì chính nó kích hoạt, dù ngón trôi trong ngưỡng ấy. Ngưỡng là **~5 mm**
+(28 px trên màn 4" 320×480, ~5,7 px/mm): tâm chạm của đầu ngón trôi 1–3 mm khi ngón ép xuống và lăn,
+còn một cú vuốt đi xa hơn nhiều. Ngưỡng nhỏ hơn thì cú chạm hơi lăn ngón — nhất là trên phím rộng
+26 px (4,6 mm) — bị coi là kéo và mất. Ngón trượt ra ngoài ngưỡng thì cú bấm thành kéo. Màn nào đang kéo thật (`drags()` đúng — thanh trượt độ sáng và âm lượng khi cú
 bấm đặt lên chúng) nhận mọi điểm giữa qua `on_drag` rồi nhận cú nhấc như thường. Màn còn lại nhận
 ngay `on_touch(-1, -1, false)`: nút sáng tắt, không gì kích hoạt, và phần còn lại của cú kéo bị bỏ.
 Không có luật này thì một cú vuốt qua danh sách Wi-Fi chọn mạng nằm dưới chỗ ngón dừng, một cú vuốt
