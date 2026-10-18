@@ -13,7 +13,7 @@ sha256:
   LCC_FASD/LCC_FASD_development: <directory>
   LCC_FASD/LCC_FASD_evaluation: <directory>
 counts:
-  files: 18828
+  files: 18827
   images: 18827
 consumed_by:
 - antispoof/eval

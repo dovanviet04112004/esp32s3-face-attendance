@@ -3,7 +3,7 @@ source_url: https://huggingface.co/datasets/gaunernst/glint360k-wds-gz
 access: auto
 license: research-only, non-commercial
 downloaded: '2026-08-30'
-verified: true
+verified: false
 expects:
 - glint360k-0000.tar.gz
 sha256:
@@ -14,4 +14,5 @@ consumed_by:
 - recognition/student
 notes: 'Du 1385 shard / 122 GB. Webdataset .tar.gz da shard san, khong can chay
   recordio_to_wds.py. expects chi giu mot shard lam mau kiem tra; so shard that lay
-  o counts.files vi trang liet ke cua Hub cat o 1000 entry.'
+  o counts.files vi trang liet ke cua Hub cat o 1000 entry. Ban tren E: da xoa truoc
+  18/10/2026, chua tai lai; sha256 o tren de kiem ban tai lai.'

@@ -17,7 +17,7 @@ sha256:
   SynthASpoof/PAs/Webcam_ReplayAttack: <directory>
   SynthASpoof/PAs/iPad_ReplayAttack: <directory>
 counts:
-  files: 103798
+  files: 103797
   images: 103797
 consumed_by:
 - antispoof/eval
