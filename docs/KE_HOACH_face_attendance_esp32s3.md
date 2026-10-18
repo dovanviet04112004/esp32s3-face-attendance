@@ -2597,6 +2597,7 @@ esp32s3-face-attendance/
 | `.editorconfig` | Thống nhất indent/EOL cho 4 ngôn ngữ. Không có thì diff đầy nhiễu whitespace |
 | `.gitattributes` | `* text=auto eol=lf`, `*.tflite binary`, `*.espdl binary`, `**/generated/** linguist-generated` |
 | `.pre-commit-config.yaml` | Chạy `check_comments` · `ruff` · `clang-format` · `prettier` trước khi commit, và `check_commit_msg` lúc viết commit message: khuôn của CLAUDE.md §5, không tiếng Việt, không trailer AI. `make setup` cài hook `commit-msg` |
+| `ruff.toml` | Một kiểu Python cho cả repo: `extend = "ml/pyproject.toml"`, nên `tools/`, `hardware/gen/` và các `pytest_*.py` của test app firmware lint và format theo đúng 100 cột và bộ luật của `ml/`; file trong `ml/` vẫn đọc `ml/pyproject.toml` vì ruff lấy cấu hình gần nhất. `make lint` và job `contracts` chạy ruff từ gốc, bằng đúng phiên bản `ml/uv.lock` khoá |
 | `Makefile` | Điểm vào duy nhất, và là Makefile duy nhất của repo: mọi lệnh của sáu khối — cài môi trường, sinh code, kiểm tra, dữ liệu, train, lượng tử, xuất model, firmware, gắn board vào WSL qua usbipd, backend, frontend, deploy. `make help` liệt kê; lệnh chưa có target thì thêm target rồi mới chạy |
 
 Ba khối `ml` / `firmware` / `backend+frontend` **không bao giờ copy định nghĩa của nhau**. Payload MQTT, danh sách model đang deploy, vector kiểm thử — tất cả nằm ở `contracts/`, mỗi bên sinh code từ đó. Đây là thứ giữ monorepo không rữa sau vài tháng.
