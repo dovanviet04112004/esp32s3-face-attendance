@@ -8432,6 +8432,21 @@ Thiếu bản chép này thì một đơn đổi tài khoản duyệt trong kho�
 tiền sẽ đổi nơi nhận của một kỳ đã phát phiếu — đúng thứ §9.17 mục 6 cấm, mà cấm ở tầng không
 ai nhìn thấy: số tiền trên phiếu vẫn đúng từng đồng, chỉ có người nhận là khác.
 
+**Thực lĩnh không bao giờ âm.** Khoản trừ có thể vượt thu nhập: tháng mới có một ngày công mà số ngày
+nghỉ chưa tới ngưỡng miễn đóng (§9.7) thì bảo hiểm vẫn trừ đủ trên lương đóng bảo hiểm, và một phiếu
+âm đi thẳng vào file ngân hàng thành một dòng chuyển tiền âm. Nên `calculate()` thêm dòng trừ
+`CARRY_OUT` mang **số âm** đúng bằng phần âm, đưa thực lĩnh về 0, còn phiếu vẫn kể đủ từng khoản.
+Chủ repo chốt 18/10: phần âm **chuyển sang kỳ sau**. Lúc chốt, mỗi phiếu có `CARRY_OUT` sinh một
+`RetroAdjustment` mã `CARRY` mang chính số âm ấy, và lượt thường kế tiếp của người đó trừ nó **sau
+thuế** thành dòng `RETRO_CARRY`, như trừ tạm ứng — bảo hiểm đã được trừ khỏi thu nhập chịu thuế của
+kỳ trước, trừ lần nữa là giảm thuế hai lần. Chốt kỳ sau đánh dấu nó `APPLIED` như mọi khoản truy
+lĩnh; kỳ sau vẫn âm thì phần âm mới lại chuyển tiếp. Phiếu chốt cuối âm (người rời đi còn nợ, như
+tài sản không trả) không có kỳ sau để chuyển: nó giữ số âm để HR thu theo đường riêng. Danh sách
+kiểm có mục `NEGATIVE_NET` đếm phiếu của kỳ có phần âm, nên chốt đòi người chốt nhận nó như các mục mở
+khác; file ngân hàng chỉ ghi phiếu thực lĩnh lớn hơn 0, còn file hạch toán thêm cột phần đã chuyển
+kỳ. Lượt thường chỉ gồm người đã có mức lương hiệu lực trong kỳ: người chưa có không phải lượt hỏng mà
+là mục `NO_COMPENSATION` của danh sách kiểm.
+
 `Payslip` giữ tổng; `PayslipLine` giữ từng khoản, mỗi khoản một dòng với mã, nhãn và số tiền,
 phân loại thành khoản cộng và khoản trừ. **Không nhét vào một ô JSON**: câu hỏi "quý này trả
 bao nhiêu tiền tăng ca toàn công ty" phải trả lời được bằng một phép gộp SQL.
