@@ -40,9 +40,6 @@ static esp_err_t models_error = ESP_OK;
 // Raise only when a seed below changes, and read KEHOACH 6.2.1 first: it
 // overwrites whatever SET_CONFIG had put there.
 #define APP_SEED_VER 7
-#define NVS_DETECT_MIN "detect_min"
-#define NVS_LIVE_MIN "live_min"
-#define NVS_MATCH_MIN "match_min"
 #define NVS_GUIDE_MIN "guide_min"
 #define NVS_ALLOW_NO_SPOOF "allow_no_spoof"
 #define PERMILLE 1000.0f
@@ -64,9 +61,6 @@ typedef struct {
 } app_seed_t;
 
 static const app_seed_t kSeeds[] = {
-    { STORAGE_NS_VISION, NVS_DETECT_MIN, CONFIG_VISION_SEED_DETECT_MIN_PERMILLE },
-    { STORAGE_NS_VISION, NVS_LIVE_MIN, CONFIG_VISION_SEED_LIVE_MIN_PERMILLE },
-    { STORAGE_NS_VISION, NVS_MATCH_MIN, CONFIG_VISION_SEED_MATCH_MIN_PERMILLE },
     { STORAGE_NS_VISION, STORAGE_KEY_FACE_MIN_PX, CONFIG_VISION_SEED_FACE_MIN_PX },
     { STORAGE_NS_VISION, NVS_GUIDE_MIN, CONFIG_VISION_SEED_GUIDE_MIN_PERCENT },
     { STORAGE_NS_VISION, STORAGE_KEY_PRESENT_MM, CONFIG_VISION_SEED_PRESENT_MM },
@@ -203,32 +197,26 @@ uint8_t app_boot_brightness(void)
     return (uint8_t)(stored > 100 ? 100 : stored);
 }
 
-// The threshold the running image carries for one entry; a v1 image carries none, so NVS
-// keeps the one it held (KEHOACH 6.2.2).
-static float model_threshold(const char *entry, const char *key, uint32_t seed, bool *from_image)
+// The threshold the running image carries for one entry, 0 for an entry it lacks (KEHOACH 6.2.2).
+static float model_threshold(const char *entry)
 {
     const storage_models_header_t *header = NULL;
     if (sys_storage_models_open(&header) == ESP_OK && header != NULL) {
         for (uint32_t i = 0; i < header->count && i < STORAGE_MODEL_COUNT; ++i) {
-            if (strcmp(header->entry[i].name, entry) == 0 && header->threshold_permille[i] != 0) {
+            if (strcmp(header->entry[i].name, entry) == 0) {
                 return header->threshold_permille[i] / PERMILLE;
             }
         }
     }
-    *from_image = false;
-    return setting(STORAGE_NS_VISION, key, seed) / PERMILLE;
+    return 0.0f;
 }
 
-static svc_vision_thresholds_t vision_thresholds(bool *from_image)
+static svc_vision_thresholds_t vision_thresholds(void)
 {
-    *from_image = true;
     svc_vision_thresholds_t thresholds = {
-        .detect_min_score = model_threshold(MODEL_ENTRY_DETECT, NVS_DETECT_MIN,
-                                            CONFIG_VISION_SEED_DETECT_MIN_PERMILLE, from_image),
-        .live_min_score = model_threshold(MODEL_ENTRY_SPOOF, NVS_LIVE_MIN,
-                                          CONFIG_VISION_SEED_LIVE_MIN_PERMILLE, from_image),
-        .match_min_score = model_threshold(MODEL_ENTRY_RECOG, NVS_MATCH_MIN,
-                                           CONFIG_VISION_SEED_MATCH_MIN_PERMILLE, from_image),
+        .detect_min_score = model_threshold(MODEL_ENTRY_DETECT),
+        .live_min_score = model_threshold(MODEL_ENTRY_SPOOF),
+        .match_min_score = model_threshold(MODEL_ENTRY_RECOG),
         .face_min_px = (int)setting(STORAGE_NS_VISION, STORAGE_KEY_FACE_MIN_PX,
                                     CONFIG_VISION_SEED_FACE_MIN_PX),
         .guide_min_share =
@@ -306,17 +294,16 @@ static void start_vision(EventGroupHandle_t flags)
     xEventGroupSetBits(flags, APP_EG_DB_LOADED);
     ESP_LOGI(TAG, "face table holds %u templates", (unsigned)svc_facedb_count());
 
-    bool from_image = false;
-    const svc_vision_thresholds_t thresholds = vision_thresholds(&from_image);
+    const svc_vision_thresholds_t thresholds = vision_thresholds();
     const esp_err_t vision = svc_vision_init(&thresholds);
     if (vision != ESP_OK) {
         ESP_LOGE(TAG, "vision pipeline: %s", esp_err_to_name(vision));
         return;
     }
     xEventGroupSetBits(flags, APP_EG_AI_READY);
-    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f from %s, face %d px",
+    ESP_LOGI(TAG, "vision up: detect %.3f, live %.3f, match %.3f from the models image, face %d px",
              thresholds.detect_min_score, thresholds.live_min_score, thresholds.match_min_score,
-             from_image ? "the models image" : "nvs", thresholds.face_min_px);
+             thresholds.face_min_px);
 }
 
 esp_err_t app_boot_models_error(void)

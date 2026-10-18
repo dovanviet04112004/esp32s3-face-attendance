@@ -11,7 +11,7 @@
 
 #define STORAGE_MODELS_MAGIC 0x534C444Du  // 'MDLS'
 #define STORAGE_MODELS_VER 2u
-#define STORAGE_MODELS_VER_OLDEST 1u      // v1 carries no thresholds
+#define STORAGE_MODELS_VER_OLDEST 2u      // v1 carries no thresholds
 #define STORAGE_MODEL_COUNT 3
 #define STORAGE_MODEL_NAME_LEN 16
 #define STORAGE_SHA256_LEN 32

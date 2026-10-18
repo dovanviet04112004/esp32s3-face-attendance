@@ -1,32 +1,5 @@
 menu "Vision pipeline"
 
-    config VISION_SEED_DETECT_MIN_PERMILLE
-        int "Seed for the detector confidence floor (per mille)"
-        default 350
-        range 1 999
-        help
-            Seeds NVS key vision/detect_min, which the kiosk reads only while
-            the running models image is format 1. A format 2 image carries the
-            threshold of its own detector, from ml/configs/common/quant.yaml
-            (KEHOACH 6.2.2), and SET_CONFIG never changes it.
-
-    config VISION_SEED_LIVE_MIN_PERMILLE
-        int "Seed for the liveness floor (per mille)"
-        default 500
-        range 1 999
-        help
-            Seeds NVS key vision/live_min, read only for a format 1 models
-            image, the way the detector seed is (KEHOACH 6.2.2).
-
-    config VISION_SEED_MATCH_MIN_PERMILLE
-        int "Seed for the cosine match floor (per mille)"
-        default 450
-        range 1 999
-        help
-            Seeds NVS key vision/match_min, read only for a format 1 models
-            image, the way the detector seed is. Cosine of unit embeddings, so
-            450 means 0.45 (KEHOACH 6.2.2).
-
     config VISION_SEED_FACE_MIN_PX
         int "Seed for the smallest face the pipeline verifies (frame pixels)"
         default 100
