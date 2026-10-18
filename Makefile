@@ -144,7 +144,7 @@ be-e2e: ## Backend e2e as CI runs it: throwaway stack, clean clone plus the work
 	@mkdir -p "$(dir $(E2E_DIR))"
 	@set -euo pipefail; exec 9>"$(E2E_DIR).lock"; flock 9; \
 	d="$(DOCKER)"; clone="$(E2E_DIR)"; repo="$(CURDIR)"; \
-	stop() { "$$d" rm -f ci-e2e-pg ci-e2e-redis ci-e2e-emqx >/dev/null 2>&1 || true; }; trap stop EXIT; stop; \
+	stop() { "$$d" rm -fv ci-e2e-pg ci-e2e-redis ci-e2e-emqx >/dev/null 2>&1 || true; }; trap stop EXIT; stop; \
 	"$$d" run -d --rm --name ci-e2e-pg -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=attendance_ci \
 	  -p $(E2E_PG_PORT):5432 postgres:16-alpine >/dev/null; \
 	"$$d" run -d --rm --name ci-e2e-redis -p $(E2E_REDIS_PORT):6379 redis:7-alpine >/dev/null; \
