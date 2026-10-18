@@ -286,20 +286,22 @@ export function KioskCommands({
             {t("commandsEmpty")}
           </p>
         ) : (
-          <ul className="-my-1 flex flex-col">
+          <ul className="-my-1 grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3">
             {rows.map((row) => {
               const at = new Date(row.createdAt);
               const said = [row.resultNote === null ? lapsed(row) : noteOf(row.resultNote), row.issuedBy].filter(Boolean).join(" · ");
               return (
-                <li key={row.cmdId} className="flex items-start gap-3 border-b border-kumo-hairline py-2 last:border-0">
-                  <span className="min-w-11 shrink-0 pt-0.5 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+                <li key={row.cmdId} className="col-span-3 grid grid-cols-subgrid items-start border-b border-kumo-hairline py-2 last:border-0">
+                  <span className="pt-0.5 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
                     {format.dateTime(at, stampOptions(at))}
                   </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 flex-col">
                     <span className="truncate">{t(`command_${row.action}`)}</span>
                     <span className="text-sm text-pretty break-words text-kumo-subtle">{said || common("empty")}</span>
                   </span>
-                  <StatePill tone={STATE_TONE[row.state]}>{t(`commandState_${row.state}`)}</StatePill>
+                  <StatePill tone={STATE_TONE[row.state]} className="justify-self-end">
+                    {t(`commandState_${row.state}`)}
+                  </StatePill>
                 </li>
               );
             })}
