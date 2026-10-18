@@ -5,7 +5,7 @@ import { InfoIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { DateField } from "@/components/ui/date-field";
 import { useNotify } from "@/components/ui/notify";
@@ -81,8 +81,12 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
   const employeeId = useSession((s) => s.employeeId);
   const [kind, setKind] = useState<RequestKind>(preset ?? "LEAVE");
   const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [fromDate, setFromDate] = useState(date ?? (preset === "ATTENDANCE_FIX" ? addDays(todayIso(), -1) : todayIso()));
-  const [toDate, setToDate] = useState(date ?? todayIso());
+  // A leave with no day asked for waits for the next working day, so it never charges a day off (KEHOACH 9.5).
+  const awaitsWorkday = date === undefined && (preset ?? "LEAVE") === "LEAVE";
+  const [fromDate, setFromDate] = useState(
+    date ?? (preset === "ATTENDANCE_FIX" ? addDays(todayIso(), -1) : awaitsWorkday ? "" : todayIso()),
+  );
+  const [toDate, setToDate] = useState(date ?? (awaitsWorkday ? "" : todayIso()));
   const [halfDay, setHalfDay] = useState(false);
   const [dayPart, setDayPart] = useState<DayPart>("MORNING");
   const [startTime, setStartTime] = useState("");
@@ -102,6 +106,23 @@ export function RequestForm({ open, onOpenChange, kind: preset, date }: Props) {
     enabled: open,
     queryFn: async () => (await api.get<LeaveType[]>("/leave-types")).data,
   });
+
+  const workday = useQuery({
+    queryKey: ["leave-days", "next", todayIso()],
+    enabled: open && awaitsWorkday,
+    retry: false,
+    queryFn: async () => (await api.get<{ day: string | null }>("/leave-days/next")).data,
+  });
+
+  // No answer is no signal, where the form still files and queues, so it falls back to today (KEHOACH 9.21.3).
+  useEffect(() => {
+    if (!awaitsWorkday || fromDate !== "" || toDate !== "" || workday.isPending) {
+      return;
+    }
+    const day = workday.data?.day ?? todayIso();
+    setFromDate(day);
+    setToDate(day);
+  }, [workday.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const balances = useLeaveBalances(employeeId, fromDate, open && kind === "LEAVE");
 
