@@ -2831,6 +2831,11 @@
     "export_ledger": "Ledger downloaded",
     "export_d02": "D02-LT exported",
     "export_requests": "Request ledger exported",
+    "export_disputes": "Pay dispute ledger exported",
+    "export_certificates": "Letter ledger exported",
+    "export_profileChanges": "Record change ledger exported",
+    "export_dependents": "Dependant ledger exported",
+    "export_advances": "Salary advance ledger exported",
     "export_timesheet": "Timesheet summary exported",
     "export_assets": "Asset register exported"
   },

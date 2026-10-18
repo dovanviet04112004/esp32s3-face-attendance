@@ -61,6 +61,15 @@ const TABS: { tab: Tab; queues: Queue[] }[] = [
   { tab: "advances", queues: ["advancesToDecide", "advancesToPay"] },
 ];
 
+const EXPORTS: Record<Tab, { path: string; file: string }> = {
+  requests: { path: "/requests/export", file: "requests.csv" },
+  disputes: { path: "/payslip-disputes/export", file: "disputes.csv" },
+  certificates: { path: "/certificates/export", file: "certificates.csv" },
+  profileChanges: { path: "/profile-changes/export", file: "profile-changes.csv" },
+  dependents: { path: "/dependents/export", file: "dependents.csv" },
+  advances: { path: "/advances/export", file: "advances.csv" },
+};
+
 interface RequestPage {
   rows: RequestRow[];
   total: number;
@@ -146,8 +155,10 @@ function Register() {
   });
 
   const download = useMutation({
-    mutationFn: async () =>
-      saveCsv((await api.get<string>(`/requests/export${queryOf({ ...filter, state: url.state, ...order })}`)).data, "requests.csv"),
+    mutationFn: async () => {
+      const asked = onRequests ? { ...filter, state: url.state, ...order } : params;
+      saveCsv((await api.get<string>(`${EXPORTS[tab].path}${queryOf(asked)}`)).data, EXPORTS[tab].file);
+    },
     onSuccess: () => notify.done(t("exported")),
     onError: notify.failed,
   });
@@ -269,11 +280,9 @@ function Register() {
           filters={filters}
           range={{ from: url.from, to: url.to, onFrom: (next) => setUrl({ from: next }), onTo: (next) => setUrl({ to: next }) }}
           extra={
-            onRequests ? (
-              <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()}>
-                {common("export")}
-              </Button>
-            ) : undefined
+            <Button variant="secondary" icon={DownloadSimpleIcon} loading={download.isPending} onClick={() => download.mutate()}>
+              {common("export")}
+            </Button>
           }
         />
         {onRequests ? (

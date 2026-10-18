@@ -2831,6 +2831,11 @@
     "export_ledger": "Tải sổ lương cho kế toán",
     "export_d02": "Xuất D02-LT",
     "export_requests": "Xuất sổ đơn",
+    "export_disputes": "Xuất sổ khiếu nại lương",
+    "export_certificates": "Xuất sổ giấy xác nhận",
+    "export_profileChanges": "Xuất sổ đổi hồ sơ",
+    "export_dependents": "Xuất sổ người phụ thuộc",
+    "export_advances": "Xuất sổ tạm ứng",
     "export_timesheet": "Xuất bảng công tổng hợp",
     "export_assets": "Xuất sổ tài sản"
   },
