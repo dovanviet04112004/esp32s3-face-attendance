@@ -3620,7 +3620,7 @@ components/svc_vision/
 ├── include/svc_vision.h                  # C: ngưỡng, kết quả, init/step/reset
 ├── priv_include/{vision.hpp, backends.hpp}   # 4 interface + VisionPipeline · 4 adapter thật
 ├── src/{pipeline.cpp, backends.cpp, svc_vision.cpp}   # chuỗi thoát sớm · adapter · mặt tiền C
-├── Kconfig                               # giá trị gieo cho 4 ngưỡng
+├── Kconfig                               # giá trị gieo cho các ngưỡng vận hành
 └── test_apps/pipeline/{main/test_pipeline.cpp, CMakeLists.txt, pytest_pipeline.py}
 ```
 
@@ -6145,7 +6145,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`, và có bản thứ hai ở `log/boot.bin` vì mất NVS không được làm nó đếm lại (§6.2.5); `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
 | `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
-| `vision` | `detect_min` (u32, ‰), `live_min` (u32, ‰), `match_min` (u32, ‰), `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | `face_min_px`, `guide_min` của §4.5.5d cộng ngưỡng "có người" của §2.3D: boot đầu gieo từ `Kconfig` của `svc_vision`, `SET_CONFIG` đổi `face_min_px` và `present_mm`. Ba ngưỡng của model đi trong ảnh model (§6.2.2); `detect_min`, `live_min`, `match_min` chỉ còn được đọc khi ngăn đang chạy là ảnh định dạng 1, chưa mang ngưỡng, và `SET_CONFIG` không chạm tới chúng |
+| `vision` | `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | `face_min_px`, `guide_min` của §4.5.5d cộng ngưỡng "có người" của §2.3D: boot đầu gieo từ `Kconfig` của `svc_vision`, `SET_CONFIG` đổi `face_min_px` và `present_mm`. Ba ngưỡng của model không nằm ở NVS: chúng đi trong ảnh model (§6.2.2), và `SET_CONFIG` không chạm tới chúng |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
 **`device/serial` là danh tính, không phải bí mật.** Thiếu khoá thì `sys_storage` dựng
@@ -6246,7 +6246,7 @@ offset 0x0000  header 256 B
              sha256  [32]
              in_h u16, in_w u16
              arena_hint u32              # arena model này chạy trong (byte); 0 = chưa đo
-   +0xD0  threshold[0..2] u16 ‰          # ngưỡng của entry cùng số thứ tự; 0 ở ảnh định dạng 1
+   +0xD0  threshold[0..2] u16 ‰          # ngưỡng của entry cùng số thứ tự
    +0xD6  reserved                       (38B)
    +0xFC  crc32 của 0x00..0xFB           (4B)
 
@@ -6277,9 +6277,9 @@ cửa, hạ `live_min` là ảnh chụp lọt qua. Số đi từ `quant.yaml` qu
 lock (§4.9); `quant-deploy` từ chối khoá một nhánh chưa khai ngưỡng, nên entry có mặt mà ngưỡng 0 là ảnh
 hỏng và `pack` không bao giờ ghi nó.
 
-Ngưỡng đưa `format_ver` lên **2**. Firmware đọc cả hai định dạng: ảnh định dạng 1 không mang ngưỡng, và
-gặp nó thì `main` lấy ba ngưỡng từ NVS `vision` như trước — chỉ xảy ra trong lúc đội máy chuyển sang ảnh
-mới, vì bước cập nhật đi firmware trước. Firmware cũ từ chối ảnh định dạng 2 (`sys_storage_models_open`
+Ngưỡng đưa `format_ver` lên **2**, và firmware chỉ nhận định dạng 2 (`STORAGE_MODELS_VER_OLDEST`): ảnh
+định dạng 1 không mang ngưỡng, nên `sys_storage` từ chối nó như một ảnh hỏng và máy lùi về ngăn kia,
+chứ không chạy model với ngưỡng nào khác ngưỡng đo cho chính nó. Firmware cũ từ chối ảnh định dạng 2 (`sys_storage_models_open`
 trả `ESP_ERR_INVALID_CRC`) rồi lùi về ngăn cũ, nên bản models định dạng 2 khai `minFwVersion` là firmware
 đầu tiên đọc được nó (§7.7).
 
