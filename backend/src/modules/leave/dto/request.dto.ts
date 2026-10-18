@@ -617,6 +617,16 @@ export class LeaveDaysPartView {
   left!: number | null;
 }
 
+export class NextWorkdayView {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: "2026-10-19",
+    description: "First working day from today, YYYY-MM-DD; null when none falls in the next month",
+  })
+  day!: string | null;
+}
+
 export class LeaveDaysView {
   @ApiProperty({ example: 3, description: "Days charged in all: working days, or every day for a calendar-day type" })
   days!: number;

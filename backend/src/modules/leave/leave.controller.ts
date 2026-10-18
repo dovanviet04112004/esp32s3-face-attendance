@@ -38,6 +38,7 @@ import {
   LeaveDaysQueryDto,
   LeaveDaysView,
   ListRequestsDto,
+  NextWorkdayView,
   RequestDetailView,
   RequestPageView,
   SubmitRequestDto,
@@ -49,6 +50,7 @@ import {
   type InboxCounts,
   type InboxRow,
   type LeaveDays,
+  type NextWorkday,
   type RequestDetail,
   type RequestRow,
 } from "./leave.service.js";
@@ -115,6 +117,14 @@ export class LeaveController {
     @Query() query: BalanceQueryDto,
   ): Promise<BalanceAsOf[]> {
     return this.leave.balancesFor(viewer, query.employeeId, new Date(query.asOf ?? Date.now()));
+  }
+
+  @Get("leave-days/next")
+  @ApiOperation({ summary: "The caller's first working day from today, where the leave form opens (KEHOACH 9.5)" })
+  @ApiOkResponse({ type: NextWorkdayView })
+  @ApiForbiddenResponse({ type: ErrorBody, description: "NOT_AN_EMPLOYEE" })
+  nextWorkday(@CurrentViewer() viewer: Viewer): Promise<NextWorkday> {
+    return this.leave.nextWorkday(viewer);
   }
 
   @Get("leave-days")

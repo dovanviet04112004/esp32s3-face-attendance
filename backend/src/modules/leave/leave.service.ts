@@ -58,6 +58,8 @@ export { THE_DESK } from "./queue-filter.js";
 
 const HALF = 0.5;
 const MS_PER_DAY = 86_400_000;
+// Longer than any run of weekends and holidays a calendar holds.
+const WORKDAY_LOOKAHEAD_DAYS = 31;
 const MS_PER_MINUTE = 60_000;
 const OFF_SITE: RequestKind[] = ["BUSINESS_TRIP", "REMOTE_WORK"];
 const TIMED: RequestKind[] = ["OVERTIME", "ATTENDANCE_FIX"];
@@ -151,6 +153,10 @@ export interface LeaveDays {
   limited: boolean;
   calendarDays: boolean;
   parts: (YearPart & { left: number | null })[];
+}
+
+export interface NextWorkday {
+  day: string | null;
 }
 
 interface Charge {
@@ -453,6 +459,17 @@ export class LeaveService {
       calendarDays: type?.calendarDays ?? false,
       parts: parts.map((part, at) => ({ ...part, left: lefts[at] ?? null })),
     };
+  }
+
+  /** The caller's first working day from the business today, by the count leaveDays uses (KEHOACH 9.5). */
+  async nextWorkday(viewer: Viewer): Promise<NextWorkday> {
+    if (viewer.employeeId === null) {
+      throw new ForbiddenException("NOT_AN_EMPLOYEE");
+    }
+    const from = dayAsDate(this.timesheet.today());
+    const to = new Date(from.getTime() + WORKDAY_LOOKAHEAD_DAYS * MS_PER_DAY);
+    const [first] = await this.timesheet.workdays(viewer.employeeId, from, to);
+    return { day: first ? asDay(first) : null };
   }
 
   private async fileableType(id: string | undefined): Promise<Pick<LeaveType, "id" | "paid" | "calendarDays">> {
