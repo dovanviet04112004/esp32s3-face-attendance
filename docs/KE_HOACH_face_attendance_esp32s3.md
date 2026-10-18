@@ -8722,6 +8722,14 @@ xếp hai thẻ một hàng, vì thứ người ta mở trang ra để làm luô
 một đường "xem tất cả" ở mép phải, thân `LayerCard.Primary` là các dòng. Không thẻ số liệu to,
 không ô rỗng: một thẻ không còn gì thì nói một câu ngắn trong chính thân nó.
 
+**Thẻ mà dữ liệu quyết định chiều cao thì về cùng một lúc.** *Việc cần làm* chỉ hiện khi có, *Đơn
+của tôi* dài ngắn theo số đơn, hai thẻ của quản lý cũng vậy; dựng từng thẻ ngay khi query của nó về
+là đẩy những thẻ đã vẽ phía dưới đi, và trang của nhân viên đo được CLS 0,502 trên Lighthouse mobile.
+Nên *Hôm nay* dựng ngay, phần còn lại của cột chính là một khối xám không chữ tới khi mọi query quyết
+định chiều cao của nó về, rồi cột phụ mới dựng. Khối xám không mang chữ nào, vì chữ đứng đó rồi dời
+đi vẫn là một cú nhảy với người đang đọc dù không phần tử nào bị đo là xê dịch. Ở khổ hai cột, cột phụ
+có khối xám của riêng nó, vì nó không nằm dưới thẻ nào.
+
 **Mọi con số bấm được, và bấm là tới đúng danh sách có con số ấy.** Có mặt và đi muộn mở
 `Chấm công` lọc đúng hôm nay; nghỉ phép mở sổ `Đơn từ` lọc đơn nghỉ đã duyệt phủ hôm nay. Vắng
 không phép **mở danh sách tên ngay trên trang**, vì chưa trang tra cứu nào liệt kê người vắng
