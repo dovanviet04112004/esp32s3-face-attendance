@@ -88,6 +88,11 @@ esp_err_t bsp_board_init(void)
     }
     APP_RETURN_ON_ERR(spi_bus_up(), TAG, "spi bus");
     APP_RETURN_ON_ERR(i2c_bus_up(), TAG, "i2c bus");
+    // A chip cut off mid-byte keeps its power through our reset and holds SDA low until clocked free (KEHOACH 2.3).
+    const esp_err_t cleared = i2c_master_bus_reset(s_i2c_bus);
+    if (cleared != ESP_OK) {
+        ESP_LOGW(TAG, "i2c bus clear: %s", esp_err_to_name(cleared));
+    }
     APP_RETURN_ON_ERR(wait_for_bus_devices(), TAG, "i2c devices");
     APP_RETURN_ON_ERR(gpio_install_isr_service(ESP_INTR_FLAG_IRAM), TAG, "gpio isr service");
     s_ready = true;
