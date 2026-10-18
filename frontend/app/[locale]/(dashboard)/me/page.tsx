@@ -17,7 +17,8 @@ import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 
 import { StatePill as RequestPill, useLeaveBalances, useRequestWords, type RequestRow } from "@/components/requests/request-card";
-import { InboxPreview, useShortSpan } from "@/components/requests/inbox-preview";
+import { useInboxCounts } from "@/components/nav/waiting-count";
+import { InboxPreview, useInboxPreview, useShortSpan } from "@/components/requests/inbox-preview";
 import { RequestForm } from "@/components/requests/request-form";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
@@ -145,6 +146,21 @@ function SkeletonRows({ rows = 2 }: { rows?: number }) {
       ))}
     </ul>
   );
+}
+
+function GreyCards({ rows }: { rows: number[] }) {
+  return rows.map((count, at) => (
+    <LayerCard key={at}>
+      <LayerCard.Secondary>
+        <span className="w-32">
+          <SkeletonLine minWidth={100} maxWidth={100} />
+        </span>
+      </LayerCard.Secondary>
+      <LayerCard.Primary className="gap-0 p-0 pr-0">
+        <SkeletonRows rows={count} />
+      </LayerCard.Primary>
+    </LayerCard>
+  ));
 }
 
 function Pad({ children }: { children: ReactNode }) {
@@ -326,12 +342,16 @@ function TodayCard({ employeeId, week }: { employeeId: number; week: ReturnType<
 }
 
 /** The kiosks that run a newer recognition model than any face the viewer holds, and how to capture there (KEHOACH 9.21.4). */
-function RecaptureCard() {
-  const t = useTranslations("me");
-  const kiosks = useQuery({
+function useRecapture() {
+  return useQuery({
     queryKey: ["me", "recapture"],
     queryFn: () => unlessMissing<Kiosk[]>("/enrollments/me"),
   });
+}
+
+function RecaptureCard() {
+  const t = useTranslations("me");
+  const kiosks = useRecapture();
   if (!kiosks.data || kiosks.data.length === 0) {
     return null;
   }
@@ -407,14 +427,19 @@ function WeekCard({ week }: { week: ReturnType<typeof useWeek> }) {
   );
 }
 
+function useTeamToday(enabled = true) {
+  return useQuery({
+    queryKey: ["reports", "team-today"],
+    enabled,
+    queryFn: () => unlessMissing<TeamToday>("/reports/team-today"),
+  });
+}
+
 function TeamCard() {
   const t = useTranslations("me");
   const format = useFormatter();
   const [picked, setPicked] = useState<TeamBucket | null>(null);
-  const team = useQuery({
-    queryKey: ["reports", "team-today"],
-    queryFn: () => unlessMissing<TeamToday>("/reports/team-today"),
-  });
+  const team = useTeamToday();
   useFocusOnArrival(team.isSuccess, (who) => {
     if (who === "onLeave") {
       setPicked("onLeave");
@@ -576,6 +601,14 @@ export default function MyPage() {
     queryFn: async () =>
       (await api.get<{ rows: PayslipRow[] }>(`/payslips?employeeId=${employeeId}&take=1`)).data.rows[0] ?? null,
   });
+  const manager = role === "MANAGER";
+  const recapture = useRecapture();
+  const team = useTeamToday(manager);
+  const inbox = useInboxPreview(manager);
+  const counts = useInboxCounts(role);
+  const managerIn = !manager || (!team.isPending && !inbox.isPending && !(counts.isPending && counts.fetchStatus !== "idle"));
+  // Cards whose height the data decides land at once, the side column after them (KEHOACH 9.10).
+  const landed = managerIn && [documents, checklists, recent, pending, recapture].every((one) => !one.isPending);
 
   function askLeave(): void {
     setSeed((held) => held + 1);
@@ -614,87 +647,91 @@ export default function MyPage() {
     <div className="flex flex-col gap-4">
       <TodayCard employeeId={employeeId} week={week} />
 
-      <RecaptureCard />
-
-      {role === "MANAGER" ? (
+      {landed ? (
         <>
-          <InboxPreview />
-          <TeamCard />
+          <RecaptureCard />
+
+          {manager ? (
+            <>
+              <InboxPreview />
+              <TeamCard />
+            </>
+          ) : null}
+
+          {unsigned.length + turnedDown.length + ownTasks.length > 0 ? (
+            <HomeCard truncate title={t("todoTitle")}>
+              <ul className="flex flex-col">
+                {ownTasks.map((task) => {
+                  const due = task.dueOn.slice(0, 10);
+                  return (
+                    <li key={task.id} className="flex min-h-12 items-center gap-3 border-b border-kumo-hairline px-4 py-2.5 last:border-0">
+                      <ListChecksIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate">{task.title}</span>
+                        <span className={cn("text-sm tabular-nums", due < today ? "text-kumo-warning" : "text-kumo-subtle")}>
+                          {t("todoTaskDue", { date: format.dateTime(dayOnly(due), { day: "numeric", month: "numeric" }) })}
+                        </span>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={finish.isPending && finish.variables === task.id}
+                        disabled={finish.isPending}
+                        onClick={() => finish.mutate(task.id)}
+                      >
+                        {t("todoTaskDone")}
+                      </Button>
+                    </li>
+                  );
+                })}
+                {unsigned.map((one) => (
+                  <RowLink key={one.versionId} href="/me/documents">
+                    <FileTextIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{t("todoSign", { title: one.title })}</span>
+                  </RowLink>
+                ))}
+                {turnedDown.map((row) => (
+                  <RowLink key={row.id} href={`/me/requests?open=${row.id}`}>
+                    <XCircleIcon size={18} className="shrink-0 text-kumo-danger" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{t("todoTurnedDown", { what: words.kind(row), span: shortSpan(row) })}</span>
+                  </RowLink>
+                ))}
+              </ul>
+            </HomeCard>
+          ) : null}
+
+          <WeekCard week={week} />
+
+          <HomeCard truncate title={r("mine")} link={{ href: "/me/requests", label: common("seeAll") }}>
+            {pending.isError || recent.isError ? (
+              <Pad>
+                <Failed
+                  onRetry={() => {
+                    void pending.refetch();
+                    void recent.refetch();
+                  }}
+                />
+              </Pad>
+            ) : lines.length === 0 ? (
+              <p className="px-4 py-3.5 text-kumo-subtle">{r("mineEmpty")}</p>
+            ) : (
+              <ul className="flex flex-col">
+                {mine.length === 0 ? (
+                  <li className="flex min-h-11 items-center gap-2.5 border-b border-kumo-hairline px-4 text-kumo-subtle">
+                    <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
+                    {t("noPending")}
+                  </li>
+                ) : null}
+                {lines.map((row) => (
+                  <RequestLine key={row.id} row={row} />
+                ))}
+              </ul>
+            )}
+          </HomeCard>
         </>
-      ) : null}
-
-      {unsigned.length + turnedDown.length + ownTasks.length > 0 ? (
-        <HomeCard truncate title={t("todoTitle")}>
-          <ul className="flex flex-col">
-            {ownTasks.map((task) => {
-              const due = task.dueOn.slice(0, 10);
-              return (
-                <li key={task.id} className="flex min-h-12 items-center gap-3 border-b border-kumo-hairline px-4 py-2.5 last:border-0">
-                  <ListChecksIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate">{task.title}</span>
-                    <span className={cn("text-sm tabular-nums", due < today ? "text-kumo-warning" : "text-kumo-subtle")}>
-                      {t("todoTaskDue", { date: format.dateTime(dayOnly(due), { day: "numeric", month: "numeric" }) })}
-                    </span>
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={finish.isPending && finish.variables === task.id}
-                    disabled={finish.isPending}
-                    onClick={() => finish.mutate(task.id)}
-                  >
-                    {t("todoTaskDone")}
-                  </Button>
-                </li>
-              );
-            })}
-            {unsigned.map((one) => (
-              <RowLink key={one.versionId} href="/me/documents">
-                <FileTextIcon size={18} className="shrink-0 text-kumo-subtle" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{t("todoSign", { title: one.title })}</span>
-              </RowLink>
-            ))}
-            {turnedDown.map((row) => (
-              <RowLink key={row.id} href={`/me/requests?open=${row.id}`}>
-                <XCircleIcon size={18} className="shrink-0 text-kumo-danger" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{t("todoTurnedDown", { what: words.kind(row), span: shortSpan(row) })}</span>
-              </RowLink>
-            ))}
-          </ul>
-        </HomeCard>
-      ) : null}
-
-      <WeekCard week={week} />
-
-      <HomeCard truncate title={r("mine")} link={{ href: "/me/requests", label: common("seeAll") }}>
-        {pending.isPending || recent.isPending ? (
-          <SkeletonRows rows={3} />
-        ) : pending.isError || recent.isError ? (
-          <Pad>
-            <Failed
-              onRetry={() => {
-                void pending.refetch();
-                void recent.refetch();
-              }}
-            />
-          </Pad>
-        ) : lines.length === 0 ? (
-          <p className="px-4 py-3.5 text-kumo-subtle">{r("mineEmpty")}</p>
-        ) : (
-          <ul className="flex flex-col">
-            {mine.length === 0 ? (
-              <li className="flex min-h-11 items-center gap-2.5 border-b border-kumo-hairline px-4 text-kumo-subtle">
-                <CheckCircleIcon size={18} weight="fill" className="shrink-0 text-kumo-success" aria-hidden />
-                {t("noPending")}
-              </li>
-            ) : null}
-            {lines.map((row) => (
-              <RequestLine key={row.id} row={row} />
-            ))}
-          </ul>
-        )}
-      </HomeCard>
+      ) : (
+        <GreyCards rows={[3, 3]} />
+      )}
     </div>
   );
 
@@ -808,7 +845,19 @@ export default function MyPage() {
           </Button>
         }
       />
-      <PageLayout aside={side}>{main}</PageLayout>
+      <PageLayout
+        aside={
+          landed ? (
+            side
+          ) : (
+            <div aria-hidden className="hidden flex-col gap-4 @5xl/page:flex">
+              <GreyCards rows={[1, 3, 1]} />
+            </div>
+          )
+        }
+      >
+        {main}
+      </PageLayout>
       <RequestForm key={seed} open={filing} onOpenChange={setFiling} kind="LEAVE" />
     </>
   );

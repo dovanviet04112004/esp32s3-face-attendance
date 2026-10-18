@@ -116,6 +116,17 @@ function QueueLine({ queue, value, label }: { queue: Queue; value: number; label
 }
 
 /** The oldest requests waiting on this viewer, decided in place, and a line per other queue (KEHOACH 9.10). */
+/** The first rows of the requests queue, shared with the home page so it knows when they are in. */
+export function useInboxPreview(enabled = true) {
+  return useQuery({
+    queryKey: ["requests", "inbox", "preview"],
+    enabled,
+    refetchInterval: WAITING_POLL_MS,
+    queryFn: async () =>
+      (await api.get<{ rows: InboxRow[]; total: number }>(`/requests/inbox?take=${kPreviewRows}&order=asc`)).data,
+  });
+}
+
 export function InboxPreview() {
   const t = useTranslations("home");
   const r = useTranslations("requests");
@@ -132,12 +143,7 @@ export function InboxPreview() {
   const [reason, setReason] = useState("");
   const [decided, setDecided] = useState<string[]>([]);
 
-  const inbox = useQuery({
-    queryKey: ["requests", "inbox", "preview"],
-    refetchInterval: WAITING_POLL_MS,
-    queryFn: async () =>
-      (await api.get<{ rows: InboxRow[]; total: number }>(`/requests/inbox?take=${kPreviewRows}&order=asc`)).data,
-  });
+  const inbox = useInboxPreview();
 
   const decide = useMutation({
     mutationFn: (what: Decision) =>
