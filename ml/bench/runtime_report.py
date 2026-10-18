@@ -1,6 +1,6 @@
 """The three-runtime benchmark of KEHOACH 3 layer 5, from the host's scores and bench_ai's runs.
 
-image packs the lock's runs as Q1 .tflite into an experimental lock and a models image;
+image packs the lock's runs as Q1 .tflite into the TFLM lock and its models image;
 score runs one branch's locked .espdl or Q1 .tflite through host_bench and the ladder's ruler;
 check replays bench_ai's inputs through the .tflite files and compares the board's outputs;
 render writes docs/measurements/runtime_compare.md from all of it and each run's build facts.
@@ -28,6 +28,7 @@ sys.path.insert(0, str(ML_ROOT / "bench"))
 
 LOCK = REPO_ROOT / "contracts" / "models.lock.json"
 WORK = ML_ROOT / "artifacts" / "device" / "runtime_compare"
+TFLM_LOCK = ML_ROOT / "artifacts" / "device" / "locks" / "tflm"
 REPORT = REPO_ROOT / "docs" / "measurements" / "runtime_compare.md"
 BRANCHES = ("detection", "antispoof", "recognition")
 ENTRY = {"detection": "detect", "antispoof": "spoof", "recognition": "recog"}
@@ -129,8 +130,8 @@ def sha256_of(path: Path) -> str:
 def image(args: argparse.Namespace) -> int:
     from facepipe.export import pack_models_partition, update_lock
 
-    lock = args.out / "lock" / "models.lock.json"
-    models = args.out / "lock" / "models"
+    lock = TFLM_LOCK / "models.lock.json"
+    models = TFLM_LOCK / "models"
     lock.unlink(missing_ok=True)
     # Spoof and recog share arena_big, so each carries the pair's total (KEHOACH 3.8).
     arena = {
@@ -153,7 +154,7 @@ def image(args: argparse.Namespace) -> int:
         [
             *("--lock", str(lock), "--models-dir", str(models)),
             *("--partitions", str(REPO_ROOT / "firmware" / "partitions.dev.csv")),
-            *("--out", str(args.out / "models_tflm.bin")),
+            *("--out", str(TFLM_LOCK / "models.bin")),
         ]
     )
 
@@ -1087,7 +1088,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=WORK, help="where runs and results live")
     commands = parser.add_subparsers(dest="command", required=True)
-    imaged = commands.add_parser("image", help="the experimental lock and models_tflm.bin")
+    imaged = commands.add_parser("image", help="the TFLM lock in ml/artifacts/device/locks/tflm")
     imaged.add_argument("--arena-fast", type=int, default=0, help="detect's arena, bytes")
     imaged.add_argument("--arena-big", type=int, default=0, help="spoof and recog together, bytes")
     scored = commands.add_parser("score", help="one branch on one runtime, to scores/*.json")
