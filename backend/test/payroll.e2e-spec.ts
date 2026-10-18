@@ -64,6 +64,7 @@ function input(over: Partial<CalcInput> = {}): CalcInput {
     overtime: { weekdayMinutes: 0, weekendMinutes: 0, holidayMinutes: 0, nightMinutes: 0 },
     extras: [],
     deductions: [],
+    carryShortfall: true,
     ...over,
   };
 }
@@ -163,6 +164,23 @@ describe("payroll calculation", () => {
     assert.equal(under.insuranceEmployee, 2_100_000n);
     assert.equal(over.insuranceEmployee, 0n);
     assert.ok(over.netPay > 0n);
+  });
+
+  it("carries a shortfall on a positive line and pays nothing below zero", () => {
+    // One paid day against contributions on the whole month, the slip of 13/10.
+    const result = calculate(input({ paidDayHundredths: 100n, unpaidDayHundredths: 200n }));
+    assert.equal(result.grossPay, 769_231n);
+    assert.equal(result.deductionsTotal, 769_231n);
+    assert.equal(result.netPay, 0n);
+    assert.equal(amountOf(result, "CARRY_OUT"), 1_330_769n);
+    assert.ok(result.lines.every((line) => line.amount >= 0n));
+  });
+
+  it("keeps the shortfall on the slip when no next period will take it", () => {
+    const result = calculate(input({ paidDayHundredths: 100n, unpaidDayHundredths: 200n, carryShortfall: false }));
+    assert.equal(result.netPay, -1_330_769n);
+    assert.equal(result.deductionsTotal, 2_100_000n);
+    assert.ok(!result.lines.some((line) => line.code === "CARRY_OUT"));
   });
 
   it("taxes the normal part of overtime and exempts the premium", () => {

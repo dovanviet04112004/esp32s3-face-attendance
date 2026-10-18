@@ -254,6 +254,10 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
         endDate: dateOf("2001-12-31"),
       },
     });
+    // Someone with pay in force that month, so the press reaches the policy lookup.
+    const record = await db.compensationRecord.create({
+      data: { employeeId: idOf.get(STEADY) as number, effectiveFrom: dateOf("2001-12-01"), baseSalary: BASE, insuranceSalary: BASE },
+    });
     const run = await db.payrollRun.create({ data: { periodId: early.id, kind: "REGULAR" } });
     const pressed = await as("payroll").post(`/payroll-runs/${run.id}/execute`);
     assert.equal(pressed.status, 404, JSON.stringify(pressed.body));
@@ -265,6 +269,7 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     const stopped = await payroll.runNow(run.id);
     assert.equal(stopped.state, "FAILED");
     assert.equal(stopped.failure, "PERIOD_NOT_OPEN");
+    await db.compensationRecord.delete({ where: { id: record.id } });
   });
 
   it("prices a weekend and a holiday worked as overtime, at their own rates", async () => {

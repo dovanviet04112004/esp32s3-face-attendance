@@ -337,7 +337,7 @@ describe("disputing a payslip (e2e)", () => {
       .send({ outcome: "REJECTED", answer: ANSWER });
     assert.equal(res.status, 409);
     assert.equal(res.body.message, "DISPUTE_ALREADY_ANSWERED");
-    assert.equal(await db.retroAdjustment.count({ where: { employeeId } }), 1, "a second answer minted money");
+    assert.equal(await db.retroAdjustment.count({ where: { employeeId, code: LINE } }), 1, "a second answer minted money");
   });
 
   // The whole point of the record: the answer is a figure somebody receives,
@@ -360,7 +360,7 @@ describe("disputing a payslip (e2e)", () => {
       .set("Authorization", `Bearer ${desk}`)
       .send({ acceptOpenItems: true });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
-    const retro = await db.retroAdjustment.findFirstOrThrow({ where: { employeeId } });
+    const retro = await db.retroAdjustment.findFirstOrThrow({ where: { employeeId, code: LINE } });
     assert.equal(retro.state, "APPLIED");
     assert.equal(retro.appliedPeriodId, nextPeriodId);
   });
