@@ -22,8 +22,7 @@ LCD_PANEL = (61.74, 108.04)
 # Hole centre to hole centre across the panel, measured on it. The two insets that
 # follow are not equal, and the header row sits 1 mm outside the near one (KEHOACH 2.3A).
 LCD_HOLE_PITCH = (55.0, 102.0)
-LCD_HOLE_INSET = ((LCD_PANEL[0] - LCD_HOLE_PITCH[0]) / 2,
-                  (LCD_PANEL[1] - LCD_HOLE_PITCH[1]) / 2)
+LCD_HOLE_INSET = ((LCD_PANEL[0] - LCD_HOLE_PITCH[0]) / 2, (LCD_PANEL[1] - LCD_HOLE_PITCH[1]) / 2)
 LCD_HEADER_DROP = 1.0
 LCD_HEADER_INSET = LCD_HOLE_INSET[1] - LCD_HEADER_DROP
 # The two rows measure 104 mm apart on the panel, which puts the far one the same
@@ -80,8 +79,12 @@ def lcd_area() -> tuple:
     x, y, _ = PLACEMENT["J3"]
     centre = x + (14 - 1) * 2.54 / 2.0
     near = y + LCD_HEADER_INSET
-    return (round(centre - LCD_PANEL[0] / 2, 2), round(near - LCD_PANEL[1], 2),
-            round(centre + LCD_PANEL[0] / 2, 2), round(near, 2))
+    return (
+        round(centre - LCD_PANEL[0] / 2, 2),
+        round(near - LCD_PANEL[1], 2),
+        round(centre + LCD_PANEL[0] / 2, 2),
+        round(near, 2),
+    )
 
 
 LCD_AREA = lcd_area()
@@ -96,8 +99,12 @@ def sd_row() -> tuple:
 PLACEMENT["J14"] = sd_row()
 # Where the carrier bolts to the case: H1..H4 hold the panel to this board, not this
 # board to anything. The ToF and the terminals each moved 2 mm to clear a corner.
-BOARD_HOLES = {"H5": (5.0, 5.0, 0), "H6": (153.0, 5.0, 0),
-               "H7": (153.0, 116.0, 0), "H8": (5.0, 116.0, 0)}
+BOARD_HOLES = {
+    "H5": (5.0, 5.0, 0),
+    "H6": (153.0, 5.0, 0),
+    "H7": (153.0, 116.0, 0),
+    "H8": (5.0, 116.0, 0),
+}
 PLACEMENT.update(BOARD_HOLES)
 # Bare holes carrying no net, so like the screw holes they never reach the sheet.
 GRID_FP = "kiosk:SolderGrid_4x05_P2.54mm"
@@ -120,10 +127,13 @@ def lcd_holes() -> dict:
     """M3 clearance at the panel's four corners, so J3 carries no load."""
     x0, y0, x1, y1 = LCD_AREA
     wide, tall = LCD_HOLE_INSET
-    corners = ((x0 + wide, y0 + tall), (x1 - wide, y0 + tall),
-               (x1 - wide, y1 - tall), (x0 + wide, y1 - tall))
-    return {f"H{i + 1}": (round(hx, 2), round(hy, 2), 0)
-            for i, (hx, hy) in enumerate(corners)}
+    corners = (
+        (x0 + wide, y0 + tall),
+        (x1 - wide, y0 + tall),
+        (x1 - wide, y1 - tall),
+        (x0 + wide, y1 - tall),
+    )
+    return {f"H{i + 1}": (round(hx, 2), round(hy, 2), 0) for i, (hx, hy) in enumerate(corners)}
 
 
 def uid(*parts: object) -> str:
@@ -154,8 +164,7 @@ def emit(node, depth: int = 0) -> str:
         return f"{pad}({' '.join(node)})"
     parts = [f"{pad}({head}"]
     for child in node[1:]:
-        parts.append(emit(child, depth + 1) if not isinstance(child, str)
-                     else f"{pad}\t{child}")
+        parts.append(emit(child, depth + 1) if not isinstance(child, str) else f"{pad}\t{child}")
     parts.append(f"{pad})")
     return "\n".join(parts)
 
@@ -191,8 +200,10 @@ def schematic_nets() -> tuple[dict, dict]:
     for wire in children(tree, "wire"):
         pts = children(first(wire, "pts"), "xy")
         wires.append(tuple(float(v) for p in pts for v in p[1:3]))
-    labels = [(unquote(n[1]), float(first(n, "at")[1]), float(first(n, "at")[2]))
-              for n in children(tree, "label")]
+    labels = [
+        (unquote(n[1]), float(first(n, "at")[1]), float(first(n, "at")[2]))
+        for n in children(tree, "label")
+    ]
 
     def near(ax, ay, bx, by):
         return abs(ax - bx) < 0.01 and abs(ay - by) < 0.01
@@ -216,8 +227,9 @@ def schematic_nets() -> tuple[dict, dict]:
         for number, (lx, ly) in pins_of[name].items():
             px, py = ox + lx, oy - ly
             for x1, y1, x2, y2 in wires:
-                far = ((x2, y2) if near(x1, y1, px, py)
-                       else (x1, y1) if near(x2, y2, px, py) else None)
+                far = (
+                    (x2, y2) if near(x1, y1, px, py) else (x1, y1) if near(x2, y2, px, py) else None
+                )
                 if far is None:
                     continue
                 for net, lax, lay in labels:
@@ -234,26 +246,40 @@ def load_footprint(spec: str) -> list:
 
 # pcb upgrade mints a random uuid for every one of these that arrives without one, so
 # each is named here, keyed on the reference to stay unique across two placements.
-UUID_NODES = ("fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly", "fp_text",
-              "pad", "property")
+UUID_NODES = ("fp_line", "fp_rect", "fp_circle", "fp_arc", "fp_poly", "fp_text", "pad", "property")
 
 
 def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> list:
     x, y, rot = spot
     tree = load_footprint(spec)
     # tree[1] is the footprint's own name, a bare string; the board names it itself.
-    body = [c for c in tree[1:]
-            if isinstance(c, list) and c[0] not in ("version", "generator",
-                                                    "generator_version")]
-    out = ["footprint", f'"{spec}"', ["layer", '"F.Cu"'], ["uuid", f'"{uid("fp", ref)}"'],
-           ["at", str(x), str(y)] + ([str(rot)] if rot else [])]
+    body = [
+        c
+        for c in tree[1:]
+        if isinstance(c, list) and c[0] not in ("version", "generator", "generator_version")
+    ]
+    out = [
+        "footprint",
+        f'"{spec}"',
+        ["layer", '"F.Cu"'],
+        ["uuid", f'"{uid("fp", ref)}"'],
+        ["at", str(x), str(y)] + ([str(rot)] if rot else []),
+    ]
     seen: dict = {}
     # pcb upgrade fills these two in itself if they are absent, with a fresh uuid.
     for field in ("Datasheet", "Description"):
-        body = body + [["property", f'"{field}"', '""', ["at", "0", "0", "0"],
-                        ["layer", '"F.Fab"'], ["hide", "yes"],
-                        ["uuid", f'"{uid("prop", ref, field)}"'],
-                        ["effects", ["font", ["size", "1.27", "1.27"]]]]]
+        body = body + [
+            [
+                "property",
+                f'"{field}"',
+                '""',
+                ["at", "0", "0", "0"],
+                ["layer", '"F.Fab"'],
+                ["hide", "yes"],
+                ["uuid", f'"{uid("prop", ref, field)}"'],
+                ["effects", ["font", ["size", "1.27", "1.27"]]],
+            ]
+        ]
     for node in body:
         if node[0] == "layer" or node[0] == "at":
             continue
@@ -264,8 +290,14 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             # Modulo 180, the way KiCad's own boards store it: a name follows a
             # quarter turn but never ends up upside down at a half one.
             if rot:
-                node = [([c[0], c[1], c[2], str((float(c[3] if len(c) > 3 else 0) + rot) % 180)]
-                         if isinstance(c, list) and c[0] == "at" else c) for c in node]
+                node = [
+                    (
+                        [c[0], c[1], c[2], str((float(c[3] if len(c) > 3 else 0) + rot) % 180)]
+                        if isinstance(c, list) and c[0] == "at"
+                        else c
+                    )
+                    for c in node
+                ]
         if node[0] == "pad":
             number = unquote(node[1])
             net = pin_nets.get(number)
@@ -273,13 +305,17 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             # A pad carries the footprint's angle even when it is round: the library
             # parity check reads pad orientation, and a bare (at x y) fails against it.
             if rot:
-                node = [([c[0], c[1], c[2],
-                          f"{(float(c[3] if len(c) > 3 else 0) + rot) % 360:g}"]
-                         if isinstance(c, list) and c[0] == "at" else c) for c in node]
+                node = [
+                    (
+                        [c[0], c[1], c[2], f"{(float(c[3] if len(c) > 3 else 0) + rot) % 360:g}"]
+                        if isinstance(c, list) and c[0] == "at"
+                        else c
+                    )
+                    for c in node
+                ]
             if net:
                 node.append(["net", str(net_id[net]), f'"{net}"'])
-        if (node[0] == "property" and unquote(node[1]) == "Reference"
-                and "MountingHole" in spec):
+        if node[0] == "property" and unquote(node[1]) == "Reference" and "MountingHole" in spec:
             node = list(node) + [["hide", "yes"]]
         if node[0] in UUID_NODES:
             node = [c for c in node if not (isinstance(c, list) and c[0] == "uuid")]
@@ -325,15 +361,33 @@ GROUND_TIE = ("J10.2", "J11.2")
 # terminal on its own copper, and each reservoir hangs on the load it holds up.
 RAIL_TREE = {
     # U2 alone may hang off another's branch: it regulates, so rule 6 buys nothing.
-    "+5V_R1": [("J10.1", "U1.20"), ("J10.1", "J7.7"), ("J10.1", "C1.1"), ("J7.7", "C2.1"),
-               ("J10.1", "J16.1"), ("U1.20", "U2.1"), ("U2.1", "C5.1")],
+    "+5V_R1": [
+        ("J10.1", "U1.20"),
+        ("J10.1", "J7.7"),
+        ("J10.1", "C1.1"),
+        ("J7.7", "C2.1"),
+        ("J10.1", "J16.1"),
+        ("U1.20", "U2.1"),
+        ("U2.1", "C5.1"),
+    ],
     "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
     "GND@tie": [GROUND_TIE],
     # Four branches leave J10.2, which has the room; a pad wedged in a row carries two.
     # The panel's return closes on U2.2 and goes no further (KEHOACH 2.5 rule 8).
-    "GND@1": [("J10.2", "J7.6"), ("J7.6", "C2.2"), ("J10.2", "C1.2"), ("J10.2", "U1.40"),
-              ("J10.2", "J16.2"), ("U1.40", "C5.2"), ("C5.2", "U2.2"), ("U2.2", "C4.2"),
-              ("C4.2", "J3.2"), ("J3.2", "J4.2"), ("J4.2", "J5.3"), ("J5.3", "J6.6")],
+    "GND@1": [
+        ("J10.2", "J7.6"),
+        ("J7.6", "C2.2"),
+        ("J10.2", "C1.2"),
+        ("J10.2", "U1.40"),
+        ("J10.2", "J16.2"),
+        ("U1.40", "C5.2"),
+        ("C5.2", "U2.2"),
+        ("U2.2", "C4.2"),
+        ("C4.2", "J3.2"),
+        ("J3.2", "J4.2"),
+        ("J4.2", "J5.3"),
+        ("J5.3", "J6.6"),
+    ],
     "GND@2": [("J11.2", "J9.1"), ("J9.1", "C3.2"), ("J11.2", "J18.2")],
     # Last: it shares the back layer with two grounds that have less room than it.
     "+3V3_LCD": [("U2.3", "C4.1"), ("C4.1", "J3.1")],
@@ -347,8 +401,10 @@ def spanning_edges(points: list) -> list:
     inside, outside = [points[0]], list(points[1:])
     edges = []
     while outside:
-        best = min(((a, b) for a in inside for b in outside),
-                   key=lambda pair: (pair[0][1] - pair[1][1]) ** 2 + (pair[0][2] - pair[1][2]) ** 2)
+        best = min(
+            ((a, b) for a in inside for b in outside),
+            key=lambda pair: (pair[0][1] - pair[1][1]) ** 2 + (pair[0][2] - pair[1][2]) ** 2,
+        )
         edges.append(best)
         inside.append(best[1])
         outside.remove(best[1])
@@ -356,27 +412,45 @@ def spanning_edges(points: list) -> list:
 
 
 def track(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> list:
-    return ["segment", ["start", str(a[0]), str(a[1])], ["end", str(b[0]), str(b[1])],
-            ["width", str(width)], ["layer", layer], ["net", str(net)],
-            ["uuid", f'"{uid("trk", tag)}"']]
+    return [
+        "segment",
+        ["start", str(a[0]), str(a[1])],
+        ["end", str(b[0]), str(b[1])],
+        ["width", str(width)],
+        ["layer", layer],
+        ["net", str(net)],
+        ["uuid", f'"{uid("trk", tag)}"'],
+    ]
 
 
 def via(tag: str, at: tuple, width: float, net: int) -> list:
     size, drill = VIA[width]
     # Mask covers every via: a module standing over one cannot reach it, and silk
     # printed across one keeps its letters (KEHOACH 2.5).
-    return ["via", ["at", str(at[0]), str(at[1])], ["size", str(size)],
-            ["drill", str(drill)], ["layers", SIGNAL_LAYER, POWER_LAYER],
-            ["covering", ["front", "yes"], ["back", "yes"]],
-            ["net", str(net)], ["uuid", f'"{uid("via", tag)}"']]
+    return [
+        "via",
+        ["at", str(at[0]), str(at[1])],
+        ["size", str(size)],
+        ["drill", str(drill)],
+        ["layers", SIGNAL_LAYER, POWER_LAYER],
+        ["covering", ["front", "yes"], ["back", "yes"]],
+        ["net", str(net)],
+        ["uuid", f'"{uid("via", tag)}"'],
+    ]
 
 
 def every_pad(doc: list) -> dict:
     """Pad id -> x, y, half its widest side, and the net it carries or None."""
     found = {}
     for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
-        ref = next((unquote(p[2]) for p in children(fp, "property")
-                    if len(p) > 2 and unquote(p[1]) == "Reference"), "?")
+        ref = next(
+            (
+                unquote(p[2])
+                for p in children(fp, "property")
+                if len(p) > 2 and unquote(p[1]) == "Reference"
+            ),
+            "?",
+        )
         at = first(fp, "at")
         ox, oy = float(at[1]), float(at[2])
         th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
@@ -386,12 +460,15 @@ def every_pad(doc: list) -> dict:
             wide, tall = float(size[1]), float(size[2])
             # A square pad reaches further at its corners than any circle drawn on its
             # side does, and pin 1 of every header is square.
-            reach = (math.hypot(wide, tall) if pad[3] in ("rect", "roundrect")
-                     else max(wide, tall)) / 2.0
+            reach = (
+                math.hypot(wide, tall) if pad[3] in ("rect", "roundrect") else max(wide, tall)
+            ) / 2.0
             found[f"{ref}.{unquote(pad[1])}"] = (
                 round(ox + lx * math.cos(th) + ly * math.sin(th), 3),
                 round(oy - lx * math.sin(th) + ly * math.cos(th), 3),
-                reach, unquote(net[-1]) if net else None)
+                reach,
+                unquote(net[-1]) if net else None,
+            )
     return found
 
 
@@ -442,8 +519,9 @@ def disc_cells(x: float, y: float, r: float) -> list:
         if room < 0:
             continue
         span = math.sqrt(room)
-        for j in range(max(0, math.ceil((y - span) / GRID)),
-                       min(NY - 1, int((y + span) / GRID)) + 1):
+        for j in range(
+            max(0, math.ceil((y - span) / GRID)), min(NY - 1, int((y + span) / GRID)) + 1
+        ):
             out.append(j * NX + i)
     return out
 
@@ -480,6 +558,7 @@ def screw_keepout(probe: float) -> set:
 def find_path(blocked: dict, room: dict, start: tuple, goal: tuple, want: str) -> list:
     """(cell, layer) from pad to pad over both sides; a layer change is a via."""
     import heapq
+
     si, sj = int(round(start[0] / GRID)), int(round(start[1] / GRID))
     gi, gj = int(round(goal[0] / GRID)), int(round(goal[1] / GRID))
     src, dst = sj * NX + si, gj * NX + gi
@@ -517,8 +596,12 @@ def find_path(blocked: dict, room: dict, start: tuple, goal: tuple, want: str) -
         for turn, (dx, dy) in enumerate(step):
             ni, nj = i + dx, j + dy
             if 0 <= ni < NX and 0 <= nj < NY and not wall[lay][nj * NX + ni]:
-                moves.append((((nj * NX + ni) * 4 + turn) * 2 + lay,
-                              1 + bias[lay] + (0 if turn == face else TURN_COST)))
+                moves.append(
+                    (
+                        ((nj * NX + ni) * 4 + turn) * 2 + lay,
+                        1 + bias[lay] + (0 if turn == face else TURN_COST),
+                    )
+                )
         for ahead, price in moves:
             if wall[ahead % 2][ahead // 8]:
                 continue
@@ -546,8 +629,7 @@ def corners(cells: list) -> list:
 
 def turn(x: float, y: float, deg: float, lx: float, ly: float) -> tuple:
     th = math.radians(deg)
-    return (x + lx * math.cos(th) + ly * math.sin(th),
-            y - lx * math.sin(th) + ly * math.cos(th))
+    return (x + lx * math.cos(th) + ly * math.sin(th), y - lx * math.sin(th) + ly * math.cos(th))
 
 
 # Glyph figures are check_pcb's, kept here so the router can dodge what it measures.
@@ -558,8 +640,11 @@ SILK_MM, SILK_PEN_MM = "0.8", "0.15"
 
 def silk_cells(doc: list) -> set:
     """Cells under a printed name: silk is clipped off bare copper, so no via may sit there."""
-    printed = [(n, unquote(n[1]), GLYPH_MM, 0.0, 0.0, 0.0)
-               for n in doc if isinstance(n, list) and n[0] == "gr_text"]
+    printed = [
+        (n, unquote(n[1]), GLYPH_MM, 0.0, 0.0, 0.0)
+        for n in doc
+        if isinstance(n, list) and n[0] == "gr_text"
+    ]
     for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
         at = first(fp, "at")
         ox, oy = float(at[1]), float(at[2])
@@ -582,15 +667,18 @@ def silk_cells(doc: list) -> set:
         justify = first(first(node, "effects") or [], "justify")
         side = unquote(justify[1]) if justify else "center"
         span = len(text) * glyph
-        reach = {"left": (0.0, span), "right": (-span, 0.0),
-                 "center": (-span / 2, span / 2)}[side]
+        reach = {"left": (0.0, span), "right": (-span, 0.0), "center": (-span / 2, span / 2)}[side]
         a = turn(x, y, rot, reach[0], -LINE_MM / 2)
         b = turn(x, y, rot, reach[1], LINE_MM / 2)
         grow = max(VIA[POWER_MM][0], VIA[SIGNAL_MM][0]) / 2
-        for i in range(max(0, int((min(a[0], b[0]) - grow) / GRID)),
-                       min(NX - 1, int((max(a[0], b[0]) + grow) / GRID)) + 1):
-            for j in range(max(0, int((min(a[1], b[1]) - grow) / GRID)),
-                           min(NY - 1, int((max(a[1], b[1]) + grow) / GRID)) + 1):
+        for i in range(
+            max(0, int((min(a[0], b[0]) - grow) / GRID)),
+            min(NX - 1, int((max(a[0], b[0]) + grow) / GRID)) + 1,
+        ):
+            for j in range(
+                max(0, int((min(a[1], b[1]) - grow) / GRID)),
+                min(NY - 1, int((max(a[1], b[1]) + grow) / GRID)) + 1,
+            ):
                 out.add(j * NX + i)
     return out
 
@@ -633,8 +721,7 @@ def route_jobs(pads: dict) -> list:
     return jobs
 
 
-def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list,
-            job: tuple) -> tuple:
+def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list, job: tuple) -> tuple:
     """Corners with the layer each sits on, or None when there is no way through."""
     tag, src, dst = job
     width, clear, want = wire_class(tag)
@@ -698,8 +785,13 @@ def route_board(doc: list, net_id: dict) -> list:
     """Lay every edge; when one is walled in, lift the newest foreign run and retry."""
     pads = every_pad(doc)
     probes = [(c, r) for c in (SIGNAL_CLEAR, POWER_CLEAR) for r in PROBES]
-    stamp = {key: {pad_id: disc_cells(x, y, half + key[0] + key[1])
-                   for pad_id, (x, y, half, net) in pads.items()} for key in probes}
+    stamp = {
+        key: {
+            pad_id: disc_cells(x, y, half + key[0] + key[1])
+            for pad_id, (x, y, half, net) in pads.items()
+        }
+        for key in probes
+    }
     rim = {r: border(2 * r) | screw_keepout(r) for r in PROBES}
     # A via under a printed name eats the name: the fab clips silk off bare copper.
     ink = silk_cells(doc)
@@ -728,9 +820,9 @@ def route_board(doc: list, net_id: dict) -> list:
     for order, run in enumerate(placed):
         number = net_id[run["tag"].split("@")[0]]
         for k, (a, b, layer) in enumerate(run["legs"]):
-            out.append(track(f'{run["tag"]}-{order}-{k}', a, b, run["width"], layer, number))
+            out.append(track(f"{run['tag']}-{order}-{k}", a, b, run["width"], layer, number))
         for k, at in enumerate(run["holes"]):
-            out.append(via(f'{run["tag"]}-{order}-{k}', at, run["width"], number))
+            out.append(via(f"{run['tag']}-{order}-{k}", at, run["width"], number))
     return out
 
 
@@ -758,8 +850,7 @@ def settle(job: tuple, parts: list) -> dict:
                 for at in holes:
                     cells.update(disc_cells(at[0], at[1], VIA[width][0] / 2 + gap + probe))
                 halo[layer][(job_clear, probe)] = cells
-    return {"job": job, "tag": tag, "width": width, "legs": legs,
-            "holes": holes, "halo": halo}
+    return {"job": job, "tag": tag, "width": width, "legs": legs, "holes": holes, "halo": halo}
 
 
 LABEL_GAP = 0.6
@@ -772,9 +863,14 @@ def label_side(seats: dict) -> tuple:
     ys = [s[1] for s in seats.values()]
     across = (max(xs) - min(xs)) >= (max(ys) - min(ys))
     low, high = (min(ys), max(ys)) if across else (min(xs), max(xs))
-    over = next((a for a in MODULE_AREA.values()
-                 if a[0] <= min(xs) and max(xs) <= a[2]
-                 and a[1] <= min(ys) and max(ys) <= a[3]), None)
+    over = next(
+        (
+            a
+            for a in MODULE_AREA.values()
+            if a[0] <= min(xs) and max(xs) <= a[2] and a[1] <= min(ys) and max(ys) <= a[3]
+        ),
+        None,
+    )
     if over is None:
         return (across, 1, high + LABEL_OFFSET) if across else (across, -1, low - LABEL_OFFSET)
     near, far = (over[1], over[3]) if across else (over[0], over[2])
@@ -786,6 +882,7 @@ def label_side(seats: dict) -> tuple:
 def pad_seats(fp: list) -> dict:
     """Pad number -> its board position, plus the local x that says which row it is on."""
     import math
+
     at = first(fp, "at")
     ox, oy = float(at[1]), float(at[2])
     th = math.radians(float(at[3]) if len(at) > 3 else 0.0)
@@ -793,8 +890,11 @@ def pad_seats(fp: list) -> dict:
     for pad in children(fp, "pad"):
         a = first(pad, "at")
         lx, ly = float(a[1]), float(a[2])
-        seats[unquote(pad[1])] = (ox + lx * math.cos(th) + ly * math.sin(th),
-                                  oy - lx * math.sin(th) + ly * math.cos(th), lx)
+        seats[unquote(pad[1])] = (
+            ox + lx * math.cos(th) + ly * math.sin(th),
+            oy - lx * math.sin(th) + ly * math.cos(th),
+            lx,
+        )
     return seats
 
 
@@ -802,10 +902,10 @@ def move_references(doc: list) -> None:
     """A designator under a module is as lost as a pin name, so it follows them out."""
     import math
     import gen_sch
+
     labelled = {ref for ref, value, left, right, x, y in gen_sch.PARTS}
     for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
-        prop = next((p for p in children(fp, "property")
-                     if unquote(p[1]) == "Reference"), None)
+        prop = next((p for p in children(fp, "property") if unquote(p[1]) == "Reference"), None)
         seats = pad_seats(fp)
         if prop is None or not seats or children(prop, "hide"):
             continue
@@ -813,8 +913,10 @@ def move_references(doc: list) -> None:
             continue
         xs = [s[0] for s in seats.values()]
         ys = [s[1] for s in seats.values()]
-        if not any(a[0] <= min(xs) and max(xs) <= a[2]
-                   and a[1] <= min(ys) and max(ys) <= a[3] for a in MODULE_AREA.values()):
+        if not any(
+            a[0] <= min(xs) and max(xs) <= a[2] and a[1] <= min(ys) and max(ys) <= a[3]
+            for a in MODULE_AREA.values()
+        ):
             continue
         across, sign, line = label_side(seats)
         start = (min(xs) if across else min(ys)) - 3.0
@@ -832,6 +934,7 @@ def pin_labels(doc: list) -> list:
     """A signal name printed beside every pad, so a hole can be identified by eye."""
     import math
     import gen_sch
+
     names = {}
     for ref, value, left, right, x, y in gen_sch.PARTS:
         for i, (name, net) in enumerate(left, 1):
@@ -841,8 +944,14 @@ def pin_labels(doc: list) -> list:
 
     out = []
     for fp in [n for n in doc if isinstance(n, list) and n[0] == "footprint"]:
-        ref = next((unquote(p[2]) for p in children(fp, "property")
-                    if len(p) > 2 and unquote(p[1]) == "Reference"), "?")
+        ref = next(
+            (
+                unquote(p[2])
+                for p in children(fp, "property")
+                if len(p) > 2 and unquote(p[1]) == "Reference"
+            ),
+            "?",
+        )
         at = first(fp, "at")
         ox, oy = float(at[1]), float(at[2])
         deg = float(at[3]) if len(at) > 3 else 0.0
@@ -873,14 +982,19 @@ def pin_labels(doc: list) -> list:
             else:
                 ax, ay = line, py
                 rot, just = 0, ("right" if sign < 0 else "left")
-            effects = ["effects", ["font", ["size", SILK_MM, SILK_MM],
-                                   ["thickness", SILK_PEN_MM]]]
+            effects = ["effects", ["font", ["size", SILK_MM, SILK_MM], ["thickness", SILK_PEN_MM]]]
             if just:
                 effects.append(["justify", just])
-            out.append(["gr_text", f'"{label}"',
-                        ["at", f"{ax:.2f}", f"{ay:.2f}", str(rot)],
-                        ["layer", '"F.SilkS"'],
-                        ["uuid", f'"{uid("lbl", ref, label)}"'], effects])
+            out.append(
+                [
+                    "gr_text",
+                    f'"{label}"',
+                    ["at", f"{ax:.2f}", f"{ay:.2f}", str(rot)],
+                    ["layer", '"F.SilkS"'],
+                    ["uuid", f'"{uid("lbl", ref, label)}"'],
+                    effects,
+                ]
+            )
     return out
 
 
@@ -889,42 +1003,70 @@ def main() -> None:
     every = sorted({n for pins in nets.values() for n in pins.values()})
     net_id = {name: i + 1 for i, name in enumerate(every)}
 
-    doc = ["kicad_pcb", ["version", "20241229"], ["generator", '"kiosk-gen"'],
-           ["generator_version", '"9.0"'],
-           ["general", ["thickness", "1.6"], ["legacy_teardrops", "no"]],
-           ["paper", '"A4"'],
-           ["layers", ["0", '"F.Cu"', "signal"], ["2", '"B.Cu"', "signal"],
-            ["9", '"F.Adhes"', "user", '"F.Adhesive"'], ["11", '"B.Adhes"', "user", '"B.Adhesive"'],
-            ["13", '"F.Paste"', "user"], ["15", '"B.Paste"', "user"],
-            ["5", '"F.SilkS"', "user", '"F.Silkscreen"'], ["7", '"B.SilkS"', "user", '"B.Silkscreen"'],
-            ["1", '"F.Mask"', "user"], ["3", '"B.Mask"', "user"],
+    doc = [
+        "kicad_pcb",
+        ["version", "20241229"],
+        ["generator", '"kiosk-gen"'],
+        ["generator_version", '"9.0"'],
+        ["general", ["thickness", "1.6"], ["legacy_teardrops", "no"]],
+        ["paper", '"A4"'],
+        [
+            "layers",
+            ["0", '"F.Cu"', "signal"],
+            ["2", '"B.Cu"', "signal"],
+            ["9", '"F.Adhes"', "user", '"F.Adhesive"'],
+            ["11", '"B.Adhes"', "user", '"B.Adhesive"'],
+            ["13", '"F.Paste"', "user"],
+            ["15", '"B.Paste"', "user"],
+            ["5", '"F.SilkS"', "user", '"F.Silkscreen"'],
+            ["7", '"B.SilkS"', "user", '"B.Silkscreen"'],
+            ["1", '"F.Mask"', "user"],
+            ["3", '"B.Mask"', "user"],
             ["17", '"Dwgs.User"', "user", '"User.Drawings"'],
             ["19", '"Cmts.User"', "user", '"User.Comments"'],
-            ["21", '"Eco1.User"', "user", '"User.Eco1"'], ["23", '"Eco2.User"', "user", '"User.Eco2"'],
-            ["25", '"Edge.Cuts"', "user"], ["27", '"Margin"', "user"],
-            ["31", '"F.CrtYd"', "user", '"F.Courtyard"'], ["29", '"B.CrtYd"', "user", '"B.Courtyard"'],
-            ["35", '"F.Fab"', "user"], ["33", '"B.Fab"', "user"]],
-           ["setup", ["pad_to_mask_clearance", "0"]],
-           ["net", "0", '""']]
+            ["21", '"Eco1.User"', "user", '"User.Eco1"'],
+            ["23", '"Eco2.User"', "user", '"User.Eco2"'],
+            ["25", '"Edge.Cuts"', "user"],
+            ["27", '"Margin"', "user"],
+            ["31", '"F.CrtYd"', "user", '"F.Courtyard"'],
+            ["29", '"B.CrtYd"', "user", '"B.Courtyard"'],
+            ["35", '"F.Fab"', "user"],
+            ["33", '"B.Fab"', "user"],
+        ],
+        ["setup", ["pad_to_mask_clearance", "0"]],
+        ["net", "0", '""'],
+    ]
     for name, number in net_id.items():
         doc.append(["net", str(number), f'"{name}"'])
 
     corners = [(EDGE, EDGE), (BOARD_W, EDGE), (BOARD_W, BOARD_H), (EDGE, BOARD_H)]
     for i, start in enumerate(corners):
         end = corners[(i + 1) % 4]
-        doc.append(["gr_line", ["start", str(start[0]), str(start[1])],
-                    ["end", str(end[0]), str(end[1])],
-                    ["stroke", ["width", "0.1"], ["type", "default"]],
-                    ["layer", '"Edge.Cuts"'], ["uuid", f'"{uid("edge", i)}"']])
+        doc.append(
+            [
+                "gr_line",
+                ["start", str(start[0]), str(start[1])],
+                ["end", str(end[0]), str(end[1])],
+                ["stroke", ["width", "0.1"], ["type", "default"]],
+                ["layer", '"Edge.Cuts"'],
+                ["uuid", f'"{uid("edge", i)}"'],
+            ]
+        )
 
     for name, (x0, y0, x1, y1) in MODULE_AREA.items():
         box = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
         for i, start in enumerate(box):
             end = box[(i + 1) % 4]
-            doc.append(["gr_line", ["start", str(start[0]), str(start[1])],
-                        ["end", str(end[0]), str(end[1])],
-                        ["stroke", ["width", "0.2"], ["type", "dash"]],
-                        ["layer", '"F.SilkS"'], ["uuid", f'"{uid("area", name, i)}"']])
+            doc.append(
+                [
+                    "gr_line",
+                    ["start", str(start[0]), str(start[1])],
+                    ["end", str(end[0]), str(end[1])],
+                    ["stroke", ["width", "0.2"], ["type", "dash"]],
+                    ["layer", '"F.SilkS"'],
+                    ["uuid", f'"{uid("area", name, i)}"'],
+                ]
+            )
 
     for ref, spot in PLACEMENT.items():
         if ref in BOARD_HOLES or ref in SOLDER_GRID:
@@ -943,8 +1085,10 @@ def main() -> None:
     doc += laid
 
     OUT.write_text(emit(doc) + "\n", encoding="utf-8")
-    print(f"{OUT}: {len(PLACEMENT)} footprint, {len(net_id)} net, {len(laid)} doan day, "
-          f"board {BOARD_W}x{BOARD_H} mm")
+    print(
+        f"{OUT}: {len(PLACEMENT)} footprint, {len(net_id)} net, {len(laid)} doan day, "
+        f"board {BOARD_W}x{BOARD_H} mm"
+    )
     missing = sorted(set(footprint) - set(PLACEMENT))
     if missing:
         print(f"  !! chua dat: {missing}")

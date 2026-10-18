@@ -80,7 +80,9 @@ def routes(path: Path) -> list[tuple[str, bool, bool]]:
             if VERBS.match(lines[j]):
                 break
         desk = roles is not None and bool(DESK.search(roles))
-        found.append((f"{verb.group(1).upper()} {name}", roles is not None or sees, desk and not reach))
+        found.append(
+            (f"{verb.group(1).upper()} {name}", roles is not None or sees, desk and not reach)
+        )
     return found
 
 

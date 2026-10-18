@@ -31,7 +31,6 @@ SKIP_GROUPS = ("CAM",)
 SKIP_MACROS = ("APP_STATUS_LED_GPIO", "APP_FACTORY_RESET_GPIO")
 
 
-
 @dataclass
 class Problem:
     where: str
@@ -66,8 +65,11 @@ def first(node: list, tag: str) -> list | None:
 def macro_gpios(header: Path) -> dict[str, int]:
     text = header.read_text(encoding="utf-8")
     found = re.findall(r"#define\s+(APP_(\w+?)_\w+_GPIO)\s+(\d+)", text)
-    return {macro: int(pin) for macro, group, pin in found
-            if group not in SKIP_GROUPS and macro not in SKIP_MACROS}
+    return {
+        macro: int(pin)
+        for macro, group, pin in found
+        if group not in SKIP_GROUPS and macro not in SKIP_MACROS
+    }
 
 
 def expected_net(macro: str) -> str:
@@ -105,8 +107,10 @@ def devkit_nets(tree: list) -> tuple[dict[str, str], list[Problem]]:
     for wire in children(tree, "wire"):
         points = children(first(wire, "pts"), "xy")
         wires.append(tuple(float(v) for p in points for v in p[1:3]))
-    labels = [(node[1], float(first(node, "at")[1]), float(first(node, "at")[2]))
-              for node in children(tree, "label")]
+    labels = [
+        (node[1], float(first(node, "at")[1]), float(first(node, "at")[2]))
+        for node in children(tree, "label")
+    ]
 
     def near(ax: float, ay: float, bx: float, by: float) -> bool:
         return abs(ax - bx) < TOLERANCE and abs(ay - by) < TOLERANCE
@@ -142,15 +146,23 @@ def text_boxes(tree: list) -> list[tuple[str, float, float, float, float]]:
     for label in children(tree, "label"):
         at = first(label, "at")
         boxes.append((label[1], float(at[1]), float(at[2])))
-    return [(text, x - len(text) * CHAR_MM / 2, x + len(text) * CHAR_MM / 2,
-             y - LINE_MM / 2, y + LINE_MM / 2) for text, x, y in boxes]
+    return [
+        (
+            text,
+            x - len(text) * CHAR_MM / 2,
+            x + len(text) * CHAR_MM / 2,
+            y - LINE_MM / 2,
+            y + LINE_MM / 2,
+        )
+        for text, x, y in boxes
+    ]
 
 
 def overlaps(tree: list) -> list[Problem]:
     boxes = text_boxes(tree)
     found = []
     for i, (text, x0, x1, y0, y1) in enumerate(boxes):
-        for other, ox0, ox1, oy0, oy1 in boxes[i + 1:]:
+        for other, ox0, ox1, oy0, oy1 in boxes[i + 1 :]:
             if x0 < ox1 and ox0 < x1 and y0 < oy1 and oy0 < y1:
                 found.append(Problem("sheet", f'"{text}" sits on "{other}"'))
     return found

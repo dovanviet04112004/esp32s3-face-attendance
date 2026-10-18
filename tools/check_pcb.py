@@ -36,8 +36,7 @@ POWER_WIDTH_MM, SIGNAL_WIDTH_MM = 1.0, 0.25
 def place(ox: float, oy: float, deg: float, lx: float, ly: float) -> tuple[float, float]:
     """A footprint-local point in board coordinates."""
     th = math.radians(deg)
-    return (ox + lx * math.cos(th) + ly * math.sin(th),
-            oy - lx * math.sin(th) + ly * math.cos(th))
+    return (ox + lx * math.cos(th) + ly * math.sin(th), oy - lx * math.sin(th) + ly * math.cos(th))
 
 
 def sheet_nets(tree: list) -> dict[str, dict[str, str]]:
@@ -55,8 +54,9 @@ def sheet_nets(tree: list) -> dict[str, dict[str, str]]:
     for wire in children(tree, "wire"):
         points = children(first(wire, "pts"), "xy")
         wires.append(tuple(float(v) for p in points for v in p[1:3]))
-    labels = [(n[1], float(first(n, "at")[1]), float(first(n, "at")[2]))
-              for n in children(tree, "label")]
+    labels = [
+        (n[1], float(first(n, "at")[1]), float(first(n, "at")[2])) for n in children(tree, "label")
+    ]
 
     def near(ax, ay, bx, by):
         return abs(ax - bx) < TOLERANCE and abs(ay - by) < TOLERANCE
@@ -73,8 +73,9 @@ def sheet_nets(tree: list) -> dict[str, dict[str, str]]:
         for number, (lx, ly) in pins_of[lib_id[1].split(":", 1)[-1]].items():
             px, py = ox + lx, oy - ly
             for x1, y1, x2, y2 in wires:
-                far = ((x2, y2) if near(x1, y1, px, py)
-                       else (x1, y1) if near(x2, y2, px, py) else None)
+                far = (
+                    (x2, y2) if near(x1, y1, px, py) else (x1, y1) if near(x2, y2, px, py) else None
+                )
                 if far is None:
                     continue
                 for net, lax, lay in labels:
@@ -123,8 +124,10 @@ def board_parts(tree: list) -> dict[str, dict]:
             cx, cy = float(mid[1]), float(mid[2])
             radius = math.dist((cx, cy), (float(rim[1]), float(rim[2])))
             hub = place(ox, oy, deg, cx, cy)
-            corners += [(hub[0] + sx * radius, hub[1] + sy * radius)
-                        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            corners += [
+                (hub[0] + sx * radius, hub[1] + sy * radius)
+                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+            ]
         parts[ref] = {"spec": fp[1], "pads": pads, "crtyd": corners}
     return parts
 
@@ -156,8 +159,15 @@ def boxes_from(segments: list[tuple]) -> list[tuple]:
             joined["pts"] += loop["pts"]
             loops.remove(loop)
         loops.append(joined)
-    return [(min(p[0] for p in g["pts"]), min(p[1] for p in g["pts"]),
-             max(p[0] for p in g["pts"]), max(p[1] for p in g["pts"])) for g in loops]
+    return [
+        (
+            min(p[0] for p in g["pts"]),
+            min(p[1] for p in g["pts"]),
+            max(p[0] for p in g["pts"]),
+            max(p[1] for p in g["pts"]),
+        )
+        for g in loops
+    ]
 
 
 def silk_strings(tree: list) -> list[tuple]:
@@ -172,9 +182,17 @@ def silk_strings(tree: list) -> list[tuple]:
                 continue
             spot = first(prop, "at")
             moved = place(ox, oy, deg, float(spot[1]), float(spot[2]))
-            found.append(([prop[0], prop[2], ["at", str(moved[0]), str(moved[1]), "0"],
-                           *[c for c in prop[3:] if not (isinstance(c, list) and c[0] == "at")]],
-                          REF_GLYPH_MM / GLYPH_MM))
+            found.append(
+                (
+                    [
+                        prop[0],
+                        prop[2],
+                        ["at", str(moved[0]), str(moved[1]), "0"],
+                        *[c for c in prop[3:] if not (isinstance(c, list) and c[0] == "at")],
+                    ],
+                    REF_GLYPH_MM / GLYPH_MM,
+                )
+            )
     return found
 
 
@@ -191,21 +209,25 @@ def text_boxes(tree: list) -> list[tuple]:
         justify = first(first(node, "effects") or [], "justify")
         side = justify[1] if justify else "center"
         width = len(node[1]) * GLYPH_MM * scale
-        span = {"left": (0.0, width), "right": (-width, 0.0),
-                "center": (-width / 2, width / 2)}[side]
+        span = {"left": (0.0, width), "right": (-width, 0.0), "center": (-width / 2, width / 2)}[
+            side
+        ]
         a = place(x, y, rot, span[0], -LINE_MM / 2)
         b = place(x, y, rot, span[1], LINE_MM / 2)
-        found.append((node[1], min(a[0], b[0]), min(a[1], b[1]),
-                      max(a[0], b[0]), max(a[1], b[1])))
+        found.append((node[1], min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])))
     return found
 
 
 # Section 2.5 rules 1, 2, 6 and 7 are facts about where current flows, which no clearance
 # check sees: cut these pads out and the first pairs must part, the second pairs must not.
 RULE_CUTS = [
-    ("GND", ("J10.2", "C1.2", "J11.2"),
-     [("J9.1", "J7.6"), ("J9.1", "U1.40"), ("C3.2", "J16.2"), ("J18.2", "J16.2")],
-     [("J7.6", "C2.2"), ("J9.1", "C3.2")], "1, 2"),
+    (
+        "GND",
+        ("J10.2", "C1.2", "J11.2"),
+        [("J9.1", "J7.6"), ("J9.1", "U1.40"), ("C3.2", "J16.2"), ("J18.2", "J16.2")],
+        [("J7.6", "C2.2"), ("J9.1", "C3.2")],
+        "1, 2",
+    ),
     ("GND", ("J10.2", "C1.2"), [("J7.6", "U1.40")], [("J7.6", "C2.2")], "2"),
     ("+5V_R1", ("J10.1", "C1.1"), [("U1.20", "J7.7")], [("J7.7", "C2.1")], "6, 7"),
     ("+5V_R2", ("J11.1",), [("J9.2", "J18.1")], [("J9.2", "C3.1")], "6, 7"),
@@ -214,12 +236,14 @@ RULE_CUTS = [
 
 def seg_gap(p: tuple, q: tuple, r: tuple, s: tuple) -> tuple:
     """Closest approach of two segments, and the point halfway across it."""
+
     def near(a, b, c):
         vx, vy = b[0] - a[0], b[1] - a[1]
         run = vx * vx + vy * vy
         t = 0.0 if run == 0 else max(0.0, min(1.0, ((c[0] - a[0]) * vx + (c[1] - a[1]) * vy) / run))
         foot = (a[0] + vx * t, a[1] + vy * t)
         return math.dist(c, foot), foot, c
+
     best = min(near(p, q, r), near(p, q, s), near(r, s, p), near(r, s, q), key=lambda h: h[0])
     return best[0], ((best[1][0] + best[2][0]) / 2, (best[1][1] + best[2][1]) / 2)
 
@@ -230,23 +254,42 @@ def copper_bits(tree: list, parts: dict, net: str) -> list:
     for ref, part in parts.items():
         for number, pad in part["pads"].items():
             if pad["net"] == net:
-                bits.append({"id": f"{ref}.{number}", "layer": None,
-                             "a": pad["xy"], "b": pad["xy"], "r": pad["size"] / 2})
+                bits.append(
+                    {
+                        "id": f"{ref}.{number}",
+                        "layer": None,
+                        "a": pad["xy"],
+                        "b": pad["xy"],
+                        "r": pad["size"] / 2,
+                    }
+                )
     for node in children(tree, "segment"):
         if first(node, "net")[-1] != net:
             continue
         start, end = first(node, "start"), first(node, "end")
-        bits.append({"id": None, "layer": first(node, "layer")[1],
-                     "a": (float(start[1]), float(start[2])),
-                     "b": (float(end[1]), float(end[2])),
-                     "r": float(first(node, "width")[1]) / 2})
+        bits.append(
+            {
+                "id": None,
+                "layer": first(node, "layer")[1],
+                "a": (float(start[1]), float(start[2])),
+                "b": (float(end[1]), float(end[2])),
+                "r": float(first(node, "width")[1]) / 2,
+            }
+        )
     for node in children(tree, "via"):
         if first(node, "net")[-1] != net:
             continue
         at = first(node, "at")
         spot = (float(at[1]), float(at[2]))
-        bits.append({"id": None, "layer": None, "a": spot, "b": spot,
-                     "r": float(first(node, "size")[1]) / 2})
+        bits.append(
+            {
+                "id": None,
+                "layer": None,
+                "a": spot,
+                "b": spot,
+                "r": float(first(node, "size")[1]) / 2,
+            }
+        )
     return bits
 
 
@@ -281,14 +324,19 @@ def joined(bits: list, drop: tuple, cut: dict) -> list:
 def check_rules(tree: list, parts: dict) -> list:
     """Section 2.5 rules 1, 2, 6 and 7, read off the copper rather than the plan."""
     problems = []
-    for net in sorted({p["net"] for part in parts.values() for p in part["pads"].values() if p["net"]}):
+    for net in sorted(
+        {p["net"] for part in parts.values() for p in part["pads"].values() if p["net"]}
+    ):
         bits = copper_bits(tree, parts, net)
         whole = joined(bits, (), {})
         holding = [g for g in whole if g]
         if len(holding) > 1:
             problems.append(f"{net}: dong chia lam {len(holding)} manh roi nhau")
-    seats = {f"{ref}.{number}": (pad["xy"], pad["size"] / 2)
-             for ref, part in parts.items() for number, pad in part["pads"].items()}
+    seats = {
+        f"{ref}.{number}": (pad["xy"], pad["size"] / 2)
+        for ref, part in parts.items()
+        for number, pad in part["pads"].items()
+    }
     for net, drop, apart, together, rule in RULE_CUTS:
         cut = {pad: seats[pad] for pad in drop if pad in seats}
         groups = joined(copper_bits(tree, parts, net), drop, cut)
@@ -318,9 +366,13 @@ def check_wires(tree: list) -> list:
         size = float(first(node, "size")[1])
         drill = float(first(node, "drill")[1])
         if drill < MIN_DRILL_MM:
-            problems.append(f"via o {first(node, 'at')[1]}: khoan {drill} mm duoi muc {MIN_DRILL_MM}")
+            problems.append(
+                f"via o {first(node, 'at')[1]}: khoan {drill} mm duoi muc {MIN_DRILL_MM}"
+            )
         if (size - drill) / 2 < MIN_RING_MM:
-            problems.append(f"via o {first(node, 'at')[1]}: vanh {(size - drill) / 2:.2f} mm duoi muc {MIN_RING_MM}")
+            problems.append(
+                f"via o {first(node, 'at')[1]}: vanh {(size - drill) / 2:.2f} mm duoi muc {MIN_RING_MM}"
+            )
     return problems
 
 
@@ -377,11 +429,15 @@ def main() -> int:
                 continue
             ring = (pad["narrow"] - pad["drill"]) / 2
             if pad["drill"] < MIN_DRILL_MM:
-                problems.append(f"{ref}.{number}: drilled {pad['drill']:.2f} mm, "
-                                f"under the {MIN_DRILL_MM} mm floor")
+                problems.append(
+                    f"{ref}.{number}: drilled {pad['drill']:.2f} mm, "
+                    f"under the {MIN_DRILL_MM} mm floor"
+                )
             if ring < MIN_RING_MM:
-                problems.append(f"{ref}.{number}: {ring:.2f} mm of copper round the hole, "
-                                f"under the {MIN_RING_MM} mm floor")
+                problems.append(
+                    f"{ref}.{number}: {ring:.2f} mm of copper round the hole, "
+                    f"under the {MIN_RING_MM} mm floor"
+                )
 
     edge = boxes_from(outline(pcb, "Edge.Cuts"))
     if edge:
@@ -389,18 +445,27 @@ def main() -> int:
         for ref, part in sorted(parts.items()):
             for point in [p["xy"] for p in part["pads"].values()] + part["crtyd"]:
                 if not (x0 <= point[0] <= x1 and y0 <= point[1] <= y1):
-                    problems.append(f"{ref}: ({point[0]:.1f}, {point[1]:.1f}) falls outside the board")
+                    problems.append(
+                        f"{ref}: ({point[0]:.1f}, {point[1]:.1f}) falls outside the board"
+                    )
                     break
 
     # A module keeps its body once plugged in, so the dashed rectangle it stands on
     # holds its own pins and nothing else wired. Mounting holes carry no net.
     for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
-        inside = sorted(ref for ref, part in parts.items()
-                        if any(p["net"] and bx0 <= p["xy"][0] <= bx1 and by0 <= p["xy"][1] <= by1
-                               for p in part["pads"].values()))
+        inside = sorted(
+            ref
+            for ref, part in parts.items()
+            if any(
+                p["net"] and bx0 <= p["xy"][0] <= bx1 and by0 <= p["xy"][1] <= by1
+                for p in part["pads"].values()
+            )
+        )
         if len(inside) > 1:
-            problems.append(f"module body ({bx0:.0f}, {by0:.0f})-({bx1:.0f}, {by1:.0f}): "
-                            f"holds {', '.join(inside)}")
+            problems.append(
+                f"module body ({bx0:.0f}, {by0:.0f})-({bx1:.0f}, {by1:.0f}): "
+                f"holds {', '.join(inside)}"
+            )
 
     # The body lands square on its socket only if the row is centred across the
     # outline along the axis the row runs; 1 mm of drift is visible on the board.
@@ -416,17 +481,21 @@ def main() -> int:
             mid = (min(xs) + max(xs)) / 2 if along else (min(ys) + max(ys)) / 2
             centre = (bx0 + bx1) / 2 if along else (by0 + by1) / 2
             if abs(mid - centre) > 0.3:
-                problems.append(f"{ref}: sits {mid - centre:+.2f} mm off the centre of "
-                                f"the body it carries")
+                problems.append(
+                    f"{ref}: sits {mid - centre:+.2f} mm off the centre of the body it carries"
+                )
 
     # A footprint placed twice brings its library uuids twice unless the generator
     # renames them, and KiCad then treats two different pads as one object.
-    doubled = sorted(value for value, count in Counter(
-        re.findall(r'\(uuid "([0-9a-f-]{36})"\)', board.read_text(encoding="utf-8"))
-    ).items() if count > 1)
+    doubled = sorted(
+        value
+        for value, count in Counter(
+            re.findall(r'\(uuid "([0-9a-f-]{36})"\)', board.read_text(encoding="utf-8"))
+        ).items()
+        if count > 1
+    )
     if doubled:
-        problems.append(f"{len(doubled)} uuid(s) shared by more than one node, "
-                        f"first {doubled[0]}")
+        problems.append(f"{len(doubled)} uuid(s) shared by more than one node, first {doubled[0]}")
 
     problems += check_rules(pcb, parts)
     problems += check_wires(pcb)
@@ -439,7 +508,7 @@ def main() -> int:
             hulls[ref] = (min(xs), min(ys), max(xs), max(ys))
     refs = sorted(hulls)
     for i, a in enumerate(refs):
-        for b in refs[i + 1:]:
+        for b in refs[i + 1 :]:
             ax0, ay0, ax1, ay1 = hulls[a]
             bx0, by0, bx1, by1 = hulls[b]
             if ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1:
@@ -465,14 +534,17 @@ def main() -> int:
         for bx0, by0, bx1, by1 in bodies:
             if tx0 < bx1 and bx0 < tx1 and ty0 < by1 and by0 < ty1:
                 problems.append(f'"{text}": a module body at ({bx0:.0f}, {by0:.0f}) covers it')
-        if edge and not (edge[0][0] <= tx0 and tx1 <= edge[0][2]
-                         and edge[0][1] <= ty0 and ty1 <= edge[0][3]):
+        if edge and not (
+            edge[0][0] <= tx0 and tx1 <= edge[0][2] and edge[0][1] <= ty0 and ty1 <= edge[0][3]
+        ):
             problems.append(f'"{text}": silkscreen runs off the board')
 
     for problem in problems:
         print(problem)
-    print(f"check_pcb: {len(parts)} part(s), {len(carried)} net(s), "
-          f"{len(problems)} problem(s)", file=sys.stderr)
+    print(
+        f"check_pcb: {len(parts)} part(s), {len(carried)} net(s), {len(problems)} problem(s)",
+        file=sys.stderr,
+    )
     return 1 if problems else 0
 
 

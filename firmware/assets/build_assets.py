@@ -78,8 +78,10 @@ def main(argv: list[str] | None = None) -> int:
     subprocess.run(
         [sys.executable, str(generator), str(size), str(root), str(args.out)], check=True
     )
-    print(f"{args.out}  {args.out.stat().st_size / 1024.0:.1f} KB of {size / 1024.0:.0f} KB "
-          f"{args.partition}")
+    print(
+        f"{args.out}  {args.out.stat().st_size / 1024.0:.1f} KB of {size / 1024.0:.0f} KB "
+        f"{args.partition}"
+    )
     return 0
 
 

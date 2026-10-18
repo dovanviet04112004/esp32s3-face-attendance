@@ -32,9 +32,7 @@ BRANCHES = ("detection", "antispoof", "recognition")
 
 
 def git(*args: str) -> str:
-    return subprocess.run(
-        ["git", *args], check=True, capture_output=True, text=True
-    ).stdout
+    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
 
 
 def notes_max_len() -> int:
@@ -47,9 +45,7 @@ def notes_max_len() -> int:
 
 def firmware_span(version: str) -> tuple[str, str]:
     """The previous release commit, and the one that set this version (HEAD until it is committed)."""
-    found = git(
-        "log", "--format=%H", f'-Sset(PROJECT_VER "{version}")', "--", CMAKE
-    ).split()
+    found = git("log", "--format=%H", f'-Sset(PROJECT_VER "{version}")', "--", CMAKE).split()
     at = found[-1] if found else "HEAD"
     before = git(
         "log",
@@ -118,9 +114,7 @@ def parse(text: str, most: int) -> dict[str, str]:
         if not body:
             raise ValueError(f"the [{lang}] notes are empty")
         if len(body) > most:
-            raise ValueError(
-                f"the [{lang}] notes run {len(body)} characters, over {most}"
-            )
+            raise ValueError(f"the [{lang}] notes run {len(body)} characters, over {most}")
         notes[key] = body
     return notes
 
@@ -180,12 +174,8 @@ def firmware_facts(args: argparse.Namespace) -> tuple[list[str], str]:
         f"Image on the server: {args.size} B, sha256 `{args.sha256}`. Not attached: it carries the fleet's bootstrap token."
     ]
     if args.requires:
-        facts.append(
-            f"Kiosks install models {args.requires} or newer before this firmware."
-        )
-    link = (
-        f"{args.repo}/compare/{before}...{at}" if before else f"{args.repo}/commits/{at}"
-    )
+        facts.append(f"Kiosks install models {args.requires} or newer before this firmware.")
+    link = f"{args.repo}/compare/{before}...{at}" if before else f"{args.repo}/commits/{at}"
     return facts, link
 
 
@@ -257,9 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     wr.add_argument(
         "--current", type=Path, help="JSON of the notes the server holds, to start from"
     )
-    wr.add_argument(
-        "--since", default="", help="the commit of the previous models release, if any"
-    )
+    wr.add_argument("--since", default="", help="the commit of the previous models release, if any")
     wr.add_argument("--no-edit", action="store_true", help="check the draft as it is")
     gh = steps.add_parser("github", help="the body of the GitHub release")
     gh.add_argument("kind", choices=("firmware", "models"))

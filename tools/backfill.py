@@ -16,13 +16,17 @@ from check_plans import psql, read_url
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--table", required=True)
     parser.add_argument("--key", required=True, help="an ordered column the batch walks")
     parser.add_argument("--set", required=True, dest="assign", help="the SET clause, without SET")
     parser.add_argument("--where", required=True, help="what is not yet done; --set must clear it")
     parser.add_argument("--chunk", type=int, default=5000)
-    parser.add_argument("--pause-ms", type=int, default=200, help="room for other writers between batches")
+    parser.add_argument(
+        "--pause-ms", type=int, default=200, help="room for other writers between batches"
+    )
     parser.add_argument("--apply", action="store_true", help="write; the default only reports")
     args = parser.parse_args()
 

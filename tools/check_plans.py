@@ -105,8 +105,20 @@ SCAN = re.compile(r"Seq Scan on (?:\w+ )?\"?(\w+)\"?", re.I)
 def psql(url: str, sql: str) -> str:
     """Run one statement through the client inside the postgres container."""
     done = subprocess.run(
-        ["docker", "compose", "-f", "deploy/docker-compose.yml", "exec", "-T", "postgres",
-         "psql", "-qAtX", url, "-c", sql],
+        [
+            "docker",
+            "compose",
+            "-f",
+            "deploy/docker-compose.yml",
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-qAtX",
+            url,
+            "-c",
+            sql,
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -130,7 +142,7 @@ def read_url() -> str:
 
 
 def live_rows(url: str) -> dict[str, int]:
-    out = psql(url, 'SELECT relname, n_live_tup FROM pg_stat_user_tables')
+    out = psql(url, "SELECT relname, n_live_tup FROM pg_stat_user_tables")
     counts: dict[str, int] = {}
     for line in out.splitlines():
         if "|" in line:
@@ -170,7 +182,9 @@ def main() -> int:
             if (name, table) in WHY:
                 continue
             if held < floor:
-                print(f"{name}: seq scan on {table}, {held} rows is under the {floor} floor — no verdict")
+                print(
+                    f"{name}: seq scan on {table}, {held} rows is under the {floor} floor — no verdict"
+                )
                 withheld += 1
                 continue
             print(f"{name}: seq scan on {table} at {held} rows, and no reason is recorded")

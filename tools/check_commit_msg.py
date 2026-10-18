@@ -19,9 +19,7 @@ HEADER = re.compile(
     r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9_./-]+)\))?(?P<bang>!)?: (?P<subject>.+)$"
 )
 BANNED_SUBJECTS = {"update code", "fix", "final", "test again", "new version", "wip"}
-PAST_TENSE = re.compile(
-    r"^(added|fixed|updated|changed|removed|updating|adding|fixing)\b"
-)
+PAST_TENSE = re.compile(r"^(added|fixed|updated|changed|removed|updating|adding|fixing)\b")
 GIT_WRITTEN = re.compile(r"^(Merge |Revert \"|fixup! |squash! |amend! )")
 VIETNAMESE = re.compile(
     "[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"
@@ -58,9 +56,7 @@ def problems(text: str) -> list[str]:
     found = []
     shape = HEADER.match(header)
     if not shape:
-        found.append(
-            f"the first line is not '<type>(<scope>): <description>': {header}"
-        )
+        found.append(f"the first line is not '<type>(<scope>): <description>': {header}")
     else:
         subject = shape["subject"]
         if shape["type"] not in TYPES:
@@ -75,9 +71,7 @@ def problems(text: str) -> list[str]:
             found.append(
                 "the description must be imperative: add, fix, remove, not added or fixing"
             )
-        if shape["bang"] and not any(
-            line.startswith("BREAKING CHANGE:") for line in lines
-        ):
+        if shape["bang"] and not any(line.startswith("BREAKING CHANGE:") for line in lines):
             found.append("a '!' after the scope needs a 'BREAKING CHANGE:' footer")
     if len(lines) > 1 and lines[1]:
         found.append("a blank line must separate the first line from the body")
@@ -115,9 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "message_file", nargs="?", type=Path, help="the file the commit-msg hook gets"
     )
-    parser.add_argument(
-        "--range", dest="span", help="check every commit in A..B instead"
-    )
+    parser.add_argument("--range", dest="span", help="check every commit in A..B instead")
     args = parser.parse_args(argv)
     if (args.message_file is None) == (args.span is None):
         parser.error("give a message file or --range, one of the two")

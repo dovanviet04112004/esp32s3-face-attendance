@@ -35,9 +35,7 @@ def main() -> int:
         return 0
     if REPO_ROOT not in path.resolve().parents:
         return 0
-    done = subprocess.run(
-        [sys.executable, str(CHECKER), str(path)], capture_output=True, text=True
-    )
+    done = subprocess.run([sys.executable, str(CHECKER), str(path)], capture_output=True, text=True)
     if done.returncode == 0:
         return 0
     print(done.stdout.strip(), file=sys.stderr)

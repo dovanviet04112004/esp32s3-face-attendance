@@ -43,14 +43,19 @@ def render() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true", help="compare with the committed file instead of writing it")
+    parser.add_argument(
+        "--check", action="store_true", help="compare with the committed file instead of writing it"
+    )
     args = parser.parse_args()
     text = render()
     shown = OUT.relative_to(ROOT)
     if args.check:
         held = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
         if held != text:
-            print(f"{shown} is out of date with the catalogues; run ./tools/gen_sw_words.py", file=sys.stderr)
+            print(
+                f"{shown} is out of date with the catalogues; run ./tools/gen_sw_words.py",
+                file=sys.stderr,
+            )
             return 1
         print(f"gen_sw_words: {shown} matches the catalogues")
         return 0

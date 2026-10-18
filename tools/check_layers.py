@@ -52,9 +52,7 @@ FORBIDDEN_EDGES: set[tuple[str, str]] = {
 }
 
 REGISTER_RE = re.compile(r"idf_component_register\s*\((.*?)\)", re.DOTALL)
-REQUIRES_RE = re.compile(
-    r"\b(PRIV_REQUIRES|REQUIRES)\b(.*?)(?=\b[A-Z_]{3,}\b\s|$)", re.DOTALL
-)
+REQUIRES_RE = re.compile(r"\b(PRIV_REQUIRES|REQUIRES)\b(.*?)(?=\b[A-Z_]{3,}\b\s|$)", re.DOTALL)
 KEYWORD_RE = re.compile(r"^[A-Z_]{3,}$")
 
 
@@ -104,9 +102,7 @@ def check_graph(graph: dict[str, set[str]]) -> list[Problem]:
     problems: list[Problem] = []
     for component, deps in sorted(graph.items()):
         if component not in LAYERS:
-            problems.append(
-                Problem(component, "4.5.4", "component is absent from the layer table")
-            )
+            problems.append(Problem(component, "4.5.4", "component is absent from the layer table"))
             continue
         own_layer = LAYERS[component]
         for dep in sorted(deps):

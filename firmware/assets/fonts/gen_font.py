@@ -101,8 +101,13 @@ def emit(name: str, glyphs: list[dict], ascent: int, line: int) -> str:
     for g, at in table:
         lines.append(
             "    {{ {code}, {w}, {h}, {ox}, {oy}, {adv}, {at} }},".format(
-                code=g["code"], w=g["w"], h=g["h"], ox=g["off_x"], oy=g["off_y"],
-                adv=g["adv"], at=at,
+                code=g["code"],
+                w=g["w"],
+                h=g["h"],
+                ox=g["off_x"],
+                oy=g["off_y"],
+                adv=g["adv"],
+                at=at,
             )
         )
     lines.append("};")
@@ -168,11 +173,15 @@ def main() -> None:
         ascent, descent = font.getmetrics()
         glyphs = glyphs_of(font, text)
         stem = f"{args.name}_{size}"
-        (here / f"{stem}.c").write_text(emit(stem, glyphs, ascent, ascent + descent), encoding="utf-8")
+        (here / f"{stem}.c").write_text(
+            emit(stem, glyphs, ascent, ascent + descent), encoding="utf-8"
+        )
         (here / f"{stem}.h").write_text(header(stem), encoding="utf-8")
         blob = sum(len(r) for g in glyphs for r in g["rows"])
         total += blob
-        print(f"{stem:14} w{weight} {role:8} {len(glyphs)} glyphs, {blob:6d} B, line {ascent + descent}px")
+        print(
+            f"{stem:14} w{weight} {role:8} {len(glyphs)} glyphs, {blob:6d} B, line {ascent + descent}px"
+        )
     print(f"total bitmap: {total} B")
 
 

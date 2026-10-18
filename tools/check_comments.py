@@ -40,9 +40,7 @@ C_BODY_SUFFIXES = {".c", ".cpp", ".cc"}
 PY_SUFFIXES = {".py"}
 TS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx"}
 YAML_SUFFIXES = {".yaml", ".yml"}
-SCANNED_SUFFIXES = (
-    C_HEADER_SUFFIXES | C_BODY_SUFFIXES | PY_SUFFIXES | TS_SUFFIXES | YAML_SUFFIXES
-)
+SCANNED_SUFFIXES = C_HEADER_SUFFIXES | C_BODY_SUFFIXES | PY_SUFFIXES | TS_SUFFIXES | YAML_SUFFIXES
 
 MAX_CONSECUTIVE_BODY_COMMENTS = 2
 MAX_DOC_COMMENT_LINES = 6
@@ -217,9 +215,7 @@ def check_runs_and_density(
                 run_start = None
                 run_len = 0
         if run_len > MAX_CONSECUTIVE_BODY_COMMENTS:
-            problems.append(
-                Problem(path, run_start, "2.3", f"{run_len} consecutive comment lines")
-            )
+            problems.append(Problem(path, run_start, "2.3", f"{run_len} consecutive comment lines"))
 
         code_lines = [i for i, ln in enumerate(lines, 1) if ln.strip()]
         if density and len(code_lines) >= 20:
@@ -264,8 +260,7 @@ def check_c_like(
                             path,
                             block_start,
                             "2.3",
-                            f"doc comment is {block_len} lines, limit is "
-                            f"{MAX_DOC_COMMENT_LINES}",
+                            f"doc comment is {block_len} lines, limit is {MAX_DOC_COMMENT_LINES}",
                         )
                     )
             continue
@@ -385,9 +380,7 @@ def check_yaml(path: Path, lines: list[str]) -> list[Problem]:
         header_end = lineno
     body = {n for n in comment_lines if n > header_end}
     if header_end > MAX_DOC_COMMENT_LINES:
-        problems.append(
-            Problem(path, 1, "2.3", f"header is {header_end} lines, limit is 6")
-        )
+        problems.append(Problem(path, 1, "2.3", f"header is {header_end} lines, limit is 6"))
     problems += check_runs_and_density(path, lines, body, is_header=False, density=False)
     return problems
 

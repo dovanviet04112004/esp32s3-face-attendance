@@ -25,7 +25,7 @@ def uid(*parts: object) -> str:
 def prop(name: str, value: str, y: float, layer: str, hide: bool = False) -> str:
     rows = [
         f'\t(property "{name}" "{value}"',
-        f'\t\t(at 0 {y:.2f} 0)',
+        f"\t\t(at 0 {y:.2f} 0)",
         f'\t\t(layer "{layer}")',
         *(["\t\t(hide yes)"] if hide else []),
         f'\t\t(uuid "{uid("prop", name)}")',
@@ -41,28 +41,32 @@ def prop(name: str, value: str, y: float, layer: str, hide: bool = False) -> str
 
 
 def line(tag: str, x1: float, y1: float, x2: float, y2: float, layer: str, w: float) -> str:
-    return "\n".join([
-        "\t(fp_line",
-        f"\t\t(start {x1:.2f} {y1:.2f})",
-        f"\t\t(end {x2:.2f} {y2:.2f})",
-        f"\t\t(stroke\n\t\t\t(width {w})\n\t\t\t(type solid)\n\t\t)",
-        f'\t\t(layer "{layer}")',
-        f'\t\t(uuid "{uid("line", tag)}")',
-        "\t)",
-    ])
+    return "\n".join(
+        [
+            "\t(fp_line",
+            f"\t\t(start {x1:.2f} {y1:.2f})",
+            f"\t\t(end {x2:.2f} {y2:.2f})",
+            f"\t\t(stroke\n\t\t\t(width {w})\n\t\t\t(type solid)\n\t\t)",
+            f'\t\t(layer "{layer}")',
+            f'\t\t(uuid "{uid("line", tag)}")',
+            "\t)",
+        ]
+    )
 
 
 def pad(number: int, x: float, y: float) -> str:
     shape = "rect" if number == 1 else "circle"
-    return "\n".join([
-        f'\t(pad "{number}" thru_hole {shape}',
-        f"\t\t(at {x} {y:.2f})",
-        f"\t\t(size {PAD} {PAD})",
-        f"\t\t(drill {DRILL})",
-        '\t\t(layers "*.Cu" "*.Mask")',
-        f'\t\t(uuid "{uid("pad", number)}")',
-        "\t)",
-    ])
+    return "\n".join(
+        [
+            f'\t(pad "{number}" thru_hole {shape}',
+            f"\t\t(at {x} {y:.2f})",
+            f"\t\t(size {PAD} {PAD})",
+            f"\t\t(drill {DRILL})",
+            '\t\t(layers "*.Cu" "*.Mask")',
+            f'\t\t(uuid "{uid("pad", number)}")',
+            "\t)",
+        ]
+    )
 
 
 GRID_OUT = Path("hardware/lib/footprints/kiosk.pretty/SolderGrid_4x05_P2.54mm.kicad_mod")
@@ -81,8 +85,8 @@ def solder_grid() -> None:
         '\t(generator_version "10.0")',
         '\t(layer "F.Cu")',
         '\t(descr "Bare 4x5 field of 2.54 mm holes for soldering a small breakout down. No '
-        'pad carries a net and none ever should: the board it holds has no standard pin row, '
-        'so the module slides until its pins sit over holes and is soldered wherever they '
+        "pad carries a net and none ever should: the board it holds has no standard pin row, "
+        "so the module slides until its pins sit over holes and is soldered wherever they "
         'land. Power reaches the module on wire, from the pair of holes beside this field.")',
         '\t(tags "solder grid breakout anchor")',
         "\t(attr through_hole)",
@@ -90,8 +94,12 @@ def solder_grid() -> None:
         prop("Value", "SolderGrid_4x05", GRID_REF_GAP, "F.Fab"),
     ]
     x, y = cx + 0.85 + 0.25, cy + 0.85 + 0.25
-    for tag, a, b, c, d in (("t", -x, -y, x, -y), ("r", x, -y, x, y),
-                            ("b", x, y, -x, y), ("l", -x, y, -x, -y)):
+    for tag, a, b, c, d in (
+        ("t", -x, -y, x, -y),
+        ("r", x, -y, x, y),
+        ("b", x, y, -x, y),
+        ("l", -x, y, -x, -y),
+    ):
         out.append(line(f"grid{tag}", a, b, c, d, "F.CrtYd", 0.05))
     for row in range(GRID_ROWS):
         for col in range(GRID_COLS):
@@ -116,9 +124,9 @@ def bare_holes() -> None:
         '\t(generator "kiosk-gen")',
         '\t(generator_version "10.0")',
         '\t(layer "F.Cu")',
-        '\t(descr "Four bare 2.54 mm holes for the panel\'s own microSD pins to pass through, '
-        'or for wire soldered in later. No net reaches them and no part is fitted here, so the '
-        'footprint draws no silkscreen: the only outline that means anything at this spot is '
+        "\t(descr \"Four bare 2.54 mm holes for the panel's own microSD pins to pass through, "
+        "or for wire soldered in later. No net reaches them and no part is fitted here, so the "
+        "footprint draws no silkscreen: the only outline that means anything at this spot is "
         'the panel body, and a socket outline printed across it would only crowd it.")',
         '\t(tags "bare holes pass through")',
         "\t(attr through_hole)",
@@ -126,8 +134,12 @@ def bare_holes() -> None:
         prop("Value", "BareHoles_1x04", half + 3.0, "F.Fab"),
     ]
     x, y = 0.85 + 0.25, half + 0.85 + 0.25
-    for tag, a, b, c, d in (("t", -x, -y, x, -y), ("r", x, -y, x, y),
-                            ("b", x, y, -x, y), ("l", -x, y, -x, -y)):
+    for tag, a, b, c, d in (
+        ("t", -x, -y, x, -y),
+        ("r", x, -y, x, y),
+        ("b", x, y, -x, y),
+        ("l", -x, y, -x, -y),
+    ):
         out.append(line(f"bare{tag}", a, b, c, d, "F.CrtYd", 0.05))
     for i in range(4):
         out.append(pad(i + 1, 0, -half + i * PITCH))
@@ -147,10 +159,10 @@ def main() -> None:
         '\t(generator_version "10.0")',
         '\t(layer "F.Cu")',
         '\t(descr "GOOUUU ESP32-S3-CAM socket, 2x20 at 2.54 mm, rows 25.4 mm apart - measured '
-        'on the board and confirmed against a published figure. Pin 1 = 3V3 at top left seen '
-        'from above with the two USB-C on the bottom edge; the silkscreen bar marks that edge. '
-        'The outline is deliberately oversized: this board has no datasheet, so its real edge '
-        'is unmeasured and the courtyard errs wide to keep tall parts out from under it. Keep '
+        "on the board and confirmed against a published figure. Pin 1 = 3V3 at top left seen "
+        "from above with the two USB-C on the bottom edge; the silkscreen bar marks that edge. "
+        "The outline is deliberately oversized: this board has no datasheet, so its real edge "
+        "is unmeasured and the courtyard errs wide to keep tall parts out from under it. Keep "
         'the USB edge clear for cables, and EN and BOOT reachable on the top face.")',
         '\t(tags "esp32s3 cam devkit socket")',
         "\t(attr through_hole)",
@@ -159,8 +171,12 @@ def main() -> None:
     ]
     for layer, width, grow in (("F.SilkS", 0.12, 0.0), ("F.CrtYd", 0.05, 0.25)):
         x, y = CX + grow, CY + grow
-        for tag, a, b, c, d in (("t", -x, -y, x, -y), ("r", x, -y, x, y),
-                                ("b", x, y, -x, y), ("l", -x, y, -x, -y)):
+        for tag, a, b, c, d in (
+            ("t", -x, -y, x, -y),
+            ("r", x, -y, x, y),
+            ("b", x, y, -x, y),
+            ("l", -x, y, -x, -y),
+        ):
             out.append(line(f"{layer}{tag}", a, b, c, d, layer, width))
     out.append(line("usb", -CX, CY - USB_EDGE, CX, CY - USB_EDGE, "F.SilkS", 0.12))
 

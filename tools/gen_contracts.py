@@ -230,7 +230,7 @@ def zod_conditionals(model: Model) -> str:
             f"      for (const name of [{names}] as const) {{\n"
             f"        if (value[name] === undefined) {{\n"
             f"          ctx.addIssue({{\n"
-            f"            code: \"custom\",\n"
+            f'            code: "custom",\n'
             f"            path: [name],\n"
             f"            message: `${{name}} is required when {field} is "
             f"{match['const']}`,\n"
@@ -284,12 +284,14 @@ def render_c_enums(model: Model) -> str:
         )
         # A caller sizing an array by the last value writes a bound that a new
         # enum member silently walks past, so the count comes from here.
-        out.append(f"typedef enum {{\n{entries}    {prefix}_COUNT = {len(spec['enum'])},\n}} {name};\n\n")
+        out.append(
+            f"typedef enum {{\n{entries}    {prefix}_COUNT = {len(spec['enum'])},\n}} {name};\n\n"
+        )
         out.append(f"static inline const char *{name[:-2]}_str({name} v)\n{{\n")
         out.append("    switch (v) {\n")
         for value in spec["enum"]:
             out.append(f'    case {prefix}_{screaming(value)}: return "{value}";\n')
-        out.append("    default: return \"\";\n    }\n}\n\n")
+        out.append('    default: return "";\n    }\n}\n\n')
         out.append(f"static inline bool {name[:-2]}_parse(const char *s, {name} *out)\n{{\n")
         out.append("    if (s == NULL || out == NULL) { return false; }\n")
         for value in spec["enum"]:
@@ -333,7 +335,9 @@ def render_c_bounds(model: Model) -> str:
     for field, spec in model.properties.items():
         if spec.get("type") == "integer" and "minimum" in spec and "maximum" in spec:
             name = f"{screaming(model.c_prefix)}_{screaming(field)}"
-            out.append(f"#define {name}_MIN {spec['minimum']}\n#define {name}_MAX {spec['maximum']}\n")
+            out.append(
+                f"#define {name}_MIN {spec['minimum']}\n#define {name}_MAX {spec['maximum']}\n"
+            )
     return "".join(out) + ("\n" if out else "")
 
 
@@ -368,10 +372,7 @@ def render_c_parse(model: Model) -> str:
         out.append(f'    item = cJSON_GetObjectItemCaseSensitive(root, "{field}");\n')
         if kind == "string":
             cond = "cJSON_IsString(item) && item->valuestring != NULL"
-            body = (
-                f"        strncpy(out->{cname}, item->valuestring, "
-                f"sizeof(out->{cname}) - 1);\n"
-            )
+            body = f"        strncpy(out->{cname}, item->valuestring, sizeof(out->{cname}) - 1);\n"
         elif kind == "enum":
             enum_fn = c_enum_name(model, field)[:-2]
             cond = "cJSON_IsString(item) && item->valuestring != NULL"
@@ -427,8 +428,7 @@ def render_c_serialize(model: Model) -> str:
         elif kind == "enum":
             enum_fn = c_enum_name(model, field)[:-2]
             out.append(
-                f'{indent}cJSON_AddStringToObject(root, "{field}", '
-                f"{enum_fn}_str(in->{cname}));\n"
+                f'{indent}cJSON_AddStringToObject(root, "{field}", {enum_fn}_str(in->{cname}));\n'
             )
         elif kind == "boolean":
             out.append(f'{indent}cJSON_AddBoolToObject(root, "{field}", in->{cname});\n')
@@ -438,9 +438,7 @@ def render_c_serialize(model: Model) -> str:
                 f"{model.c_prefix}_{cname}_to_json(&in->{cname}));\n"
             )
         else:
-            out.append(
-                f'{indent}cJSON_AddNumberToObject(root, "{field}", (double) in->{cname});\n'
-            )
+            out.append(f'{indent}cJSON_AddNumberToObject(root, "{field}", (double) in->{cname});\n')
         if not required:
             out.append("    }\n")
     out.append("    return root;\n}\n\n")
@@ -492,26 +490,21 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
         f"#define GEN_TOPIC_MAX_LEN {longest + 1}\n\n",
     ]
 
-    entries = "".join(
-        f"    GEN_TOPIC_{t.c_upper} = {i},\n" for i, t in enumerate(topics)
-    )
+    entries = "".join(f"    GEN_TOPIC_{t.c_upper} = {i},\n" for i, t in enumerate(topics))
     parts.append(f"typedef enum {{\n{entries}    GEN_TOPIC_NONE = {len(topics)},\n")
     parts.append("} gen_topic_id_t;\n\n")
 
     for topic in topics:
         parts.append(f"#define GEN_TOPIC_{topic.c_upper}_QOS {topic.qos}\n")
         parts.append(
-            f"#define GEN_TOPIC_{topic.c_upper}_RETAIN "
-            f"{'true' if topic.retained else 'false'}\n"
+            f"#define GEN_TOPIC_{topic.c_upper}_RETAIN {'true' if topic.retained else 'false'}\n"
         )
         parts.append(
             f"#define GEN_TOPIC_{topic.c_upper}_IS_LAST_WILL "
             f"{'true' if topic.last_will else 'false'}\n"
         )
         if topic.interval_s is not None:
-            parts.append(
-                f"#define GEN_TOPIC_{topic.c_upper}_INTERVAL_S {int(topic.interval_s)}\n"
-            )
+            parts.append(f"#define GEN_TOPIC_{topic.c_upper}_INTERVAL_S {int(topic.interval_s)}\n")
     parts.append("\n")
 
     for topic in topics:
@@ -522,16 +515,14 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
         )
         parts.append("    if (device_id == NULL || out == NULL) { return false; }\n")
         parts.append("    const size_t id_len = strlen(device_id);\n")
-        parts.append(f"    if (id_len == 0 || id_len > GEN_TOPIC_DEVICE_ID_MAX) {{ return false; }}\n")
         parts.append(
-            f"    const size_t need = {len(head)} + id_len + {len(tail)} + 1;\n"
+            f"    if (id_len == 0 || id_len > GEN_TOPIC_DEVICE_ID_MAX) {{ return false; }}\n"
         )
+        parts.append(f"    const size_t need = {len(head)} + id_len + {len(tail)} + 1;\n")
         parts.append("    if (cap < need) { return false; }\n")
         parts.append(f'    memcpy(out, "{head}", {len(head)});\n')
         parts.append(f"    memcpy(out + {len(head)}, device_id, id_len);\n")
-        parts.append(
-            f'    memcpy(out + {len(head)} + id_len, "{tail}", {len(tail)} + 1);\n'
-        )
+        parts.append(f'    memcpy(out + {len(head)} + id_len, "{tail}", {len(tail)} + 1);\n')
         parts.append("    return true;\n}\n\n")
 
     parts.append(
@@ -550,8 +541,7 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
     down = [t for t in topics if t.direction == "down"]
     parts.append(f"#define GEN_TOPIC_DOWN_COUNT {len(down)}\n\n")
     parts.append(
-        "static inline gen_topic_id_t gen_topic_down_at(size_t index)\n{\n"
-        "    switch (index) {\n"
+        "static inline gen_topic_id_t gen_topic_down_at(size_t index)\n{\n    switch (index) {\n"
     )
     for i, topic in enumerate(down):
         parts.append(f"    case {i}: return GEN_TOPIC_{topic.c_upper};\n")
@@ -570,9 +560,7 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
 
     parts.append("static inline uint8_t gen_topic_qos(gen_topic_id_t id)\n{\n    switch (id) {\n")
     for topic in topics:
-        parts.append(
-            f"    case GEN_TOPIC_{topic.c_upper}: return GEN_TOPIC_{topic.c_upper}_QOS;\n"
-        )
+        parts.append(f"    case GEN_TOPIC_{topic.c_upper}: return GEN_TOPIC_{topic.c_upper}_QOS;\n")
     parts.append("    default: return 0;\n    }\n}\n\n")
 
     parts.append("static inline bool gen_topic_retain(gen_topic_id_t id)\n{\n    switch (id) {\n")
@@ -633,9 +621,7 @@ def render_topics_ts(topics: list[Topic], id_max: int) -> str:
         parts.append(f"    qos: {topic.qos},\n")
         parts.append(f"    retained: {str(topic.retained).lower()},\n")
         parts.append(f"    lastWill: {str(topic.last_will).lower()},\n")
-        parts.append(
-            f"    build: (deviceId: string) => `{head_tpl}${{deviceId}}{tail_tpl}`,\n"
-        )
+        parts.append(f"    build: (deviceId: string) => `{head_tpl}${{deviceId}}{tail_tpl}`,\n")
         parts.append(f"    wildcard: {json.dumps(wildcard)},\n")
         parts.append(f"    schema: {schema_const(topic)},\n")
         parts.append("  },\n")
