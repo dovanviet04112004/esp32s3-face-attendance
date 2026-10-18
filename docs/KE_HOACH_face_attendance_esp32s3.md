@@ -8441,12 +8441,13 @@ khoản trừ. Chủ repo chốt 18/10: phần âm **chuyển sang kỳ sau**. L
 sinh một `RetroAdjustment` mã `CARRY` mang đúng số ấy, và lượt thường kế tiếp của người đó trừ nó **sau
 thuế** thành dòng `RETRO_CARRY`, như trừ tạm ứng — bảo hiểm đã được trừ khỏi thu nhập chịu thuế của
 kỳ trước, trừ lần nữa là giảm thuế hai lần. Chốt kỳ sau đánh dấu nó `APPLIED` như mọi khoản truy
-lĩnh; kỳ sau vẫn âm thì phần âm mới lại chuyển tiếp. Phiếu chốt cuối âm (người rời đi còn nợ, như
-tài sản không trả) không có kỳ sau để chuyển: nó giữ số âm để HR thu theo đường riêng. Danh sách
-kiểm có mục `NEGATIVE_NET` đếm phiếu của kỳ có phần âm, nên chốt đòi người chốt nhận nó như các mục mở
-khác; file ngân hàng chỉ ghi phiếu thực lĩnh lớn hơn 0, còn file hạch toán thêm cột phần đã chuyển
-kỳ. Lượt thường chỉ gồm người đã có mức lương hiệu lực trong kỳ: người chưa có không phải lượt hỏng mà
-là mục `NO_COMPENSATION` của danh sách kiểm.
+lĩnh; kỳ sau vẫn âm thì phần âm mới lại chuyển tiếp. Người nghỉ trong kỳ (`leaveDate` không qua
+`endDate`) không có kỳ sau để chuyển: phiếu thường lẫn phiếu chốt cuối của họ giữ số âm (còn nợ, như
+tài sản không trả) để HR thu theo đường riêng, chứ không để lại một khoản `CARRY` không kỳ nào trừ.
+Danh sách kiểm có mục `NEGATIVE_NET` đếm phiếu của kỳ có phần âm, nên chốt đòi người chốt nhận nó
+như các mục mở khác; file ngân hàng chỉ ghi phiếu thực lĩnh lớn hơn 0, còn file hạch toán thêm cột
+phần đã chuyển kỳ. Lượt thường chỉ gồm người đã có mức lương hiệu lực trong kỳ: người chưa có không
+phải lượt hỏng mà là mục `NO_COMPENSATION` của danh sách kiểm.
 
 `Payslip` giữ tổng; `PayslipLine` giữ từng khoản, mỗi khoản một dòng với mã, nhãn và số tiền,
 phân loại thành khoản cộng và khoản trừ. **Không nhét vào một ô JSON**: câu hỏi "quý này trả
