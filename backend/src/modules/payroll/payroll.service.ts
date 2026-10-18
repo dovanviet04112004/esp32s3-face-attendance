@@ -39,6 +39,7 @@ import {
   calculate,
   taxOn,
   LINE_ASSET_OFFSET,
+  LINE_CARRY_OUT,
   LINE_EXEMPT_OVERTIME,
   LINE_LEAVE_PAYOUT,
   LINE_RELIEF_DEPENDENT,
@@ -65,6 +66,9 @@ const kChunk = 500;
 const kHundred = 100n;
 const kChunkTxMs = 60_000;
 const LINE_ADVANCE = "ADVANCE";
+// The retro code a shortfall is carried under, and the code that says why (KEHOACH 9.6).
+const CARRY_CODE = "CARRY";
+const CARRY_REASON = "NEGATIVE_NET";
 
 interface Leaver {
   id: number;
@@ -383,6 +387,7 @@ export class PayrollService {
       paidElsewhere,
       stillHolding,
       lateDisputes,
+      comingShort,
     ] = await Promise.all([
       this.db.request.count({
         where: {
@@ -445,6 +450,7 @@ export class PayrollService {
           payslip: { period: { legalEntityId } },
         },
       }),
+      this.comingShortCount(periodId),
     ]);
     return [
       { code: "REQUESTS_PENDING", count: pendingRequests },
@@ -456,7 +462,21 @@ export class PayrollService {
       { code: "PAID_ELSEWHERE", count: paidElsewhere },
       { code: "LEAVERS_HOLDING_ASSETS", count: stillHolding },
       { code: "DISPUTES_OVERDUE", count: lateDisputes },
+      { code: "NEGATIVE_NET", count: comingShort },
     ];
+  }
+
+  /** Payslips the lock would issue that come short: carried to the next period, or left owing by a leaver. */
+  private async comingShortCount(periodId: string): Promise<number> {
+    const [row] = await this.db.$queryRaw<{ count: number }[]>`
+      WITH chosen AS (${this.chosenSlips(periodId)})
+      SELECT count(*)::int AS "count"
+        FROM "Payslip" p
+        JOIN chosen c ON c."id" = p."id"
+       WHERE p."netPay" < 0
+          OR EXISTS (SELECT 1 FROM "PayslipLine" l WHERE l."payslipId" = p."id" AND l."code" = ${LINE_CARRY_OUT})
+    `;
+    return row?.count ?? 0;
   }
 
   /** How many of this period's regular payslips belong to someone a regular payslip for the month already went to. */
@@ -533,6 +553,17 @@ export class PayrollService {
                SELECT 1 FROM "PayslipLine" l
                 WHERE l."payslipId" = p."id" AND l."code" = 'RETRO_' || a."code"
              )
+        `;
+        await tx.$executeRaw`
+          INSERT INTO "RetroAdjustment" ("id", "employeeId", "sourcePeriodId", "code", "amount", "reason", "createdById")
+          SELECT gen_random_uuid()::text, p."employeeId", ${periodId}, ${CARRY_CODE}, l."amount", ${CARRY_REASON},
+                 ${viewer.userId}
+            FROM "Payslip" p
+            JOIN "PayrollRun" r ON r."id" = p."runId"
+            JOIN "PayslipLine" l ON l."payslipId" = p."id" AND l."code" = ${LINE_CARRY_OUT}
+           WHERE p."periodId" = ${periodId}
+             AND p."state" <> 'DRAFT'
+             AND r."kind" = 'REGULAR'
         `;
         await tx.$executeRaw`
           UPDATE "SalaryAdvance" a
@@ -915,7 +946,7 @@ export class PayrollService {
     policyOf: ReadonlyMap<number, RunPolicy>,
     ids: number[],
   ): Promise<{ gross: Dong; net: Dong; done: number; retroIds: string[]; advanceIds: string[] }> {
-    const [pay, allowances, days, leave, dependents, retros, advances] = await Promise.all([
+    const [pay, allowances, days, leave, dependents, retros, advances, leavers] = await Promise.all([
       this.db.$queryRaw<PayRow[]>`
         SELECT DISTINCT ON (c."employeeId")
                c."employeeId", c."id" AS "recordId",
@@ -996,9 +1027,14 @@ export class PayrollService {
       this.db.salaryAdvance.findMany({
         where: { employeeId: { in: ids }, state: "PAID" },
       }),
+      this.db.employee.findMany({
+        where: { id: { in: ids }, leaveDate: { lte: period.endDate } },
+        select: { id: true },
+      }),
     ]);
 
     const payOf = new Map(pay.map((row) => [row.employeeId, row]));
+    const leaving = new Set(leavers.map((row) => row.id));
     const allowanceOf = new Map<string, CalcAllowance[]>();
     for (const row of allowances) {
       const list = allowanceOf.get(row.recordId) ?? [];
@@ -1016,16 +1052,22 @@ export class PayrollService {
     const leaveOf = new Map(leave.map((row) => [row.employeeId, row]));
     const dependentOf = new Map(dependents.map((row) => [row.employeeId, row.count]));
     const retroOf = new Map<number, CalcExtra[]>();
+    const deductionOf = new Map<number, CalcDeduction[]>();
+    const owe = (employeeId: number, deduction: CalcDeduction): void => {
+      deductionOf.set(employeeId, [...(deductionOf.get(employeeId) ?? []), deduction]);
+    };
     for (const row of retros) {
+      // Its insurance already left the earlier period's taxable income, so it comes off after tax (KEHOACH 9.6).
+      if (row.code === CARRY_CODE) {
+        owe(row.employeeId, { code: `RETRO_${row.code}`, amount: toDong(row.amount) });
+        continue;
+      }
       const list = retroOf.get(row.employeeId) ?? [];
       list.push({ code: `RETRO_${row.code}`, label: row.label ?? undefined, amount: toDong(row.amount), taxable: true });
       retroOf.set(row.employeeId, list);
     }
-    const advanceOf = new Map<number, CalcDeduction[]>();
     for (const row of advances) {
-      const list = advanceOf.get(row.employeeId) ?? [];
-      list.push({ code: LINE_ADVANCE, amount: toDong(row.amount) });
-      advanceOf.set(row.employeeId, list);
+      owe(row.employeeId, { code: LINE_ADVANCE, amount: toDong(row.amount) });
     }
 
     const slips: Prisma.PayslipCreateManyInput[] = [];
@@ -1059,7 +1101,8 @@ export class PayrollService {
           nightMinutes: 0,
         },
         extras: retroOf.get(employeeId) ?? [],
-        deductions: advanceOf.get(employeeId) ?? [],
+        deductions: deductionOf.get(employeeId) ?? [],
+        carryShortfall: !leaving.has(employeeId),
       });
       linesOf.set(employeeId, result.lines);
       gross += result.grossPay;
@@ -1691,6 +1734,7 @@ export class PayrollService {
             department: { select: { code: true, name: true, costCentre: true } },
           },
         },
+        lines: { where: { code: LINE_CARRY_OUT }, select: { code: true, amount: true } },
       },
       orderBy: { employee: { code: "asc" } },
     });
@@ -1703,9 +1747,10 @@ export class PayrollService {
     });
     const reference = `LUONG ${String(period.month).padStart(2, "0")}${period.year}`;
     if (kind === "bank") {
+      // A bank takes no zero or negative transfer; a shortfall is carried or left to HR (KEHOACH 9.6).
       return toExcelCsv(
         ["code", "fullName", "bankName", "bankAccount", "amount", "reference"],
-        rows.map((row) => [
+        rows.filter((row) => row.netPay.gt(0)).map((row) => [
           row.employee.code,
           row.employee.fullName,
           row.bankName ?? "",
@@ -1726,6 +1771,7 @@ export class PayrollService {
         "insuranceEmployer",
         "tax",
         "net",
+        "carried",
       ],
       rows.map((row) => [
         row.employee.code,
@@ -1737,6 +1783,7 @@ export class PayrollService {
         row.insuranceEmployer.toFixed(0),
         row.personalIncomeTax.toFixed(0),
         row.netPay.toFixed(0),
+        sumOf(row.lines, LINE_CARRY_OUT).toString(),
       ]),
     );
   }
@@ -1883,8 +1930,13 @@ export class PayrollService {
     if (run.kind === "FINAL_SETTLEMENT") {
       return this.leaversOf(run.period);
     }
+    // Someone with no pay record is the checklist's NO_COMPENSATION, not a failed payslip (KEHOACH 9.6).
     return this.db.employee.findMany({
-      where: { ...coveredBy(run.period), ...(run.departmentId ? { departmentId: run.departmentId } : {}) },
+      where: {
+        ...coveredBy(run.period),
+        ...(run.departmentId ? { departmentId: run.departmentId } : {}),
+        compensation: { some: { effectiveFrom: { lte: run.period.endDate } } },
+      },
       select: { id: true, legalEntityId: true },
       orderBy: { id: "asc" },
     });

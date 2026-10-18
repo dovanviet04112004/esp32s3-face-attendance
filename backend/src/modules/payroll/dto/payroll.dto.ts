@@ -31,6 +31,7 @@ const CHECKLIST_CODES = [
   "PAID_ELSEWHERE",
   "LEAVERS_HOLDING_ASSETS",
   "DISPUTES_OVERDUE",
+  "NEGATIVE_NET",
 ] as const;
 
 export class CreatePeriodDto {

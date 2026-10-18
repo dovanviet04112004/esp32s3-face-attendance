@@ -83,6 +83,7 @@ export interface CalcInput {
   overtime: CalcOvertime;
   extras: CalcExtra[];
   deductions: CalcDeduction[];
+  carryShortfall: boolean; // false when no next period will take it
 }
 
 export interface CalcResult {
@@ -106,6 +107,7 @@ export const LINE_EXEMPT_OVERTIME = "OT_EXEMPT";
 export const LINE_LEAVE_PAYOUT = "LEAVE_PAYOUT";
 export const LINE_SEVERANCE = "SEVERANCE";
 export const LINE_ASSET_OFFSET = "ASSET_OFFSET";
+export const LINE_CARRY_OUT = "CARRY_OUT";
 
 interface OvertimeBand {
   code: string;
@@ -283,9 +285,15 @@ export function calculate(input: CalcInput): CalcResult {
     });
   }
 
-  const deductionsTotal = lines
+  const deducted = lines
     .filter((line) => line.kind === "DEDUCTION")
     .reduce((total, line) => total + line.amount, 0n);
+  // A shortfall rides to the next period rather than becoming a negative transfer (KEHOACH 9.6).
+  const shortfall = input.carryShortfall ? atLeastZero(deducted - grossPay) : 0n;
+  if (shortfall > 0n) {
+    lines.push({ kind: "INFO", code: LINE_CARRY_OUT, amount: shortfall });
+  }
+  const deductionsTotal = deducted - shortfall;
 
   const ordered = lines.map((line, index) => ({ ...line, ordinal: index + 1 }));
   return {

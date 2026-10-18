@@ -1415,6 +1415,7 @@ async function buildPayroll(org: Org, people: Person[]): Promise<void> {
         },
         extras: [],
         deductions: [],
+        carryShortfall: person.leaveDate === null || person.leaveDate > end,
       });
       linesOf.set(packet.employeeId, result.lines);
       gross += result.grossPay;
