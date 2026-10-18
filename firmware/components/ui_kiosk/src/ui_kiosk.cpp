@@ -35,8 +35,8 @@ constexpr int32_t kTouchUp = -1;
 constexpr int32_t kTouchLost = -2;
 // A new screen waits this long for a new press, so a double tap never acts on it.
 constexpr int64_t kFreshPressMs = 250;
-// A press that slides further than this from where it landed is a drag, not a tap (KEHOACH 4.5.5h).
-constexpr int kTapSlopPx = 12;
+// About 5 mm on the 4" panel: a tap rolls less, a swipe further, so past it the press is a drag (KEHOACH 4.5.5h).
+constexpr int kTapSlopPx = 28;
 
 // One map per slot: cam_task reads the published one for a whole frame while
 // ui_task paints the other (KEHOACH 4.5.5h).
