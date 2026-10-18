@@ -55,7 +55,7 @@ typedef struct {
     uint32_t employee_id;
     int32_t error_code;
     float liveness;
-    char note[48];
+    char note[64];
     bool has_employee;
     bool has_error;
     bool has_liveness;

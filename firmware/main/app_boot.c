@@ -17,6 +17,7 @@
 #include "drv_servo.h"
 #include "drv_tof.h"
 #include "drv_touch.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -32,6 +33,57 @@
 
 static const char *TAG = "app_boot";
 static esp_err_t models_error = ESP_OK;
+
+#define BOOT_MARK_MAGIC 0x424D4B31u
+
+typedef enum {
+    BOOT_STEP_NONE,
+    BOOT_STEP_STORAGE,
+    BOOT_STEP_MODELS,
+    BOOT_STEP_WIRING,
+    BOOT_STEP_BOARD,
+    BOOT_STEP_LCD,
+    BOOT_STEP_UI,
+    BOOT_STEP_IOEXP,
+    BOOT_STEP_CLOCK,
+    BOOT_STEP_TOUCH,
+    BOOT_STEP_TOF,
+    BOOT_STEP_CAMERA,
+    BOOT_STEP_VISION,
+    BOOT_STEP_SERVO,
+    BOOT_STEP_ZONE,
+    BOOT_STEP_AUDIO,
+    BOOT_STEP_ATTENDANCE,
+    BOOT_STEP_WIFI,
+    BOOT_STEP_RUNNING,
+    BOOT_STEP_COUNT,
+} boot_step_t;
+
+static const char *const kStepNames[BOOT_STEP_COUNT] = {
+    [BOOT_STEP_STORAGE] = "storage",
+    [BOOT_STEP_MODELS] = "models",
+    [BOOT_STEP_WIRING] = "wiring",
+    [BOOT_STEP_BOARD] = "board",
+    [BOOT_STEP_LCD] = "lcd",
+    [BOOT_STEP_UI] = "ui",
+    [BOOT_STEP_IOEXP] = "ioexp",
+    [BOOT_STEP_CLOCK] = "clock",
+    [BOOT_STEP_TOUCH] = "touch",
+    [BOOT_STEP_TOF] = "tof",
+    [BOOT_STEP_CAMERA] = "camera",
+    [BOOT_STEP_VISION] = "vision",
+    [BOOT_STEP_SERVO] = "servo",
+    [BOOT_STEP_ZONE] = "zone",
+    [BOOT_STEP_AUDIO] = "audio",
+    [BOOT_STEP_ATTENDANCE] = "attendance",
+    [BOOT_STEP_WIFI] = "wifi",
+    [BOOT_STEP_RUNNING] = "running",
+};
+
+// RTC memory outlives every reset but a power cut, so the next boot can name where this one stopped (KEHOACH 4.6).
+static RTC_NOINIT_ATTR uint32_t s_mark_magic;
+static RTC_NOINIT_ATTR uint32_t s_mark_step;
+static const char *s_last_step;
 
 #define NVS_RTC_NTP_SET "rtc_ntp_set"
 #define NVS_SEED_VER "seed_ver"
@@ -311,6 +363,27 @@ esp_err_t app_boot_models_error(void)
     return models_error;
 }
 
+static void reach(boot_step_t step)
+{
+    s_mark_step = (uint32_t)step;
+    s_mark_magic = BOOT_MARK_MAGIC;
+}
+
+// A power-on leaves noise in the RTC words and has no previous boot to tell of.
+static const char *previous_step(void)
+{
+    if (esp_reset_reason() == ESP_RST_POWERON || s_mark_magic != BOOT_MARK_MAGIC ||
+        s_mark_step == BOOT_STEP_NONE || s_mark_step >= BOOT_STEP_COUNT) {
+        return NULL;
+    }
+    return kStepNames[s_mark_step];
+}
+
+const char *app_boot_last_step(void)
+{
+    return s_last_step;
+}
+
 const char *app_boot_reset_cause(void)
 {
     switch (esp_reset_reason()) {
@@ -335,51 +408,66 @@ const char *app_boot_reset_cause(void)
 
 esp_err_t app_boot(void)
 {
+    s_last_step = previous_step();
+    reach(BOOT_STEP_STORAGE);
     ESP_ERROR_CHECK(sys_storage_init());
     char device_id[STORAGE_DEVICE_ID_CAP] = { 0 };
     if (sys_storage_device_id(device_id, sizeof(device_id)) != ESP_OK) {
         ESP_LOGE(TAG, "no device id: nothing this kiosk records can be attributed");
     }
-    ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32 ", reset by %s", device_id, sys_storage_boot_count(),
-             app_boot_reset_cause());
+    ESP_LOGI(TAG, "kiosk %s, boot %" PRIu32 ", reset by %s, last step %s", device_id, sys_storage_boot_count(),
+             app_boot_reset_cause(), s_last_step != NULL ? s_last_step : "unknown");
     // The arena needs one contiguous run the drivers below would fragment (KEHOACH 3.8).
+    reach(BOOT_STEP_MODELS);
     load_models();
+    reach(BOOT_STEP_WIRING);
     ESP_ERROR_CHECK(app_wiring_init());
     seed_settings();
+    reach(BOOT_STEP_BOARD);
     ESP_ERROR_CHECK(bsp_board_init());
+    reach(BOOT_STEP_LCD);
     ESP_ERROR_CHECK(drv_lcd_init());
     const uint8_t lamp = app_boot_brightness();
     const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, STORAGE_KEY_VOLUME, CONFIG_UI_SEED_VOLUME);
     ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
+    reach(BOOT_STEP_UI);
     ESP_ERROR_CHECK(ui_kiosk_init());
     ui_kiosk_set_levels(lamp, loud);
     // An absent key reads as an empty string, which the kiosk takes as Vietnamese.
     char lang[8] = { 0 };
     sys_storage_get_str(STORAGE_NS_UI, STORAGE_KEY_LANG, lang, sizeof(lang));
     ui_kiosk_set_language(lang);
+    reach(BOOT_STEP_IOEXP);
     ESP_ERROR_CHECK(drv_ioexp_init());
+    reach(BOOT_STEP_CLOCK);
     // A silent clock costs the trust of a timestamp, not the kiosk (KEHOACH 6.2.5).
     const esp_err_t clock = sys_time_init(rtc_ntp_marker(), on_time_synced, NULL);
     if (clock != ESP_OK) {
         ESP_LOGW(TAG, "no clock from the rtc: %s", esp_err_to_name(clock));
     }
+    reach(BOOT_STEP_TOUCH);
     // A dead panel costs the settings screen, not the kiosk (KEHOACH 6.2.2).
     const esp_err_t touch = drv_touch_init();
     if (touch != ESP_OK) {
         ESP_LOGW(TAG, "touch absent: %s", esp_err_to_name(touch));
     }
+    reach(BOOT_STEP_TOF);
     // No ranging means nothing wakes the pipeline, so the kiosk is a preview.
     const esp_err_t tof = drv_tof_init();
     if (tof != ESP_OK) {
         ESP_LOGW(TAG, "tof absent: %s", esp_err_to_name(tof));
     }
+    reach(BOOT_STEP_CAMERA);
     ESP_ERROR_CHECK(drv_camera_init());
+    reach(BOOT_STEP_VISION);
     start_vision(app_wiring()->flags);
     settle_models(app_wiring()->flags);
 
     // A door that will not take a pulse is a miswired kiosk, not a degraded
     // one: granting access with nothing to open is worse than not booting.
+    reach(BOOT_STEP_SERVO);
     ESP_ERROR_CHECK(drv_servo_init());
+    reach(BOOT_STEP_ZONE);
     char zone[TZ_CAP] = { 0 };
     // A key present but empty is the same as absent, as sntp_host is (KEHOACH 4.5).
     if (sys_storage_get_str(STORAGE_NS_DEVICE, NVS_TZ, zone, sizeof(zone)) != ESP_OK ||
@@ -388,6 +476,7 @@ esp_err_t app_boot(void)
     }
     ESP_ERROR_CHECK(sys_time_set_zone(zone));
 
+    reach(BOOT_STEP_AUDIO);
     // A kiosk with no voice still opens doors, so the amplifier only warns.
     const esp_err_t amplifier = drv_audio_init();
     if (amplifier != ESP_OK) {
@@ -396,12 +485,15 @@ esp_err_t app_boot(void)
     if (drv_audio_set_volume(loud) != ESP_OK) {
         ESP_LOGW(TAG, "volume %u out of range, playing at full", (unsigned)loud);
     }
+    reach(BOOT_STEP_ATTENDANCE);
     const svc_attendance_policy_t policy = attend_policy();
     ESP_ERROR_CHECK(svc_attendance_init(svc_door_servo(), &policy));
+    reach(BOOT_STEP_WIFI);
     // A kiosk with no network still opens doors (KEHOACH 6.2.5).
     const esp_err_t station = net_wifi_start();
     if (station != ESP_OK) {
         ESP_LOGW(TAG, "wifi down: %s", esp_err_to_name(station));
     }
+    reach(BOOT_STEP_RUNNING);
     return ESP_OK;
 }

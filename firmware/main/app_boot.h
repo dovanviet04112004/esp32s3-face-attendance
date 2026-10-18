@@ -31,6 +31,11 @@ esp_err_t app_boot_models_error(void);
  */
 const char *app_boot_reset_cause(void);
 
+/** The boot step the previous boot last reached, or NULL when nothing survives to say (KEHOACH 4.6).
+ *  @ctx any | non-blocking | read once by app_boot, "running" once that boot had finished
+ */
+const char *app_boot_last_step(void);
+
 #ifdef __cplusplus
 }
 #endif
