@@ -651,17 +651,18 @@ xử lý dữ liệu nhạy cảm vì chính bản chất chấm công bằng kh
 
 ## E24 — Bề rộng: đánh giá, đào tạo, tuyển dụng, phân tích
 
-Giai đoạn 4 của §9.13. Không cái nào chặn việc trả lương, nên chúng đứng sau.
+**Ngoài phạm vi** (chủ repo chốt 18/10): phân hệ 12–16 của KẾ HOẠCH §9.13 không làm ở bản này.
+Không cái nào chặn việc trả lương; quyết định thiết kế của chúng ở §9.16 giữ lại cho lần làm tiếp.
 
 | ID | Task | Xong khi | Chặn bởi |
 |---|---|---|---|
-| E24-T1 | Chu kỳ đánh giá + mục tiêu OKR/KPI; chu kỳ chốt thì **đóng băng** chức danh và lương tại thời điểm đó (§9.16) | Đọc lại sau hai năm vẫn đúng bối cảnh | E18-T1 |
-| E24-T2 | Phản hồi liên tục và tự đánh giá | Đánh giá không dồn hết vào một tuần cuối năm | E24-T1 |
-| E24-T3 | Khoá đào tạo, ghi danh, kết quả; **chứng chỉ có hạn sinh nhắc nhở** | Chứng chỉ an toàn lao động hết hạn không còn là chuyện im lặng | E22-T2 |
-| E24-T4 | Tuyển dụng: tin, ứng viên, vòng phỏng vấn, thư mời. **Ứng viên không nằm chung bảng với nhân viên**; chuyển đổi là phép có chủ đích, để lại liên kết ngược | Nhận việc sinh `Employee` mới, không sửa ứng viên thành nhân viên | E15-T8 |
-| E24-T5 | Khảo sát; **ẩn danh là ẩn danh thật** — câu trả lời lưu tách khỏi người trả lời, không lưu thứ đủ để ghép lại | Không hứa một điều không giữ được | E15-T5 |
-| E24-T6 | Phân tích nhân sự: biến động, nghỉ việc, chi phí lương, chuyên cần — **đọc từ bảng tổng hợp, không đọc bảng giao dịch** (§9.9 luật 1) | Báo cáo không chậm dần theo tuổi hệ thống | E16-T3, E18-T8 |
-| E24-T7 | Ghi nhận đóng góp và thông báo nội bộ | — | E22-T2 |
+| ~~E24-T1~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Chu kỳ đánh giá + mục tiêu OKR/KPI; chu kỳ chốt thì **đóng băng** chức danh và lương tại thời điểm đó (§9.16) | Đọc lại sau hai năm vẫn đúng bối cảnh | E18-T1 |
+| ~~E24-T2~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Phản hồi liên tục và tự đánh giá | Đánh giá không dồn hết vào một tuần cuối năm | E24-T1 |
+| ~~E24-T3~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Khoá đào tạo, ghi danh, kết quả; **chứng chỉ có hạn sinh nhắc nhở** | Chứng chỉ an toàn lao động hết hạn không còn là chuyện im lặng | E22-T2 |
+| ~~E24-T4~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Tuyển dụng: tin, ứng viên, vòng phỏng vấn, thư mời. **Ứng viên không nằm chung bảng với nhân viên**; chuyển đổi là phép có chủ đích, để lại liên kết ngược | Nhận việc sinh `Employee` mới, không sửa ứng viên thành nhân viên | E15-T8 |
+| ~~E24-T5~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Khảo sát; **ẩn danh là ẩn danh thật** — câu trả lời lưu tách khỏi người trả lời, không lưu thứ đủ để ghép lại | Không hứa một điều không giữ được | E15-T5 |
+| ~~E24-T6~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Phân tích nhân sự: biến động, nghỉ việc, chi phí lương, chuyên cần — **đọc từ bảng tổng hợp, không đọc bảng giao dịch** (§9.9 luật 1) | Báo cáo không chậm dần theo tuổi hệ thống | E16-T3, E18-T8 |
+| ~~E24-T7~~ | **Ngoài phạm vi, chủ repo chốt 18/10.** Ghi nhận đóng góp và thông báo nội bộ | — | E22-T2 |
 
 ---
 

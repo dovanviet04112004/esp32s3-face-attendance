@@ -9027,15 +9027,17 @@ phân hệ chỉ vào được giai đoạn sau khi thứ nó đứng trên đã
 | 9 | **Tài liệu và chính sách nội bộ** | văn bản có phiên bản, xác nhận đã đọc | 3 |
 | 10 | **Onboarding / offboarding** | danh sách việc theo mẫu, bàn giao, thu hồi quyền | 3 |
 | 11 | **Tài sản cấp phát** | máy móc, thẻ, đồng phục — cấp, thu, mất | 3 |
-| 12 | **Đánh giá và mục tiêu** | chu kỳ đánh giá, mục tiêu OKR/KPI, phản hồi | 3 |
-| 13 | **Đào tạo** | khoá, ghi danh, kết quả, chứng chỉ có hạn | 4 |
-| 14 | **Tuyển dụng** | tin tuyển, ứng viên, vòng phỏng vấn, thư mời | 4 |
-| 15 | **Khảo sát và ghi nhận** | khảo sát nhanh, ghi nhận đóng góp, thông báo nội bộ | 4 |
-| 16 | **Phân tích nhân sự** | biến động, nghỉ việc, chi phí lương, chuyên cần | 4 |
+| 12 | **Đánh giá và mục tiêu** | chu kỳ đánh giá, mục tiêu OKR/KPI, phản hồi | ngoài phạm vi |
+| 13 | **Đào tạo** | khoá, ghi danh, kết quả, chứng chỉ có hạn | ngoài phạm vi |
+| 14 | **Tuyển dụng** | tin tuyển, ứng viên, vòng phỏng vấn, thư mời | ngoài phạm vi |
+| 15 | **Khảo sát và ghi nhận** | khảo sát nhanh, ghi nhận đóng góp, thông báo nội bộ | ngoài phạm vi |
+| 16 | **Phân tích nhân sự** | biến động, nghỉ việc, chi phí lương, chuyên cần | ngoài phạm vi |
 
 **Giai đoạn 1 là thứ không có thì không có gì khác chạy được.** Không có cây tổ chức thì không
 có người duyệt; không có ngày công thì không có lương. Giai đoạn 2 biến nó thành thứ nhân viên
-mở ra hằng ngày. Giai đoạn 3 và 4 là bề rộng.
+mở ra hằng ngày. Giai đoạn 3 là bề rộng. **Phân hệ 12–16 nằm ngoài phạm vi bản này** (chủ repo
+chốt 18/10): hệ dừng ở mười một phân hệ, còn quyết định của năm phân hệ kia ở §9.16 giữ lại cho
+lần làm tiếp.
 
 **Một luật chung cho cả mười sáu**: phân hệ nào cũng gắn vào `employeeId` và **không phân hệ
 nào sở hữu bản sao hồ sơ nhân viên**. Chép tên và phòng ban sang bảng tuyển dụng hay bảng đánh
