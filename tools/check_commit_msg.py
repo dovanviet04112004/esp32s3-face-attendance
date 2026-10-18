@@ -26,7 +26,8 @@ VIETNAMESE = re.compile(
     "ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]"
 )
 AI_TRAILER = re.compile(
-    r"^(co-authored-by:.*\b(claude|anthropic|openai|gpt|copilot|gemini)\b|.*generated with \[?claude)",
+    r"^(co-authored-by:.*\b(claude|anthropic|openai|gpt|copilot|gemini)\b"
+    r"|.*generated with \[?claude)",
     re.IGNORECASE,
 )
 SCISSORS = "# ------------------------ >8 ------------------------"
@@ -125,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
             failed += 1
     if failed:
         print(
-            "commit format: CLAUDE.md 5, e.g. 'fix(firmware/drv_lcd): retry a scanline read' + a body",
+            "commit format: CLAUDE.md 5, "
+            "e.g. 'fix(firmware/drv_lcd): retry a scanline read' + a body",
             file=sys.stderr,
         )
     return 1 if failed else 0

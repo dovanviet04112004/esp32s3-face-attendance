@@ -180,7 +180,8 @@ def main() -> None:
         blob = sum(len(r) for g in glyphs for r in g["rows"])
         total += blob
         print(
-            f"{stem:14} w{weight} {role:8} {len(glyphs)} glyphs, {blob:6d} B, line {ascent + descent}px"
+            f"{stem:14} w{weight} {role:8} {len(glyphs)} glyphs, "
+            f"{blob:6d} B, line {ascent + descent}px"
         )
     print(f"total bitmap: {total} B")
 

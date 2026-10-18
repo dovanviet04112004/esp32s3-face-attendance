@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the lock-screen words of the service worker from both catalogues: app name and push section.
+"""Write the service worker's lock-screen words, app name and push section, from both catalogues.
 
 The worker cannot load the app's catalogues, so it reads this one copy, and no
 sentence is typed into the worker by hand (KEHOACH 9.21.4). Run with --check to

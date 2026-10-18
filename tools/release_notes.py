@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the notes of a firmware or models release, and the GitHub page that carries them (KEHOACH 7.7).
+"""Write the notes of a firmware or models release and the GitHub page carrying them (KEHOACH 7.7).
 
 The publisher writes the notes for the people who run kiosks, in Vietnamese and in English, in an
 editor that lists the commits since the previous release as hints. Commits are written for people
@@ -15,7 +15,6 @@ import os
 import re
 import shlex
 import shutil
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -44,7 +43,7 @@ def notes_max_len() -> int:
 
 
 def firmware_span(version: str) -> tuple[str, str]:
-    """The previous release commit, and the one that set this version (HEAD until it is committed)."""
+    """The previous release commit, and the one that set this version (HEAD until committed)."""
     found = git("log", "--format=%H", f'-Sset(PROJECT_VER "{version}")', "--", CMAKE).split()
     at = found[-1] if found else "HEAD"
     before = git(
@@ -171,7 +170,8 @@ def write(args: argparse.Namespace) -> int:
 def firmware_facts(args: argparse.Namespace) -> tuple[list[str], str]:
     before, at = firmware_span(args.version)
     facts = [
-        f"Image on the server: {args.size} B, sha256 `{args.sha256}`. Not attached: it carries the fleet's bootstrap token."
+        f"Image on the server: {args.size} B, sha256 `{args.sha256}`. "
+        "Not attached: it carries the fleet's bootstrap token."
     ]
     if args.requires:
         facts.append(f"Kiosks install models {args.requires} or newer before this firmware.")
@@ -183,16 +183,19 @@ def models_facts(args: argparse.Namespace) -> tuple[list[str], str]:
     blob = args.image.read_bytes()
     lock = json.loads(args.lock.read_text(encoding="utf-8"))
     facts = [
-        f"Image {args.version}, {len(blob)} B, recognition model recog-{lock['recognition']['sha256'][:16]}. "
+        f"Image {args.version}, {len(blob)} B, "
+        f"recognition model recog-{lock['recognition']['sha256'][:16]}. "
         f"Kiosks need firmware {args.min_fw} or newer."
     ]
     if args.moving:
         facts.append(
-            f"It moves {args.moving} kiosk(s) to another recognition model: each drops every face it holds once it "
+            f"It moves {args.moving} kiosk(s) to another recognition model: "
+            "each drops every face it holds once it "
             "installs it, and everyone captures again once, at any kiosk (KEHOACH 7.5)."
         )
     facts += [
-        f"- {branch}: {lock[branch]['file']}, sha256 {lock[branch]['sha256'][:16]}, run {lock[branch]['run_id']}"
+        f"- {branch}: {lock[branch]['file']}, "
+        f"sha256 {lock[branch]['sha256'][:16]}, run {lock[branch]['run_id']}"
         for branch in BRANCHES
         if branch in lock
     ]

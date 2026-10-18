@@ -223,11 +223,11 @@ def lib_symbol(ref: str, left: list, right: list) -> str:
         "      (exclude_from_sim no) (in_bom yes) (on_board yes)",
         f'      (property "Reference" "{ref[0]}" (at 0 {half + 5.08} 0) {FONT})',
         f'      (property "Value" "{ref}" (at 0 {-half - 5.08} 0) {FONT})',
-        f'      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
-        f'      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
+        '      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
+        '      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
         f'      (symbol "{ref}_1_1"',
         f"        (rectangle (start {-body} {half + 2.54}) (end {body} {-half - 2.54})",
-        f"          (stroke (width 0.254) (type default)) (fill (type background)))",
+        "          (stroke (width 0.254) (type default)) (fill (type background)))",
     ]
     for i, (name, _) in enumerate(left):
         out.append(sym_pin(name, i + 1, -body - STUB, half - i * PITCH, 0))
@@ -245,8 +245,8 @@ def lib_two_pin(ref: str) -> str:
             "      (exclude_from_sim no) (in_bom yes) (on_board yes)",
             f'      (property "Reference" "{ref[0]}" (at 3.81 1.27 0) {FONT})',
             f'      (property "Value" "{ref}" (at 3.81 -1.27 0) {FONT})',
-            f'      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
-            f'      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
+            '      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
+            '      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))',
             f'      (symbol "{ref}_1_1"',
             "        (rectangle (start -1.27 2.54) (end 1.27 -2.54)",
             "          (stroke (width 0.254) (type default)) (fill (type none)))",

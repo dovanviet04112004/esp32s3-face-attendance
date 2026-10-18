@@ -30,7 +30,6 @@ SKIP_DIR_PARTS = {
     "notebooks",
     ".venv",
     ".next",
-    "dist",
     "artifacts",
     "cache",
 }

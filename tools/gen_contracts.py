@@ -515,9 +515,7 @@ def render_topics_header(topics: list[Topic], id_max: int) -> str:
         )
         parts.append("    if (device_id == NULL || out == NULL) { return false; }\n")
         parts.append("    const size_t id_len = strlen(device_id);\n")
-        parts.append(
-            f"    if (id_len == 0 || id_len > GEN_TOPIC_DEVICE_ID_MAX) {{ return false; }}\n"
-        )
+        parts.append("    if (id_len == 0 || id_len > GEN_TOPIC_DEVICE_ID_MAX) { return false; }\n")
         parts.append(f"    const size_t need = {len(head)} + id_len + {len(tail)} + 1;\n")
         parts.append("    if (cap < need) { return false; }\n")
         parts.append(f'    memcpy(out, "{head}", {len(head)});\n')

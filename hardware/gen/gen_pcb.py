@@ -268,7 +268,8 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
     seen: dict = {}
     # pcb upgrade fills these two in itself if they are absent, with a fresh uuid.
     for field in ("Datasheet", "Description"):
-        body = body + [
+        body = [
+            *body,
             [
                 "property",
                 f'"{field}"',
@@ -278,7 +279,7 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
                 ["hide", "yes"],
                 ["uuid", f'"{uid("prop", ref, field)}"'],
                 ["effects", ["font", ["size", "1.27", "1.27"]]],
-            ]
+            ],
         ]
     for node in body:
         if node[0] == "layer" or node[0] == "at":
@@ -316,7 +317,7 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             if net:
                 node.append(["net", str(net_id[net]), f'"{net}"'])
         if node[0] == "property" and unquote(node[1]) == "Reference" and "MountingHole" in spec:
-            node = list(node) + [["hide", "yes"]]
+            node = [*node, ["hide", "yes"]]
         if node[0] in UUID_NODES:
             node = [c for c in node if not (isinstance(c, list) and c[0] == "uuid")]
             seen[node[0]] = seen.get(node[0], 0) + 1
@@ -559,11 +560,10 @@ def find_path(blocked: dict, room: dict, start: tuple, goal: tuple, want: str) -
     """(cell, layer) from pad to pad over both sides; a layer change is a via."""
     import heapq
 
-    si, sj = int(round(start[0] / GRID)), int(round(start[1] / GRID))
-    gi, gj = int(round(goal[0] / GRID)), int(round(goal[1] / GRID))
+    si, sj = round(start[0] / GRID), round(start[1] / GRID)
+    gi, gj = round(goal[0] / GRID), round(goal[1] / GRID)
     src, dst = sj * NX + si, gj * NX + gi
     step = ((1, 0), (0, 1), (-1, 0), (0, -1))
-    side = {name: k for k, name in enumerate(LAYERS)}
     wall = [blocked[name] for name in LAYERS]
     hole = [room[name] for name in LAYERS]
     bias = [0 if name == want else WRONG_SIDE for name in LAYERS]
@@ -712,7 +712,7 @@ def route_jobs(pads: dict) -> list:
     """Every edge to lay, in the order that decides which one gets first pick."""
     jobs = [(tag, a, b) for tag in RAIL_TREE for a, b in RAIL_TREE[tag]]
     rest: dict = {}
-    for pad_id, (x, y, half, net) in pads.items():
+    for pad_id, (x, y, _half, net) in pads.items():
         if net is None or net == "GND" or net in RAIL_TREE:
             continue
         rest.setdefault(net, []).append((pad_id, x, y))
@@ -732,7 +732,7 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list, job: tup
             field = bytearray(NX * NY)
             for cell in rim[probe]:
                 field[cell] = 1
-            for pad_id, (x, y, half, net) in pads.items():
+            for pad_id, (_x, _y, _half, net) in pads.items():
                 if pad_id in (src, dst) or (net and pad_tag(pad_id, net) == tag):
                     continue
                 for cell in stamp[(max(clear, net_clear(net)), probe)][pad_id]:
@@ -901,6 +901,7 @@ def pad_seats(fp: list) -> dict:
 def move_references(doc: list) -> None:
     """A designator under a module is as lost as a pin name, so it follows them out."""
     import math
+
     import gen_sch
 
     labelled = {ref for ref, value, left, right, x, y in gen_sch.PARTS}
@@ -932,14 +933,13 @@ def move_references(doc: list) -> None:
 
 def pin_labels(doc: list) -> list:
     """A signal name printed beside every pad, so a hole can be identified by eye."""
-    import math
     import gen_sch
 
     names = {}
-    for ref, value, left, right, x, y in gen_sch.PARTS:
-        for i, (name, net) in enumerate(left, 1):
+    for ref, _value, left, right, _x, _y in gen_sch.PARTS:
+        for i, (name, _net) in enumerate(left, 1):
             names[(ref, str(i))] = name
-        for i, (name, net) in enumerate(right, len(left) + 1):
+        for i, (name, _net) in enumerate(right, len(left) + 1):
             names[(ref, str(i))] = name
 
     out = []
@@ -952,10 +952,6 @@ def pin_labels(doc: list) -> list:
             ),
             "?",
         )
-        at = first(fp, "at")
-        ox, oy = float(at[1]), float(at[2])
-        deg = float(at[3]) if len(at) > 3 else 0.0
-        th = math.radians(deg)
         pads = children(fp, "pad")
         seats = pad_seats(fp)
         across, sign, line = label_side(seats)

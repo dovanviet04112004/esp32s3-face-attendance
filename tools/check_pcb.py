@@ -371,7 +371,8 @@ def check_wires(tree: list) -> list:
             )
         if (size - drill) / 2 < MIN_RING_MM:
             problems.append(
-                f"via o {first(node, 'at')[1]}: vanh {(size - drill) / 2:.2f} mm duoi muc {MIN_RING_MM}"
+                f"via o {first(node, 'at')[1]}: "
+                f"vanh {(size - drill) / 2:.2f} mm duoi muc {MIN_RING_MM}"
             )
     return problems
 

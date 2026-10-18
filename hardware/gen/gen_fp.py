@@ -146,7 +146,7 @@ def bare_holes() -> None:
     out.append(")")
     BARE_OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"{BARE_OUT}")
-    print(f"  4 lo | khong in lua | khong lo nao mang net")
+    print("  4 lo | khong in lua | khong lo nao mang net")
 
 
 def main() -> None:

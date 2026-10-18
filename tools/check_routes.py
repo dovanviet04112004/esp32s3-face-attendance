@@ -29,14 +29,22 @@ OPEN: dict[str, str] = {
     "GET /auth/me": "reads the caller's own claims off the request",
     "POST /devices/register": "a kiosk, not a person (KEHOACH 7.3)",
     "GET /devices/me": "a kiosk proving its own ticket, held by the device guard (KEHOACH 7.3)",
-    "POST /devices/me/token": "a kiosk trading its own ticket, held by the device guard (KEHOACH 7.3)",
-    "POST /mqtt/auth": "the broker asks about a kiosk; traefik keeps it off the internet (KEHOACH 7.4)",
+    "POST /devices/me/token": (
+        "a kiosk trading its own ticket, held by the device guard (KEHOACH 7.3)"
+    ),
+    "POST /mqtt/auth": (
+        "the broker asks about a kiosk; traefik keeps it off the internet (KEHOACH 7.4)"
+    ),
     "GET /leave-types": "the filing form needs them and they name no person",
     "GET /health": "the deploy script asks with no account, and it names no row (KEHOACH 4.8)",
     "POST /releases": "CI or the training box, held by the publisher token guard (KEHOACH 7.7)",
     "GET /releases/:releaseId/image": "a kiosk holding a link signed for it alone (KEHOACH 7.7)",
-    "GET /releases/published": "CI asking before it builds, held by the publisher token guard (KEHOACH 7.7)",
-    "PUT /releases/details": "the release box describing a release, held by the publisher token guard (KEHOACH 7.7)",
+    "GET /releases/published": (
+        "CI asking before it builds, held by the publisher token guard (KEHOACH 7.7)"
+    ),
+    "PUT /releases/details": (
+        "the release box describing a release, held by the publisher token guard (KEHOACH 7.7)"
+    ),
 }
 
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')
@@ -48,7 +56,7 @@ SIGNATURE_END = re.compile(r"\)\s*:")
 
 
 def routes(path: Path) -> list[tuple[str, bool, bool]]:
-    """Each route: its name, whether it knows who asks, and whether it is a desk route missing @Reach."""
+    """Per route: its name, whether it knows who asks, and whether it lacks a needed @Reach."""
     text = path.read_text(encoding="utf-8")
     head = text.split("export class", 1)[0]
     class_roles = ROLES.search(head)

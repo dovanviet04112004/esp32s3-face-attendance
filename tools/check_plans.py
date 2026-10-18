@@ -64,7 +64,8 @@ QUERIES: dict[str, str] = {
            AND (CURRENT_DATE - r."createdAt"::date) = ANY(ARRAY[3, 7, 14]::int[])
     """,
     "unread-notifications": """
-        SELECT count(*) FROM "Notification" WHERE "userId" = '00000000-0000-0000-0000-000000000000' AND "readAt" IS NULL
+        SELECT count(*) FROM "Notification"
+         WHERE "userId" = '00000000-0000-0000-0000-000000000000' AND "readAt" IS NULL
     """,
     "leavers-of-period": """
         SELECT e."id" FROM "Employee" e
@@ -183,7 +184,8 @@ def main() -> int:
                 continue
             if held < floor:
                 print(
-                    f"{name}: seq scan on {table}, {held} rows is under the {floor} floor — no verdict"
+                    f"{name}: seq scan on {table}, "
+                    f"{held} rows is under the {floor} floor — no verdict"
                 )
                 withheld += 1
                 continue

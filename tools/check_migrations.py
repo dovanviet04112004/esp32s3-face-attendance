@@ -54,8 +54,12 @@ COMMENT = re.compile(r"^\s*--\s?(.*)$")
 # Applied everywhere and older than this rule; editing one breaks the checksum
 # Prisma keeps, so they are named rather than rewritten or skipped quietly.
 GRANDFATHERED = {
-    "20260919165510_attendance_flags": "dropped AttendanceRecord.synced in the release that replaced it",
-    "20260920000000_hr_foundation": "dropped Employee.department in the release that moved it to Department",
+    "20260919165510_attendance_flags": (
+        "dropped AttendanceRecord.synced in the release that replaced it"
+    ),
+    "20260920000000_hr_foundation": (
+        "dropped Employee.department in the release that moved it to Department"
+    ),
 }
 
 
