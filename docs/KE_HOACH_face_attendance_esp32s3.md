@@ -9392,9 +9392,18 @@ tấm xem của chính loại ấy ngay trên sổ — tab *Đơn từ* cũng v�
 và tấm xem không quyết (đoạn trên): việc đã xong hiện đúng kết quả của nó, việc đang chờ hiện nút
 sang hộp khi người xem giữ hàng đợi ấy, riêng đơn từ khi chính người xem được quyết đơn ấy. Đổi thứ
 tự bằng tiêu đề *Ngày gửi* ở mọi tab; tab *Đơn từ* sắp thêm được theo ngày bắt đầu. Năm tab sau dùng
-chính bảng và tấm xem của hàng đợi cùng loại (`components/requests/queues.tsx`) ở chế độ sổ; xuất
-CSV ở lại tab *Đơn từ*. Trang `/leave/[id]` vẫn là trang của một đơn từ, nơi thông báo và hộp xem
-trước ở trang nhà dẫn tới.
+chính bảng và tấm xem của hàng đợi cùng loại (`components/requests/queues.tsx`) ở chế độ sổ. Trang
+`/leave/[id]` vẫn là trang của một đơn từ, nơi thông báo và hộp xem trước ở trang nhà dẫn tới.
+
+**Tab nào của sổ cũng xuất CSV theo đúng bộ lọc đang mở.** Một sổ chỉ xem được thì cuối tháng người
+ta vẫn chép tay sang Excel, và chép tay là chỗ sai. Mỗi bảng có route `…/export` nhận chính bộ lọc
+của danh sách và dựng điều kiện bằng chính hàm của danh sách, phạm vi §9.4 gồm trong đó, nên file
+không bao giờ có dòng mà sổ không hiện. Route chỉ mở cho vai giữ hàng đợi của tab (`QUEUE_DESKS`;
+tạm ứng là hai bàn duyệt và chi), như tab chỉ hiện cho vai ấy. Cột của file là cột của tab tách
+thành từng giá trị: mã, tên, phòng ban, các giá trị của hai cột riêng, ngày gửi, trạng thái, người
+quyết, ngày quyết và lời ghi khi quyết. File không mang thứ sổ không hiện: người phụ thuộc không có
+ngày sinh, số giấy tờ hay mã số thuế. Trần 50.000 dòng như tab *Đơn từ*, hạn mức `heavy`, và mỗi lần
+tải để lại một dòng `export.*` (§9.24 luật 7).
 
 **Vệt điều hướng nằm ở thanh trên, như product header của Cloudflare.** Nó dựng từ chính bảng
 này: nhóm, rồi mục, rồi tab hay trang con, rồi tên bản ghi đang mở — tên ấy do chính trang báo
@@ -11111,5 +11120,5 @@ cảm sống lâu hơn chính dữ liệu ấy. Mỗi file xuất ghi một dòn
 người tải, bộ lọc như đã gửi, và số dòng trong file — không bao giờ ghi nội dung (luật 4). Chủ thể
 là thứ file ấy nói về khi nó nói về một thứ: kỳ lương cho file ngân hàng và sổ lương, pháp nhân
 cho D02-LT. File xuất một danh sách thì chủ thể là `export` kèm tên danh sách — `employees`,
-`payslips`, `requests`, `timesheet`, `assets` —, một loại định danh cho một loại chủ thể như luật
-3 đòi.
+`payslips`, `requests`, `disputes`, `certificates`, `profile-changes`, `dependents`, `advances`,
+`timesheet`, `assets` —, một loại định danh cho một loại chủ thể như luật 3 đòi.
