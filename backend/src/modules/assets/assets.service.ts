@@ -4,7 +4,7 @@ import { Prisma, type Asset, type AssetState, type AssetTransfer } from "@prisma
 
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
-import { toExcelCsv } from "../../common/csv.js";
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -51,8 +51,6 @@ export interface AssetCounts {
   kinds: string[];
 }
 
-// A register this long is a data problem, not a spreadsheet; the export says so by stopping.
-const kExportMax = 50_000;
 const EXPORT_HEADER = ["code", "name", "kind", "serialNo", "state", "holderCode", "holderName", "department", "issuedAt"];
 
 function asRow(row: RegisterRow): AssetRow {
@@ -103,7 +101,7 @@ export class AssetsService {
       where: { AND: [filterOf(query, matched), reach] },
       include: REGISTER_ROW,
       orderBy: { code: "asc" },
-      take: kExportMax,
+      take: EXPORT_MAX_ROWS,
     });
     await this.audit.record({
       actorId: viewer.userId,

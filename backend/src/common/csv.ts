@@ -1,6 +1,8 @@
 /** Marks a file UTF-8 for Excel, which otherwise reads the local code page and garbles every Vietnamese name; a parser must not get it. */
 export const BYTE_ORDER_MARK = "\ufeff";
 
+export const EXPORT_MAX_ROWS = 50_000;
+
 /** A cell opening with = + - @ tab or CR, which Excel runs as a formula (KEHOACH 7.2). */
 export const FORMULA_LEAD = /^[=+\-@\t\r]/;
 

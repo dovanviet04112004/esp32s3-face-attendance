@@ -15,7 +15,7 @@ import type {
   RequestState,
 } from "@prisma/client";
 
-import { toExcelCsv } from "../../common/csv.js";
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -64,8 +64,6 @@ const TIMED: RequestKind[] = ["OVERTIME", "ATTENDANCE_FIX"];
 const OFF_WORK: RequestState[] = ["PENDING", "APPROVED"];
 // Judged at read time: a login locked after filing still sends the request to the desk (KEHOACH 9.15).
 const OVERLAP_SHOWN = 20;
-// Past this an export stops; a filter narrows it (KEHOACH 9.9 rule 6).
-const EXPORT_MAX = 50_000;
 const EXPORT_COLUMNS = [
   "code", "fullName", "department", "kind", "leaveType", "fromDate", "toDate", "days",
   "state", "reason", "createdAt", "decidedBy", "decidedAt", "decisionNote",
@@ -663,7 +661,7 @@ export class LeaveService {
       await this.db.request.findMany({
         where: await this.ledgerWhere(viewer, query),
         orderBy: sortedBy(field, query.order ?? "desc") as Prisma.RequestOrderByWithRelationInput[],
-        take: EXPORT_MAX,
+        take: EXPORT_MAX_ROWS,
         include: REQUEST_VIEW,
       }),
     );
