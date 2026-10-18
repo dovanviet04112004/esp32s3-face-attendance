@@ -177,9 +177,13 @@ make fw-log PORT=/dev/ttyACM0       # in log của board trong 30 s
 - Đối chứng ba runtime (KẾ HOẠCH §3 lớp 5): `make fw-bench-ai RUNTIME=espdl|tflm|tflm_ansi` dựng
   `test_apps/bench_ai` vào `build_<RUNTIME>` riêng, `make fw-bench-ai-run RUNTIME=… PORT=…` nạp rồi giữ
   log cả lượt cùng cỡ ảnh, sdkconfig và phiên bản component của chính bản build đó (`make
-  fw-bench-ai-facts`). `make runtime-image` đóng ảnh model TFLM từ ba run trên lock, `make runtime-score` chấm
-  độ chính xác trên máy, `make runtime-check` so board với máy, `make runtime-report` sinh
-  `docs/measurements/runtime_compare.md`.
+  fw-bench-ai-facts`). `make runtime-image` đóng lock TFLM `ml/artifacts/device/locks/tflm/` từ ba run trên
+  lock, `make runtime-score` chấm độ chính xác trên máy, `make runtime-check` so board với máy,
+  `make runtime-report` sinh `docs/measurements/runtime_compare.md`.
+- Đổi kiosk bàn giữa hai runtime trong một lệnh: `make kiosk-runtime RUNTIME=tflm|espdl PORT=/dev/ttyACM0`
+  dựng bản `bench` của runtime ấy, đóng ảnh model từ lock tương ứng rồi nạp app cùng hai ngăn model một lượt.
+  Đổi runtime là đổi model nhận diện: sang TFLM thì máy chưa nhận ra ai cho tới khi lấy mặt lại, về ESP-DL
+  thì server gửi lại bộ mẫu cũ.
 
 ### Model
 

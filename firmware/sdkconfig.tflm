@@ -1,0 +1,2 @@
+# The desk kiosk on TFLM, after sdkconfig.bench; its models image comes from the TFLM lock (KEHOACH 6.2.2).
+CONFIG_AI_RUNTIME_TFLM=y

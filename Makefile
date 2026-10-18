@@ -4,8 +4,8 @@ SHELL := /bin/bash
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors detect-floors password-list \
-        idf fw-secrets fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
-        fw-bench-ai fw-bench-ai-facts fw-bench-ai-run runtime-image runtime-score runtime-check runtime-report \
+        idf fw-secrets fw-dev fw-bench fw-bench-tflm fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
+        fw-bench-ai fw-bench-ai-facts fw-bench-ai-run kiosk-runtime runtime-image runtime-score runtime-check runtime-report \
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
@@ -40,14 +40,17 @@ FW_BASE := sdkconfig.defaults sdkconfig.defaults.esp32s3
 FW_SECRETS := $(if $(wildcard firmware/sdkconfig.secrets),sdkconfig.secrets)
 fw_dir_dev := build
 fw_dir_bench := build_bench
+fw_dir_bench_tflm := build_bench_tflm
 fw_dir_prod := build_prod
 fw_dir_fleet := build_release
 fw_cfg_dev := sdkconfig
 fw_cfg_bench := build_bench/sdkconfig
+fw_cfg_bench_tflm := build_bench_tflm/sdkconfig
 fw_cfg_prod := build_prod/sdkconfig
 fw_cfg_fleet := build_release/sdkconfig
 fw_set_dev := sdkconfig.dev $(FW_SECRETS)
 fw_set_bench := sdkconfig.bench $(FW_SECRETS)
+fw_set_bench_tflm := sdkconfig.bench sdkconfig.tflm $(FW_SECRETS)
 fw_set_prod := sdkconfig.prod sdkconfig.secrets
 fw_set_fleet := sdkconfig.$(FLEET_PROFILE) sdkconfig.fleet sdkconfig.secrets
 empty :=
@@ -57,7 +60,7 @@ fw_idf = cd firmware && idf.py -B $(fw_dir_$(1)) -D SDKCONFIG=$(fw_cfg_$(1)) \
 # Defaults only fill the keys an sdkconfig lacks, so one older than any of its defaults goes.
 fw_fresh = @for f in $(FW_BASE) $(fw_set_$(1)); do \
   [ firmware/$$f -nt firmware/$(fw_cfg_$(1)) ] && rm -f firmware/$(fw_cfg_$(1)); done; true
-fw_profile = $(if $(fw_dir_$(PROFILE)),,$(error PROFILE must be dev, bench, prod or fleet))
+fw_profile = $(if $(fw_dir_$(PROFILE)),,$(error PROFILE must be dev, bench, bench_tflm, prod or fleet))
 JOBS ?= 4
 # idf.py takes no -j, and ninja's default of cores + 2 has crashed this WSL: configure, then ninja.
 fw_build = $(call fw_idf,$(1)) reconfigure && ninja -C $(fw_dir_$(1)) -j$(JOBS)
@@ -237,8 +240,9 @@ pack: ## Pack the locked models into models.bin (PORT= also writes both slots)
 
 ##@ Firmware (ESP-IDF from IDF_EXPORT when the shell has none; PORT=/dev/ttyACM0 picks the port)
 IDF_EXPORT ?= $(HOME)/esp/esp-idf/export.sh
-IDF_GOALS := idf fw-dev fw-bench fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write \
-  fw-part-erase fw-app fw-app-flash fw-app-test fw-bench-ai fw-bench-ai-facts fw-bench-ai-run fw-assets release ai-unit speed \
+IDF_GOALS := idf fw-dev fw-bench fw-bench-tflm fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write \
+  fw-part-erase fw-app fw-app-flash fw-app-test fw-bench-ai fw-bench-ai-facts fw-bench-ai-run kiosk-runtime fw-assets release \
+  ai-unit speed \
   board-save board-restore $(if $(PORT),pack)
 # Sourced once and exported, so a goal needing the tools runs from any shell, its sub-makes included.
 ifneq ($(filter $(IDF_GOALS),$(MAKECMDGOALS)),)
@@ -264,6 +268,10 @@ fw-dev: idf ## Build the dev profile in firmware/build
 fw-bench: idf ## Build the bench profile in firmware/build_bench
 	$(call fw_fresh,bench)
 	$(call fw_build,bench)
+
+fw-bench-tflm: idf ## Build the bench profile on TFLM in firmware/build_bench_tflm (KEHOACH 6.2.2)
+	$(call fw_fresh,bench_tflm)
+	$(call fw_build,bench_tflm)
 
 fw-prod: idf fw-secrets ## Build the prod profile in firmware/build_prod, from a fresh sdkconfig
 	rm -f firmware/$(fw_cfg_prod)
@@ -364,7 +372,27 @@ fw-bench-ai-run: idf fw-bench-ai-facts ## Flash build_<RUNTIME> of bench_ai, kee
 	until grep -q -a -E "$(unity_summary)" $$log 2>/dev/null || ! kill -0 $$monitor 2>/dev/null; do sleep 5; done; \
 	kill $$monitor 2>/dev/null; wait $$monitor; grep -a -E "$(unity_summary)" $$log
 
-runtime-image: ## E9-T51: the lock's runs as Q1 .tflite in an experimental lock, packed into models_tflm.bin (ARENA_FAST= ARENA_BIG= bytes)
+TFLM_LOCK := ml/artifacts/device/locks/tflm
+kiosk_profile_espdl := bench
+kiosk_profile_tflm := bench_tflm
+kiosk_lock_espdl := contracts/models.lock.json
+kiosk_lock_tflm := $(TFLM_LOCK)/models.lock.json
+kiosk_models_espdl := firmware/models
+kiosk_models_tflm := $(TFLM_LOCK)/models
+
+# One esptool run writes the app and both model slots, so no boot meets one runtime's app with the other's models.
+kiosk-runtime: idf ## Make the desk kiosk an ESP-DL or a TFLM kiosk in one command (RUNTIME=espdl|tflm, PORT=)
+	$(call need,PORT,the board's serial port)
+	$(if $(kiosk_profile_$(RUNTIME)),,$(error RUNTIME must be espdl or tflm))
+	$(call fw_fresh,$(kiosk_profile_$(RUNTIME)))
+	$(call fw_build,$(kiosk_profile_$(RUNTIME)))
+	cd ml && ./scripts/50_pack_and_flash.sh --lock $(CURDIR)/$(kiosk_lock_$(RUNTIME)) \
+	  --models-dir $(CURDIR)/$(kiosk_models_$(RUNTIME)) --out $(CURDIR)/firmware/$(fw_dir_$(kiosk_profile_$(RUNTIME)))/models.bin
+	cd firmware/$(fw_dir_$(kiosk_profile_$(RUNTIME))) && table=partition_table/partition-table.bin && \
+	  $(esptool_board) write-flash @flash_args $(call part_info,$$table,models_0,offset) models.bin \
+	  $(call part_info,$$table,models_1,offset) models.bin
+
+runtime-image: ## E9-T51: the lock's runs as Q1 .tflite in the TFLM lock ml/artifacts/device/locks/tflm/ (ARENA_FAST= ARENA_BIG= bytes)
 	cd ml && $(ML_PY) bench/runtime_report.py image --arena-fast $(or $(ARENA_FAST),0) --arena-big $(or $(ARENA_BIG),0)
 
 runtime-score: ## E9-T51: each branch's accuracy on ESP-DL and on TFLite (BRANCH= and SCORE_RUNTIME= narrow it)
