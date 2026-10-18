@@ -115,11 +115,11 @@ lint: ## Every static check CI runs: the repo tools and ruff
 	python3 tools/check_routes.py
 	python3 tools/gen_sw_words.py --check
 	python3 tools/check_notice_kinds.py
-	cd ml && $(ML_PY) -m ruff check . && $(ML_PY) -m ruff format --check .
+	$(ML_PY) -m ruff check . && $(ML_PY) -m ruff format --check .
 
 # Format first: the long lines E501 flags are mostly ones the formatter wraps.
-fmt: ## Apply ruff fixes and formatting to ml/
-	cd ml && $(ML_PY) -m ruff format . && $(ML_PY) -m ruff check --fix . && $(ML_PY) -m ruff format .
+fmt: ## Apply ruff fixes and formatting to every Python file in the repo
+	$(ML_PY) -m ruff format . && $(ML_PY) -m ruff check --fix . && $(ML_PY) -m ruff format .
 
 typecheck: be-typecheck fe-typecheck ## tsc over backend/ and frontend/, as CI runs it
 
