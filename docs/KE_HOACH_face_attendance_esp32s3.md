@@ -8337,6 +8337,12 @@ năm. Khi chưa khai loại phép nào, chỗ ô chọn loại là một dải b
 nhân sự* chứ không phải một danh sách mở ra rỗng, và sổ đơn từ của `HR` · `ADMIN` mở đầu bằng
 một dải báo dẫn tới danh mục *Loại phép*: không có loại nào thì không ai xin nghỉ được.
 
+**Hộp xin nghỉ mở sẵn ở ngày làm việc kế tiếp.** Ngày mặc định là ngày làm việc gần nhất kể từ hôm
+nay theo lịch của chính người gửi, do `GET /leave-days/next` trả bằng đúng hàm `workdays` mà phép
+đếm dùng, với *hôm nay* là ngày nghiệp vụ của server (§9.8). Lấy hôm nay làm mặc định thì mở hộp
+vào Chủ nhật hay ngày lễ là mở ra một ô đỏ `LEAVE_NO_WORKING_DAY` trước khi người dùng chọn gì.
+Không hỏi được server thì hộp mở ở hôm nay như cũ.
+
 ### 9.6 Lương
 
 **Lương là dữ liệu có thời hạn, không phải một ô để sửa đè.** `CompensationRecord` mang
