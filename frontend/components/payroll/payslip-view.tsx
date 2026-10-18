@@ -37,14 +37,24 @@ export interface Payslip {
   lines: PayslipLine[];
 }
 
-const ORDER: LineKind[] = ["EARNING", "DEDUCTION", "EMPLOYER_COST", "INFO"];
+type Section = LineKind | "CARRIED";
 
-const GROUP: Record<LineKind, "earnings" | "deductions" | "employerCost" | "info"> = {
+const ORDER: Section[] = ["EARNING", "DEDUCTION", "CARRIED", "EMPLOYER_COST", "INFO"];
+
+const GROUP: Record<Section, "earnings" | "deductions" | "carried" | "employerCost" | "info"> = {
   EARNING: "earnings",
   DEDUCTION: "deductions",
+  CARRIED: "carried",
   EMPLOYER_COST: "employerCost",
   INFO: "info",
 };
+
+const LINE_CARRY_OUT = "CARRY_OUT";
+
+// A shortfall reads beside the deductions it outgrew, not among the tax workings (KEHOACH 9.6).
+function sectionOf(line: PayslipLine): Section {
+  return line.code === LINE_CARRY_OUT ? "CARRIED" : line.kind;
+}
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
@@ -95,17 +105,17 @@ export function PayslipView({ slip }: { slip: Payslip }) {
         </div>
       </LayerCard>
 
-      {ORDER.map((kind) => {
-        const rows = slip.lines.filter((line) => line.kind === kind);
+      {ORDER.map((section) => {
+        const rows = slip.lines.filter((line) => sectionOf(line) === section);
         if (rows.length === 0) {
           return null;
         }
         const total = rows.reduce((sum, line) => sum + Number(line.amount), 0);
         return (
-          <LayerCard key={kind}>
+          <LayerCard key={section}>
             <LayerCard.Secondary className="justify-between">
-              <span>{t(GROUP[kind])}</span>
-              {kind !== "INFO" ? (
+              <span>{t(GROUP[section])}</span>
+              {section !== "INFO" ? (
                 <span className="font-medium text-kumo-default tabular-nums">{money(total, locale)}</span>
               ) : null}
             </LayerCard.Secondary>
@@ -120,11 +130,11 @@ export function PayslipView({ slip }: { slip: Payslip }) {
                     <dd
                       className={cn(
                         "shrink-0 tabular-nums",
-                        kind === "DEDUCTION" && "text-kumo-danger",
-                        kind === "INFO" && "text-kumo-subtle",
+                        section === "DEDUCTION" && "text-kumo-danger",
+                        section === "INFO" && "text-kumo-subtle",
                       )}
                     >
-                      {kind === "DEDUCTION" ? "− " : ""}
+                      {section === "DEDUCTION" ? "− " : ""}
                       {money(Number(line.amount), locale)}
                     </dd>
                   </div>

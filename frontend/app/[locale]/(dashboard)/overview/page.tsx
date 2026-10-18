@@ -123,7 +123,8 @@ type BlockerCode =
   | "NOT_IN_RUN"
   | "PAID_ELSEWHERE"
   | "LEAVERS_HOLDING_ASSETS"
-  | "DISPUTES_OVERDUE";
+  | "DISPUTES_OVERDUE"
+  | "NEGATIVE_NET";
 
 interface Blocker {
   code: BlockerCode;

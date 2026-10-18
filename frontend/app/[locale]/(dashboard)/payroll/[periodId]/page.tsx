@@ -93,7 +93,8 @@ type ItemKey =
   | "NOT_IN_RUN"
   | "PAID_ELSEWHERE"
   | "LEAVERS_HOLDING_ASSETS"
-  | "DISPUTES_OVERDUE";
+  | "DISPUTES_OVERDUE"
+  | "NEGATIVE_NET";
 
 // Where each open item is settled; an item without a row here is only counted.
 const HANDLED_AT: Record<string, string> = {
