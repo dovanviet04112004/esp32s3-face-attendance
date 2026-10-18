@@ -36,6 +36,30 @@ const WEEK_FROM = "2036-06-09";
 const WEEK_TO = "2036-06-13";
 const OWN_HOLIDAY = "2036-06-11";
 const OTHER_HOLIDAY = "2036-06-12";
+const NEXT_HOLIDAY = "Lễ thử ngày mở hộp";
+const DAY_MS = 86_400_000;
+
+function dateOf(day: string): Date {
+  return new Date(`${day}T00:00:00.000Z`);
+}
+
+function dayAfter(day: string, days: number): string {
+  return new Date(dateOf(day).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+// The business date the server counts from, in its own zone (KEHOACH 9.8).
+function businessToday(zone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+function firstWorkday(from: string, holidays: ReadonlySet<string>): string {
+  for (let day = from; ; day = dayAfter(day, 1)) {
+    const weekday = dateOf(day).getUTCDay();
+    if (weekday !== 0 && weekday !== 6 && !holidays.has(day)) {
+      return day;
+    }
+  }
+}
 
 interface Balance {
   leaveTypeId: string;
@@ -67,6 +91,10 @@ describe("leave balance (e2e)", () => {
   let db: PrismaService;
   let token = "";
   let adminToken = "";
+  let zone = "";
+  let ownEntityId = "";
+  let otherEntityId = "";
+  let seedPassword = "";
   let employeeId = 0;
   let leaveTypeId = "";
   const opened: string[] = [];
@@ -133,6 +161,8 @@ describe("leave balance (e2e)", () => {
 
   before(async () => {
     const env = validateEnv();
+    zone = env.APP_TIMEZONE;
+    seedPassword = env.SEED_ADMIN_PASSWORD ?? "";
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     configure(app);
@@ -152,6 +182,8 @@ describe("leave balance (e2e)", () => {
 
     const own = await db.legalEntity.create({ data: { code: OWN_ENTITY, name: "Pháp nhân thử phép" } });
     const other = await db.legalEntity.create({ data: { code: OTHER_ENTITY, name: "Pháp nhân khác" } });
+    ownEntityId = own.id;
+    otherEntityId = other.id;
     await db.holiday.createMany({
       data: [
         { legalEntityId: own.id, date: new Date(OWN_HOLIDAY), name: "Lễ của pháp nhân mình" },
@@ -365,5 +397,43 @@ describe("leave balance (e2e)", () => {
     assert.equal(cancelled.status, 201);
     assert.equal((await held(2035))?.pending, 0);
     assert.equal((await held(2036))?.pending, was?.pending);
+  });
+
+  it("opens the leave form on the first working day from the server's today", async () => {
+    const today = businessToday(zone);
+    const shared = await db.holiday.findMany({
+      where: { legalEntityId: null, date: { gte: dateOf(today), lte: dateOf(dayAfter(today, 40)) } },
+      select: { date: true },
+    });
+    const holidays = new Set(shared.map((one) => one.date.toISOString().slice(0, 10)));
+    const next = () => request(http).get("/leave-days/next").set("Authorization", `Bearer ${token}`);
+
+    const plain = await next();
+    assert.equal(plain.status, 200, JSON.stringify(plain.body));
+    assert.equal(plain.body.day, firstWorkday(today, holidays));
+
+    const own = [0, 1, 2, 3].map((n) => dayAfter(plain.body.day, n));
+    const pushed = firstWorkday(today, new Set([...holidays, ...own]));
+    await db.holiday.createMany({
+      data: [
+        ...own.map((day) => ({ legalEntityId: ownEntityId, date: dateOf(day), name: NEXT_HOLIDAY })),
+        { legalEntityId: otherEntityId, date: dateOf(pushed), name: NEXT_HOLIDAY },
+      ],
+    });
+    try {
+      const moved = await next();
+      assert.equal(moved.status, 200, JSON.stringify(moved.body));
+      assert.equal(moved.body.day, pushed, "the day ignored its own entity's holidays or heeded another's");
+    } finally {
+      await db.holiday.deleteMany({ where: { name: NEXT_HOLIDAY } });
+    }
+  });
+
+  it("refuses the day to an account with no employee record", async () => {
+    const signed = await request(http).post("/auth/login").send({ email: "viewer@kiosk.local", password: seedPassword });
+    assert.equal(signed.status, 200, "the viewer account could not sign in");
+    const res = await request(http).get("/leave-days/next").set("Authorization", `Bearer ${signed.body.accessToken}`);
+    assert.equal(res.status, 403);
+    assert.equal(res.body.message, "NOT_AN_EMPLOYEE");
   });
 });
