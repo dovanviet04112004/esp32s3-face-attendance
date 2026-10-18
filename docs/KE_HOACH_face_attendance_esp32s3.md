@@ -779,6 +779,13 @@ sửa code và trông như ngẫu nhiên. **Reset chip không tái hiện đư�
 lần đầu. Bảng này chỉ có hai thiết bị: mốc của GT911 không dùng được vì phép đo cũ chạy lúc
 đầu cắm cảm ứng còn lỏng (§2.3C), và nó cũng không cần — GT911 không nằm trong danh sách chờ.
 
+**Trước khi thăm dò, `bsp_board_init()` gỡ bus** bằng `i2c_master_bus_reset()` của IDF: reset máy
+trạng thái I2C rồi phát 9 xung SCL và STOP. Chip I2C không mất điện khi ESP32 reset, nên một chip bị
+cắt ngang lúc đang gửi bit 0 cứ giữ SDA thấp chờ xung nhịp kế tiếp; bus khi đó không ai ACK,
+`bsp_board_init()` trả lỗi, `ESP_ERROR_CHECK` reset chip, và vòng lặp chỉ dứt khi rút điện — nghi phạm
+số một của lần kiosk khởi động lặp 27/09 (E13-T19). Chín xung đủ để chip đẩy xong byte đang dở và thả
+SDA ở bit ACK.
+
 Chốt: `bsp_board_init()` thăm dò **PCF8574 `0x20`** tới khi nó ACK, trần **500 ms** (≈100× mốc
 5 ms), quá trần thì trả lỗi kèm địa chỉ im. PCF8574 là con duy nhất trên bus mà máy không chạy
 được thiếu nó, và là con không phụ thuộc chân của ai. **VL53L1X không nằm trong danh sách chờ**:
@@ -5163,11 +5170,15 @@ hợp đồng bị mở rộng: thêm `cmdId` (tuỳ chọn) cùng hai giá tr�
 hiện đúng những tình huống hợp đồng liệt kê, và cả bốn đều **không được phép chờ mạng**:
 `ai_task` mất khung (`CAMERA_FAULT`), `tof_task` đọc lỗi khác timeout (`TOF_FAULT`),
 `attend_task` thấy `SPOOF`/`UNKNOWN`, và đường ghi log hỏng (`STORAGE_FAULT`). Nên chúng bỏ một
-bản ghi 72 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
+bản ghi 88 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
 
 **`BOOTED` nói vì sao máy vừa khởi động.** `message` mang số lần khởi động cùng lý do
 `esp_reset_reason()` của lần ấy — sụt nguồn, watchdog, crash, `esp_restart`, USB — và dòng log lúc lên
-nói cùng câu. Thiếu nó thì một lần sụt áp, một lần crash và một lần nạp lại trông y hệt nhau trên
+nói cùng câu. `message` còn mang **bước khởi động cuối cùng của lần trước** (`storage`, `models`,
+`board`, `lcd`, `camera`… hay `running` khi lần ấy đã lên xong): `app_boot` ghi tên từng bước vào một
+biến `RTC_NOINIT_ATTR` trước khi chạy bước ấy, biến sống qua mọi lần reset trừ cắt điện, nên một
+`ESP_ERROR_CHECK` hỏng ở bước nào thì lần khởi động lên được kế sau báo đúng bước ấy dù không ai mở
+console. Thiếu nó thì một lần sụt áp, một lần crash và một lần nạp lại trông y hệt nhau trên
 server, vì coredump đang tắt và console không phải lúc nào cũng có người mở: chiều 17/10 kiosk bàn
 tự khởi động lại hai lần mà không ai biết vì đâu. `ts` của nó là lúc `sync_task` phát, sau khi nối
 broker, nên nó đến **sau** lượt chấm mà máy vừa lên đã kịp ghi cho người còn đứng trước kính; đọc
@@ -5914,7 +5925,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
 | `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
-| `q_event` | Queue, depth 8, `app_event_t` | 8 × 72 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × ~1,8 KB | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
