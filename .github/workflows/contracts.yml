@@ -82,6 +82,14 @@ jobs:
       - name: Comment rules
         run: python3 tools/check_comments.py
 
+      # The ruff ml/uv.lock pins, over every Python file under its nearest config (KEHOACH 4.1).
+      - name: Python lint and format
+        run: |
+          version=$(python3 -c "import tomllib; print(next(p['version'] for p in tomllib.load(open('ml/uv.lock', 'rb'))['package'] if p['name'] == 'ruff'))")
+          python3 -m pip install --quiet "ruff==$version"
+          ruff check .
+          ruff format --check .
+
       - name: Firmware layering
         run: python3 tools/check_layers.py
 
