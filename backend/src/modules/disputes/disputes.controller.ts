@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpStatus, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpStatus, Param, Post, Query, UseGuards } from "@nestjs/common";
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -9,6 +9,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
 import type { PayslipDispute } from "@prisma/client";
@@ -16,10 +17,15 @@ import type { PayslipDispute } from "@prisma/client";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
+import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { API_AUTH, ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
+import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
+import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
+import { THROTTLE } from "../auth/auth.types.js";
+import { QUEUE_DESKS } from "../leave/queue-filter.js";
 import { DisputesService, type DisputeRow } from "./disputes.service.js";
 import {
   AnswerDisputeDto,
@@ -59,6 +65,18 @@ export class DisputesController {
     @CurrentViewer() viewer: Viewer,
   ): Promise<Page<DisputeRow>> {
     return this.disputes.list(viewer, query);
+  }
+
+  @Get("export")
+  @RateBucket(THROTTLE.heavy)
+  @Roles(...QUEUE_DESKS.disputes)
+  @Reach("person")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @ApiProduces("text/csv")
+  @ApiOperation({ summary: "The disputes list under the same filter, as a file Excel opens" })
+  @ApiOkResponse({ description: "CSV with a byte order mark", schema: { type: "string" } })
+  exportCsv(@CurrentViewer() viewer: Viewer, @Query() query: ListDisputesDto): Promise<string> {
+    return this.disputes.exportCsv(viewer, query);
   }
 
   @Get(":id")

@@ -10,6 +10,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Employee, Prisma, ProfileChange } from "@prisma/client";
 
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -20,6 +21,7 @@ import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type ProfileNoticeJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import type { Order } from "../leave/dto/queue.dto.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -49,6 +51,10 @@ import type {
 } from "./dto/profile-change.dto.js";
 
 const DESK = QUEUE_DESKS.profileChanges;
+const EXPORT_COLUMNS = [
+  "code", "fullName", "department", "field", "oldValue", "newValue", "reason",
+  "createdAt", "state", "decidedBy", "decidedAt", "note",
+];
 
 type Person = Employee & { login: { email: string } | null };
 
@@ -124,22 +130,7 @@ export class ProfileService {
   }
 
   async list(viewer: Viewer, query: ListProfileChangesDto): Promise<Page<ProfileChangeRow>> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const person = await personWhere(this.db, query);
-    const waiting = query.state === "PENDING";
-    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
-    const where = {
-      AND: [
-        ScopeService.ownedWhere(viewer, visible),
-        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
-        await this.audience.inboxNarrowing(viewer, "PROFILE_CHANGES", waiting, query.employeeId),
-        query.state ? { state: query.state } : {},
-        query.field ? { field: query.field } : {},
-        person ? { employee: person } : {},
-        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
-      ],
-    } as Prisma.ProfileChangeWhereInput;
-    const order = query.order ?? (waiting ? "asc" : "desc");
+    const { where, order } = await this.selected(viewer, query);
     const resumed = query.cursor
       ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.ProfileChangeWhereInput] }
       : where;
@@ -159,6 +150,69 @@ export class ProfileService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** The list under the same filter, as a file Excel opens (KEHOACH 9.15). */
+  async exportCsv(viewer: Viewer, query: ListProfileChangesDto): Promise<string> {
+    const { where, order } = await this.selected(viewer, query);
+    const rows = await this.db.profileChange.findMany({
+      where,
+      orderBy: sortedBy("createdAt", order) as Prisma.ProfileChangeOrderByWithRelationInput[],
+      take: EXPORT_MAX_ROWS,
+      include: { employee: PERSON_VIEW, decidedBy: NAMED },
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_PROFILE_CHANGES,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "profile-changes",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
+    // The parts of a field in the order the register reads them, as one cell.
+    const valuesOf = (row: ProfileChange, values: Prisma.JsonValue | null) =>
+      PROFILE_FIELDS[row.field].columns
+        .map((column) => ((values ?? {}) as ProfileValues)[column] ?? "")
+        .filter((one) => one !== "")
+        .join(" · ");
+    return toExcelCsv(
+      EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.field,
+        valuesOf(row, row.oldValue),
+        valuesOf(row, row.newValue),
+        row.reason ?? "",
+        row.createdAt.toISOString(),
+        row.state,
+        nameOf(row.decidedBy) ?? "",
+        row.decidedAt?.toISOString() ?? "",
+        row.note ?? "",
+      ]),
+    );
+  }
+
+  private async selected(
+    viewer: Viewer,
+    query: ListProfileChangesDto,
+  ): Promise<{ where: Prisma.ProfileChangeWhereInput; order: Order }> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "PENDING";
+    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
+    const where = {
+      AND: [
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        await this.audience.inboxNarrowing(viewer, "PROFILE_CHANGES", waiting, query.employeeId),
+        query.state ? { state: query.state } : {},
+        query.field ? { field: query.field } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.ProfileChangeWhereInput;
+    return { where, order: query.order ?? (waiting ? "asc" : "desc") };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpStatus,
   Param,
   ParseIntPipe,
@@ -20,6 +21,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiTags,
 } from "@nestjs/swagger";
 import type { AllowanceType, Dependent } from "@prisma/client";
@@ -35,6 +37,7 @@ import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { Reach } from "../../common/scope/reach.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { THROTTLE } from "../auth/auth.types.js";
+import { QUEUE_DESKS } from "../leave/queue-filter.js";
 import {
   CompensationService,
   type PayRecord,
@@ -178,6 +181,18 @@ export class CompensationController {
     @Query() query: ListDependentsDto,
   ): Promise<Page<QueuedDependent>> {
     return this.pay.dependentQueue(viewer, query);
+  }
+
+  @Get("dependents/export")
+  @RateBucket(THROTTLE.heavy)
+  @Roles(...QUEUE_DESKS.dependents)
+  @Reach("person")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @ApiProduces("text/csv")
+  @ApiOperation({ summary: "The dependants list under the same filter, as a file Excel opens" })
+  @ApiOkResponse({ description: "CSV with a byte order mark", schema: { type: "string" } })
+  exportDependents(@CurrentViewer() viewer: Viewer, @Query() query: ListDependentsDto): Promise<string> {
+    return this.pay.exportDependents(viewer, query);
   }
 
   @Get("dependents/:id")

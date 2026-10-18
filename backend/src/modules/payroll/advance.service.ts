@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, SalaryAdvance } from "@prisma/client";
 
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -10,6 +11,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
+import type { Order } from "../leave/dto/queue.dto.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -25,6 +27,10 @@ import { namesOf } from "../notifications/notifications.service.js";
 import type { DecideAdvanceDto, ListAdvancesDto, RequestAdvanceDto } from "./dto/advance.dto.js";
 
 const SORT_FIELD = "requestedAt";
+const EXPORT_COLUMNS = [
+  "code", "fullName", "department", "amount", "reason", "createdAt", "state",
+  "decidedBy", "decidedAt", "decisionNote", "paidAt", "settledAt",
+];
 // Money handed out and not yet taken back by a payslip.
 const OWED: SalaryAdvance["state"][] = ["APPROVED", "PAID"];
 
@@ -51,22 +57,7 @@ export class AdvanceService {
 
   async list(viewer: Viewer, query: ListAdvancesDto): Promise<Page<AdvanceRow>> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const person = await personWhere(this.db, query);
-    const own =
-      query.state === "PENDING"
-        ? await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_DECIDE", true, query.employeeId)
-        : await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_PAY", query.state === "APPROVED", query.employeeId);
-    const where = {
-      AND: [
-        ScopeService.ownedWhere(viewer, visible),
-        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
-        own,
-        query.state ? { state: query.state } : {},
-        person ? { employee: person } : {},
-        filedBetween(SORT_FIELD, query, this.config.get("APP_TIMEZONE", { infer: true })),
-      ],
-    } as Prisma.SalaryAdvanceWhereInput;
-    const order = query.order ?? (query.state === "PENDING" || query.state === "APPROVED" ? "asc" : "desc");
+    const { where, order } = await this.selected(viewer, query, visible);
     const resumed = query.cursor
       ? { AND: [where, resumeAfter(SORT_FIELD, order, query.cursor) as Prisma.SalaryAdvanceWhereInput] }
       : where;
@@ -85,6 +76,66 @@ export class AdvanceService {
       rows: await this.withContext(rows, visible === null),
       next: nextCursor(rows, query.take, (row) => row.requestedAt),
     };
+  }
+
+  /** The list under the same filter, as a file Excel opens (KEHOACH 9.15). */
+  async exportCsv(viewer: Viewer, query: ListAdvancesDto): Promise<string> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const { where, order } = await this.selected(viewer, query, visible);
+    const rows = await this.db.salaryAdvance.findMany({
+      where,
+      include: { employee: PERSON_VIEW },
+      orderBy: sortedBy(SORT_FIELD, order) as Prisma.SalaryAdvanceOrderByWithRelationInput[],
+      take: EXPORT_MAX_ROWS,
+    });
+    const named = await namesOf(this.db, rows.map((row) => row.decidedById));
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_ADVANCES,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "advances",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
+    return toExcelCsv(
+      EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.amount.toFixed(0),
+        row.reason,
+        row.requestedAt.toISOString(),
+        row.state,
+        (row.decidedById ? named.get(row.decidedById) : null) ?? "",
+        row.decidedAt?.toISOString() ?? "",
+        row.decisionNote ?? "",
+        row.paidAt?.toISOString() ?? "",
+        row.settledAt?.toISOString() ?? "",
+      ]),
+    );
+  }
+
+  private async selected(
+    viewer: Viewer,
+    query: ListAdvancesDto,
+    visible: number[] | null,
+  ): Promise<{ where: Prisma.SalaryAdvanceWhereInput; order: Order }> {
+    const person = await personWhere(this.db, query);
+    const own =
+      query.state === "PENDING"
+        ? await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_DECIDE", true, query.employeeId)
+        : await this.audience.inboxNarrowing(viewer, "ADVANCES_TO_PAY", query.state === "APPROVED", query.employeeId);
+    const where = {
+      AND: [
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        own,
+        query.state ? { state: query.state } : {},
+        person ? { employee: person } : {},
+        filedBetween(SORT_FIELD, query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.SalaryAdvanceWhereInput;
+    return { where, order: query.order ?? (query.state === "PENDING" || query.state === "APPROVED" ? "asc" : "desc") };
   }
 
   // Pay and debts are what the desk weighs an advance against (KEHOACH 9.15), computed for nobody else.

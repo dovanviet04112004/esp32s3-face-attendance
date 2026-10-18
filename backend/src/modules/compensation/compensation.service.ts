@@ -17,6 +17,7 @@ import {
 import { departmentSubtree } from "../../common/scope/department-subtree.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import type { Env } from "../../config/env.schema.js";
@@ -33,6 +34,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { namesOf } from "../notifications/notifications.service.js";
+import type { Order } from "../leave/dto/queue.dto.js";
 import {
   PERSON_VIEW,
   QUEUE_DESKS,
@@ -54,6 +56,11 @@ import {
 } from "./dto/compensation.dto.js";
 
 export type PayRecord = CompensationRecord & { allowances: CompensationAllowance[] };
+
+const DEPENDENT_EXPORT_COLUMNS = [
+  "code", "fullName", "department", "dependentName", "relation", "fromMonth", "toMonth",
+  "createdAt", "state", "decidedBy", "decidedAt", "decisionNote",
+];
 
 type ListedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
@@ -441,8 +448,61 @@ export class CompensationService {
    *  with every state (KEHOACH 9.15). An approval nobody can find is an approval that never happens.
    */
   async dependentQueue(viewer: Viewer, query: ListDependentsDto): Promise<Page<QueuedDependent>> {
+    const { where, order } = await this.dependentsSelected(viewer, query);
+    const [rows, found] = await Promise.all([
+      this.db.dependent.findMany({
+        where: { AND: [where, resumeAfter("createdAt", order, query.cursor)] },
+        include: { employee: PERSON_VIEW },
+        orderBy: sortedBy("createdAt", order),
+        take: query.take,
+      }),
+      this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    return { rows: await this.named(rows), ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
+  }
+
+  /** The register's dependants under the same filter, as a file Excel opens; no identity numbers (KEHOACH 9.15). */
+  async exportDependents(viewer: Viewer, query: ListDependentsDto): Promise<string> {
+    const { where, order } = await this.dependentsSelected(viewer, query);
+    const rows = await this.named(
+      await this.db.dependent.findMany({
+        where,
+        include: { employee: PERSON_VIEW },
+        orderBy: sortedBy("createdAt", order),
+        take: EXPORT_MAX_ROWS,
+      }),
+    );
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_DEPENDENTS,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "dependents",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
+    return toExcelCsv(
+      DEPENDENT_EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.fullName,
+        row.relation,
+        asDay(row.fromMonth).slice(0, 7),
+        asDay(row.toMonth)?.slice(0, 7) ?? "",
+        row.createdAt.toISOString(),
+        row.state,
+        row.decidedByName ?? "",
+        row.decidedAt?.toISOString() ?? "",
+        row.decisionNote ?? "",
+      ]),
+    );
+  }
+
+  private async dependentsSelected(
+    viewer: Viewer,
+    query: ListDependentsDto,
+  ): Promise<{ where: Prisma.DependentWhereInput; order: Order }> {
     const waiting = query.state === "PENDING";
-    const order = query.order ?? (waiting ? "asc" : "desc");
     const [visible, person] = await Promise.all([
       this.scope.deskOrSelfEmployeeIds(viewer),
       personWhere(this.db, query),
@@ -457,16 +517,7 @@ export class CompensationService {
         filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
       ],
     };
-    const [rows, found] = await Promise.all([
-      this.db.dependent.findMany({
-        where: { AND: [where, resumeAfter("createdAt", order, query.cursor)] },
-        include: { employee: PERSON_VIEW },
-        orderBy: sortedBy("createdAt", order),
-        take: query.take,
-      }),
-      this.db.dependent.count({ where, take: COUNT_CEILING + 1 }),
-    ]);
-    return { rows: await this.named(rows), ...countedTo(found), next: nextCursor(rows, query.take, (row) => row.createdAt) };
+    return { where, order: query.order ?? (waiting ? "asc" : "desc") };
   }
 
   private async named(rows: ListedDependent[]): Promise<QueuedDependent[]> {

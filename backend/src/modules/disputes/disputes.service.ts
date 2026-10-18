@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import type { PayslipDispute, Prisma } from "@prisma/client";
 
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -22,9 +23,14 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { NAMED, nameOf } from "../notifications/notifications.service.js";
+import type { Order } from "../leave/dto/queue.dto.js";
 import type { AnswerDisputeDto, ListDisputesDto, RaiseDisputeDto } from "./dto/dispute.dto.js";
 
 const ANSWERERS = QUEUE_DESKS.disputes;
+const EXPORT_COLUMNS = [
+  "code", "fullName", "department", "period", "line", "claim",
+  "createdAt", "state", "decidedBy", "decidedAt", "outcome", "answer",
+];
 
 const DISPUTE_VIEW = {
   employee: PERSON_VIEW,
@@ -100,23 +106,7 @@ export class DisputesService {
 
   /** Pay disputes are pay-type data: the desk reads all, everyone else their own (KEHOACH 9.4). */
   async list(viewer: Viewer, query: ListDisputesDto): Promise<Page<DisputeRow>> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const person = await personWhere(this.db, query);
-    const waiting = query.state === "OPEN" || query.overdue === true;
-    // Spread would let a later key overwrite `state` and quietly answer a
-    // different question than the one asked.
-    const where = {
-      AND: [
-        ScopeService.ownedWhere(viewer, visible),
-        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
-        await this.audience.inboxNarrowing(viewer, "DISPUTES", waiting, query.employeeId),
-        query.state ? { state: query.state } : {},
-        query.overdue ? { state: "OPEN", dueAt: { lt: new Date() } } : {},
-        person ? { employee: person } : {},
-        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
-      ],
-    } as Prisma.PayslipDisputeWhereInput;
-    const order = query.order ?? (waiting ? "asc" : "desc");
+    const { where, order } = await this.selected(viewer, query);
     const resumed = query.cursor
       ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.PayslipDisputeWhereInput] }
       : where;
@@ -136,6 +126,64 @@ export class DisputesService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** The list under the same filter, as a file Excel opens (KEHOACH 9.15). */
+  async exportCsv(viewer: Viewer, query: ListDisputesDto): Promise<string> {
+    const { where, order } = await this.selected(viewer, query);
+    const rows = await this.db.payslipDispute.findMany({
+      where,
+      orderBy: sortedBy("createdAt", order) as Prisma.PayslipDisputeOrderByWithRelationInput[],
+      take: EXPORT_MAX_ROWS,
+      include: { ...DISPUTE_VIEW, answeredBy: NAMED },
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_DISPUTES,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "disputes",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
+    return toExcelCsv(
+      EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        `${row.payslip.period.year}-${String(row.payslip.period.month).padStart(2, "0")}`,
+        row.lineCode ?? "",
+        row.claim,
+        row.createdAt.toISOString(),
+        row.state,
+        nameOf(row.answeredBy) ?? "",
+        row.answeredAt?.toISOString() ?? "",
+        row.outcome ?? "",
+        row.answer ?? "",
+      ]),
+    );
+  }
+
+  private async selected(
+    viewer: Viewer,
+    query: ListDisputesDto,
+  ): Promise<{ where: Prisma.PayslipDisputeWhereInput; order: Order }> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "OPEN" || query.overdue === true;
+    // Spread would let a later key overwrite `state` and quietly answer a
+    // different question than the one asked.
+    const where = {
+      AND: [
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        await this.audience.inboxNarrowing(viewer, "DISPUTES", waiting, query.employeeId),
+        query.state ? { state: query.state } : {},
+        query.overdue ? { state: "OPEN", dueAt: { lt: new Date() } } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.PayslipDisputeWhereInput;
+    return { where, order: query.order ?? (waiting ? "asc" : "desc") };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */

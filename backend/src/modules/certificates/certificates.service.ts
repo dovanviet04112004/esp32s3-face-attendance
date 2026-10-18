@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import type { Certificate, PayslipState, Prisma } from "@prisma/client";
 
+import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
@@ -24,9 +25,14 @@ import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import { asDay, localDay } from "../timesheet/local-day.js";
 import { letterFor, type Earnings } from "./certificate-text.js";
+import type { Order } from "../leave/dto/queue.dto.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
 
 const DESK = QUEUE_DESKS.certificates;
+const EXPORT_COLUMNS = [
+  "code", "fullName", "department", "kind", "purpose", "months",
+  "createdAt", "state", "decidedBy", "decidedAt", "serial", "note",
+];
 const SERIAL_DIGITS = 5;
 const DEFAULT_MONTHS = 3;
 // Every state a slip reaches once it has gone out; opening it does not unsay the income.
@@ -79,22 +85,7 @@ export class CertificatesService {
 
   /** Letters are pay-type data: the desk reads all, everyone else their own (KEHOACH 9.4). */
   async list(viewer: Viewer, query: ListCertificatesDto): Promise<Page<CertificateRow>> {
-    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
-    const person = await personWhere(this.db, query);
-    const waiting = query.state === "REQUESTED";
-    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
-    const where = {
-      AND: [
-        ScopeService.ownedWhere(viewer, visible),
-        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
-        await this.audience.inboxNarrowing(viewer, "CERTIFICATES", waiting, query.employeeId),
-        query.state ? { state: query.state } : {},
-        query.kind ? { kind: query.kind } : {},
-        person ? { employee: person } : {},
-        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
-      ],
-    } as Prisma.CertificateWhereInput;
-    const order = query.order ?? (waiting ? "asc" : "desc");
+    const { where, order } = await this.selected(viewer, query);
     const resumed = query.cursor
       ? { AND: [where, resumeAfter("createdAt", order, query.cursor) as Prisma.CertificateWhereInput] }
       : where;
@@ -114,6 +105,65 @@ export class CertificatesService {
       ...countedTo(found),
       next: nextCursor(rows, query.take, (row) => row.createdAt),
     };
+  }
+
+  /** The list under the same filter, as a file Excel opens (KEHOACH 9.15). */
+  async exportCsv(viewer: Viewer, query: ListCertificatesDto): Promise<string> {
+    const { where, order } = await this.selected(viewer, query);
+    const rows = await this.db.certificate.findMany({
+      where,
+      orderBy: sortedBy("createdAt", order) as Prisma.CertificateOrderByWithRelationInput[],
+      take: EXPORT_MAX_ROWS,
+      include: { employee: PERSON_VIEW, issuedBy: NAMED },
+    });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: AUDIT_ACTIONS.EXPORT_CERTIFICATES,
+      subject: AUDIT_SUBJECTS.EXPORT,
+      subjectId: "certificates",
+      meta: { filters: { ...query }, rows: rows.length },
+    });
+    // A refusal stamps no issue time, so the last write dates it.
+    const decidedAt = (row: Certificate) => (row.state === "ISSUED" ? row.issuedAt : row.state === "REJECTED" ? row.updatedAt : null);
+    return toExcelCsv(
+      EXPORT_COLUMNS,
+      rows.map((row) => [
+        row.employee.code,
+        row.employee.fullName,
+        row.employee.department?.name ?? "",
+        row.kind,
+        row.purpose,
+        row.months?.toString() ?? "",
+        row.createdAt.toISOString(),
+        row.state,
+        nameOf(row.issuedBy) ?? "",
+        decidedAt(row)?.toISOString() ?? "",
+        row.serial ?? "",
+        row.note ?? "",
+      ]),
+    );
+  }
+
+  private async selected(
+    viewer: Viewer,
+    query: ListCertificatesDto,
+  ): Promise<{ where: Prisma.CertificateWhereInput; order: Order }> {
+    const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
+    const person = await personWhere(this.db, query);
+    const waiting = query.state === "REQUESTED";
+    // Every clause names employeeId, so an AND keeps the narrowest rather than letting one replace another.
+    const where = {
+      AND: [
+        ScopeService.ownedWhere(viewer, visible),
+        query.employeeId === undefined ? {} : { employeeId: query.employeeId },
+        await this.audience.inboxNarrowing(viewer, "CERTIFICATES", waiting, query.employeeId),
+        query.state ? { state: query.state } : {},
+        query.kind ? { kind: query.kind } : {},
+        person ? { employee: person } : {},
+        filedBetween("createdAt", query, this.config.get("APP_TIMEZONE", { infer: true })),
+      ],
+    } as Prisma.CertificateWhereInput;
+    return { where, order: query.order ?? (waiting ? "asc" : "desc") };
   }
 
   /** One record through the list's own scope, so the inbox opens it wherever it sits in the queue (KEHOACH 9.21.4). */

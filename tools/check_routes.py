@@ -42,8 +42,8 @@ OPEN: dict[str, str] = {
 VERBS = re.compile(r'^\s*@(Get|Post|Patch|Put|Delete)\(\s*"?([^"),]*)"?')
 ROLES = re.compile(r"@Roles\(([^)]*)\)")
 REACH = re.compile(r"@Reach\(")
-# The desk roles, by name or through the role list the import route spreads.
-DESK = re.compile(r'"HR"|"PAYROLL"|IMPORT_ROLES')
+# The desk roles, by name or through a role list a route spreads.
+DESK = re.compile(r'"HR"|"PAYROLL"|IMPORT_ROLES|QUEUE_DESKS')
 SIGNATURE_END = re.compile(r"\)\s*:")
 
 

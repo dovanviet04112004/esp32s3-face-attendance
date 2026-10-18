@@ -154,6 +154,11 @@ export const AUDIT_ACTIONS = {
   EXPORT_LEDGER: "export.ledger",
   EXPORT_D02: "export.d02",
   EXPORT_REQUESTS: "export.requests",
+  EXPORT_DISPUTES: "export.disputes",
+  EXPORT_CERTIFICATES: "export.certificates",
+  EXPORT_PROFILE_CHANGES: "export.profileChanges",
+  EXPORT_DEPENDENTS: "export.dependents",
+  EXPORT_ADVANCES: "export.advances",
   EXPORT_TIMESHEET: "export.timesheet",
   EXPORT_ASSETS: "export.assets",
 
