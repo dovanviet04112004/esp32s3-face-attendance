@@ -232,6 +232,8 @@ describe("a payslip that comes short (e2e)", () => {
     assert.ok(locked.status < 300, JSON.stringify(locked.body));
     const kept = await db.payrollPeriod.findUniqueOrThrow({ where: { id: marchId } });
     assert.equal(kept.lockNote, LOCK_NOTE, "the lock kept no reason for the items it accepted");
+    const filed = await db.auditLog.findFirstOrThrow({ where: { action: "payroll.lock", subjectId: marchId } });
+    assert.equal((filed.meta as { note?: string } | null)?.note, LOCK_NOTE, "the audit log does not say why the lock passed");
 
     const owed = await db.retroAdjustment.findMany({ where: { employeeId: { in: [...idOf.values()] } } });
     assert.equal(owed.length, 1, "the lock carried other than the one short slip that has a next period");
