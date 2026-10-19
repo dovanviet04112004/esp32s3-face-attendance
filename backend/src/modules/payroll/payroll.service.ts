@@ -554,7 +554,7 @@ export class PayrollService {
             state: "LOCKED",
             lockedAt: new Date(),
             lockedById: viewer.userId,
-            lockNote: body.note ?? null,
+            lockNote: body.note?.trim() || null,
           },
         });
         if (shut.count === 0) {
@@ -622,7 +622,7 @@ export class PayrollService {
       action: AUDIT_ACTIONS.PAYROLL_LOCK,
       subject: AUDIT_SUBJECTS.PAYROLL,
       subjectId: periodId,
-      meta: { openItems: open.map((item) => item.code) },
+      meta: { openItems: open.map((item) => item.code), note: locked.lockNote },
     });
     // Bonus and final runs stand on the regular slip (KEHOACH 9.18), so the oldest is the one to open.
     const told = await this.db.payslip.findMany({
