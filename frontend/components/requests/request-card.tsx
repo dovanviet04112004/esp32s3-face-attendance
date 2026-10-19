@@ -151,13 +151,14 @@ export function useRequestWords() {
       return row.fromDate.slice(0, 10) === row.toDate.slice(0, 10) ? from : `${from} → ${format.dateTime(dayOnly(row.toDate), "day")}`;
     },
     extent: (row: RequestRow) => {
-      if (row.kind === "ATTENDANCE_FIX" && (row.fromAt || row.toAt)) {
-        return [row.fromAt ? t("fixIn", { time: clock(row.fromAt) }) : null, row.toAt ? t("fixOut", { time: clock(row.toAt) }) : null]
-          .filter(Boolean)
-          .join(" · ");
-      }
       if (row.fromAt && row.toAt) {
         return `${clock(row.fromAt)} – ${clock(row.toAt)}`;
+      }
+      if (row.kind === "ATTENDANCE_FIX" && row.fromAt) {
+        return t("fixIn", { time: clock(row.fromAt) });
+      }
+      if (row.kind === "ATTENDANCE_FIX" && row.toAt) {
+        return t("fixOut", { time: clock(row.toAt) });
       }
       if (row.minutes > 0) {
         return minutes(row.minutes, locale);
