@@ -1,14 +1,14 @@
 "use client";
 
 import { Banner, Button, LayerDialog, Select } from "@cloudflare/kumo";
-import { ArrowRightIcon, PlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, InfoIcon, PlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useState } from "react";
 
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { DateField } from "@/components/ui/date-field";
-import { MonthPicker, monthOrder, periodName, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
+import { MonthPicker, monthKey, monthOrder, periodName, shiftMonth, thisMonth, type Month } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -200,6 +200,7 @@ export default function PayrollPage() {
   ];
 
   const entityItems: Record<string, string> = Object.fromEntries(entityList.map((one) => [one.id, one.name]));
+  const notYet = monthOrder(month) > monthOrder(thisMonth());
 
   return (
     <>
@@ -288,8 +289,15 @@ export default function PayrollPage() {
               ) : null}
               <div className="flex flex-col gap-1.5">
                 <span className="font-medium">{t("month")}</span>
-                <MonthPicker value={month} onChange={setMonth} />
+                <MonthPicker value={month} onChange={setMonth} max={thisMonth()} />
               </div>
+              {notYet ? (
+                <Banner
+                  size="sm"
+                  icon={<InfoIcon weight="fill" />}
+                  title={t("openNotYet", { period: periodName(month), day: format.dateTime(dayOnly(`${monthKey(month)}-01`), "day") })}
+                />
+              ) : null}
               <DateField
                 label={t("payDate")}
                 value={payDate}
@@ -301,7 +309,7 @@ export default function PayrollPage() {
             </div>
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary loading={open.isPending} onClick={() => open.mutate()}>
+            <LayerDialog.Actions.Primary loading={open.isPending} disabled={notYet} onClick={() => open.mutate()}>
               {t("openPeriodN", { period: periodName(month) })}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>

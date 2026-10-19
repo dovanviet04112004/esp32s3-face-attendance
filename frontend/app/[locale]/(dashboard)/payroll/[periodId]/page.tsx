@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Checkbox, Empty, Input, LayerCard, LayerDialog, Radio } from "@cloudflare/kumo";
+import { Banner, Button, Checkbox, Empty, Input, LayerCard, LayerDialog, Radio, Textarea } from "@cloudflare/kumo";
 import {
   CalculatorIcon,
   CheckCircleIcon,
@@ -14,12 +14,14 @@ import {
   TrashIcon,
   WalletIcon,
   WarningCircleIcon,
+  WarningIcon,
 } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { QUEUE_ROLES } from "@/components/nav/waiting-count";
 import { BonusSheet } from "@/components/payroll/bonus-sheet";
 import { PayslipView, type Payslip } from "@/components/payroll/payslip-view";
 import { RunProgress, type PayrollRun, type RunKind } from "@/components/payroll/run-progress";
@@ -33,12 +35,12 @@ import { useOptional } from "@/components/ui/optional";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { CountPill, StatePill, type Tone } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { api, saveCsv } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-import { money } from "@/lib/format";
+import { addDays, dayOnly, money, todayIso } from "@/lib/format";
 import { allows } from "@/lib/nav";
 import { useUrlState } from "@/lib/url-state";
 
@@ -52,7 +54,13 @@ interface Period {
   year: number;
   month: number;
   state: "OPEN" | "LOCKED" | "PAID";
+  endDate: string;
   lockNote: string | null;
+}
+
+interface HeldPunches {
+  closedPeriod: number;
+  late: number;
 }
 
 interface Totals {
@@ -127,6 +135,7 @@ const KIND_HINT: Record<RunKind, "runREGULARHint" | "runBONUSHint" | "runFINAL_S
 const kRunPollMs = 2_000;
 const kSlipPage = 50;
 const kLabelMax = 120;
+const kLockNoteMax = 500;
 
 type StepKey = "run" | "check" | "lock" | "pay" | "deliver";
 type StepState = "done" | "current" | "later";
@@ -196,6 +205,8 @@ function PayrollPeriod() {
   const notify = useNotify();
   const faultOf = useFault();
   const optional = useOptional();
+  const router = useRouter();
+  const attendance = useTranslations("attendance");
 
   const [url, setUrl] = useUrlState({ q: "", run: "", open: "" });
   const [typed, setTyped] = useState(url.q);
@@ -212,6 +223,7 @@ function PayrollPeriod() {
   const [locking, setLocking] = useState(false);
   const [discarding, setDiscarding] = useState<PayrollRun | null>(null);
   const [accept, setAccept] = useState(false);
+  const [lockNote, setLockNote] = useState("");
   const [paying, setPaying] = useState(false);
   const [sending, setSending] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
@@ -229,6 +241,12 @@ function PayrollPeriod() {
   const checklist = useQuery({
     queryKey: ["payroll-periods", periodId, "checklist"],
     queryFn: async () => (await api.get<ChecklistItem[]>(`/payroll-periods/${periodId}/checklist`)).data,
+  });
+
+  // Under "attendance", so a punch held or decided anywhere refreshes the count.
+  const held = useQuery({
+    queryKey: ["attendance", "held", "period", periodId],
+    queryFn: async () => (await api.get<HeldPunches>(`/payroll-periods/${periodId}/held-punches`)).data,
   });
 
   const runs = useQuery({
@@ -351,7 +369,8 @@ function PayrollPeriod() {
   });
 
   const lock = useMutation({
-    mutationFn: () => api.post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: accept }),
+    mutationFn: () =>
+      api.post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: accept, note: accept ? lockNote.trim() : undefined }),
     onSuccess: () => {
       setLocking(false);
       notify.done(t("lockDone", { period: name }));
@@ -447,19 +466,35 @@ function PayrollPeriod() {
   };
   const order: StepKey[] = ["run", "check", "lock", "pay", "deliver"];
   const current = period ? order.find((key) => !doneOf[key]) : undefined;
+  const lockDay = period ? addDays(period.endDate.slice(0, 10), 1) : "";
+  const ended = lockDay !== "" && lockDay <= todayIso();
   const lockButton = mayWrite ? (
-    <Button
-      variant="secondary"
-      icon={LockSimpleIcon}
-      className="self-start"
-      onClick={() => {
-        setAccept(false);
-        begin(setLocking);
-      }}
-    >
-      {t("lockAction")}
-    </Button>
+    <>
+      <Button
+        variant="secondary"
+        icon={LockSimpleIcon}
+        className="self-start"
+        disabled={!ended}
+        onClick={() => {
+          setAccept(false);
+          setLockNote("");
+          begin(setLocking);
+        }}
+      >
+        {t("lockAction")}
+      </Button>
+      {ended ? null : <p className="text-sm text-kumo-subtle">{t("lockFrom", { day: format.dateTime(dayOnly(lockDay), "day") })}</p>}
+    </>
   ) : null;
+  const heldClosed = held.data?.closedPeriod ?? 0;
+  const heldLate = held.data?.late ?? 0;
+  const mayReview = role !== null && QUEUE_ROLES.punches.includes(role);
+  const heldWhy = [
+    heldClosed > 0 ? t("heldClosed", { count: heldClosed }) : null,
+    heldLate > 0 ? attendance("heldLate", { count: heldLate }) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const bodyOf: Record<StepKey, ReactNode> = {
     run:
@@ -626,6 +661,27 @@ function PayrollPeriod() {
         }
       >
         <div className="flex flex-col gap-8">
+          {heldClosed + heldLate > 0 ? (
+            <Banner
+              variant="alert"
+              icon={<WarningIcon weight="fill" />}
+              title={t("heldTitle", { count: heldClosed + heldLate })}
+              description={
+                <>
+                  {heldWhy}
+                  <span className="block">{t(open ? "heldOpen" : "heldLocked")}</span>
+                  {mayReview ? null : <span className="block">{attendance("heldWho")}</span>}
+                </>
+              }
+              action={
+                mayReview ? (
+                  <Banner.Action variant="secondary" onClick={() => router.push("/approvals?tab=punches")}>
+                    {attendance("heldGo")}
+                  </Banner.Action>
+                ) : undefined
+              }
+            />
+          ) : null}
           <section className="flex flex-col gap-3">
             <h2 className="m-0 flex items-center gap-2 text-lg font-semibold">
               {t("runs")}
@@ -882,6 +938,16 @@ function PayrollPeriod() {
                     ))}
                   </ul>
                   <Checkbox label={t("acceptOpen")} checked={accept} onCheckedChange={(next) => setAccept(next === true)} />
+                  {accept ? (
+                    <Textarea
+                      label={t("lockNote")}
+                      description={t("lockNoteHint")}
+                      rows={3}
+                      maxLength={kLockNoteMax}
+                      value={lockNote}
+                      onValueChange={setLockNote}
+                    />
+                  ) : null}
                 </>
               ) : (
                 <p className="text-kumo-subtle">{t("checklistClearHint")}</p>
@@ -893,7 +959,7 @@ function PayrollPeriod() {
             <LayerDialog.Actions.Primary
               variant="destructive"
               loading={lock.isPending}
-              disabled={openItems.length > 0 && !accept}
+              disabled={openItems.length > 0 && (!accept || lockNote.trim() === "")}
               onClick={() => lock.mutate()}
             >
               {t("lockGo", { period: name })}
