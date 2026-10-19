@@ -298,16 +298,19 @@ function Accounts() {
     {
       id: "role",
       header: t("role"),
-      cell: (row) => (
-        <div className="flex flex-col items-start gap-1">
-          <StatePill>{roleName(row.role)}</StatePill>
-          {DESKS.has(row.role) ? (
-            <span className="text-sm text-kumo-subtle">
-              {row.entities.length > 0 ? row.entities.map((one) => one.code).join(", ") : t("wholeGroup")}
-            </span>
-          ) : null}
-        </div>
-      ),
+      cell: (row) => {
+        const reach = row.entities.length > 0 ? row.entities.map((one) => one.code).join(", ") : t("wholeGroup");
+        return (
+          <span className="flex items-center gap-2">
+            <StatePill>{roleName(row.role)}</StatePill>
+            {DESKS.has(row.role) ? (
+              <span title={reach} className="max-w-40 truncate text-sm text-kumo-subtle">
+                {reach}
+              </span>
+            ) : null}
+          </span>
+        );
+      },
     },
     {
       id: "status",
