@@ -123,7 +123,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, [CODE, OTHER, CLERK]);
-    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, HR_EMAIL, CLERK_EMAIL] } } });
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, HR_EMAIL, CLERK_EMAIL, PERSONAL, MOVED] } } });
     await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER, CLERK] } } });
     await db.payrollPeriod.deleteMany({ where: { year: YEAR } });
   }
@@ -244,6 +244,14 @@ describe("changing a personal detail through an approval (e2e)", () => {
     assert.equal(res.body.message, "PROFILE_FIELD_EMPTY");
   });
 
+  it("refuses a contact email that already signs in to another account", async () => {
+    const res = await request(http)
+      .post("/profile-changes")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ field: "PERSONAL_EMAIL", personalEmail: OTHER_EMAIL.toUpperCase() });
+    assert.deepEqual([res.status, res.body.message], [409, "EMAIL_TAKEN"]);
+  });
+
   it("holds one waiting change per field", async () => {
     const res = await request(http)
       .post("/profile-changes")
@@ -335,6 +343,10 @@ describe("changing a personal detail through an approval (e2e)", () => {
       .set("Authorization", `Bearer ${desk}`);
     assert.equal(movedIt.status, 201);
     assert.equal((await held()).personalEmail, MOVED);
+    const login = await db.user.findUniqueOrThrow({ where: { employeeId } });
+    assert.equal(login.email, MOVED, "the sign-in address stayed behind the approved contact email");
+    const filed = await db.auditLog.findFirstOrThrow({ where: { action: "user.email", subjectId: login.id } });
+    assert.equal((filed.meta as { profileChangeId?: string } | null)?.profileChangeId, (askEmail.body as Change).id);
 
     const paid = await request(http)
       .post(`/profile-changes/${(askBank.body as Change).id}/approve`)
