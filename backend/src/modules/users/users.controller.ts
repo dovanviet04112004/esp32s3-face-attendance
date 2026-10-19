@@ -96,12 +96,15 @@ export class UsersController {
   @Post()
   @Roles("ADMIN")
   @AuditedInService()
-  @ApiOperation({ summary: "Open a login with any of the six roles and mail its one-time setup link" })
+  @ApiOperation({
+    summary: "Open a login with any of the six roles and mail its one-time setup link",
+    description: "One opened for a person signs in with the contact email on their record and keeps that record for life (KEHOACH 9.4).",
+  })
   @ApiCreatedResponse({ type: AccountView })
   @ApiBadRequestResponse({
     type: ErrorBody,
     description:
-      "ROLE_NEEDS_EMPLOYEE: EMPLOYEE and MANAGER need employeeId; DESK_NEEDS_EMPLOYEE: so do HR and PAYROLL; ENTITIES_NEED_DESK: only HR and PAYROLL answer for some entities",
+      "ROLE_NEEDS_EMPLOYEE: EMPLOYEE and MANAGER need employeeId; DESK_NEEDS_EMPLOYEE: so do HR and PAYROLL; ENTITIES_NEED_DESK: only HR and PAYROLL answer for some entities; EMAIL_FOLLOWS_PROFILE: an email sent with employeeId; NO_EMAIL: the record has no contact email",
   })
   @ApiNotFoundResponse({ type: ErrorBody, description: "EMPLOYEE_NOT_FOUND, LEGAL_ENTITY_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT, EMPLOYEE_HAS_LEFT" })
@@ -126,18 +129,18 @@ export class UsersController {
   @Roles("ADMIN")
   @AuditedInService()
   @ApiOperation({
-    summary: "Change role, lock or unlock, address, linked employee or the entities a desk answers for (KEHOACH 9.4)",
+    summary: "Change role, lock or unlock, the entities a desk answers for, or the address of an account with no employee record (KEHOACH 9.4)",
     description:
-      "Locking, a new role, a new employee link or a new list of entities signs the account out everywhere. Unlocking gives the old role back.",
+      "Locking, a new role or a new list of entities signs the account out everywhere. Unlocking gives the old role back. The employee record never changes once the account opens.",
   })
   @ApiParam(ACCOUNT_ID)
   @ApiOkResponse({ type: AccountView })
-  @ApiBadRequestResponse({ type: ErrorBody, description: "ROLE_NEEDS_EMPLOYEE, DESK_NEEDS_EMPLOYEE, ENTITIES_NEED_DESK" })
-  @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, EMPLOYEE_NOT_FOUND, LEGAL_ENTITY_NOT_FOUND" })
-  @ApiConflictResponse({
+  @ApiBadRequestResponse({
     type: ErrorBody,
-    description: "LAST_ADMIN, EMPLOYEE_HAS_LEFT, EMAIL_ALREADY_HAS_ACCOUNT, EMPLOYEE_HAS_ACCOUNT",
+    description: "ROLE_NEEDS_EMPLOYEE, DESK_NEEDS_EMPLOYEE, ENTITIES_NEED_DESK, EMAIL_FOLLOWS_PROFILE: the account has a record and signs in with its contact email",
   })
+  @ApiNotFoundResponse({ type: ErrorBody, description: "USER_NOT_FOUND, LEGAL_ENTITY_NOT_FOUND" })
+  @ApiConflictResponse({ type: ErrorBody, description: "LAST_ADMIN, EMPLOYEE_HAS_LEFT, EMAIL_ALREADY_HAS_ACCOUNT" })
   update(
     @Param("id") id: string,
     @Body() body: UpdateUserDto,

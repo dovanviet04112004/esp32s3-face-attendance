@@ -13,6 +13,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from "class-validator";
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
@@ -28,10 +29,16 @@ export const ACCOUNT_STATUSES = ["active", "locked", "pending"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
 export class CreateUserDto {
-  @ApiProperty({ description: "Sign-in address; the setup link is mailed there", example: "hr@kiosk.local", maxLength: EMAIL_MAX })
+  @ApiPropertyOptional({
+    description:
+      "Sign-in address of an account with no employee record; the setup link is mailed there. One opened for a person signs in with the contact email on their record, so leave it out then (KEHOACH 9.4)",
+    example: "admin2@kiosk.local",
+    maxLength: EMAIL_MAX,
+  })
+  @ValidateIf((body: CreateUserDto) => body.employeeId === undefined)
   @IsEmail()
   @MaxLength(EMAIL_MAX)
-  email!: string;
+  email?: string;
 
   @ApiProperty({
     enum: Role,
@@ -42,7 +49,7 @@ export class CreateUserDto {
   @IsEnum(Role)
   role!: Role;
 
-  @ApiPropertyOptional({ description: "The employee record this login acts as", example: 42 })
+  @ApiPropertyOptional({ description: "The employee record this login acts as, for as long as it exists (KEHOACH 9.4)", example: 42 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -64,7 +71,11 @@ export class CreateUserDto {
 }
 
 export class UpdateUserDto {
-  @ApiPropertyOptional({ maxLength: EMAIL_MAX, description: "New sign-in address", example: "hr2@kiosk.local" })
+  @ApiPropertyOptional({
+    maxLength: EMAIL_MAX,
+    description: "New sign-in address of an account with no employee record; one with a record follows its contact email (KEHOACH 9.4)",
+    example: "admin2@kiosk.local",
+  })
   @IsOptional()
   @IsEmail()
   @MaxLength(EMAIL_MAX)
@@ -84,12 +95,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
-
-  @ApiPropertyOptional({ type: Number, nullable: true, description: "null unlinks the employee record", example: 42 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  employeeId?: number | null;
 
   @ApiPropertyOptional({
     type: [String],

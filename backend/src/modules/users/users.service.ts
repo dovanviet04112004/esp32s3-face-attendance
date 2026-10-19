@@ -140,6 +140,7 @@ interface Linkable {
   id: number;
   locale: string;
   active: boolean;
+  personalEmail: string | null;
   login: { id: string } | null;
   _count: { reports: number };
 }
@@ -148,6 +149,7 @@ const LINKABLE = {
   id: true,
   locale: true,
   active: true,
+  personalEmail: true,
   login: { select: { id: true } },
   _count: { select: { reports: { where: { active: true } } } },
 } as const satisfies Prisma.EmployeeSelect;
@@ -572,15 +574,16 @@ export class UsersService {
     let person: Linkable | null = null;
     if (body.employeeId !== undefined) {
       person = await this.personFor(body.employeeId);
-      assertLinkable(person, null);
+      assertLinkable(person);
     }
+    const email = addressFor(person, body.email);
     const role = settledRole(body.role, person);
     const entityIds = (await this.entitiesFor(role, body.entityIds)) ?? [];
     let made: AccountRow;
     try {
       made = await this.db.user.create({
         data: {
-          email: body.email,
+          email,
           role,
           passwordHash: UNUSABLE_PASSWORD,
           employeeId: person?.id ?? null,
@@ -602,7 +605,7 @@ export class UsersService {
     return asAccount(made, null);
   }
 
-  /** Change an account's role, lock, address or employee link under the guards of KEHOACH 9.4. */
+  /** Change an account's role, lock or entities, or the address of one with no employee record, under the guards of KEHOACH 9.4. */
   async update(actorId: string, id: string, body: UpdateUserDto): Promise<AccountView> {
     const held = await this.db.user.findUnique({ where: { id }, select: ACCOUNT });
     if (!held) {
@@ -612,17 +615,15 @@ export class UsersService {
     if (id === actorId && (demotes || body.active === false)) {
       throw new ForbiddenException("SELF_ACCOUNT");
     }
-    const employeeId = body.employeeId === undefined ? held.employeeId : body.employeeId;
-    const relinks = employeeId !== held.employeeId;
-    const person = employeeId === null ? null : await this.personFor(employeeId);
-    if (person && relinks) {
-      assertLinkable(person, id);
+    if (body.email !== undefined && body.email !== held.email && held.employeeId !== null) {
+      throw new BadRequestException("EMAIL_FOLLOWS_PROFILE");
     }
+    const person = held.employeeId === null ? null : await this.personFor(held.employeeId);
     const unlocks = body.active === true && !held.active;
     if (unlocks && person && hasLeft(person)) {
       throw new ConflictException("EMPLOYEE_HAS_LEFT");
     }
-    const role = body.role !== undefined || relinks ? settledRole(body.role ?? held.role, person) : held.role;
+    const role = body.role !== undefined ? settledRole(body.role, person) : held.role;
     const before = entityIdsOf(held);
     const asked = await this.entitiesFor(role, body.entityIds);
     // A role off the desk answers for no entity; one staying keeps its list unless a new one is sent.
@@ -643,7 +644,7 @@ export class UsersService {
         }
         const updated = await tx.user.update({
           where: { id },
-          data: { ...(body.email ? { email: body.email } : {}), role, active, employeeId },
+          data: { ...(body.email ? { email: body.email } : {}), role, active },
           select: ACCOUNT,
         });
         if (!rescoped) {
@@ -658,8 +659,8 @@ export class UsersService {
       throw asTaken(error);
     }
 
-    // The token carries the role, the employee and the entities, so any of them moving ends every session (KEHOACH 9.23).
-    if (saved.role !== held.role || relinks || locking || rescoped) {
+    // The token carries the role and the entities, so either of them moving ends every session (KEHOACH 9.23).
+    if (saved.role !== held.role || locking || rescoped) {
       await this.auth.closeAll(id);
     }
     if (rescoped) {
@@ -697,13 +698,6 @@ export class UsersService {
     }
     if (saved.email !== held.email) {
       await this.audit.record({ ...entry, action: AUDIT_ACTIONS.USER_EMAIL });
-    }
-    if (saved.employeeId !== held.employeeId) {
-      await this.audit.record({
-        ...entry,
-        action: AUDIT_ACTIONS.USER_EMPLOYEE,
-        meta: { from: held.employeeId, to: saved.employeeId },
-      });
     }
     if (entityIdsOf(saved).join() !== entityIdsOf(held).join()) {
       await this.audit.record({
@@ -837,13 +831,30 @@ export class UsersService {
   }
 }
 
-function assertLinkable(person: Linkable, accountId: string | null): void {
+function assertLinkable(person: Linkable): void {
   if (hasLeft(person)) {
     throw new ConflictException("EMPLOYEE_HAS_LEFT");
   }
-  if (person.login && person.login.id !== accountId) {
+  if (person.login) {
     throw new ConflictException("EMPLOYEE_HAS_ACCOUNT");
   }
+}
+
+/** A person's account signs in with the contact email on their record; only one with no record takes a typed address (KEHOACH 9.4). */
+function addressFor(person: Linkable | null, typed: string | undefined): string {
+  if (person) {
+    if (typed !== undefined) {
+      throw new BadRequestException("EMAIL_FOLLOWS_PROFILE");
+    }
+    if (!person.personalEmail) {
+      throw new BadRequestException("NO_EMAIL");
+    }
+    return person.personalEmail;
+  }
+  if (typed === undefined) {
+    throw new BadRequestException("VALIDATION_FAILED");
+  }
+  return typed;
 }
 
 /** The role an account ends up with: EMPLOYEE and MANAGER are read off the org tree (KEHOACH 9.4). */
