@@ -439,6 +439,14 @@ export class RunView {
   createdAt!: string;
 }
 
+export class HeldPunchesView {
+  @ApiProperty({ example: 176, description: "Held because their day lies in a locked or paid period" })
+  closedPeriod!: number;
+
+  @ApiProperty({ example: 0, description: "Held because they reached the server more than the review window late" })
+  late!: number;
+}
+
 export class PeriodTotalsView {
   @ApiProperty({ example: 121, description: "Payslips counted" }) payslips!: number;
   @ApiProperty({ example: 118, description: "Distinct people among them" }) people!: number;

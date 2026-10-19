@@ -299,6 +299,8 @@ export interface TallyTotals {
   people: number;
   punches: number;
   unsyncedClock: number;
+  heldClosedPeriod: number;
+  heldLate: number;
 }
 
 export interface Expiring {
@@ -735,7 +737,16 @@ export class ReportsService {
       WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND ${countedPunchSql("a")}
         ${tallyFilter(people, query, this.zone)}
     `;
-    return summed;
+    // Held punches stay out of every count above, so the page says how many wait instead (KEHOACH 9.8).
+    const [held] = await this.db.$queryRaw<{ heldClosedPeriod: number; heldLate: number }[]>`
+      SELECT (count(*) FILTER (WHERE a."hold" = 'CLOSED_PERIOD'))::int AS "heldClosedPeriod",
+             (count(*) FILTER (WHERE a."hold" = 'LATE'))::int          AS "heldLate"
+      FROM "AttendanceRecord" a
+      JOIN "Employee" e ON e."id" = a."employeeId"
+      WHERE a."ts" >= ${from} AND a."ts" <= ${to} AND a."review" = 'PENDING'
+        ${tallyFilter(people, query, this.zone)}
+    `;
+    return { ...summed, ...held };
   }
 
   /** Hand a long roll-up to the queue; it outlives the request that asked. */

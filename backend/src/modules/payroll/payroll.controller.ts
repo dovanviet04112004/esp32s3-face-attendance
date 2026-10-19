@@ -49,6 +49,7 @@ import {
   PayslipPageView,
   PeriodTotalsView,
   PeriodView,
+  HeldPunchesView,
   PeriodsQueryDto,
   QueuedCount,
   RunView,
@@ -65,6 +66,7 @@ import {
   type BonusRow,
   type Delivery,
   type PayslipRow,
+  type HeldPunches,
   type PeriodTotals,
   type SettlementSheet,
   type TaxYearStatement,
@@ -108,6 +110,16 @@ export class PayrollController {
   @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
   checklist(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<ChecklistItem[]> {
     return this.payroll.checklistFor(viewer, id);
+  }
+
+  @Get("payroll-periods/:id/held-punches")
+  @Roles("ADMIN", "HR", "PAYROLL")
+  @Reach("entity")
+  @ApiOperation({ summary: "Punches of the period's days that wait on review, counted by hold reason (KEHOACH 9.8)" })
+  @ApiOkResponse({ type: HeldPunchesView })
+  @ApiParam({ name: "id", description: "Pay period id (UUID)", example: "da693adb-e137-44a8-8b1d-2f89ad567a26" })
+  heldPunches(@CurrentViewer() viewer: Viewer, @Param("id") id: string): Promise<HeldPunches> {
+    return this.payroll.heldPunches(viewer, id);
   }
 
   @Post("payroll-periods/:id/lock")

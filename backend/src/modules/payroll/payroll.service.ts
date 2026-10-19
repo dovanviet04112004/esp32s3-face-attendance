@@ -36,7 +36,7 @@ import { freeDays } from "../leave/leave.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
-import { asDay, localDay } from "../timesheet/local-day.js";
+import { asDay, dayWindow, localDay } from "../timesheet/local-day.js";
 import {
   calculate,
   taxOn,
@@ -158,6 +158,11 @@ export type PayslipRow = Payslip & {
   run: { kind: RunKind; state: RunState };
   advance: string;
 };
+
+export interface HeldPunches {
+  closedPeriod: number;
+  late: number;
+}
 
 /** What a period costs, over the payslips it issues or will issue on lock. */
 export interface PeriodTotals {
@@ -317,6 +322,23 @@ export class PayrollService {
       where: { ...(legalEntityId ? { legalEntityId } : {}), ...ScopeService.entityWhere(viewer, false) },
       orderBy: [{ year: "desc" }, { month: "desc" }],
     });
+  }
+
+  /** Punches of the period's days waiting on review, counted by hold reason (KEHOACH 9.8). */
+  async heldPunches(viewer: Viewer, periodId: string): Promise<HeldPunches> {
+    const period = await this.periodOf(viewer, periodId);
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    const rows = await this.db.attendanceRecord.groupBy({
+      by: ["hold"],
+      where: {
+        review: "PENDING",
+        ts: { gte: dayWindow(asDay(period.startDate), zone).from, lt: dayWindow(asDay(period.endDate), zone).to },
+        ...(period.legalEntityId ? { employee: { legalEntityId: period.legalEntityId } } : {}),
+      },
+      _count: { _all: true },
+    });
+    const countOf = (hold: string) => rows.find((row) => row.hold === hold)?._count._all ?? 0;
+    return { closedPeriod: countOf("CLOSED_PERIOD"), late: countOf("LATE") };
   }
 
   /** Open one entity's month: one open period an entity at a time, months only forward (KEHOACH 9.6). */

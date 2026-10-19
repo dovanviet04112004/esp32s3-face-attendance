@@ -268,6 +268,12 @@ export class TallyTotalsView {
   @ApiProperty({ example: 5280, description: "Punches in the range, questionable ones left out" }) punches!: number;
   @ApiProperty({ example: 7, description: "Of those, punches stamped by a clock that had not synced" })
   unsyncedClock!: number;
+
+  @ApiProperty({ example: 176, description: "Punches held for review because their day lies in a locked or paid period" })
+  heldClosedPeriod!: number;
+
+  @ApiProperty({ example: 0, description: "Punches held for review because they arrived past the review window" })
+  heldLate!: number;
 }
 
 export class ReportQueued {
