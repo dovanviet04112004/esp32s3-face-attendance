@@ -1,6 +1,6 @@
 "use client";
 
-import { Banner, Button, Empty, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
+import { Banner, Button, Empty, Input, LayerCard, LayerDialog, LinkButton, Select } from "@cloudflare/kumo";
 import {
   ArrowClockwiseIcon,
   ArrowUUpLeftIcon,
@@ -40,6 +40,7 @@ import { useLeaveBalances, type LeaveBalance } from "@/components/requests/reque
 import { DataTable, type Column } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -66,6 +67,8 @@ const PAPER_DESK = ["ADMIN", "HR", "PAYROLL"];
 const PEOPLE_DESK = ["ADMIN", "HR"];
 const FINISHERS = ["ADMIN", "HR", "MANAGER"];
 const kPunches = 20;
+const kContactEmailMax = 128;
+const kReasonMax = 500;
 
 type Tab = (typeof TABS)[number];
 
@@ -201,6 +204,7 @@ export default function EmployeePage() {
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const optional = useOptional();
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
   const id = Number(params.id);
@@ -223,6 +227,10 @@ export default function EmployeePage() {
   const [enrolFault, setEnrolFault] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawingFrom, setWithdrawingFrom] = useState<Standing | null>(null);
+  const [askingEmail, setAskingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [emailFault, setEmailFault] = useState<string | null>(null);
 
   function pick(next: string): void {
     router.replace(next === "info" ? `/employees/${id}` : `/employees/${id}?tab=${next}`, { scroll: false });
@@ -291,6 +299,29 @@ export default function EmployeePage() {
     },
     onError: notify.failed,
   });
+
+  const askEmail = useMutation({
+    mutationFn: () =>
+      api.post("/profile-changes", {
+        field: "PERSONAL_EMAIL",
+        personalEmail: newEmail.trim(),
+        employeeId: id,
+        ...(emailReason.trim() === "" ? {} : { reason: emailReason.trim() }),
+      }),
+    onSuccess: () => {
+      setAskingEmail(false);
+      notify.done(t("askEmailSent", { name: employee.data?.fullName ?? "" }));
+      void cache.invalidateQueries({ queryKey: ["profile-changes"] });
+    },
+    onError: (fell: unknown) => setEmailFault(faultOf(fell)),
+  });
+
+  function startAskingEmail(): void {
+    setNewEmail("");
+    setEmailReason("");
+    setEmailFault(null);
+    setAskingEmail(true);
+  }
 
   const balances = useLeaveBalances(id, todayIso(), tab === "leave");
 
@@ -474,6 +505,7 @@ export default function EmployeePage() {
           entities={entities.data ?? []}
           showBank={false}
           lockEmail
+          onAskEmail={startAskingEmail}
           showManager
           manager={person.manager}
           showOnboard={false}
@@ -803,6 +835,44 @@ export default function EmployeePage() {
           onDone={setLeft}
         />
       ) : null}
+
+      <LayerDialog.Root open={askingEmail} onOpenChange={setAskingEmail} dismissDisabled={askEmail.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("askEmailTitle", { name: person.fullName })}</LayerDialog.Title>
+          <LayerDialog.Description>{t("askEmailLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-4">
+              <Input
+                label={t("askEmailNew")}
+                type="email"
+                required
+                maxLength={kContactEmailMax}
+                value={newEmail}
+                onChange={(event) => setNewEmail(event.target.value)}
+              />
+              <Input
+                label={optional(t("askEmailReason"))}
+                maxLength={kReasonMax}
+                value={emailReason}
+                onChange={(event) => setEmailReason(event.target.value)}
+              />
+              {emailFault ? <Banner variant="error" icon={<WarningCircleIcon weight="fill" />} title={emailFault} /> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary
+              loading={askEmail.isPending}
+              disabled={newEmail.trim() === ""}
+              onClick={() => {
+                setEmailFault(null);
+                askEmail.mutate();
+              }}
+            >
+              {t("askEmailGo")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
 
       <LayerDialog.Root open={assigning} onOpenChange={setAssigning} dismissDisabled={assign.isPending}>
         <LayerDialog.Content closeLabel={common("close")}>

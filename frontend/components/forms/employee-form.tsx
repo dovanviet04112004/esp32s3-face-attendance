@@ -102,8 +102,10 @@ interface Props {
   entities: DepartmentChoice[];
   /** UpdateEmployeeDto leaves bank details out: they move through an approved ProfileChange (KEHOACH 9.17 item 6). */
   showBank: boolean;
-  /** An edit takes the personal email as read-only: changing it is a request with a notice (KEHOACH 9.17 item 6). */
+  /** An edit takes the contact email as read-only: changing it is a request with a notice (KEHOACH 9.17 item 6). */
   lockEmail?: boolean;
+  /** Offered beside a locked contact email: the desk files the change request on the person's behalf (KEHOACH 9.17 item 6). */
+  onAskEmail?: () => void;
   showManager: boolean;
   /** The manager already on the record, so an edit form opens showing them. */
   manager?: Person | null;
@@ -136,6 +138,7 @@ export function EmployeeForm({
   entities,
   showBank,
   lockEmail = false,
+  onAskEmail,
   showManager,
   manager = null,
   showOnboard,
@@ -259,7 +262,23 @@ export function EmployeeForm({
       <Section title={t("sectionReach")} lead={t("sectionReachLead")}>
         <Input
           label={lockEmail ? t("personalEmail") : optional(t("personalEmail"))}
-          description={lockEmail ? t("personalEmailLocked") : t("personalEmailWhy")}
+          description={
+            lockEmail ? (
+              <>
+                {t("personalEmailLocked")}
+                {onAskEmail ? (
+                  <>
+                    {" "}
+                    <button type="button" onClick={onAskEmail} className="text-kumo-link underline-offset-2 hover:underline">
+                      {t("askEmail")}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              t("personalEmailWhy")
+            )
+          }
           type="email"
           maxLength={MAX.personalEmail}
           value={draft.personalEmail}
