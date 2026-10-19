@@ -45,6 +45,7 @@ describe("punch review (e2e)", () => {
   let entityId = "";
   let closedDay = "";
   let lateDay = "";
+  let periodId = "";
   let revokedAt = new Date();
   let local = 0;
   const idOf = new Map<string, number>();
@@ -136,7 +137,7 @@ describe("punch review (e2e)", () => {
     closedDay = localDay(new Date(Date.now() - 3 * DAY_MS), zone);
     lateDay = localDay(new Date(Date.now() - 10 * DAY_MS), zone);
     const [year, month] = closedDay.split("-").map(Number);
-    await db.payrollPeriod.create({
+    const closed = await db.payrollPeriod.create({
       data: {
         legalEntityId: entityId,
         year,
@@ -146,6 +147,7 @@ describe("punch review (e2e)", () => {
         endDate: new Date(Date.UTC(year, month, 0)),
       },
     });
+    periodId = closed.id;
     reviewer = await signIn(http, MAIL(REVIEWER), PASSWORD);
     boss = await signIn(http, MAIL(BOSS), PASSWORD);
   });
@@ -180,6 +182,22 @@ describe("punch review (e2e)", () => {
       await timesheet.build(day, idOf.get(WORKER));
       assert.equal((await dayRow(WORKER, day))?.punchCount, 0, `a held punch counted into ${day}`);
     }
+  });
+
+  it("counts what waits on the period it falls in, and on the roll-up of the range", async () => {
+    const held = await request(http).get(`/payroll-periods/${periodId}/held-punches`).set("Authorization", `Bearer ${admin}`);
+    assert.equal(held.status, 200, JSON.stringify(held.body));
+    const lateHere = lateDay.slice(0, 7) === closedDay.slice(0, 7) ? 1 : 0;
+    assert.deepEqual(held.body, { closedPeriod: 1, late: lateHere }, "the period counted a punch of another entity or missed its own");
+    const managed = await request(http).get(`/payroll-periods/${periodId}/held-punches`).set("Authorization", `Bearer ${boss}`);
+    assert.equal(managed.status, 403);
+
+    const from = dayWindow(lateDay, zone).from.toISOString();
+    const totals = await request(http)
+      .get(`/reports/attendance/totals?from=${from}&to=${new Date().toISOString()}&search=${WORKER}`)
+      .set("Authorization", `Bearer ${admin}`);
+    assert.equal(totals.status, 200, JSON.stringify(totals.body));
+    assert.deepEqual([totals.body.punches, totals.body.heldClosedPeriod, totals.body.heldLate], [0, 1, 1], JSON.stringify(totals.body));
   });
 
   it("lists the held punches for HR, never the reviewer's own, and counts them on the badge", async () => {

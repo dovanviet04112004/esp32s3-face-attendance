@@ -218,6 +218,8 @@ describe("a desk held to some legal entities reads and writes only theirs (e2e)"
     const runs = await as("purser").get(`/payroll-periods/${bPeriod}/runs`);
     assert.equal(runs.status, 404);
     assert.equal(runs.body.message, "PERIOD_NOT_FOUND");
+    const held = await as("purser").get(`/payroll-periods/${bPeriod}/held-punches`);
+    assert.deepEqual([held.status, held.body.message], [404, "PERIOD_NOT_FOUND"], "the desk counted the punches of the company next door");
 
     const away = await as("purser").post("/payroll-periods", { legalEntityId: bId, year: YEAR, month: 4 });
     assert.equal(away.status, 404, JSON.stringify(away.body));
