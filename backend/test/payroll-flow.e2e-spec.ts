@@ -227,7 +227,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     assert.equal(await db.payslip.count({ where: { runId: bonusId } }), 0, "a stale bonus kept its payslips");
     assert.equal(await db.bonusItem.count({ where: { runId: bonusId } }), 1, "the bonus lost what it pays");
 
-    const refused = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true });
+    const refused = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(refused.status, 409, JSON.stringify(refused.body));
     assert.equal(refused.body.message, "RUN_BASE_CHANGED");
     assert.equal((await payroll.runNow(bonusId)).state, "DONE");
@@ -240,7 +240,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     const leftover = await db.payslip.create({
       data: { runId: failed.id, periodId: aprilHome, employeeId: steadyId, policyId: homePolicyId, grossPay: 1, netPay: 1 },
     });
-    const behind = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true });
+    const behind = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(behind.status, 409, "a lock issued an older run over the newest one that failed");
     assert.equal(behind.body.message, "PERIOD_RUNS_UNFINISHED");
 
@@ -252,7 +252,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     assert.equal(again.body.message, "RUN_DISCARDED");
 
     const idle = await db.payrollRun.create({ data: { periodId: aprilHome, kind: "BONUS" } });
-    const unpaid = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true });
+    const unpaid = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(unpaid.status, 409, "a lock left a bonus run in draft unpaid without a word");
     assert.equal(unpaid.body.message, "PERIOD_RUNS_UNFINISHED");
     assert.equal((await as("payroll").post(`/payroll-runs/${idle.id}/discard`)).status, 201);
@@ -264,7 +264,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     await db.payrollRun.update({ where: { id: busy.id }, data: { state: "FAILED" } });
     assert.equal((await as("payroll").post(`/payroll-runs/${busy.id}/discard`)).status, 201);
 
-    const locked = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true });
+    const locked = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
     const issued = await db.payslip.findMany({ where: { periodId: aprilHome, state: { not: "DRAFT" } }, select: { runId: true } });
     assert.deepEqual(
@@ -300,11 +300,11 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     assert.equal((await as("payroll").post(`/payroll-runs/${second.id}/discard`)).status, 201);
     const older = await db.payrollRun.findUniqueOrThrow({ where: { id: first.id } });
     assert.deepEqual([older.state, older.failure], ["DRAFT", "RUN_BASE_CHANGED"], "an older run stood in for the discarded one");
-    const refused = await as("payroll").post(`/payroll-periods/${june.body.id}/lock`, { acceptOpenItems: true });
+    const refused = await as("payroll").post(`/payroll-periods/${june.body.id}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(refused.body.message, "RUN_BASE_CHANGED", JSON.stringify(refused.body));
 
     assert.equal((await payroll.runNow(first.id)).state, "DONE");
-    const locked = await as("payroll").post(`/payroll-periods/${june.body.id}/lock`, { acceptOpenItems: true });
+    const locked = await as("payroll").post(`/payroll-periods/${june.body.id}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
     const slip = await db.payslip.findFirstOrThrow({
       where: { runId: first.id, employeeId: idOf.get(STAYER), state: { not: "DRAFT" } },
@@ -325,7 +325,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     await hire(NEWCOMER, awayId);
     assert.equal(await countOf(april.body.id, "NOT_IN_RUN"), 1, "the checklist missed a person no run priced");
 
-    const locked = await as("payroll").post(`/payroll-periods/${april.body.id}/lock`, { acceptOpenItems: true });
+    const locked = await as("payroll").post(`/payroll-periods/${april.body.id}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
     const paid = await db.payslip.count({
       where: {

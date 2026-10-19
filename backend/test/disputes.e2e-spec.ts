@@ -24,9 +24,9 @@ const OTHER_EMAIL = "e2eds-other@kiosk.local";
 const BOSS_EMAIL = "e2eds-boss@kiosk.local";
 const RACE_LINE = "RACE";
 const PASSWORD = "kiosk-e2e-password";
-const YEAR = 2034;
-const FIRST_MONTH = 3;
-const NEXT_MONTH = 4;
+const YEAR = 2026;
+const FIRST_MONTH = 5;
+const NEXT_MONTH = 6;
 const BASE = "20000000";
 const OWED = 1_234_000;
 const CLAIM = "Tăng ca tháng này thiếu 4 giờ";
@@ -64,7 +64,7 @@ describe("disputing a payslip (e2e)", () => {
     await clearDeskNotices(db, [CODE, OTHER, BOSS]);
     await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, BOSS_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER, BOSS] } } });
-    await db.payrollPeriod.deleteMany({ where: { year: YEAR } });
+    await db.payrollPeriod.deleteMany({ where: { legalEntity: { code: ENTITY } } });
     await db.legalEntity.deleteMany({ where: { code: ENTITY } });
   }
 
@@ -194,7 +194,7 @@ describe("disputing a payslip (e2e)", () => {
     const res = await request(http)
       .post(`/payroll-periods/${firstPeriodId}/lock`)
       .set("Authorization", `Bearer ${desk}`)
-      .send({ acceptOpenItems: true });
+      .send({ acceptOpenItems: true, note: "e2e" });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const slip = await db.payslip.findUniqueOrThrow({ where: { id: issuedSlipId } });
     assert.equal(slip.state, "ISSUED");
@@ -358,7 +358,7 @@ describe("disputing a payslip (e2e)", () => {
     const locked = await request(http)
       .post(`/payroll-periods/${nextPeriodId}/lock`)
       .set("Authorization", `Bearer ${desk}`)
-      .send({ acceptOpenItems: true });
+      .send({ acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
     const retro = await db.retroAdjustment.findFirstOrThrow({ where: { employeeId, code: LINE } });
     assert.equal(retro.state, "APPLIED");

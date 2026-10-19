@@ -33,7 +33,7 @@ const NEW_BANK = "Ngan hang moi";
 const NEW_ACCOUNT = "9988776655";
 const LATER_ACCOUNT = "5544332211";
 const WIRED_ACCOUNT = "7070707070";
-const YEAR = 2033;
+const YEAR = 2003;
 const MONTH = 7;
 const NET = "12345678";
 
@@ -265,7 +265,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
     const res = await request(http)
       .post(`/payroll-periods/${periodId}/lock`)
       .set("Authorization", `Bearer ${desk}`)
-      .send({ acceptOpenItems: true });
+      .send({ acceptOpenItems: true, note: "e2e" });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const slip = await db.payslip.findFirstOrThrow({ where: { periodId } });
     assert.equal(slip.bankAccount, OLD_ACCOUNT, "the payslip kept no destination of its own");

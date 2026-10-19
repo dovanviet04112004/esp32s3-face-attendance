@@ -13,7 +13,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
-import { dayWindow } from "../src/modules/timesheet/local-day.js";
+import { dayWindow, localDay } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { failureOf, spent } from "../src/queue/processors/payroll.processor.js";
 import { signIn } from "./fixtures.js";
@@ -230,6 +230,22 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal(again.body.message, "PERIOD_TAKEN");
   });
 
+  it("opens no month that has not begun, and locks none that has not ended", async () => {
+    const [year, month] = localDay(new Date(), zone).split("-").map(Number);
+    const coming = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+    const ahead = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, ...coming });
+    assert.deepEqual([ahead.status, ahead.body.message], [400, "PERIOD_NOT_STARTED"]);
+    const begun = await as("payroll").post("/payroll-periods", { legalEntityId: entityId, year, month });
+    assert.deepEqual([begun.status, begun.body.message], [409, "PERIOD_STILL_OPEN"], "the month under way was refused as not begun");
+
+    const running = await db.payrollPeriod.create({
+      data: { legalEntityId: entityId, year, month, startDate: new Date(Date.UTC(year, month - 1, 1)), endDate: new Date(Date.UTC(year, month, 0)) },
+    });
+    const early = await as("payroll").post(`/payroll-periods/${running.id}/lock`, { acceptOpenItems: true, note: "e2e" });
+    await db.payrollPeriod.delete({ where: { id: running.id } });
+    assert.deepEqual([early.status, early.body.message], [400, "PERIOD_NOT_ENDED"]);
+  });
+
   it("prices each person with their entity's policy, and clears an old failure", async () => {
     const run = await db.payrollRun.create({
       data: { periodId, kind: "REGULAR", departmentId, state: "FAILED", failure: "POLICY_MISSING" },
@@ -343,13 +359,13 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     const leftover = await db.payslip.create({
       data: { runId: broken.id, periodId, employeeId: steadyId, policyId, grossPay: 1, netPay: 1 },
     });
-    const behind = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true });
+    const behind = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(behind.status, 409, "a lock issued an older run over the newest one that failed");
     assert.equal(behind.body.message, "PERIOD_RUNS_UNFINISHED");
     const dropped = await as("payroll").post(`/payroll-runs/${broken.id}/discard`);
     assert.equal(dropped.status, 201, JSON.stringify(dropped.body));
 
-    const locked = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true });
+    const locked = await as("payroll").post(`/payroll-periods/${periodId}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));
 
     const issued = await db.payslip.findMany({ where: { periodId, state: { not: "DRAFT" } } });
@@ -473,7 +489,7 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
       data: { legalEntityId: entityId, year: 2026, month: 3, startDate: dateOf("2026-03-01"), endDate: dateOf("2026-03-31") },
     });
     const busy = await db.payrollRun.create({ data: { periodId: march.id, kind: "REGULAR", state: "RUNNING" } });
-    const blocked = await as("payroll").post(`/payroll-periods/${march.id}/lock`, { acceptOpenItems: true });
+    const blocked = await as("payroll").post(`/payroll-periods/${march.id}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(blocked.status, 409);
     assert.equal(blocked.body.message, "PERIOD_RUN_IN_PROGRESS");
     assert.equal((await db.payrollPeriod.findUniqueOrThrow({ where: { id: march.id } })).state, "OPEN");

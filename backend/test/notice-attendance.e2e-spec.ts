@@ -321,7 +321,7 @@ describe("the attendance family, each told to its own people and closed when the
     await db.payslip.createMany({
       data: (["late", "clean"] as Who[]).map((who) => ({ runId: run.id, periodId: period.id, employeeId: id(who), policyId: policy.id })),
     });
-    await app.get(PayrollService).lock(viewerOf("pay"), period.id, { acceptOpenItems: true });
+    await app.get(PayrollService).lock(viewerOf("pay"), period.id, { acceptOpenItems: true, note: "e2e" });
     assert.equal((await workOf("absent", NEXT))?.state, "EXPIRED", "work of a paid day stayed open");
     await timesheet.build(NEXT, id("lone"));
     assert.equal(await workOf("lone", NEXT), null, "a day of a locked period opened work");

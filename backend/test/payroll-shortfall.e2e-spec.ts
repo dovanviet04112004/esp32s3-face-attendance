@@ -26,6 +26,7 @@ const INSURANCE = 2_730_000;
 const SHORTFALL = INSURANCE - ONE_DAY;
 const FULL_MONTH = 20_000_000;
 const APRIL_TAX = 88_500;
+const LOCK_NOTE = "Hai phiếu âm chuyển sang kỳ sau, một người chưa có hồ sơ lương";
 
 const BRACKETS = [
   { upToAmount: 10_000_000, rateBp: 500 },
@@ -213,7 +214,7 @@ describe("a payslip that comes short (e2e)", () => {
     assert.ok(!slip.lines.some((line) => line.code === "CARRY_OUT"), "a leaver's shortfall was carried");
   });
 
-  it("names the short payslips on the checklist and makes the lock accept them", async () => {
+  it("names the short payslips on the checklist and locks over them only with a reason", async () => {
     const checklist = await as("payroll").get(`/payroll-periods/${marchId}/checklist`);
     assert.equal(checklist.status, 200, JSON.stringify(checklist.body));
     const countOf = (code: string) => checklist.body.find((item: { code: string }) => item.code === code)?.count;
@@ -223,8 +224,14 @@ describe("a payslip that comes short (e2e)", () => {
     const refused = await as("payroll").post(`/payroll-periods/${marchId}/lock`, {});
     assert.equal(refused.status, 400);
     assert.equal(refused.body.message, "CHECKLIST_NOT_CLEAR");
-    const locked = await as("payroll").post(`/payroll-periods/${marchId}/lock`, { acceptOpenItems: true });
+    for (const bare of [{ acceptOpenItems: true }, { acceptOpenItems: true, note: "   " }]) {
+      const unexplained = await as("payroll").post(`/payroll-periods/${marchId}/lock`, bare);
+      assert.deepEqual([unexplained.status, unexplained.body.message], [400, "LOCK_NOTE_REQUIRED"], JSON.stringify(bare));
+    }
+    const locked = await as("payroll").post(`/payroll-periods/${marchId}/lock`, { acceptOpenItems: true, note: LOCK_NOTE });
     assert.ok(locked.status < 300, JSON.stringify(locked.body));
+    const kept = await db.payrollPeriod.findUniqueOrThrow({ where: { id: marchId } });
+    assert.equal(kept.lockNote, LOCK_NOTE, "the lock kept no reason for the items it accepted");
 
     const owed = await db.retroAdjustment.findMany({ where: { employeeId: { in: [...idOf.values()] } } });
     assert.equal(owed.length, 1, "the lock carried other than the one short slip that has a next period");
@@ -271,7 +278,7 @@ describe("a payslip that comes short (e2e)", () => {
     assert.equal(slip.netPay.toNumber(), FULL_MONTH - INSURANCE - APRIL_TAX - SHORTFALL);
     assert.ok(!slip.lines.some((line) => line.code === "CARRY_OUT"), "a payslip in credit carried something");
 
-    const locked = await as("payroll").post(`/payroll-periods/${aprilId}/lock`, { acceptOpenItems: true });
+    const locked = await as("payroll").post(`/payroll-periods/${aprilId}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.ok(locked.status < 300, JSON.stringify(locked.body));
     const owed = await db.retroAdjustment.findMany({ where: { employeeId: { in: [...idOf.values()] } } });
     assert.equal(owed.length, 1, "the lock carried a shortfall that never was");
