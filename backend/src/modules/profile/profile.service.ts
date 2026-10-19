@@ -16,7 +16,7 @@ import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { PrismaService } from "../../database/prisma.service.js";
+import { isPrismaCode, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type ProfileNoticeJob } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -106,6 +106,9 @@ export class ProfileService {
     });
     if (waiting > 0) {
       throw new ConflictException("PROFILE_CHANGE_PENDING");
+    }
+    if (want.personalEmail) {
+      await this.refuseTakenAddress(employeeId, want.personalEmail);
     }
     const made = await this.db.profileChange.create({
       data: {
@@ -238,11 +241,16 @@ export class ProfileService {
     for (const column of PROFILE_FIELDS[held.field].columns) {
       write[column] = asked[column] ?? null;
     }
-    const given = await this.db.$transaction(async (tx) => {
-      await this.claim(tx, held.id, { state: "APPROVED", decidedAt: new Date(), decidedById: viewer.userId });
-      await tx.employee.update({ where: { id: held.employeeId }, data: write });
-      return tx.profileChange.findUniqueOrThrow({ where: { id: held.id } });
-    });
+    const { given, movedLogin } = await this.db
+      .$transaction(async (tx) => {
+        await this.claim(tx, held.id, { state: "APPROVED", decidedAt: new Date(), decidedById: viewer.userId });
+        await tx.employee.update({ where: { id: held.employeeId }, data: write });
+        const moved = write.personalEmail ? await moveSignIn(tx, held.employeeId, write.personalEmail) : null;
+        return { given: await tx.profileChange.findUniqueOrThrow({ where: { id: held.id } }), movedLogin: moved };
+      })
+      .catch((error: unknown) => {
+        throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("EMAIL_TAKEN") : error;
+      });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PROFILE_APPROVE,
@@ -250,6 +258,15 @@ export class ProfileService {
       subjectId: String(held.employeeId),
       meta: { field: held.field, noticeTo: held.noticeTo },
     });
+    if (movedLogin) {
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.USER_EMAIL,
+        subject: AUDIT_SUBJECTS.USER,
+        subjectId: movedLogin,
+        meta: { profileChangeId: held.id },
+      });
+    }
     if (PROFILE_FIELDS[held.field].notice !== null && held.noticeTo !== null) {
       await this.queues[QUEUE.notify].add(JOB.profileNotice, {
         type: JOB.profileNotice,
@@ -340,6 +357,20 @@ export class ProfileService {
     return person.personalEmail ?? person.login?.email ?? null;
   }
 
+  /** A contact email becomes the sign-in address too, so another account's address is refused when asked for (KEHOACH 9.4). */
+  private async refuseTakenAddress(employeeId: number, address: string): Promise<void> {
+    const taken = await this.db.user.findFirst({
+      where: {
+        email: { equals: address, mode: "insensitive" },
+        OR: [{ employeeId: null }, { employeeId: { not: employeeId } }],
+      },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new ConflictException("EMAIL_TAKEN");
+    }
+  }
+
   private async reachable(viewer: Viewer, employeeId: number): Promise<Person> {
     if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
@@ -394,4 +425,16 @@ export class ProfileService {
   private async reaches(viewer: Viewer, employeeId: number): Promise<boolean> {
     return this.scope.reaches(viewer, await this.scope.deskOrSelfEmployeeIds(viewer), employeeId);
   }
+}
+
+/** Move the person's sign-in address to the contact email just approved; the account it moved, if one did (KEHOACH 9.4).
+ *  @ctx inside the approval's transaction | throws a unique violation when another account holds the address
+ */
+async function moveSignIn(tx: Prisma.TransactionClient, employeeId: number, address: string): Promise<string | null> {
+  const login = await tx.user.findUnique({ where: { employeeId }, select: { id: true, email: true } });
+  if (!login || login.email === address) {
+    return null;
+  }
+  await tx.user.update({ where: { id: login.id }, data: { email: address } });
+  return login.id;
 }
