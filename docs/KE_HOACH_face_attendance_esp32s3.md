@@ -8077,10 +8077,33 @@ ai đối chiếu. Tách ra là bước rẻ nhất để có được điều �
 vai. `EMPLOYEE` và `MANAGER` phải gắn một hồ sơ nhân viên, vì cả hai đọc theo một người cụ thể
 trong công ty (`ROLE_NEEDS_EMPLOYEE`). `HR` và `PAYROLL` phải gắn hồ sơ của chính người cầm tài
 khoản, vì luật tự duyệt ở trên chỉ thấy được người có hồ sơ (`DESK_NEEDS_EMPLOYEE`). `ADMIN` và
-`VIEWER` gắn hoặc không. Luật kiểm ở mọi lần mở tài khoản, mọi lần đổi vai và mọi lần đổi hay gỡ
-hồ sơ gắn kèm; khoá, mở khoá hay đổi email một tài khoản cũ chưa gắn thì không bị chặn, để quản
-trị viên luôn khoá được nó. Tách `PAYROLL` mà không có đường giao `PAYROLL` thì cái tách ấy chỉ
-nằm trên giấy: chỉ còn `ADMIN` chạy được kỳ lương.
+`VIEWER` gắn hoặc không. Luật kiểm ở mọi lần mở tài khoản và mọi lần đổi vai; khoá, mở khoá hay
+đổi email một tài khoản cũ chưa gắn thì không bị chặn, để quản trị viên luôn khoá được nó. Tách
+`PAYROLL` mà không có đường giao `PAYROLL` thì cái tách ấy chỉ nằm trên giấy: chỉ còn `ADMIN` chạy
+được kỳ lương.
+
+**Một tài khoản đi với đúng một người từ lúc mở, và đăng nhập bằng email liên lạc của người ấy.**
+Mở tài khoản cho một người — từ hồ sơ, hàng loạt, hay trên màn `Tài khoản` khi chọn người — lấy
+**email liên lạc trong hồ sơ** làm email đăng nhập; không ai gõ tay địa chỉ ấy, và hồ sơ chưa có
+email liên lạc thì chưa mở được (`NO_EMAIL`). Sau khi mở, hai thứ không sửa tay được:
+
+- **Hồ sơ gắn kèm.** `PATCH /users/:id` không nhận `employeeId`. Đổi hồ sơ gắn là trao cho người
+  đang cầm email và mật khẩu của tài khoản quyền đọc công, phiếu lương, tài liệu và gửi đơn dưới
+  tên người mới, và trộn lịch sử của hai người vào một tài khoản. Gắn nhầm thì khoá tài khoản ấy
+  rồi mở tài khoản mới từ đúng hồ sơ.
+- **Email đăng nhập của tài khoản gắn hồ sơ.** Nó đi theo email liên lạc: đơn đổi email liên lạc
+  (§9.17 mục 6 luật 3) được duyệt thì email đăng nhập đổi theo trong cùng giao dịch, và đơn xin một
+  địa chỉ đang là email đăng nhập của tài khoản khác bị từ chối ngay lúc xin (`EMAIL_TAKEN`). Sửa
+  thẳng trả `EMAIL_FOLLOWS_PROFILE`: một ô email ở màn quản trị là cửa sau của chính đơn ấy
+  (§9.17 mục 6 luật 1).
+
+Tài khoản không gắn hồ sơ — `ADMIN` hay `VIEWER` không thuộc nhân sự công ty — giữ địa chỉ quản trị
+viên gõ lúc mở, và chỉ quản trị viên đổi được. Đánh đổi: nhân sự không sửa thẳng một email đăng nhập
+gõ sai mà phải xin hộ một đơn đổi email liên lạc, và một người khác duyệt (luật 2) — chậm hơn một
+bước, đổi lại mỗi lần đổi địa chỉ nhận thư đăng nhập đều có con mắt thứ hai và một thư báo về địa
+chỉ cũ. Tài khoản mở trước luật này có thể đang đăng nhập bằng một địa chỉ khác email liên lạc; nó
+giữ nguyên tới lần duyệt đơn kế tiếp, không đồng bộ ngược, vì đổi lặng lẽ tên đăng nhập của người
+đang dùng là khoá họ ra ngoài.
 
 `MANAGER` thì **không ai phải nhớ mà giao**: một tài khoản `EMPLOYEE` có cấp dưới trực tiếp đang
 làm là `MANAGER`, hết cấp dưới thì về `EMPLOYEE`. Hệ tính lại mỗi khi `managerId` của ai đó đổi —
@@ -8155,7 +8178,8 @@ lượt máy chủ đóng mọi phiên, đóng mọi liên kết đặt mật kh
 lại sống `PASSWORD_RESET_TTL_MINUTES` — tức là đúng luồng xin lại, theo đúng luật một liên kết sống,
 không phải một luồng khôi phục thứ hai. Bấm lần hai, hay bấm khi đã hết hạn, nhận `ALARM_SPENT`. Kẻ
 chiếm tài khoản đổi mật khẩu thì chủ lấy lại bằng một cú bấm, mà kẻ ấy không chặn được thư vì địa
-chỉ nhận là thứ chỉ quản trị viên đổi được.
+chỉ nhận không đổi được từ trong tài khoản: tài khoản gắn hồ sơ chỉ đổi nó qua một đơn có người thứ
+hai duyệt và có thư báo về địa chỉ cũ, tài khoản không gắn hồ sơ thì chỉ quản trị viên đổi.
 
 **Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không.** Một câu trả lời
 khác đi biến nó thành chỗ dò danh sách nhân sự của công ty: gõ vào một tệp email và đọc xem cái
@@ -9617,7 +9641,9 @@ là đơn có báo tin.** Thiếu nửa sau, chuỗi tấn công tự vá: chi�
 → đổi số tài khoản → thư cảnh báo bay vào hòm thư của chính kẻ chiếm. Chốt lúc xin còn giữ
 thêm một chuyện: hai đơn gửi sát nhau thì thư vẫn về địa chỉ có trước cả hai. Thư **nói việc
 gì vừa đổi và đổi lúc nào, không chép giá trị mới** — địa chỉ cũ có thể đã cũ tới mức thuộc về
-người khác, và lúc ấy thư cảnh báo lại thành thư rò rỉ.
+người khác, và lúc ấy thư cảnh báo lại thành thư rò rỉ. Đơn đổi địa chỉ liên lạc được duyệt thì
+email đăng nhập của tài khoản gắn hồ sơ đổi theo (§9.4): mỗi người một địa chỉ, nên thư cảnh báo và
+thư đăng nhập không bao giờ đi hai nơi.
 
 **Luật 4 — kỳ đã chốt giữ nơi nhận của chính nó** (§9.6). Nhờ luật này, một đơn đã duyệt ghi
 vào hồ sơ **ngay**, không phải nằm chờ kỳ lương đóng: phần cần đóng băng đã đóng băng ở chỗ
