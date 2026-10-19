@@ -1,17 +1,20 @@
 "use client";
 
-import { Button } from "@cloudflare/kumo";
-import { DownloadSimpleIcon, XIcon } from "@phosphor-icons/react";
+import { Banner, Button } from "@cloudflare/kumo";
+import { DownloadSimpleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
 
+import { QUEUE_ROLES } from "@/components/nav/waiting-count";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
 import { MonthPicker, monthBounds, monthKey, monthOf, thisMonth } from "@/components/ui/month-picker";
 import { useNotify } from "@/components/ui/notify";
 import { AsideCard, Facts, PageHeader, PageLayout } from "@/components/ui/page";
+import { useRouter } from "@/i18n/navigation";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { clockAt, dayOf, dayOnly, dayWindow } from "@/lib/format";
 import { useUrlState } from "@/lib/url-state";
 
@@ -33,6 +36,14 @@ interface Tally {
   firstAt: string | null;
   lastAt: string | null;
   unsyncedClock: number;
+}
+
+interface Totals {
+  people: number;
+  punches: number;
+  unsyncedClock: number;
+  heldClosedPeriod: number;
+  heldLate: number;
 }
 
 interface Department {
@@ -64,6 +75,8 @@ function Attendance() {
   const common = useTranslations("common");
   const format = useFormatter();
   const notify = useNotify();
+  const router = useRouter();
+  const role = useSession((held) => held.role);
 
   const [url, setUrl] = useUrlState({ q: "", departmentId: "", month: "", from: "", to: "", show: "" });
   const [typed, setTyped] = useState(url.q);
@@ -122,14 +135,22 @@ function Attendance() {
 
   const totals = useQuery({
     queryKey: ["attendance", "rollup", "totals", filter.toString()],
-    queryFn: async () =>
-      (await api.get<{ people: number; punches: number; unsyncedClock: number }>(`/reports/attendance/totals?${filter.toString()}`)).data,
+    queryFn: async () => (await api.get<Totals>(`/reports/attendance/totals?${filter.toString()}`)).data,
   });
 
   const shown = rollup.data?.pages.flatMap((one) => one.rows);
   const first = rollup.data?.pages[0];
   const punches = totals.data?.punches ?? 0;
   const unsynced = totals.data?.unsyncedClock ?? 0;
+  const heldClosed = totals.data?.heldClosedPeriod ?? 0;
+  const heldLate = totals.data?.heldLate ?? 0;
+  const mayReview = role !== null && QUEUE_ROLES.punches.includes(role);
+  const heldWhy = [
+    heldClosed > 0 ? t("heldClosed", { count: heldClosed }) : null,
+    heldLate > 0 ? t("heldLate", { count: heldLate }) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   function clock(iso: string | null) {
     return iso ? <span className="whitespace-nowrap tabular-nums">{format.dateTime(new Date(iso), "medium")}</span> : common("empty");
@@ -260,6 +281,27 @@ function Attendance() {
             )
           }
         />
+        {heldClosed + heldLate > 0 ? (
+          <Banner
+            variant="alert"
+            icon={<WarningIcon weight="fill" />}
+            className="mb-4"
+            title={t("heldTitle", { count: heldClosed + heldLate, span: spanName })}
+            description={
+              <>
+                {heldWhy}
+                {mayReview ? null : <span className="block">{t("heldWho")}</span>}
+              </>
+            }
+            action={
+              mayReview ? (
+                <Banner.Action variant="secondary" onClick={() => router.push("/approvals?tab=punches")}>
+                  {t("heldGo")}
+                </Banner.Action>
+              ) : undefined
+            }
+          />
+        ) : null}
         <DataTable
           id="attendance-rollup"
           cardLead="employee"
