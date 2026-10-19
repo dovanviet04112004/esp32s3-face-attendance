@@ -18,7 +18,7 @@ const PREFIX = "E2EACC";
 const DOMAIN = "@e2e-accounts.local";
 const PASSWORD = "kiosk-e2e-password";
 const SECOND_MS = 1_100;
-const PEOPLE = ["BOSS", "STAFF", "DESK", "PAY", "PLAIN", "LEAVER"] as const;
+const PEOPLE = ["BOSS", "STAFF", "DESK", "PAY", "PLAIN", "LEAVER", "BLANK"] as const;
 
 type Person = (typeof PEOPLE)[number];
 
@@ -112,7 +112,7 @@ describe("accounts and roles (e2e)", () => {
           fullName: `Người thử ${name}`,
           legalEntityId: entity.id,
           departmentId: leaf,
-          personalEmail: mail(name),
+          personalEmail: name === "BLANK" ? null : mail(name),
           ...(name === "LEAVER" ? { active: false, leaveDate: new Date() } : {}),
         },
       });
@@ -127,7 +127,7 @@ describe("accounts and roles (e2e)", () => {
 
   it("grants each of the six roles, and ties the four that act as a person to a record", async () => {
     const grant = (email: string, role: string, employeeId?: number) =>
-      asAdmin("post", "/users").send({ email, role, ...(employeeId === undefined ? {} : { employeeId }) });
+      asAdmin("post", "/users").send(employeeId === undefined ? { email, role } : { role, employeeId });
 
     for (const [role, code] of [
       ["EMPLOYEE", "ROLE_NEEDS_EMPLOYEE"],
@@ -176,6 +176,18 @@ describe("accounts and roles (e2e)", () => {
     const gone = await grant(mail("LEAVER"), "EMPLOYEE", person.LEAVER);
     assert.equal(gone.status, 409);
     assert.equal(gone.body.message, "EMPLOYEE_HAS_LEFT");
+  });
+
+  it("opens a person's account at the contact email on their record, never at a typed one", async () => {
+    const pay = await db.user.findUniqueOrThrow({ where: { id: account.PAY } });
+    assert.equal(pay.email, mail("PAY"), "the account did not take the record's contact email");
+    const typed = await asAdmin("post", "/users").send({ email: mail("typed-blank"), role: "EMPLOYEE", employeeId: person.BLANK });
+    assert.deepEqual([typed.status, typed.body.message], [400, "EMAIL_FOLLOWS_PROFILE"]);
+    const blank = await asAdmin("post", "/users").send({ role: "EMPLOYEE", employeeId: person.BLANK });
+    assert.deepEqual([blank.status, blank.body.message], [400, "NO_EMAIL"]);
+    const nowhere = await asAdmin("post", "/users").send({ role: "VIEWER" });
+    assert.deepEqual([nowhere.status, nowhere.body.message], [400, "VALIDATION_FAILED"]);
+    assert.equal(await db.user.count({ where: { employeeId: person.BLANK } }), 0, "a refused account was opened");
   });
 
   it("refuses an administrator's own demotion, lock and deletion", async () => {
@@ -354,15 +366,22 @@ describe("accounts and roles (e2e)", () => {
     assert.equal(await roleOf(account.BOSS), "EMPLOYEE", "a manager of nobody still working stayed MANAGER");
   });
 
-  it("keeps HR and PAYROLL on a record through every role change and every relink", async () => {
+  it("keeps every account on the record it opened with, and a linked one on the record's contact email", async () => {
     const promoted = await asAdmin("patch", `/users/${account["free-VIEWER"]}`).send({ role: "PAYROLL" });
     assert.equal(promoted.status, 400, "an account with no record became PAYROLL");
     assert.equal(promoted.body.message, "DESK_NEEDS_EMPLOYEE");
     assert.equal(await roleOf(account["free-VIEWER"]), "VIEWER");
-    const unlinked = await asAdmin("patch", `/users/${account.DESK}`).send({ employeeId: null });
-    assert.equal(unlinked.status, 400, "an HR account dropped its record");
-    assert.equal(unlinked.body.message, "DESK_NEEDS_EMPLOYEE");
+    for (const employeeId of [null, person.STAFF]) {
+      const moved = await asAdmin("patch", `/users/${account.DESK}`).send({ employeeId });
+      assert.deepEqual([moved.status, moved.body.message], [400, "VALIDATION_FAILED"], `an account took employeeId ${employeeId}`);
+    }
     const held = await db.user.findUniqueOrThrow({ where: { id: account.DESK } });
-    assert.equal(held.employeeId, person.DESK);
+    assert.equal(held.employeeId, person.DESK, "an account moved to another record");
+    const retyped = await asAdmin("patch", `/users/${account.DESK}`).send({ email: mail("desk-typed") });
+    assert.deepEqual([retyped.status, retyped.body.message], [400, "EMAIL_FOLLOWS_PROFILE"]);
+    assert.equal((await db.user.findUniqueOrThrow({ where: { id: account.DESK } })).email, mail("DESK"));
+    const free = await asAdmin("patch", `/users/${account["free-VIEWER"]}`).send({ email: mail("free-viewer-moved") });
+    assert.equal(free.status, 200, JSON.stringify(free.body));
+    assert.equal(free.body.email, mail("free-viewer-moved"), "an account with no record could not take a new address");
   });
 });

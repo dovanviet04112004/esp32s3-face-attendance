@@ -101,14 +101,14 @@ describe("audit trail (e2e)", () => {
     const made = await request(http)
       .post("/employees")
       .set("Authorization", `Bearer ${token}`)
-      .send({ code: CODE, fullName: "Người bị soi", legalEntityId: entityId });
+      .send({ code: CODE, fullName: "Người bị soi", legalEntityId: entityId, personalEmail: ACCOUNT });
     assert.equal(made.status, 201);
     employeeId = made.body.id;
 
     const account = await request(http)
       .post("/users")
       .set("Authorization", `Bearer ${token}`)
-      .send({ email: ACCOUNT, role: "VIEWER" });
+      .send({ role: "VIEWER", employeeId });
     assert.equal(account.status, 201);
     accountId = account.body.id;
   });
@@ -163,7 +163,7 @@ describe("audit trail (e2e)", () => {
     const moved = await request(http)
       .patch(`/users/${accountId}`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ role: "HR", employeeId });
+      .send({ role: "HR" });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
 
     const rows = await trail(`subjectType=user&subjectId=${accountId}&action=user.role`);

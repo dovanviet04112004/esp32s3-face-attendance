@@ -79,6 +79,7 @@ describe("a desk held to some legal entities reads and writes only theirs (e2e)"
         active: true,
         legalEntityId,
         departmentId,
+        personalEmail: MAIL(code),
         ...(role ? { login: { create: { email: MAIL(code), passwordHash: await hashPassword(PASSWORD), role } } } : {}),
       },
       include: { login: { select: { id: true } } },
@@ -274,7 +275,6 @@ describe("a desk held to some legal entities reads and writes only theirs (e2e)"
     assert.equal(employee.status, 400, JSON.stringify(employee.body));
     assert.equal(employee.body.message, "ENTITIES_NEED_DESK");
     const unknown = await as("admin").post("/users", {
-      email: MAIL(SPARE),
       role: "HR",
       employeeId: idOf.get(SPARE),
       entityIds: ["no-such-entity"],
