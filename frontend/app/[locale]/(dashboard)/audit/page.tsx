@@ -201,7 +201,7 @@ function Trail() {
         row.actor ? (
           <PersonCell name={row.actor.employee?.fullName ?? row.actor.email} code={row.actor.employee ? row.actor.email : null} />
         ) : (
-          <span className="text-kumo-subtle">{t("system")}</span>
+          <PersonCell name={t("system")} />
         ),
     },
   ];

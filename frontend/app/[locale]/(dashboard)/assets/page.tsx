@@ -230,7 +230,7 @@ function Assets() {
         row.holder ? (
           <PersonCell name={row.holder.fullName} code={row.holder.code} href={`/employees/${row.holder.id}?tab=assets`} />
         ) : (
-          common("empty")
+          <PersonCell name={common("empty")} />
         ),
     },
     {
