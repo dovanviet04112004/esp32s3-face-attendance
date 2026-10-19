@@ -8385,6 +8385,15 @@ chờ, nên hai kỳ cùng mở là hai phiếu cùng mang một khoản, và l�
 thêm một lần. Phép kiểm khoá dòng pháp nhân trong chính giao dịch tạo kỳ, nên hai người bấm cùng
 lúc không cùng lọt.
 
+**Kỳ đi theo lịch thật: mở khi tháng đã bắt đầu, chốt khi tháng đã hết.** Mở kỳ của một tháng chưa
+tới trả `PERIOD_NOT_STARTED`; chốt một kỳ mà ngày cuối chưa qua, tính theo ngày nghiệp vụ của server
+(§9.8), trả `PERIOD_NOT_ENDED`. Lượt nháp giữa tháng vẫn chạy được để xem trước, chỉ phiếu là phải
+đợi tới lúc chốt. Thiếu hai luật này thì một kỳ chốt sớm đóng băng đầu vào của chính những ngày chưa
+diễn ra: mọi lượt chấm công sau lúc chốt rơi vào `CLOSED_PERIOD` (§9.8) và bảng công đứng yên ở ngày
+chốt — production gặp đúng như vậy ngày 13/10/2026, khi kỳ 10 và kỳ 11/2026 cùng được chốt rồi đánh
+dấu đã trả. Đánh đổi: công ty trả lương trước cuối tháng không dùng được kỳ theo tháng lịch; kỳ có
+ngày cắt riêng nằm ngoài phạm vi.
+
 **Mỗi kỳ mỗi lúc một lượt chạy.** Bấm chạy khi kỳ đang có lượt chạy trả `PERIOD_RUN_IN_PROGRESS`.
 Lượt thưởng và lượt chốt cuối lấy phiếu thường làm nền thuế (§9.18 mục 8, 9); chạy song song với
 một lượt thường là tính trên một nền đang bị thay.
@@ -8601,6 +8610,11 @@ nhãn *Bị từ chối*, không bao giờ được tính. Mỗi quyết định
 người duyệt không quyết lượt của chính mình, và lượt đã được người khác quyết thì báo lại chứ
 không ghi đè (§9.10). Lượt giờ nghi vấn không bị giữ: nó đã đứng ngoài mọi ngày và đi đường ngoại lệ
 ở trên.
+
+**Lượt đang bị giữ phải hiện ra ở chỗ người ta nhìn lượt.** Trang *Lượt chấm công* và trang kỳ lương
+báo số lượt đang chờ duyệt rơi vào tháng đang xem, kèm lý do giữ và đường sang hàng đợi. Lượt bị giữ
+đứng ngoài mọi số đếm, nên thiếu dải báo này thì một bảng lượt dừng ở một ngày mà không nói vì sao —
+trông như trang hỏng, trong khi việc phải làm nằm ở hộp chờ duyệt.
 
 Còn hở, nói rõ: kẻ cầm vé vẫn ghi được lượt cho người đang ở cửa ấy, trong bảy ngày gần nhất, vào kỳ
 chưa chốt. Chỉ E13-T3 đóng được chỗ ấy.
@@ -9712,7 +9726,10 @@ hiệu lực, người chưa có trong lượt thường nào đã xong, ngườ
 khác (§9.6), và **mức lương bắt đầu có hiệu lực trong kỳ** — mức đầu tiên của người mới lẫn mọi lần
 tăng. Mục cuối không phải lỗi mà là chỗ hai bàn gặp nhau: nhân sự ghi lương, bàn lương chạy lương
 (§9.4), và một lần tăng lương bàn lương không nhìn thấy là một lần tăng không ai đối chiếu. **Chốt
-kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận.**
+kỳ khi còn mục treo phải cần xác nhận có ghi tên người xác nhận, và ghi lý do.** Chốt đè mục treo mà
+để trống ghi chú trả `LOCK_NOTE_REQUIRED`: tên người chỉ nói ai cho qua, lý do mới nói vì sao một
+mục còn mở vẫn được cho qua — điều người đọc nhật ký sau này cần để biết lần chốt ấy có chủ ý hay
+không.
 
 **5. Nhập hàng loạt từ Excel.** Ba mươi nghìn người không gõ tay được, và dữ liệu đầu vào luôn
 bẩn. Nên nhập theo hai nhịp: **chạy thử ra báo cáo lỗi từng dòng**, rồi mới nhập thật. Nhập
