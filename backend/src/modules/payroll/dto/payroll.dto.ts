@@ -111,7 +111,7 @@ export class LockPeriodDto {
 
   @ApiPropertyOptional({
     example: "Còn 2 đơn chờ duyệt, chuyển sang kỳ sau",
-    description: "Why it was locked as it stands, kept on the period",
+    description: "Why it was locked as it stands, kept on the period; required when the checklist has open items",
   })
   @IsOptional()
   @IsString()

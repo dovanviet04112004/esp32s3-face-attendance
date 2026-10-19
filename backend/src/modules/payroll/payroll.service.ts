@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   BonusItem,
   Payslip,
@@ -25,6 +26,7 @@ import { COUNT_CEILING, countedTo } from "../../common/dto/cursor.dto.js";
 import type { Page } from "../../common/dto/pagination.dto.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import { refuseOwn, type Viewer } from "../../common/scope/viewer.js";
+import type { Env } from "../../config/env.schema.js";
 import { isPrismaCode, namedFilter, PrismaService, UNIQUE_VIOLATION } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE, type PayrollJob } from "../../queue/queues.js";
@@ -34,7 +36,7 @@ import { freeDays } from "../leave/leave.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
-import { asDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
 import {
   calculate,
   taxOn,
@@ -296,7 +298,13 @@ export class PayrollService {
     private readonly notices: NotificationsService,
     private readonly attendance: AttendanceSweep,
     @Inject(QUEUE_TOKEN) private readonly queues: Queues,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** The business day now, which decides whether a month has begun or ended (KEHOACH 9.6, 9.8). */
+  private today(): string {
+    return localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true }));
+  }
 
   private mayWrite(viewer: Viewer): void {
     if (!WRITERS.has(viewer.role)) {
@@ -314,6 +322,9 @@ export class PayrollService {
   /** Open one entity's month: one open period an entity at a time, months only forward (KEHOACH 9.6). */
   async createPeriod(viewer: Viewer, body: CreatePeriodDto): Promise<PayrollPeriod> {
     this.mayWrite(viewer);
+    if (`${body.year}-${String(body.month).padStart(2, "0")}-01` > this.today()) {
+      throw new BadRequestException("PERIOD_NOT_STARTED");
+    }
     const legalEntityId = await this.entityToPay(viewer, body.legalEntityId);
     const asked = monthIndex(body);
     try {
@@ -497,10 +508,16 @@ export class PayrollService {
     if (period.state !== "OPEN") {
       throw new BadRequestException("PERIOD_NOT_OPEN");
     }
+    if (asDay(period.endDate) >= this.today()) {
+      throw new BadRequestException("PERIOD_NOT_ENDED");
+    }
     await this.requireRunsSettled(this.db, periodId);
     const open = (await this.checklist(periodId)).filter((item) => item.count > 0);
     if (open.length > 0 && !body.acceptOpenItems) {
       throw new BadRequestException("CHECKLIST_NOT_CLEAR");
+    }
+    if (open.length > 0 && !body.note?.trim()) {
+      throw new BadRequestException("LOCK_NOTE_REQUIRED");
     }
     // Issuing and spending are one act: a half-applied lock leaves a period
     // closed with its back payments still owed.
