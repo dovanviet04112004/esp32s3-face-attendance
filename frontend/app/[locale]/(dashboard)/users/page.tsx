@@ -21,6 +21,8 @@ import { useNotify } from "@/components/ui/notify";
 import { PageHeader, PageLayout } from "@/components/ui/page";
 import { PersonPicker, type Person } from "@/components/ui/person-picker";
 import { StatePill, type Tone } from "@/components/ui/pill";
+import { SkeletonLine } from "@/components/ui/skeleton";
+import { Link } from "@/i18n/navigation";
 import { api, queryOf } from "@/lib/api";
 import { useSession, type Role } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
@@ -78,9 +80,13 @@ interface Department {
 
 interface Draft {
   account: Account | null;
+  /** Typed only for an account with no employee record; one with a record signs in with its contact email. */
   email: string;
   role: Role;
+  /** Picked for a new account only: the record never changes once the account opens (KEHOACH 9.4). */
   person: Person | null;
+  /** The picked person's contact email; undefined while it loads, null when the record has none. */
+  contact: string | null | undefined;
   entityIds: string[];
 }
 
@@ -169,20 +175,16 @@ function Accounts() {
       const entityIds = DESKS.has(held.role) ? held.entityIds : [];
       if (!held.account) {
         const body = {
-          email,
           role: held.role,
-          ...(held.person ? { employeeId: held.person.id } : {}),
+          ...(held.person ? { employeeId: held.person.id } : { email }),
           ...(entityIds.length > 0 ? { entityIds } : {}),
         };
         return (await api.post<Account>("/users", body)).data;
       }
-      const was = held.account.employee?.id ?? null;
-      const now = held.person?.id ?? null;
       const scoped = held.account.entities.map((one) => one.id);
       const patch = {
-        ...(email !== held.account.email ? { email } : {}),
+        ...(!held.account.employee && email !== held.account.email ? { email } : {}),
         ...(held.role !== held.account.role ? { role: held.role } : {}),
-        ...(was !== now ? { employeeId: now } : {}),
         ...(DESKS.has(held.role) && !sameSet(entityIds, scoped) ? { entityIds } : {}),
       };
       return (await api.patch<Account>(`/users/${held.account.id}`, patch)).data;
@@ -233,26 +235,34 @@ function Accounts() {
     setTried(false);
     setDraft({
       account: one,
-      email: one?.email ?? "",
+      email: one && !one.employee ? one.email : "",
       role: one?.role ?? "VIEWER",
-      person: one?.employee ? { id: one.employee.id, code: one.employee.code, fullName: one.employee.fullName } : null,
+      person: null,
+      contact: undefined,
       entityIds: one?.entities.map((entity) => entity.id) ?? [],
     });
   }
 
-  // The address on the record is where the link goes, so picking a person fills it in.
   async function pick(person: Person | null): Promise<void> {
-    setDraft((held) => (held ? { ...held, person } : held));
+    setDraft((held) => (held ? { ...held, person, contact: undefined } : held));
     if (!person) {
       return;
     }
-    const record = (await api.get<{ personalEmail: string | null }>(`/employees/${person.id}`)).data;
-    setDraft((held) => (held && held.email === "" && record.personalEmail ? { ...held, email: record.personalEmail } : held));
+    try {
+      const record = (await api.get<{ personalEmail: string | null }>(`/employees/${person.id}`)).data;
+      setDraft((held) => (held?.person?.id === person.id ? { ...held, contact: record.personalEmail || null } : held));
+    } catch (fell: unknown) {
+      setFault(faultOf(fell));
+    }
   }
 
   function submit(held: Draft): void {
     setTried(true);
-    if (!EMAIL.test(held.email.trim()) || (NEEDS_PERSON.has(held.role) && !held.person)) {
+    const typing = held.account ? !held.account.employee : !held.person;
+    if (typing && !EMAIL.test(held.email.trim())) {
+      return;
+    }
+    if (!held.account && ((NEEDS_PERSON.has(held.role) && !held.person) || (held.person && !held.contact))) {
       return;
     }
     setFault(null);
@@ -271,8 +281,11 @@ function Accounts() {
   const loaded = accounts.data?.pages.flatMap((one) => one.rows);
   const first = accounts.data?.pages[0];
   const needsPerson = draft !== null && NEEDS_PERSON.has(draft.role);
-  const emailWrong = draft !== null && tried && !EMAIL.test(draft.email.trim());
-  const personMissing = tried && needsPerson && draft?.person === null;
+  const linked = draft?.account?.employee ?? null;
+  const typing = draft !== null && (draft.account ? linked === null : draft.person === null);
+  const emailWrong = typing && tried && !EMAIL.test(draft.email.trim());
+  const personMissing = tried && needsPerson && !draft?.account && draft?.person === null;
+  const roleChoices = draft?.account && !linked ? ROLES.filter((one) => !NEEDS_PERSON.has(one) || one === draft.account?.role) : ROLES;
   // A retired entity stays on the list while an account still answers for it, so it can be taken off.
   const offered = (entities.data ?? []).filter((one) => one.active || draft?.entityIds.includes(one.id));
 
@@ -480,17 +493,28 @@ function Accounts() {
                   label={t("role")}
                   value={draft.role}
                   onValueChange={(next) => setDraft({ ...draft, role: (String(next ?? "VIEWER") as Role) })}
-                  items={Object.fromEntries(ROLES.map((one) => [one, roleName(one)]))}
+                  items={Object.fromEntries(roleChoices.map((one) => [one, roleName(one)]))}
                   description={t(`roleHint_${draft.role}`)}
                   className="w-full"
                 />
-                <PersonPicker
-                  label={t("person")}
-                  description={needsPerson ? t("personNeeded", { role: roleName(draft.role) }) : t("personOptional")}
-                  error={personMissing ? t("personMissing") : undefined}
-                  value={draft.person}
-                  onChange={(next) => void pick(next)}
-                />
+                {linked ? (
+                  <Field label={t("person")} description={t("personFixed")}>
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <Link href={`/employees/${linked.id}`} className="truncate text-kumo-link hover:underline">
+                        {linked.fullName}
+                      </Link>
+                      <span className="shrink-0 font-mono text-sm text-kumo-subtle">{linked.code}</span>
+                    </span>
+                  </Field>
+                ) : draft.account ? null : (
+                  <PersonPicker
+                    label={t("person")}
+                    description={needsPerson ? t("personNeeded", { role: roleName(draft.role) }) : t("personOptional")}
+                    error={personMissing ? t("personMissing") : undefined}
+                    value={draft.person}
+                    onChange={(next) => void pick(next)}
+                  />
+                )}
                 {DESKS.has(draft.role) ? (
                   <Checkbox.Group
                     legend={t("entities")}
@@ -507,16 +531,30 @@ function Accounts() {
                     ))}
                   </Checkbox.Group>
                 ) : null}
-                <Input
-                  label={t("email")}
-                  type="email"
-                  required
-                  maxLength={kEmailMax}
-                  value={draft.email}
-                  onChange={(event) => setDraft({ ...draft, email: event.target.value })}
-                  description={t("emailHint")}
-                  error={emailWrong ? t("emailInvalid") : undefined}
-                />
+                {typing ? (
+                  <Input
+                    label={t("email")}
+                    type="email"
+                    required
+                    maxLength={kEmailMax}
+                    value={draft.email}
+                    onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                    description={t("emailHint")}
+                    error={emailWrong ? t("emailInvalid") : undefined}
+                  />
+                ) : (
+                  <Field label={t("email")} description={linked ? t("emailFollows") : draft.contact === null ? undefined : t("emailFromRecord")}>
+                    {linked ? (
+                      <span className="break-all">{draft.account?.email}</span>
+                    ) : draft.contact === undefined ? (
+                      <SkeletonLine minWidth={30} maxWidth={55} />
+                    ) : draft.contact ? (
+                      <span className="break-all">{draft.contact}</span>
+                    ) : (
+                      <span className="text-kumo-danger">{t("personNoEmail")}</span>
+                    )}
+                  </Field>
+                )}
                 {draft.account?.mfaEnabledAt && draft.account.id !== self.data?.id ? (
                   <Field label={t("mfa")} description={t("mfaResetHint")}>
                     <div className="flex flex-wrap items-center gap-3">
@@ -541,7 +579,11 @@ function Accounts() {
             ) : null}
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
-            <LayerDialog.Actions.Primary loading={save.isPending} onClick={() => draft && submit(draft)}>
+            <LayerDialog.Actions.Primary
+              loading={save.isPending}
+              disabled={draft !== null && !draft.account && draft.person !== null && !draft.contact}
+              onClick={() => draft && submit(draft)}
+            >
               {draft?.account ? common("save") : t("sendInvite")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
