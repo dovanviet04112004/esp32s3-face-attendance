@@ -245,7 +245,9 @@ export function useNoticeActions(): (notice: Notice) => RowAction[] {
   ];
 }
 
-/** One notice as the bell and the page both draw it; "phone" shows the state only where no state column stands beside it (KEHOACH 9.21.4). */
+/** One notice as the bell and the page both draw it, the unread dot ahead of the icon in both. "phone" is the
+ *  page's row: two lines like every other row, the state only where no state column stands beside it (KEHOACH 9.12, 9.21.4).
+ */
 export function NoticeLine({ notice, state = "always" }: { notice: Notice; state?: "always" | "phone" }) {
   const t = useTranslations("notices");
   const say = useNoticeWords();
@@ -253,22 +255,44 @@ export function NoticeLine({ notice, state = "always" }: { notice: Notice; state
   const about = say.about(notice);
   const where = say.state(notice);
   const unread = notice.readAt === null && notice.leftAt === null;
+  const row = state === "phone";
+  const pill = where ? (
+    <StatePill tone={where.tone} className={cn("shrink-0", row && "md:hidden")}>
+      {where.label}
+    </StatePill>
+  ) : null;
   return (
-    <span className="flex min-w-0 flex-1 items-start gap-3 font-normal whitespace-normal">
-      <Icon className="mt-0.5 size-4 shrink-0 text-kumo-subtle" aria-hidden />
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={cn("break-words", unread && "font-medium")}>{say.sentence(notice)}</span>
-        {about ? <span className="truncate text-sm text-kumo-subtle">{about}</span> : null}
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-kumo-subtle">
-          {where ? (
-            <StatePill tone={where.tone} className={state === "phone" ? "md:hidden" : undefined}>
-              {where.label}
-            </StatePill>
-          ) : null}
-          <span className="tabular-nums">{say.when(notice)}</span>
-        </span>
+    <span className={cn("flex min-w-0 flex-1 gap-2.5 font-normal", row ? "items-center" : "items-start")}>
+      <span className={cn("flex w-2 shrink-0 justify-center", !row && "mt-1.5")}>
+        {unread ? <span className="size-2 rounded-full bg-kumo-brand" role="img" aria-label={t("unreadDot")} /> : null}
       </span>
-      {unread ? <span className="mt-1.5 size-2 shrink-0 rounded-full bg-kumo-brand" role="img" aria-label={t("unreadDot")} /> : null}
+      <Icon className={cn("size-4 shrink-0 text-kumo-subtle", !row && "mt-0.5")} aria-hidden />
+      {row ? (
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className={cn("max-md:line-clamp-2 max-md:whitespace-normal md:truncate", unread && "font-medium")}>{say.sentence(notice)}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-sm text-kumo-subtle max-md:flex-wrap">
+            {pill}
+            {about ? (
+              <>
+                <span className="min-w-0 truncate max-md:order-last max-md:basis-full">{about}</span>
+                <span aria-hidden className="max-md:hidden">
+                  ·
+                </span>
+              </>
+            ) : null}
+            <span className="shrink-0 tabular-nums">{say.when(notice)}</span>
+          </span>
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-1 flex-col gap-1 whitespace-normal">
+          <span className={cn("break-words", unread && "font-medium")}>{say.sentence(notice)}</span>
+          {about ? <span className="truncate text-sm text-kumo-subtle">{about}</span> : null}
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-kumo-subtle">
+            {pill}
+            <span className="tabular-nums">{say.when(notice)}</span>
+          </span>
+        </span>
+      )}
     </span>
   );
 }

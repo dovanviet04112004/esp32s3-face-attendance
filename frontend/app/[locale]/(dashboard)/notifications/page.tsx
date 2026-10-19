@@ -28,6 +28,7 @@ import { useUrlState } from "@/lib/url-state";
 
 const STATUSES: NoticeStatus[] = ["action", "unread", "all", "archived"];
 const kPage = 50;
+const kStateWidthPx = 300;
 
 const TAB_KEY: Record<NoticeStatus, "tabAction" | "tabUnread" | "tabAll" | "tabArchived"> = {
   action: "tabAction",
@@ -120,9 +121,16 @@ function Notifications() {
       id: "state",
       header: t("colState"),
       priority: 2,
+      widthPx: kStateWidthPx,
       cell: (row) => {
         const where = say.state(row);
-        return where ? <StatePill tone={where.tone}>{where.label}</StatePill> : null;
+        return where ? (
+          <StatePill tone={where.tone} className="max-w-full">
+            <span title={where.label} className="truncate">
+              {where.label}
+            </span>
+          </StatePill>
+        ) : null;
       },
     },
   ];
