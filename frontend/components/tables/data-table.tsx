@@ -4,7 +4,7 @@ import { Button, DropdownMenu, Empty, LayerCard, Table } from "@cloudflare/kumo"
 import type { Icon as IconType } from "@phosphor-icons/react";
 import { ArrowDownIcon, ArrowUpIcon, ArrowsDownUpIcon, DotsThreeIcon, TrayIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { Failed } from "@/components/ui/failed";
 import { SkeletonLine } from "@/components/ui/skeleton";
@@ -27,6 +27,8 @@ export interface Column<T> {
   /** One line with an ellipsis; a string cell shows in full on hover. */
   truncate?: boolean;
   maxWidthPx?: number;
+  /** A set width, so the column keeps its place whatever the rows hold, as across tabs; longer content truncates. */
+  widthPx?: number;
   /** Orders the rows already loaded, so it stays off while the list is partial. */
   sortBy?: (row: T) => string | number;
   /** The api's sort key: the header then asks the server through the table's onSortChange. */
@@ -102,6 +104,7 @@ const kStore = "table-order:";
 const kFresh: Order = { sortId: null, descending: false };
 const kSkeletonRows = 6;
 const kTruncatePx = 280;
+const kCellPadPx = 24; // Kumo's [&_td]:p-3, both sides of a cell
 const HIDE_AT: Record<Priority, string> = {
   1: "",
   2: "@max-[560px]:hidden",
@@ -192,15 +195,20 @@ function useDropped(box: HTMLElement | null): number {
 
 function cellBody<T>(column: Column<T>, row: T): ReactNode {
   const content = column.cell(row);
-  if (!column.truncate) {
+  if (!column.truncate && column.widthPx === undefined) {
     return content;
   }
   const full = typeof content === "string" || typeof content === "number" ? String(content) : undefined;
+  const room = column.widthPx === undefined ? (column.maxWidthPx ?? kTruncatePx) : column.widthPx - kCellPadPx;
   return (
-    <div className="truncate" style={{ maxWidth: column.maxWidthPx ?? kTruncatePx }} title={full}>
+    <div className="truncate" style={{ maxWidth: room }} title={full}>
       {content}
     </div>
   );
+}
+
+function widthOf<T>(column: Column<T>): CSSProperties | undefined {
+  return column.widthPx === undefined ? undefined : { width: column.widthPx, minWidth: column.widthPx };
 }
 
 function SortMark({ dir }: { dir: Sort["dir"] | null }) {
@@ -210,20 +218,32 @@ function SortMark({ dir }: { dir: Sort["dir"] | null }) {
   return dir === "desc" ? <ArrowDownIcon size={14} aria-hidden /> : <ArrowUpIcon size={14} aria-hidden />;
 }
 
-/** Name over code in one two-line cell, so a list spends one column on who (KEHOACH 9.12). */
+/** Name over code in one two-line cell, so a list spends one column on who; two lines even without a code, so rows match (KEHOACH 9.12). */
 export function PersonCell({ name, code, href }: { name: string; code?: string | null; href?: string }) {
+  const label = href ? (
+    <Link href={href} title={name} className="truncate text-kumo-link hover:underline">
+      {name}
+    </Link>
+  ) : (
+    <span title={name} className="truncate">
+      {name}
+    </span>
+  );
+  if (code) {
+    return (
+      <div className="flex max-w-64 min-w-0 flex-col">
+        {label}
+        <span className="truncate font-mono text-sm text-kumo-subtle">{code}</span>
+      </div>
+    );
+  }
   return (
-    <div className="flex max-w-64 min-w-0 flex-col">
-      {href ? (
-        <Link href={href} title={name} className="truncate text-kumo-link hover:underline">
-          {name}
-        </Link>
-      ) : (
-        <span title={name} className="truncate">
-          {name}
-        </span>
-      )}
-      {code ? <span className="truncate font-mono text-sm text-kumo-subtle">{code}</span> : null}
+    <div className="grid max-w-64 min-w-0 grid-cols-[minmax(0,1fr)] items-center">
+      <span aria-hidden className="invisible col-start-1 row-start-1 flex flex-col">
+        <span>&nbsp;</span>
+        <span className="font-mono text-sm">&nbsp;</span>
+      </span>
+      <span className="col-start-1 row-start-1 flex min-w-0">{label}</span>
     </div>
   );
 }
@@ -444,6 +464,7 @@ export function DataTable<T>({
                         key={column.id}
                         sticky={column.sticky ? "left" : undefined}
                         aria-sort={dir === null ? undefined : dir === "desc" ? "descending" : "ascending"}
+                        style={widthOf(column)}
                         className={cn("whitespace-nowrap", column.numeric && "text-end", hide(column))}
                       >
                         {mode ? (
@@ -474,7 +495,7 @@ export function DataTable<T>({
                       <Table.Row key={`wait-${at}`}>
                         {selectable ? <Table.Cell /> : null}
                         {columns.map((column) => (
-                          <Table.Cell key={column.id} className={hide(column)}>
+                          <Table.Cell key={column.id} style={widthOf(column)} className={hide(column)}>
                             <SkeletonLine minWidth={35} maxWidth={90} />
                           </Table.Cell>
                         ))}
@@ -504,13 +525,14 @@ export function DataTable<T>({
                             <Table.Cell
                               key={column.id}
                               sticky={column.sticky ? "left" : undefined}
-                              className={cn(column.numeric && "text-end tabular-nums", hide(column))}
+                              style={widthOf(column)}
+                              className={cn(column.numeric && "text-end whitespace-nowrap tabular-nums", hide(column))}
                             >
                               {cellBody(column, row)}
                             </Table.Cell>
                           ))}
                           {rowActions ? (
-                            <Table.Cell sticky="right" className="py-1.5 text-end">
+                            <Table.Cell sticky="right" className="py-1.5! text-end">
                               <ActionMenu actions={actions} label={t("actions")} />
                             </Table.Cell>
                           ) : null}
