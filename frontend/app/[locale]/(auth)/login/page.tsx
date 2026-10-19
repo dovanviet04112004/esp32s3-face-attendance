@@ -3,7 +3,7 @@
 import { Banner, Button, Input, Link, LinkButton } from "@cloudflare/kumo";
 import { AndroidLogoIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthenticatorSetup, type OfferedSecret } from "@/components/auth/authenticator-setup";
 import { BackupCodes } from "@/components/auth/backup-codes";
@@ -69,6 +69,21 @@ function Heading({ title, lead }: { title: string; lead: string }) {
       <h1 className="m-0 text-3xl font-semibold text-kumo-default">{title}</h1>
       <p className="text-lg text-pretty text-kumo-subtle">{lead}</p>
     </div>
+  );
+}
+
+/** One numbered step: its number hangs ahead of the words, and what it holds spans the whole column like the button under it. */
+function Step({ number, text, children }: { number: number; text: string; children?: ReactNode }) {
+  return (
+    <li className="flex flex-col gap-3">
+      <span className="flex gap-2">
+        <span aria-hidden className="w-4 shrink-0 text-kumo-subtle tabular-nums">
+          {number}.
+        </span>
+        <span>{text}</span>
+      </span>
+      {children}
+    </li>
   );
 }
 
@@ -235,20 +250,14 @@ export default function LoginPage() {
     return (
       <form onSubmit={(event) => submitEnrolment(event, stage.challenge)} className="flex flex-col gap-6">
         <Heading title={mfa("enrollTitle")} lead={mfa("enrollLead", { email: stage.email })} />
-        <ol className="m-0 flex list-decimal flex-col gap-5 ps-5 marker:text-kumo-subtle">
-          <li>{mfa("enrollInstall")}</li>
-          <li>
-            <div className="flex flex-col gap-3">
-              <span>{mfa("enrollScan")}</span>
-              <AuthenticatorSetup offer={stage.offer} />
-            </div>
-          </li>
-          <li>
-            <div className="flex flex-col gap-3">
-              <span>{mfa("enrollType")}</span>
-              <CodeField value={code} onChange={setCode} allowBackup={false} autoFocus={false} />
-            </div>
-          </li>
+        <ol className="m-0 flex list-none flex-col gap-5 p-0">
+          <Step number={1} text={mfa("enrollInstall")} />
+          <Step number={2} text={mfa("enrollScan")}>
+            <AuthenticatorSetup offer={stage.offer} />
+          </Step>
+          <Step number={3} text={mfa("enrollType")}>
+            <CodeField value={code} onChange={setCode} allowBackup={false} autoFocus={false} />
+          </Step>
         </ol>
         {banner}
         <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full justify-center">
