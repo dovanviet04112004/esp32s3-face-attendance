@@ -81,8 +81,7 @@ def handler_for(capture, lock: threading.Lock, turn: int = 0, mirror: bool = Fal
                 if crop is not None:
                     x, y, width, height = crop
                     frame = frame[y : y + height, x : x + width]
-                # A phone held upright reaches Windows on its side, and both
-                # students read a face the way a person stands.
+                # An upright phone reaches Windows on its side; both students read faces upright.
                 if turn in TURNS:
                     frame = cv2.rotate(frame, TURNS[turn])
                 # Cosmetic only: training flips horizontally half the time.

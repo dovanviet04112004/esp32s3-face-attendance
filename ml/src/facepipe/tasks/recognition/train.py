@@ -44,8 +44,7 @@ def build_dataset(cfg: Config, split_index: int, train: bool) -> Ms1mShardDatase
 
 
 def build_loader(cfg: Config, dataset: Ms1mShardDataset, train: bool) -> DataLoader:
-    # Shards arrive shuffled and the dataset holds a buffer back, so the loader
-    # must not shuffle: an IterableDataset cannot be indexed anyway.
+    # No shuffle here: shards arrive shuffled and the dataset keeps a buffer back.
     return DataLoader(
         dataset,
         batch_size=cfg.data.batch_size,
@@ -79,11 +78,9 @@ def main(argv: list[str] | None = None) -> int:
         **cfg.data.params.get("arcface", {}),
     )
 
-    # The ArcFace centres are trainable and live in the loss, not the model, so
-    # the optimizer is built over both and the centres are checkpointed too.
+    # The ArcFace centres train in the loss, so the optimizer and checkpoint cover both.
     trained = nn.ModuleDict({"model": model, "loss": task_loss})
-    # Order matters: a resume casts optimizer momentum onto whichever device it
-    # finds the parameters on, and they start on the host.
+    # Move first: a resume casts optimizer momentum onto wherever the parameters sit.
     trained.to(resolve_device(cfg.train.device))
 
     optimizer = build_optimizer(trained, cfg.optim)
@@ -92,8 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     def step_fn(batch: tuple[torch.Tensor, RecogTargets]) -> tuple[torch.Tensor, dict]:
         images, targets = batch
         train_set.epoch = trainer.state.epoch
-        # trainer.model, not the module above: a compiled run must reach the
-        # wrapper the trainer built, or the graph is traced twice.
+        # trainer.model: a compiled run must go through the trainer's wrapper, or it traces twice.
         loss = task_loss(trainer.model(normalize_batch(images)), targets)
         return loss, {"task": loss.detach(), "total": loss.detach()}
 

@@ -103,8 +103,7 @@ class DetectionTaskLoss(nn.Module):
     def forward(self, model_out: HeadOutput, batch: DetectionTargets) -> torch.Tensor:
         cls_pred, bbox_pred, kps_pred = flatten_output(model_out)
         positives = batch.positives
-        # Every term is divided by the same count, so their weights stay
-        # comparable no matter how many faces a batch happens to hold.
+        # One divisor for every term keeps their weights comparable at any face count.
         norm = positives.sum().clamp_min(1).to(cls_pred.dtype)
 
         cls_target = positives.to(cls_pred.dtype).unsqueeze(-1)

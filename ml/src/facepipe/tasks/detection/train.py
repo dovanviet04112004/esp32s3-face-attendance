@@ -84,8 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         logger.warning("no second split file: no validation, and best.pth will not be written")
 
-    # Order matters: a resume casts optimizer momentum onto whichever device it
-    # finds the parameters on, and they start on the host.
+    # Move first: a resume casts optimizer momentum onto wherever the parameters sit.
     device = resolve_device(cfg.train.device)
     model.to(device)
     criterion.to(device)
@@ -95,8 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def step_fn(batch: tuple[torch.Tensor, object]) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         images, targets = batch
-        # trainer.model, not the module above: a compiled run must reach the
-        # wrapper the trainer built, or the graph is traced twice.
+        # trainer.model: a compiled run must go through the trainer's wrapper, or it traces twice.
         loss = criterion(trainer.model(images), targets)
         return loss, {"task": loss.detach(), "total": loss.detach()}
 

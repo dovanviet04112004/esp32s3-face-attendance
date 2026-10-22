@@ -423,8 +423,7 @@ def photometric(
     if rng.random() < probability:
         photons = rng.uniform(*PHOTON_RANGE)
         read_sigma = rng.uniform(*READ_SIGMA_RANGE)
-        # One stream for both views: the tight crop is the middle of the wide one,
-        # so the same sensor pixels appear twice and their noise is not independent.
+        # One noise stream for both views: the tight crop shares the wide one's sensor pixels.
         seed = rng.getrandbits(32)
         views = [
             sensor_noise(view, photons, read_sigma, np.random.default_rng(seed)) for view in views
@@ -473,8 +472,7 @@ class SpoofShardDataset(IterableDataset):
             self._length = count_records(self.shards)
         else:
             self.shards, self._length = resolve_splits(root, splits)
-        # A folder is one capture setup, which is what SSDG calls a domain; the
-        # order is sorted so a resumed run numbers them the same way (KEHOACH 3).
+        # A folder is a capture setup, an SSDG domain, sorted so resumes number alike (KEHOACH 3).
         self.domains = sorted({shard.parent.name for shard in self.shards})
         self.size = size
         self.train = train
@@ -503,8 +501,7 @@ class SpoofShardDataset(IterableDataset):
         return self._length
 
     def _open(self, shards: list[Path], live: list) -> None:
-        # Picked by folder, not by position: the paired set repeats five times in
-        # the split and would otherwise fill the window on its own (KEHOACH 3).
+        # By folder: the paired set, five times in the split, would fill the window (KEHOACH 3).
         while shards and len(live) < self.interleave:
             held = {domain for domain, _ in live}
             at = next(
@@ -515,8 +512,7 @@ class SpoofShardDataset(IterableDataset):
             live.append((self.domains.index(shard.parent.name), iter(read_shard(shard))))
 
     def _records(self) -> Iterator[SpoofSample]:
-        # One folder is one domain, so reading shards end to end hands a batch a
-        # single domain and the domain terms have nothing to compare (KEHOACH 3).
+        # Interleaved: a one-domain batch leaves the domain terms nothing to compare (KEHOACH 3).
         waiting = worker_shards(self.shards, self.seed + self.epoch if self.train else None)
         live: list = []
         while True:
@@ -531,8 +527,7 @@ class SpoofShardDataset(IterableDataset):
                 standing.append((domain, stream))
                 meta = json.loads(record["json"])
                 reached = float(meta["wide_scale"])
-                # The crop-scale augmentation cuts the tight view out of this one,
-                # so a training pass still needs it even when the model will not see it.
+                # Crop-scale training cuts the tight view out of it, even for a one-view model.
                 wide = decode_native(record["wide.jpg"]) if self.train or self.keep_wide else None
                 if wide is not None and not self.train:
                     wide = resized(wide, self.size)

@@ -87,8 +87,7 @@ def load_ground_truth(root: Path, settings: tuple[str, ...] = SETTINGS) -> Wider
         flat: list[np.ndarray] = []
         for event in range(listed.shape[0]):
             for image in range(listed[event][0].shape[0]):
-                # MATLAB indices are 1-based and the array is empty when the
-                # subset keeps nothing from this image.
+                # 1-based MATLAB indices, empty when the subset keeps nothing of this image.
                 indices = np.asarray(listed[event][0][image][0]).ravel().astype(np.int64)
                 flat.append(indices - 1)
         keep[setting] = flat

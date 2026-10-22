@@ -42,8 +42,7 @@ class ArcFaceLoss(nn.Module):
         self.margin = margin
         self.cos_margin = math.cos(margin)
         self.sin_margin = math.sin(margin)
-        # Past this angle cos(theta + m) turns back upwards, so the margin would
-        # start rewarding a worse prediction; beyond it a linear penalty is used.
+        # Past this angle cos(theta + m) rises again and would reward a worse prediction.
         self.turning_point = math.cos(math.pi - margin)
         self.turning_penalty = math.sin(math.pi - margin) * margin
 
@@ -55,8 +54,7 @@ class ArcFaceLoss(nn.Module):
         """Replace each target cosine with cos(theta + margin)."""
         index = labels.view(-1, 1)
         target = cosine.gather(1, index).squeeze(1)
-        # cos(theta + m) from the angle-addition formula: acos on a value that
-        # rounds to +-1 loses most of its precision, and this never needs it.
+        # cos(theta + m) by angle addition: acos of a value near +-1 loses most of its precision.
         sine = torch.sqrt((1.0 - target * target).clamp_min(0.0))
         shifted = target * self.cos_margin - sine * self.sin_margin
         penalised = torch.where(target > self.turning_point, shifted, target - self.turning_penalty)

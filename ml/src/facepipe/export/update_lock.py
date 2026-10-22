@@ -87,8 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     if branch != args.branch or not run_dir.is_dir():
         raise SystemExit(f"run id must name a directory, and {run_dir} is not one")
 
-    # A graph the runtime cannot build fails only on the board, a whole flash
-    # cycle later, so it must not reach firmware/models/ at all.
+    # A graph the runtime cannot build fails only on the board, a whole flash cycle later.
     if runtime == "espdl":
         creator = ["--creator", str(args.creator)] if args.creator is not None else []
         checked = espdl_op_check.main(["--model", str(args.model), *creator])

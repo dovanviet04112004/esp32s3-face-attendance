@@ -43,8 +43,7 @@ def fold(model: nn.Module) -> int:
                 conv.bias = nn.Parameter(bias)
             else:
                 conv.bias.copy_(bias)
-        # The norm stays in the graph as an identity: dropping the module would
-        # break every state dict and every hook that names it.
+        # Kept as an identity: dropping the norm breaks every state dict and hook that names it.
         bn.reset_parameters()
         with torch.no_grad():
             bn.weight.fill_(1.0)

@@ -88,8 +88,7 @@ def warp_affine(image: np.ndarray, matrix: np.ndarray, size: int = ALIGNED_SIZE)
     x, y = source[:, 0], source[:, 1]
     x0, y0 = np.floor(x).astype(np.int64), np.floor(y).astype(np.int64)
     x1, y1 = x0 + 1, y0 + 1
-    # Clamping to the border rather than dropping out-of-range samples keeps the
-    # output complete for a face that touches the edge of the frame.
+    # Clamped, not dropped: a face touching the frame edge still gets a complete output.
     fx, fy = x - x0, y - y0
     x0, x1 = np.clip(x0, 0, width - 1), np.clip(x1, 0, width - 1)
     y0, y1 = np.clip(y0, 0, height - 1), np.clip(y1, 0, height - 1)

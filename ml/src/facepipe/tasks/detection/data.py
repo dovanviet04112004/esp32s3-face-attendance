@@ -314,8 +314,7 @@ class WiderFaceDataset(Dataset):
         sample = self._read(index)
         if self.train:
             sample = random_crop(sample, self.rng, self.crop_scale)
-        # Filtered on both sides of the split: a face too small to train on is
-        # also one this branch does not claim to find.
+        # Both splits: a face too small to train on is one this branch does not claim to find.
         sample = drop_small_faces(letterbox(sample, self.input_hw), self.min_face_px)
         if self.train and self.rng.random() < 0.5:
             sample = horizontal_flip(sample)

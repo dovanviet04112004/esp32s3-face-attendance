@@ -33,8 +33,7 @@ def equalize(first: nn.Conv2d, second: nn.Conv2d) -> torch.Tensor:
     in_range = channel_range(second.weight, in_axis)
 
     scale = torch.sqrt(out_range / (in_range + EPS)).clamp(min=EPS)
-    # A channel that is dead in either layer has no range to trade, and the
-    # square root above would hand it a meaningless factor.
+    # A channel dead in either layer has no range to trade: the square root means nothing there.
     scale[(out_range < EPS) | (in_range < EPS)] = 1.0
 
     with torch.no_grad():

@@ -60,8 +60,7 @@ def landmark_cases() -> list[np.ndarray]:
 
 
 def emit_align(root: Path, rng: np.random.Generator) -> int:
-    # drv_camera hands out RGB565, so the reference warps the unpacked words
-    # rather than an rgb888 frame the board never sees.
+    # drv_camera hands out RGB565, so the reference warps unpacked words, not an rgb888 frame.
     words = rng.integers(0, 1 << 16, FRAME_HW, dtype=np.uint16)
     frame = unpack_rgb565(words).astype(np.uint8)
     # The ESP-DL cases reuse the frame and landmarks at the 112 side, with no draw of their own.

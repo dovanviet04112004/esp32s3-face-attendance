@@ -17,8 +17,7 @@ def convert(saved_dir: Path, out: Path, representative=None) -> int:
     if representative is not None:
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
         converter.representative_dataset = representative
-        # Anything the converter cannot take to int8 would land on a float
-        # kernel that ESP-NN has no accelerated path for (KEHOACH 3 layer 4).
+        # A float op would land on a kernel ESP-NN cannot accelerate (KEHOACH 3 layer 4).
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         converter.inference_input_type = tf.int8
         converter.inference_output_type = tf.int8

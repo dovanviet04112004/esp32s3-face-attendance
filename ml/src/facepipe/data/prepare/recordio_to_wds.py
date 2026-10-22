@@ -60,8 +60,7 @@ def read_records(rec_path: Path) -> Iterator[Record]:
                 label = labels[0]
                 offset += 4 * flag
             image = payload[offset:]
-            # The identity index sits after the images: same header shape, empty
-            # body, and a label that is a record range rather than an identity.
+            # The identity index follows the images: same header, empty body, a range as label.
             if not image:
                 continue
             yield Record(label=int(label), image=image)

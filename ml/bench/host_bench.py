@@ -75,8 +75,7 @@ def scores(model_path: Path, loader, live_index: int, limit: int = 0):
             for name, batch in (("tight", tight), ("wide", wide)):
                 if name not in inputs:
                     continue
-                # A missing name would silently leave one crop at zero, which
-                # costs far more accuracy than any quantisation rung.
+                # A missing name silently zeroes a crop, costing more than any quantisation rung.
                 detail = inputs[name]
                 frame = batch[i : i + 1].numpy().transpose(0, 2, 3, 1)
                 interpreter.set_tensor(detail["index"], quantized(frame, detail))

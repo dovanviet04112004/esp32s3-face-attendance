@@ -52,8 +52,7 @@ class SpoofTaskLoss(nn.Module):
         parts = output if isinstance(output, tuple) else (output,)
         logits = parts[0]
         patch = parts[1] if len(parts) > 1 else None
-        # The trainer moves the model, not the loss beside it, so this
-        # buffer follows the logits rather than assuming anyone moved it.
+        # The trainer moves the model, not the loss, so the weight follows the logits.
         weight = self.class_weight.to(logits.device, logits.dtype)
         task = nn.functional.cross_entropy(
             logits, batch.labels, weight=weight, label_smoothing=self.label_smoothing

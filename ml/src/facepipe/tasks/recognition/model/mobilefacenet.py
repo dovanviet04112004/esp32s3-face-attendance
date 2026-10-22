@@ -56,8 +56,7 @@ class MobileFaceNet(nn.Module):
         self.head = ConvBnAct(width * 2, 512, kernel_size=1, **act)
         self.head_dw = ConvBn(512, 512, kernel_size=final_map(input_size), groups=512)
         self.embed = nn.Linear(512, embedding, bias=False)
-        # No affine: the embedding is compared by angle, so a learned per-channel
-        # scale would only rescale a vector that is normalised straight after.
+        # No affine: the embedding is compared by angle and normalised straight after.
         self.embed_bn = nn.BatchNorm1d(embedding, affine=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

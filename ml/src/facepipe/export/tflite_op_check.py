@@ -53,8 +53,7 @@ def operators(model_path: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     for op in interpreter._get_ops_details():
         name = op["op_name"]
-        # DELEGATE is the host interpreter handing work to XNNPACK; no such
-        # node reaches the board, so counting it would overstate the graph.
+        # DELEGATE is the host handing work to XNNPACK; that node never reaches the board.
         if name == "DELEGATE":
             continue
         counts[name] = counts.get(name, 0) + 1

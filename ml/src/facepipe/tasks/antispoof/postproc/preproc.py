@@ -44,8 +44,7 @@ def cell_bounds(
     computes it that way, and on the last cell the two disagree by a pixel.
     """
     step = np.float32(span) / np.float32(count)
-    # xtensa contracts origin + i * step into one madd.s, so the product and the
-    # sum round once between them; float64 here reproduces that single rounding.
+    # xtensa contracts origin + i * step into one madd.s, rounding once; float64 does the same.
     low = (np.float64(origin) + np.arange(count, dtype=np.float64) * np.float64(step)).astype(
         np.float32
     )

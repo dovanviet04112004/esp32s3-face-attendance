@@ -182,8 +182,7 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     from .model import minifasnet_v2, minifasnet_v2_se  # noqa: F401  registers both models
 
     cfg = load_run_config(run)
-    # best.pth appears only after the first validation, so a run stopped inside
-    # its first epochs has nothing but last.pth.
+    # best.pth appears only after the first validation; a run stopped sooner has last.pth alone.
     path = run / "ckpt" / "best.pth"
     if not path.is_file():
         path = run / "ckpt" / "last.pth"
@@ -191,8 +190,7 @@ def load_run(run: Path) -> tuple[object, torch.nn.Module]:
     state = payload["ema"]["module"] if "ema" in payload else payload["model"]
     # The per-cell head lives only while training, and the config cannot rebuild it.
     state = {k: v for k, v in state.items() if ".patch." not in k}
-    # A config without a views key belongs to a two-view run; its weights say so,
-    # and writing it back is what makes the loader hand that run its second view.
+    # No views key means a two-view run; the loader hands it the second view only once set.
     if cfg.model.name == "minifasnet_v2_se":
         has_tight = any(k.startswith("tight.") for k in state)
         has_wide = any(k.startswith("wide.") for k in state)
@@ -535,8 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"       eer   {equal_error_rate(*held).acer:.4f}  (not the gate, the threshold moved)")
 
     for shards in args.xdomain:
-        # HTER is these rates at the home set's own threshold: refitting here
-        # would report how separable the other set is, not how well this transfers.
+        # HTER at the home threshold: refitting would measure separability, not transfer.
         other = collect_scores(model, build_loader(cfg, ".", root=shards), device)
         live, attack = split_scores(*other)
         rates = error_rates(*other, crossing.threshold)

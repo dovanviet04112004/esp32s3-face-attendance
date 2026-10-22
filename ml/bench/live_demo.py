@@ -83,8 +83,7 @@ def load_recogniser(run: Path, device: str) -> torch.nn.Module:
     params = dict(cfg.model.params)
     params["input_size"] = int(cfg.model.input_hw[0])
     model = MODELS.build({"name": cfg.model.name, "params": params})
-    # The align step reads it back off the model: a run frozen at another size
-    # must not be warped to whatever the module default happens to be.
+    # The align step reads this back, so a run at another size is not warped to the default.
     model.aligned_size = params["input_size"]
     path = run / "ckpt" / "best.pth"
     if not path.exists():
@@ -508,8 +507,7 @@ def infer_into(
         score, votes, live = call_of(recent, args.threshold, args.vote)
 
         who, similarity = None, 0.0
-        # Recognition runs only behind a live call, so a photo can neither be
-        # enrolled nor matched unless the gate is deliberately lifted.
+        # Gated on liveness so a photo is neither enrolled nor matched unless the gate is lifted.
         if live or not args.spoof_gate:
             vector = embed_face(recog, rgb, found.landmarks[best], args.device)
             done = enrolment.offer(vector, args.enroll_frames)
@@ -684,8 +682,7 @@ def serve(
             self.end_headers()
             sent = 0
             while not stop.is_set():
-                # Sending a frame the browser already has only builds a queue it
-                # falls further behind on, which reads as lag rather than as low fps.
+                # A resent frame only grows the browser's queue: it shows as lag, not as low fps.
                 _, version = frames.take()
                 if version == sent:
                     time.sleep(0.01)

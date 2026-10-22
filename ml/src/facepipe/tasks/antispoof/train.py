@@ -101,8 +101,7 @@ def sized(view: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
 
 
 def build_loader(cfg: Config, dataset: SpoofShardDataset, train: bool) -> DataLoader:
-    # Shards already arrive shuffled and the dataset holds a buffer back, so the
-    # loader must not shuffle: an IterableDataset cannot be indexed anyway.
+    # No shuffle here: shards arrive shuffled and the dataset keeps a buffer back.
     return DataLoader(
         dataset,
         batch_size=cfg.data.batch_size,
@@ -139,8 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("loss.teacher_run is required with antispoof_distill (ADR-0003)")
     criterion = LOSSES.get(loss_name)(**loss_cfg)
 
-    # Order matters: a resume casts optimizer momentum onto whichever device it
-    # finds the parameters on, and they start on the host.
+    # Move first: a resume casts optimizer momentum onto wherever the parameters sit.
     device = resolve_device(cfg.train.device)
     model.to(device)
     criterion.to(device)
@@ -161,8 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         tight, wide, labels, wide_scale = batch
         train_set.epoch = trainer.state.epoch
         meta = SpoofBatch(labels, wide_scale, teacher_logits(tight, wide))
-        # trainer.model, not the module above: a compiled run must reach the
-        # wrapper the trainer built, or the graph is traced twice.
+        # trainer.model: a compiled run must go through the trainer's wrapper, or it traces twice.
         loss = criterion(trainer.model((tight, wide)), meta)
         return loss, {"task": loss.detach(), "total": loss.detach()}
 
@@ -197,8 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         logger=logger,
         step_fn=step_fn,
         val_fn=val_fn,
-        # Distillation ranks checkpoints by the divergence it minimises: the pool's
-        # EER reads labels this run never learned from (ADR-0003).
+        # Distilling ranks by divergence: the pool's EER reads labels it never learned (ADR-0003).
         best_metric_key="loss" if teacher is not None else "eer",
     )
     logger.info(f"train={len(train_set)} val={len(val_set)}")

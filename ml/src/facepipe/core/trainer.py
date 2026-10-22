@@ -178,14 +178,12 @@ class Trainer:
         self.logger = logger
         self.device = resolve_device(cfg.train.device)
         self.channels_last = cfg.train.channels_last
-        # Parameters the optimizer owns but the exported model does not, such as
-        # a classifier head living in the loss (KEHOACH 4.4).
+        # Trained but not exported, such as a classifier head in the loss (KEHOACH 4.4).
         self.trained_elsewhere = dict(trained_elsewhere or {})
         self.module = model.to(self.device)
         if self.channels_last:
             self.module = self.module.to(memory_format=torch.channels_last)
-        # A compiled wrapper renames state_dict keys with an _orig_mod prefix,
-        # so weights are read and written through self.module, never self.model.
+        # torch.compile prefixes state_dict keys with _orig_mod: weights go through self.module.
         self.model = _compiled(self.module, cfg.train.compile)
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -198,8 +196,7 @@ class Trainer:
         self.amp_dtype = getattr(torch, cfg.train.amp_dtype)
         self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.amp_enabled)
         self.ema = ModelEma(self.module, cfg.train.ema_decay) if cfg.train.ema_decay > 0 else None
-        # Divergence is recorded on device and read at logging cadence: testing
-        # it per step would block on the accelerator every step.
+        # Read at log cadence: testing divergence per step would block on the accelerator.
         self.diverged = torch.zeros((), dtype=torch.bool, device=self.device)
         self.state = TrainState(best_is_lower=best_is_lower)
         self.state.best_metric = math.inf if best_is_lower else -math.inf
@@ -228,8 +225,7 @@ class Trainer:
             if self.val_fn is not None and self._due(self.cfg.train.val_every_epochs):
                 val_stats = self.val_fn(self.export_module, self.state.epoch)
                 self.logger.log_scalars(self.state.global_step, prefix="val", **val_stats)
-                # The metric a run is judged on belongs where someone watching a
-                # long run will see it, not only in the event files.
+                # Also printed: a long run's judged metric must not live only in the event files.
                 self.logger.info(f"epoch {epoch} val | {format_scalars(val_stats)}")
                 stats = {**stats, **{f"val_{k}": v for k, v in val_stats.items()}}
                 self._track_best(val_stats)
@@ -336,8 +332,7 @@ class Trainer:
     def to_device(self, batch: Any) -> Any:
         if isinstance(batch, torch.Tensor):
             moved = batch.to(self.device, non_blocking=True)
-            # Bytes count as images: a branch normalising on the device would
-            # otherwise reach the model contiguous, losing what this buys.
+            # uint8 images too: a branch normalising on device would feed the model contiguous ones.
             if self.channels_last and moved.dim() == 4:
                 moved = moved.contiguous(memory_format=torch.channels_last)
             return moved
@@ -346,8 +341,7 @@ class Trainer:
         if isinstance(batch, tuple | list):
             moved = [self.to_device(v) for v in batch]
             return type(batch)(moved) if isinstance(batch, tuple) else moved
-        # Branches carry their targets in a dataclass. Left alone it would stay
-        # on the host while the images move, and the loss would fail on device.
+        # Branch targets ride in a dataclass; left on the host they break the loss on device.
         if is_dataclass(batch) and not isinstance(batch, type):
             moved_fields = {f.name: self.to_device(getattr(batch, f.name)) for f in fields(batch)}
             return replace(batch, **moved_fields)
@@ -425,8 +419,7 @@ class Trainer:
         if "rng" in payload:
             restore_rng_state(payload["rng"])
 
-        # A run_id carries a timestamp, so continuing lands in a new directory.
-        # Recording the parent keeps the history from breaking across the two.
+        # A resume lands in a new timestamped run, so the parent is recorded to link the two.
         self.resumed_from = payload.get("run_id")
         if self.resumed_from:
             (self.run_dir.path / RESUMED_FROM_NAME).write_text(
