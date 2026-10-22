@@ -430,11 +430,9 @@ TEST_CASE("corner marks name the panel's origin and axis directions", "[drv_lcd]
 
 void app_main(void)
 {
-    // The hand-judged cases go first so the corner marks still end on the glass.
-    UNITY_BEGIN();
-    unity_run_tests_by_tag("[manual]", false);
-    UNITY_END();
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
+    // The hand-judged cases wait in the menu, so the corner marks stay on the glass until one is picked.
+    unity_run_menu();
 }
