@@ -113,11 +113,11 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
     }
 }
 
-void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
+bool resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
                      const Quantizer &quant, int planes) noexcept
 {
     if (size > kMaxSide) {
-        return;
+        return false;
     }
     int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
     cell_bounds(left, side, size, frame.width, col_first, col_last);
@@ -126,13 +126,14 @@ void resample_square(const ai_engine_frame_t &frame, float left, float top, floa
         area_rows(frame, col_first, col_last, size, row_first[row], row_last[row],
                   out + (size_t)row * size * planes, quant, planes);
     }
+    return true;
 }
 
-void resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
+bool resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
                     const Quantizer &quant) noexcept
 {
     if (new_w > kMaxSide || new_h > kMaxSide) {
-        return;
+        return false;
     }
     int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
     cell_bounds(0.0f, static_cast<float>(frame.width), new_w, frame.width, col_first, col_last);
@@ -141,6 +142,7 @@ void resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t
         area_rows(frame, col_first, col_last, new_w, row_first[row], row_last[row], out + row * out_w * kChannels,
                   quant, kChannels);
     }
+    return true;
 }
 
 }  // namespace ai

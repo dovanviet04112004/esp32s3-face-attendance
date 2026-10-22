@@ -34,8 +34,7 @@ esp_err_t letterbox_frame(const ai_engine_frame_t &frame, const TensorView &inpu
     const Quantizer quant(input, kPixelMean, kPixelSpan);
     memset(input.data, quant.byte(0), input.bytes);
     int8_t *origin = input.data + (geometry->pad_y * out_w + geometry->pad_x) * kChannels;
-    resample_frame(frame, new_w, new_h, origin, out_w, quant);
-    return ESP_OK;
+    return resample_frame(frame, new_w, new_h, origin, out_w, quant) ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 }  // namespace ai

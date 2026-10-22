@@ -45,13 +45,16 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
 /** Resample one frame rectangle onto a size x size x planes int8 block by area
  *  averaging; planes 4 appends per-pixel saturation, which a convolution cannot
  *  derive from the three beside it (KEHOACH 3, measurements 38).
+ *  @ret false with out untouched when size passes kMaxSide
  */
-void resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
+bool resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
                      const Quantizer &quant, int planes = kChannels) noexcept;
 
 /** Resample the whole frame to new_w x new_h by area averaging, writing NHWC int8
- *  rows of out_w pixels starting at out; out must hold new_h rows of out_w pixels. */
-void resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
+ *  rows of out_w pixels starting at out; out must hold new_h rows of out_w pixels.
+ *  @ret false with out untouched when a side passes kMaxSide
+ */
+bool resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
                     const Quantizer &quant) noexcept;
 
 }  // namespace ai

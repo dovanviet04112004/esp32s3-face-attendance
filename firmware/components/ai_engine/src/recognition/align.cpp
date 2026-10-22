@@ -70,7 +70,8 @@ esp_err_t align_face(const ai_engine_frame_t &frame, const float landmarks[10], 
         input.rank != 4 || input.dims[3] != kChannels) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (cap_bytes < input.bytes) {
+    // The warp fills a square, so a graph wanting H != W would be written past its tensor.
+    if (cap_bytes < input.bytes || input.dims[1] != input.dims[2]) {
         return ESP_ERR_INVALID_SIZE;
     }
     const int size = input.dims[1];

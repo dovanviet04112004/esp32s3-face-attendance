@@ -47,16 +47,16 @@ esp_err_t crop_face(const ai_engine_frame_t &frame, const float box[4], const Te
         (planes != kChannels && planes != kChannels + 1)) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (cap_bytes < input.bytes) {
+    if (cap_bytes < input.bytes || input.dims[1] != input.dims[2]) {
         return ESP_ERR_INVALID_SIZE;
     }
     if (box[2] <= box[0] || box[3] <= box[1]) {
         return ESP_ERR_INVALID_ARG;
     }
     const Square face = fitted(box, kFaceScale, frame.width, frame.height);
-    resample_square(frame, face.left, face.top, face.side, input.dims[1], out,
-                    Quantizer(input, kPixelMean, kPixelSpan), planes);
-    return ESP_OK;
+    const bool cut = resample_square(frame, face.left, face.top, face.side, input.dims[1], out,
+                                     Quantizer(input, kPixelMean, kPixelSpan), planes);
+    return cut ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 }  // namespace ai

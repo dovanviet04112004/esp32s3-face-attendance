@@ -77,7 +77,7 @@ esp_err_t ai_engine_detect(const int8_t *image);
 /** Letterbox a camera frame into the detector and run it (KEHOACH 3, letterbox_params).
  *  @ctx ai_task | blocking for the resample and the whole graph
  *  @param geometry receives what ai_engine_face_to_frame needs; may be NULL
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_FAIL
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE | ESP_FAIL
  */
 esp_err_t ai_engine_detect_frame(const ai_engine_frame_t *frame, ai_engine_letterbox_t *geometry);
 
@@ -110,14 +110,14 @@ float ai_engine_box_iou(const float a[4], const float b[4]);
  *  @ctx ai_task | blocking for the warp and the whole graph
  *  @param out unit-length embedding as symmetric int8, cap_bytes at least ai_engine_recog_output_bytes
  *  @param scale receives the dequant factor of that int8 vector
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_FAIL
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE | ESP_FAIL
  */
 esp_err_t ai_engine_recognize_face(const ai_engine_frame_t *frame, const float landmarks[10], int8_t *out,
                                    size_t cap_bytes, float *scale);
 
 /** Cut the face crop of a box in frame pixels and score its liveness.
  *  @ctx ai_task | blocking for the crop and the whole graph
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_FAIL
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE | ESP_ERR_INVALID_ARG | ESP_ERR_INVALID_SIZE | ESP_FAIL
  */
 esp_err_t ai_engine_spoof_face(const ai_engine_frame_t *frame, const float box[4], float *live);
 
