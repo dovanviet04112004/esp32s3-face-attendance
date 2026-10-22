@@ -666,17 +666,15 @@ TEST_CASE("two namespaces hold the same key without meeting", "[sys_storage]")
 
 TEST_CASE("a string setting comes back whole and a short buffer is refused", "[sys_storage]")
 {
-    const char *host = "pool.ntp.org";
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_str(STORAGE_NS_DEVICE, "sntp_host", host));
+    const char *key = "str_trip";
+    const char *text = "a string read back whole";
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_str(STORAGE_NS_DEVICE, key, text));
     char read_back[32] = { 0 };
-    TEST_ASSERT_EQUAL(ESP_OK,
-                      sys_storage_get_str(STORAGE_NS_DEVICE, "sntp_host", read_back,
-                                          sizeof(read_back)));
-    printf("sntp_host reads %s\n", read_back);
-    TEST_ASSERT_EQUAL_STRING(host, read_back);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_get_str(STORAGE_NS_DEVICE, key, read_back, sizeof(read_back)));
+    printf("%s reads %s\n", key, read_back);
+    TEST_ASSERT_EQUAL_STRING(text, read_back);
     char tiny[4] = { 0 };
-    TEST_ASSERT_NOT_EQUAL(ESP_OK,
-                          sys_storage_get_str(STORAGE_NS_DEVICE, "sntp_host", tiny, sizeof(tiny)));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, sys_storage_get_str(STORAGE_NS_DEVICE, key, tiny, sizeof(tiny)));
 }
 
 void app_main(void)
