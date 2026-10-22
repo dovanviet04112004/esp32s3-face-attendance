@@ -55,9 +55,14 @@ struct Band {
         if (wanted <= bytes) {
             return;
         }
+        // Grown first: freeing the old block for a grow that fails would strip every module built so far.
+        int8_t *grown = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, wanted, MALLOC_CAP_SPIRAM));
+        if (grown == nullptr) {
+            return;
+        }
         heap_caps_free(rows);
-        rows = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, wanted, MALLOC_CAP_SPIRAM));
-        bytes = rows != nullptr ? wanted : 0;
+        rows = grown;
+        bytes = wanted;
     }
 
     void release() noexcept
