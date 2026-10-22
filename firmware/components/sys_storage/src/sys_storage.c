@@ -64,6 +64,7 @@ static size_t s_stage_want;
 static const uint8_t *s_models_base;
 static size_t s_models_bytes;
 static esp_partition_mmap_handle_t s_models_map;
+static uint8_t s_mapped_slot;             // the slot models_open mapped, while s_models is set
 
 // active_slot names which of the two images this boot trusts; an unwritten key
 // means slot 0, which is where the flashing tool puts the first image.
@@ -916,7 +917,8 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
         *header = s_models;
         return ESP_OK;
     }
-    const esp_partition_t *part = slot_partition(active_slot());
+    const uint8_t slot = active_slot();
+    const esp_partition_t *part = slot_partition(slot);
     if (part == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
@@ -944,21 +946,28 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
     }
     s_models_bytes = part->size;
     s_models_base = base;
+    s_mapped_slot = slot;
     s_models = candidate;
     *header = s_models;
     ESP_LOGI(TAG, "models v%" PRIu32 ", %" PRIu32 " entries, slot %u", s_models->format_ver,
-             s_models->count, (unsigned)active_slot());
+             s_models->count, (unsigned)slot);
     return ESP_OK;
+}
+
+// An activate or a revert names the next boot's slot; this boot still reads the one it mapped.
+static uint8_t serving_slot(void)
+{
+    return s_models != NULL ? s_mapped_slot : active_slot();
 }
 
 uint8_t sys_storage_models_slot(void)
 {
-    return active_slot();
+    return serving_slot();
 }
 
 size_t sys_storage_models_slot_bytes(void)
 {
-    const esp_partition_t *spare = slot_partition(active_slot() == 0 ? 1 : 0);
+    const esp_partition_t *spare = slot_partition(serving_slot() == 0 ? 1 : 0);
     return spare != NULL ? spare->size : 0;
 }
 
@@ -969,7 +978,7 @@ esp_err_t sys_storage_models_stage_begin(size_t size_bytes)
     }
     // Always the slot this boot is not reading: erasing the live one would take
     // the kiosk down mid-write with nothing to fall back to (KEHOACH 6.2.2).
-    const esp_partition_t *spare = slot_partition(active_slot() == 0 ? 1 : 0);
+    const esp_partition_t *spare = slot_partition(serving_slot() == 0 ? 1 : 0);
     if (spare == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
@@ -1039,7 +1048,7 @@ esp_err_t sys_storage_models_stage_abort(void)
 
 esp_err_t sys_storage_models_activate(void)
 {
-    const uint8_t next = active_slot() == 0 ? 1 : 0;
+    const uint8_t next = serving_slot() == 0 ? 1 : 0;
     APP_RETURN_ON_ERR(sys_storage_set_u32(STORAGE_NS_MODEL, STORAGE_KEY_ACTIVE_SLOT, next), TAG, "slot");
     ESP_LOGW(TAG, "models slot %u takes over at the next boot", (unsigned)next);
     return ESP_OK;

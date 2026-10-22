@@ -185,13 +185,15 @@ esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_rec
  */
 esp_err_t sys_storage_models_open(const storage_models_header_t **header);
 
-/** Which of the two model partitions this boot mapped (KEHOACH 6.2.2).
- *  @ctx any | non-blocking | 0 until a staged image has taken over
+/** Which of the two model partitions this boot mapped (KEHOACH 6.2.2), the same after an
+ *  activate or a revert that only names the next boot's.
+ *  @ctx task | non-blocking once mapped, until then an NVS read under m_littlefs | 0 until a
+ *       staged image has taken over
  */
 uint8_t sys_storage_models_slot(void);
 
 /** How much a staged image may take, so a caller can refuse one on arithmetic.
- *  @ctx any | non-blocking | 0 when the spare partition is missing
+ *  @ctx task | as sys_storage_models_slot | 0 when the spare partition is missing
  */
 size_t sys_storage_models_slot_bytes(void);
 
