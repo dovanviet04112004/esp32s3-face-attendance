@@ -23,6 +23,7 @@
 #define LOG_CUT_KEY "log_cut"
 #define LOG_SEQ_KEY "log_seq"
 #define LOG_BOOT_KEY "log_boot"
+#define SCRATCH_LEFT_KEY "scratch_left"
 #define BOOT_WINDOW_MS 60000
 #define BOOT_HOLD_MS 2000
 #define BOOT_POLL_MS 50
@@ -389,15 +390,18 @@ TEST_CASE("the scratch directory is emptied at boot", "[sys_storage]")
 {
     // Enrol drops crops here and nothing reads them across a reboot, so a file
     // surviving init would grow the partition for the device's whole life.
+    uint32_t left = 0;
+    sys_storage_get_u32(STORAGE_NS_SYS, SCRATCH_LEFT_KEY, &left);
+    const bool survived = exists(SCRATCH_PATH);
     FILE *leftover = fopen(SCRATCH_PATH, "wb");
     TEST_ASSERT_NOT_NULL(leftover);
     fwrite("crop", 1, 4, leftover);
     fclose(leftover);
-
-    uint8_t buf[8];
-    size_t len = 0;
-    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(SCRATCH_PATH, buf, sizeof(buf), &len));
-    unlink(SCRATCH_PATH);
+    TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, SCRATCH_LEFT_KEY, 1));
+    if (!left) {
+        TEST_IGNORE_MESSAGE("a crop is left in the scratch directory: boot again to see init clear it");
+    }
+    TEST_ASSERT_FALSE_MESSAGE(survived, "the crop the last boot left survived init");
 }
 
 TEST_CASE("a packed models partition reads back, an unpacked one is refused", "[sys_storage]")
