@@ -1,5 +1,5 @@
 /** The table, the matcher and the store behind svc_facedb.h (KEHOACH 4.5.5g).
- *  @ctx task | FaceDb methods take m_facedb, nothing else here locks
+ *  @ctx task | FaceDb methods take m_facedb, the writes m_facedb_io ahead of it; nothing else here locks
  */
 #pragma once
 
@@ -106,7 +106,7 @@ public:
     esp_err_t next_unreported(svc_facedb_unreported_t *out) noexcept;
     esp_err_t mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms) noexcept;
     esp_err_t templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
-                      size_t cap, float *scale, uint8_t *quality) noexcept;
+                      size_t cap_bytes, float *scale, uint8_t *quality) noexcept;
     size_t people(svc_facedb_person_t *out, size_t cap, size_t first, size_t *total) noexcept;
     esp_err_t persist() noexcept;
     size_t active() const noexcept { return active_; }

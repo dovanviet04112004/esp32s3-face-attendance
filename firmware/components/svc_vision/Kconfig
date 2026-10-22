@@ -5,16 +5,19 @@ menu "Vision pipeline"
         default 100
         range 16 480
         help
-            Recognition warps the face onto 113x113. Someone standing at the
-            distance the guide frame invites measures 107-110 px, so 113 was a
-            gate nobody could clear from there (KEHOACH 2.1).
+            Written to NVS key vision/face_min_px on the first boot, and again
+            only when a firmware raises the seed set (KEHOACH 6.2.1).
+            Recognition warps the face onto its input square, 112x112 on the
+            deployed model. Someone standing at the distance the guide frame
+            invites measures 107-110 px, so a gate at the input side would be
+            one nobody clears from there (KEHOACH 4.5.5d).
 
     config VISION_SEED_GUIDE_MIN_PERCENT
         int "Seed for the share of a face that must sit inside the guide (percent)"
         default 50
         range 1 100
         help
-            Written to NVS key vision/guide_min on the first boot only. Half
+            Written to NVS key vision/guide_min as the face_min_px seed is. Half
             the face box inside the drawn guide lets someone standing a head
             off centre check in, and a face that is not on the glass is never
             judged, since the guide lies inside the preview slice (KEHOACH 4.5.5d).
@@ -24,7 +27,7 @@ menu "Vision pipeline"
         default 700
         range 40 1300
         help
-            Written to NVS key vision/present_mm on the first boot only.
+            Written to NVS key vision/present_mm as the face_min_px seed is.
             Recognition works between 250 and 420 mm (KEHOACH 3), so the
             gate sits past that: someone inside this distance wakes the
             pipeline, which then asks them to come closer (KEHOACH 2.3D).

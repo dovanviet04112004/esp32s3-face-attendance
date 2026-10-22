@@ -5,10 +5,12 @@ menu "Attendance uplink"
         default 16
         range 1 256
         help
-            A drain holds m_littlefs for its whole run, so a boundless batch
-            would block attend_task for as long as the backlog is deep. One
-            batch of 16 at QoS 1 is well under a second on a healthy link,
-            and a caller that sees ESP_ERR_NOT_FINISHED simply calls again.
+            Each read and each cursor write takes m_littlefs on its own, so
+            attend_task's appends slot in between, but a boundless batch would
+            keep sync_task, heartbeats and commands included, for as long as
+            the backlog is deep. One batch of 16 at QoS 1 is well under a
+            second on a healthy link, and a caller that sees
+            ESP_ERR_NOT_FINISHED simply calls again.
 
     config SYNC_ACK_TIMEOUT_MS
         int "How long a record waits for the broker's puback"

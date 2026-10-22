@@ -15,7 +15,7 @@ namespace {
 const char *TAG = "svc_facedb";
 
 constexpr uint32_t kLockMs = 200;
-// A writer queues behind a 1.8-2.3 s save of the whole table (KEHOACH 6.2.4).
+// A writer queues behind a 1.8-2.3 s save of the whole table (KEHOACH 5.3).
 constexpr uint32_t kIoLockMs = 4000;
 constexpr size_t kImageAlign = 16;
 constexpr size_t kHeaderCrcBytes = offsetof(storage_file_header_t, crc32);
@@ -430,10 +430,10 @@ esp_err_t FaceDb::mark_reported(uint32_t employee_id, uint16_t template_idx, int
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t FaceDb::templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,
+esp_err_t FaceDb::templet(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap_bytes,
                           float *scale, uint8_t *quality) noexcept
 {
-    if (emb == nullptr || cap < STORAGE_EMBED_DIM || scale == nullptr) {
+    if (emb == nullptr || cap_bytes < STORAGE_EMBED_DIM || scale == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
     app::LockGuard lock(mutex_, kLockMs);

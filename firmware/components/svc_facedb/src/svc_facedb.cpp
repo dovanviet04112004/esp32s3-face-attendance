@@ -96,10 +96,10 @@ esp_err_t svc_facedb_mark_reported(uint32_t employee_id, uint16_t template_idx, 
     return s_db.mark_reported(employee_id, template_idx, session_ms);
 }
 
-esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap,
+esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb, size_t cap_bytes,
                               float *scale, uint8_t *quality)
 {
-    return s_db.templet(employee_id, template_idx, emb, cap, scale, quality);
+    return s_db.templet(employee_id, template_idx, emb, cap_bytes, scale, quality);
 }
 
 esp_err_t svc_facedb_persist(void)

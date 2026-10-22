@@ -68,9 +68,9 @@ bool sane(const svc_vision_thresholds_t &t)
            t.guide_min_share <= 1.0f;
 }
 
-}  // namespace
-
 std::atomic<int> s_face_min_px{ 0 };
+
+}  // namespace
 
 extern "C" esp_err_t svc_vision_init(const svc_vision_thresholds_t *thresholds)
 {

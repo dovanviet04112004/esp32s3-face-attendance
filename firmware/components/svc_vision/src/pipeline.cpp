@@ -47,8 +47,8 @@ float side_of(const float *box) noexcept
     return width > height ? width : height;
 }
 
-// The 1.0x square fitted_box builds must fit whole, or the clamp pulls frame
-// border into the crop and the spoof branch reads it as content (KEHOACH 3).
+// The face's own 1.0x square must lie whole in the frame; the wider spoof crop
+// then slides to hold it rather than reaching past the border (KEHOACH 3).
 bool square_fits(const float *box, int width, int height) noexcept
 {
     const float side = side_of(box);

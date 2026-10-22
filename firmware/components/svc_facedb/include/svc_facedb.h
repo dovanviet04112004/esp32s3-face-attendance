@@ -1,5 +1,6 @@
 /** The enrolled templates: int8 embeddings in PSRAM, cosine search, two-phase persistence.
- *  @ctx task | blocking | every call but count takes m_facedb (KEHOACH 5.3)
+ *  @ctx task | blocking | a lookup takes m_facedb; a write takes m_facedb_io, waiting up to
+ *       4 s behind a save, then m_facedb (KEHOACH 5.3); count and model_tag take neither
  */
 #pragma once
 
@@ -80,7 +81,7 @@ esp_err_t svc_facedb_model_tag(uint8_t *out);
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND | ESP_ERR_INVALID_ARG | ESP_ERR_TIMEOUT
  */
 esp_err_t svc_facedb_template(uint32_t employee_id, uint16_t template_idx, int8_t *emb,
-                              size_t cap, float *scale, uint8_t *quality);
+                              size_t cap_bytes, float *scale, uint8_t *quality);
 
 /** One enrolled person, however many templates they carry. */
 typedef struct {
@@ -153,7 +154,8 @@ esp_err_t svc_facedb_next_unreported(svc_facedb_unreported_t *out);
 esp_err_t svc_facedb_mark_reported(uint32_t employee_id, uint16_t template_idx, int64_t session_ms);
 
 /** Write the table to flash in two phases, compacting once over 30 percent of it is dead.
- *  @ctx task | blocking, seconds for a full table | takes m_facedb, then m_littlefs inside
+ *  @ctx task | blocking, seconds for a full table | holds m_facedb_io throughout, takes
+ *       m_facedb to seal the image, then m_littlefs to write it with m_facedb released
  *  @ret ESP_OK | ESP_FAIL when the rename chain did not complete | ESP_ERR_TIMEOUT
  */
 esp_err_t svc_facedb_persist(void);

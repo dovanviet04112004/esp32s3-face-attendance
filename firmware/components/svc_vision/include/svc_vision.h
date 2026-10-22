@@ -17,7 +17,8 @@ extern "C" {
 
 #define SVC_VISION_REPORTED_FACES 4
 
-/** The business thresholds from NVS (KEHOACH 4.9) and the guide drawn on the glass. */
+/** The gates of one step: the model's three scores from the models image header
+ *  (KEHOACH 6.2.2), the face size and the guide drawn on the glass from NVS (KEHOACH 4.9). */
 typedef struct {
     float detect_min_score;               // a detection below this is not a face
     float live_min_score;                 // liveness below this is a presentation attack
@@ -31,7 +32,7 @@ typedef enum {
     SVC_VISION_NONE = 0,                  // nothing new: tracking a face already reported on
     SVC_VISION_NO_FACE,                   // the frame lost every face
     SVC_VISION_FACE_SMALL,                // a face is there, too far for recognition
-    SVC_VISION_FACE_OUT_OF_FRAME,         // the 1.0x crop would run off the frame
+    SVC_VISION_FACE_OUT_OF_FRAME,         // the face's 1.0x square runs off the frame
     SVC_VISION_FACE_OK,                   // through the gates, a model runs this step
     SVC_VISION_SPOOF,                     // liveness below the floor
     SVC_VISION_UNKNOWN,                   // live, no template close enough
