@@ -286,10 +286,14 @@ esp_err_t sys_time_sync_start(const char *server)
     if (server == NULL || server[0] == '\0' || strlen(server) >= sizeof(s_server)) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (s_sync_started) {
+    if (s_sync_started && strcmp(server, s_server) == 0) {
         APP_RETURN_ON_ERR(esp_netif_sntp_start(), TAG, "sntp restart");
         ESP_LOGI(TAG, "sntp asked again against %s", s_server);
         return ESP_OK;
+    }
+    if (s_sync_started) {
+        esp_netif_sntp_deinit();
+        s_sync_started = false;
     }
     // lwip keeps the pointer rather than the name (esp_netif_sntp.c, sntp_init_api).
     strlcpy(s_server, server, sizeof(s_server));

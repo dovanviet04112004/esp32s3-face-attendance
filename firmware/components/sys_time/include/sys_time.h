@@ -57,8 +57,9 @@ int64_t sys_time_now_ms(void);
  */
 esp_err_t sys_time_boot_at_ms(int64_t *out);
 
-/** Start SNTP, or ask again at once when it runs; each sync rewrites the RTC.
- *  @ctx task | non-blocking | needs a live netif, not an RTC
+/** Start SNTP, or ask again at once when it runs, against server even when it names
+ *  another host than the last call; each sync rewrites the RTC.
+ *  @ctx task | non-blocking | not reentrant | needs a live netif, not an RTC
  *  @param server host from device.sntp_host, copied (KEHOACH 4.9)
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init | ESP_ERR_INVALID_ARG | an SNTP error
  */
