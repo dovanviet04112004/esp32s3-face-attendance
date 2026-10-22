@@ -15,10 +15,12 @@ Sở hữu sơ đồ chân và hai bus dùng chung. Mọi driver từ L2 trở l
 
 ## Đo gì
 
-Trên board: PSRAM 8 MB @ 80 MHz, CPU 240 MHz, flash QIO 80 MHz. Bus I²C trả về
-`0x20` (PCF8574) và `0x5D` (GT911).
+Trên board: PSRAM 8 MB @ 80 MHz, CPU 240 MHz, flash QIO 80 MHz. Quét bus I²C với
+đủ thiết bị ngày 12/09 ở 400 kHz ra đúng năm địa chỉ (KẾ HOẠCH §2.3B): `0x14`
+(GT911, xem §2.3C vì sao không phải `0x5D`), `0x20` (PCF8574), `0x29` (VL53L1X),
+`0x57` (AT24C32 trên module RTC, không dùng) và `0x68` (DS3231).
 
-Module PCF8574 **có trở kéo ở SCL nhưng không có ở SDA** — đo bằng cách bật trở
+SCL **đã có trở treo của module cảm ứng, SDA thì không** — đo bằng cách bật trở
 kéo xuống trong chip rồi đọc chân. SDA vì thế cần một con 4,7 kΩ ngoài, và trở
 kéo nội để tắt theo §2.3B.
 

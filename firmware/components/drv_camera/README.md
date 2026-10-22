@@ -23,7 +23,7 @@ trong cùng một commit.
 | AE / AGC của sensor | **tắt cả hai** | thay bằng vòng đo vùng giữa ở `drv_camera_expose` |
 | Gain | bắt đầu 1×, vòng đo chỉnh trong 1×–4× | gain cao đẻ nhiễu hạt, anti-spoof đọc nhầm thành kết cấu da |
 | Mục tiêu sáng | kênh lục 30 / 63 | lấy mẫu thưa 1/4 giữa khung, bước 8 px |
-| Giảm chấn | 1/4 quãng, nghỉ 3 khung | sensor trễ 1–2 khung; không giảm chấn là nhấp nháy |
+| Giảm chấn | 1/4 quãng, nghỉ 2 khung | sensor trễ 1–2 khung; không giảm chấn là nhấp nháy |
 | Lọc vằn 50 Hz | `0x3C01`\|=0x80, `0x3C00`\|=0x04 | ghi xong đọc ngược lại; chỉ ràng buộc AEC của sensor, mà AEC đang tắt |
 | Chống nhấp nháy | phơi sáng theo số nguyên nửa chu kỳ điện (10 ms), gain bù phần lẻ | `drv_camera_expose` đo chu kỳ khung lúc khởi động để ra độ dài một dòng (E7-T11b) |
 
