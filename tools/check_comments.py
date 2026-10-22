@@ -307,21 +307,39 @@ def python_body_lines(source: str) -> set[int]:
     return body
 
 
-def python_comment_lines(source: str) -> set[int]:
-    """Lines that hold nothing but a comment, as the tokenizer reads them."""
-    found: set[int] = set()
+def python_comments(source: str) -> tuple[set[int], dict[int, str]]:
+    """Lines holding only a comment, and comments that follow code, as the tokenizer reads them."""
+    alone: set[int] = set()
+    trailing: dict[int, str] = {}
     coded: set[int] = set()
     quiet = (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT)
     try:
         for token in tokenize.generate_tokens(io.StringIO(source).readline):
             row = token.start[0]
-            if token.type == tokenize.COMMENT and row not in coded:
-                found.add(row)
-            elif token.type not in quiet:
-                coded.add(row)
+            if token.type != tokenize.COMMENT:
+                if token.type not in quiet:
+                    coded.update(range(row, token.end[0] + 1))
+            elif row in coded:
+                trailing[row] = token.string.rstrip()
+            else:
+                alone.add(row)
     except (tokenize.TokenError, SyntaxError):
-        return set()
-    return found
+        return set(), {}
+    return alone, trailing
+
+
+def check_trailing_comments(path: Path, trailing: dict[int, str]) -> list[Problem]:
+    """Section 2.6: a comment after code on its line stays within the trailing limit."""
+    return [
+        Problem(
+            path,
+            lineno,
+            "2.6",
+            f"trailing comment is {len(text)} chars, limit is {MAX_TRAILING_COMMENT_CHARS}",
+        )
+        for lineno, text in sorted(trailing.items())
+        if len(text) > MAX_TRAILING_COMMENT_CHARS
+    ]
 
 
 def check_function_comments(path: Path, body: set[int], alone: set[int]) -> list[Problem]:
@@ -434,11 +452,8 @@ def check_python(path: Path, lines: list[str]) -> list[Problem]:
             continue
         found = find_line_comment(line, ("#",))
         if found:
-            idx, text = found
-            comments.append((lineno, text))
+            comments.append((lineno, found[1]))
             comment_lines.add(lineno)
-            if line[:idx].strip() and len(text) > MAX_TRAILING_COMMENT_CHARS:
-                comments.append((lineno, text))
     problems = check_common(path, comments)
     problems += check_runs_and_density(path, lines, comment_lines, is_header=False)
     return problems
@@ -512,11 +527,12 @@ def check_file(path: Path) -> list[Problem]:
     if path.suffix in YAML_SUFFIXES:
         return check_yaml(path, lines)
     if path.suffix in PY_SUFFIXES:
-        body = python_body_lines(source)
+        alone, trailing = python_comments(source)
         return (
             check_python(path, lines)
             + check_docstrings(path, source)
-            + check_function_comments(path, body, python_comment_lines(source))
+            + check_function_comments(path, python_body_lines(source), alone)
+            + check_trailing_comments(path, trailing)
         )
     is_header = path.suffix in C_HEADER_SUFFIXES
     # Section 2.6 grants TypeScript TSDoc at exported symbols, which the C body rule refuses.
