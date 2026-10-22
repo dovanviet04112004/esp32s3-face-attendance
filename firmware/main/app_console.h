@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-/** Serve nvs get and nvs set on the USB port until reboot.
+/** Serve set, get and del on the NVS groups of KEHOACH 6.2.1, and heap, on the USB port until reboot.
  *  @ctx task | non-blocking | call after sys_storage_init
  *  @ret ESP_OK | ESP_ERR_NOT_SUPPORTED when the console is compiled out
  */

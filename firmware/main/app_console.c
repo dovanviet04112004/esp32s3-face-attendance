@@ -38,13 +38,29 @@ static struct {
     struct arg_end *end;
 } s_del;
 
+// sys_storage keeps the namespace pointer it is first handed, so its own names go in, never this line's buffer.
+static const char *const kNamespaces[] = { STORAGE_NS_WIFI, STORAGE_NS_DEVICE, STORAGE_NS_MODEL, STORAGE_NS_SYS,
+                                           STORAGE_NS_UI,   STORAGE_NS_VISION, STORAGE_NS_ATTEND };
+
+static const char *known_ns(const char *typed)
+{
+    for (size_t i = 0; i < sizeof(kNamespaces) / sizeof(kNamespaces[0]); ++i) {
+        if (strcmp(typed, kNamespaces[i]) == 0) { return kNamespaces[i]; }
+    }
+    ESP_LOGW(TAG, "no namespace %s in KEHOACH 6.2.1", typed);
+    return NULL;
+}
+
 static int set_cmd(int argc, char **argv)
 {
     if (arg_parse(argc, argv, (void **)&s_set) != 0) {
         arg_print_errors(stderr, s_set.end, argv[0]);
         return 1;
     }
-    const char *ns = s_set.ns->sval[0];
+    const char *ns = known_ns(s_set.ns->sval[0]);
+    if (ns == NULL) {
+        return 1;
+    }
     const char *key = s_set.key->sval[0];
     const unsigned len = (unsigned)strlen(s_set.value->sval[0]);
     const esp_err_t err = sys_storage_set_str(ns, key, s_set.value->sval[0]);
@@ -75,7 +91,10 @@ static int get_cmd(int argc, char **argv)
         return 1;
     }
     char value[VALUE_CAP] = { 0 };
-    const char *ns = s_get.ns->sval[0];
+    const char *ns = known_ns(s_get.ns->sval[0]);
+    if (ns == NULL) {
+        return 1;
+    }
     const char *key = s_get.key->sval[0];
     const esp_err_t err = sys_storage_get_str(ns, key, value, sizeof(value));
     if (err != ESP_OK) {
@@ -96,7 +115,10 @@ static int del_cmd(int argc, char **argv)
         arg_print_errors(stderr, s_del.end, argv[0]);
         return 1;
     }
-    const char *ns = s_del.ns->sval[0];
+    const char *ns = known_ns(s_del.ns->sval[0]);
+    if (ns == NULL) {
+        return 1;
+    }
     const char *key = s_del.key->sval[0];
     const esp_err_t err = sys_storage_erase_key(ns, key);
     if (err != ESP_OK) {
