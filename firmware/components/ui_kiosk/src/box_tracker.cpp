@@ -54,8 +54,7 @@ uint32_t BoxTracker::sad(int col, int row, uint32_t ceiling) const noexcept
     for (int y = 0; y < kPatch; ++y) {
         const uint8_t *a = template_ + y * kPatch;
         const uint8_t *b = window_ + (row + y) * kWindow + col;
-        // A position already worse than the best one cannot win, and most of
-        // the 289 of them are, so the row is where the search gives up.
+        // A position already worse than the best cannot win, and most of the 289 are, so each row may quit.
         if (total >= ceiling) {
             return ceiling;
         }
@@ -101,8 +100,7 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     if (!active_ || frame == nullptr || width < kWindowPx || height < kWindowPx) {
         return false;
     }
-    // A face that moved last frame is moving this one, so the window goes where
-    // it is headed: the reach doubles for a steady walk and costs nothing.
+    // A face moving last frame moves this one, so the window leads it: double reach on a steady walk, free.
     const int lead_x = clamp(lead_x_, -kRadius * kStep, kRadius * kStep);
     const int lead_y = clamp(lead_y_, -kRadius * kStep, kRadius * kStep);
     const int window_left =
@@ -116,8 +114,7 @@ bool BoxTracker::update(const uint16_t *frame, int width, int height) noexcept
     uint32_t best = stay;
     int best_col = stay_col;
     int best_row = stay_row;
-    // One sparse pass over the whole reach, then two passes that close in on
-    // what it found: 307 comparisons cover what a dense grid of 4225 would.
+    // One sparse pass, then two closing in: 307 comparisons cover what a dense grid of 4225 would.
     for (int step = BoxTracker::kCoarseStep; step >= 1; step /= 2) {
         const int from_row = step == BoxTracker::kCoarseStep ? 0 : best_row - step;
         const int to_row = step == BoxTracker::kCoarseStep ? kPositions - 1 : best_row + step;

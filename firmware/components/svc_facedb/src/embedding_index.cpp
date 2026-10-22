@@ -67,8 +67,7 @@ MatchResult CosineLinearMatcher::best(const int8_t *emb, float scale) const noex
         if (!live(*rec) || table_.norm_sq(i) == 0) {
             continue;
         }
-        // The per-record scale never enters: cosine measures angle, and a
-        // positive factor cancels (KEHOACH 6.2.4).
+        // The per-record scale never enters: a positive factor cancels out of cosine (KEHOACH 6.2.4).
         const float score = static_cast<float>(dot_aligned_query(rec->embedding)) /
                             sqrtf(query_sq * static_cast<float>(table_.norm_sq(i)));
         if (winner == nullptr || score > result.score) {

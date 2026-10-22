@@ -71,8 +71,7 @@ static esp_err_t attach_ready_line(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        // Pairs with INTERRUPT_ACTIVE_LOW: the line rests high and the chip
-        // pulls it down once per completed measurement (KEHOACH 2.3).
+        // Pairs with INTERRUPT_ACTIVE_LOW: the chip pulls the line low once per measurement (KEHOACH 2.3).
         .intr_type = GPIO_INTR_NEGEDGE,
     };
     APP_RETURN_ON_ERR(gpio_config(&cfg), TAG, "int pin");

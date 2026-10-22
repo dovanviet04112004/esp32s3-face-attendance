@@ -130,8 +130,7 @@ TEST_CASE("heap and stacks hold across the soak window", "[soak]")
         sample_t now;
         take_sample(&now);
         const int64_t elapsed_ms = (esp_timer_get_time() - started_us) / 1000;
-        // A new low is the only sample worth the full table: it names the task
-        // that is still growing its stack.
+        // Only a new low earns the full table: it names the task still growing its stack.
         if (now.thinnest_bytes < thinnest.thinnest_bytes) {
             thinnest = now;
             print_sample(elapsed_ms, &now, &first);

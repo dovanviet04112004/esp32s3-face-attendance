@@ -552,8 +552,7 @@ TEST_CASE("a withdrawn ask keeps no face from any later step", "[svc_vision]")
 
 extern "C" void app_main(void)
 {
-    // The whole suite prints in a few ms, and the console drops whatever will
-    // not fit the 64-byte usb fifo unless a driver stands behind it.
+    // The suite prints in a few ms, and without a driver the console drops what overflows the 64-byte usb fifo.
     usb_serial_jtag_driver_config_t console = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     if (usb_serial_jtag_driver_install(&console) == ESP_OK) {
         usb_serial_jtag_vfs_use_driver();

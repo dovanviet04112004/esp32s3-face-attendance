@@ -269,8 +269,7 @@ void take_touch()
 void publish(ui::Canvas &from)
 {
     const bool opaque = ui::manager().current()->opaque();
-    // Every painted cell goes out: sending only the difference from the map on
-    // the glass draws a screen in pieces the moment that assumption slips.
+    // Every painted cell goes out: diffing against the glass draws the screen in pieces once the two drift.
     from.offer_painted();
     drv_lcd_overlay_t *target = &s_slot[s_next];
     memset(target, 0, sizeof(*target));
@@ -345,8 +344,7 @@ void take_verdict(int64_t dt_ms)
             }
             s_dirty = true;
         } else if (offer.verdict > APP_UI_SCANNING) {
-            // The same verdict about the same face is the same news, so it is held
-            // rather than blanked and flashed back (KEHOACH 4.5.5h.1).
+            // The same verdict on the same face is held, not blanked and flashed back (KEHOACH 4.5.5h.1).
             const bool holding =
                 s_seen.verdict == offer.verdict && s_seen.verdict_track == offer.track;
             s_clear_in_ms = kShowMs;
@@ -497,8 +495,7 @@ esp_err_t ui_kiosk_init(void)
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
                        float yaw, uint32_t track)
 {
-    // The tracked face leads the list (KEHOACH 4.5.5d), and the guide is about
-    // the person being served, not about whoever else is in shot.
+    // The tracked face leads the list (KEHOACH 4.5.5d); the guide serves that person, not others in shot.
     (void)frame_width;
     (void)frame_height;
     (void)boxes;
@@ -605,8 +602,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
     if (!s_dirty) {
         return;
     }
-    // Publishing again over a map the panel never took would drop whatever that
-    // map alone carried, because the next one is only a delta against it.
+    // The next map is a delta against this one, so publishing over an untaken map drops what it alone carried.
     if (s_sent != 0 && s_on_glass.load(std::memory_order_acquire) != s_sent) {
         return;
     }
@@ -619,8 +615,7 @@ void ui_kiosk_tick(uint32_t dt_ms)
             break;
         }
     }
-    // Painting over the slot on the glass or the one being read is what makes a
-    // frame carry half of two overlays, so a full house waits a tick.
+    // Painting the slot on the glass or the one being read splits a frame across two overlays: wait a tick.
     if (free_slot < 0) {
         return;
     }
@@ -993,8 +988,7 @@ bool ui_kiosk_take_vision_reset(bool *stuck)
         *stuck = ui::vision_reset() == ui::Restart::Stuck;
     }
     ui::vision_reset() = ui::Restart::No;
-    // The screens hold nothing of what the last look decided, so the first
-    // fresh sight is what the person in front of the kiosk is judged on.
+    // Nothing the last look decided survives, so the person in front is judged on the first fresh sight.
     s_seen.face = false;
     s_seen.stage = UI_KIOSK_STAGE_NO_FACE;
     s_seen.verdict = APP_UI_IDLE;

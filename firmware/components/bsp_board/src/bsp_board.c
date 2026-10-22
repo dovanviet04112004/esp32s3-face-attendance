@@ -47,8 +47,7 @@ static esp_err_t i2c_bus_up(void)
 
 static esp_err_t wait_for_bus_devices(void)
 {
-    // i2c_new_master_bus succeeding says nothing about the devices: at 4 ms
-    // after boot none of them answers yet; the ToF is not waited for (KEHOACH 2.3).
+    // No device answers 4 ms after boot, bus up or not; the ToF is not waited for (KEHOACH 2.3).
     const uint16_t addrs[] = {APP_IOEXP_I2C_ADDR};
     const size_t count = sizeof(addrs) / sizeof(addrs[0]);
     bool answered[sizeof(addrs) / sizeof(addrs[0])] = {false};

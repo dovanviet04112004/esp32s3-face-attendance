@@ -47,8 +47,7 @@ TEST_CASE("a frame arrives at the size the pipeline expects", "[drv_camera]")
 
 TEST_CASE("every dvp data line toggles, so no bit is stuck", "[drv_camera]")
 {
-    // Colour bars exercise all eight lines whatever the room looks like; a
-    // stuck-high line shows in the AND of every byte, a stuck-low one in the OR.
+    // Colour bars toggle all eight lines whatever the room looks like.
     sensor_t *sensor = esp_camera_sensor_get();
     TEST_ASSERT_NOT_NULL(sensor);
     TEST_ASSERT_EQUAL(0, sensor->set_colorbar(sensor, 1));
@@ -70,8 +69,7 @@ TEST_CASE("every dvp data line toggles, so no bit is stuck", "[drv_camera]")
 
 TEST_CASE("frames keep coming, so every grab is returned to the pool", "[drv_camera]")
 {
-    // A pool of four buffers: a grab that forgets to return starves it within a
-    // few rounds rather than at the end.
+    // The pool holds four buffers, so a grab never returned starves it within a few rounds.
     for (int i = 0; i < GRAB_ROUNDS; ++i) {
         camera_fb_t *frame = drv_camera_grab();
         TEST_ASSERT_NOT_NULL(frame);
@@ -340,8 +338,7 @@ TEST_CASE("the button keeps one raw frame, the led says it landed", "[drv_camera
     settle_exposure();
     printf("tap BOOT for a raw frame, hold %d s to finish\n", BUTTON_END_HOLD_MS / 1000);
 
-    // Set once and left alone: re-sending it every poll starves the camera's dma
-    // and the sensor hands back short frames.
+    // Set once: re-sending it every poll starves the camera's dma into short frames.
     led_show(0, 0, 8);
     int kept = 0;
     bool finished = false;
@@ -393,8 +390,7 @@ TEST_CASE("the button keeps one frame, the led says whether it landed", "[drv_ca
     size_t written = 0;
     int kept = 0, scene = 0;
     bool finished = false;
-    // The led is left alone between presses: re-sending it every frame starved
-    // the camera's dma and the sensor returned short frames.
+    // Set once: re-sending it every frame starves the camera's dma into short frames.
     led_show(0, 0, 8);
     while (!finished && kept < SHOT_MAX && written < SHOT_MAX_BYTES) {
         camera_fb_t *warm = drv_camera_grab();
@@ -437,8 +433,7 @@ TEST_CASE("the button keeps raw frames on the board", "[drv_camera][manual]")
     printf("tap BOOT to keep a raw frame, %d fit; hold %d s to finish\n", RAW_KEEP_MAX,
            BUTTON_END_HOLD_MS / 1000);
 
-    // Set once and left alone: re-sending it every poll starves the camera's dma
-    // and the sensor hands back short frames.
+    // Set once: re-sending it every poll starves the camera's dma into short frames.
     led_show(0, 0, 8);
     size_t written = 0;
     int kept = 0;

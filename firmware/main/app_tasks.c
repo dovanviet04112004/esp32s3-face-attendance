@@ -872,8 +872,7 @@ static roster_outcome_t apply_roster(const app_roster_t *op)
         done = already_gone(svc_facedb_remove_template(op->employee_id, op->template_idx));
         break;
     case ENROLL_PAYLOAD_OP_REPLACE_ALL:
-        // The upserts that refill the table follow this one, and the kiosk
-        // matches nobody until they land (KEHOACH 7.5).
+        // The upserts that refill the table follow; the kiosk matches nobody until they land (KEHOACH 7.5).
         revoke_all_pending();
         done = svc_facedb_clear(op->source != APP_ROSTER_PURGE);
         break;
@@ -1456,8 +1455,7 @@ static void sync_task(void *arg)
     for (;;) {
         if (!more) {
             storage_attend_record_t nudge;
-            // The short tick is for commands; the log is only read on the long
-            // one, since a drain opens the cursor on flash every call.
+            // The short tick is for commands; the log, whose drain opens the flash cursor, waits for the long one.
             nudged = xQueueReceive(wiring->uplink, &nudge, pdMS_TO_TICKS(SYNC_TICK_MS)) == pdTRUE;
         }
         settle_this_build(wiring, esp_timer_get_time() / 1000);
@@ -1485,8 +1483,7 @@ static void sync_task(void *arg)
             drained != ESP_ERR_TIMEOUT && drained != ESP_ERR_NO_MEM) {
             note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, drained, "attendance log unreadable");
         }
-        // A backlog is when progress is worth watching, so a long drain says
-        // where it has got to rather than only speaking once it ends.
+        // A backlog is when progress is worth watching, so a long drain reports as it goes.
         if (drained != said || ++batches % SYNC_REPORT_BATCHES == 0) {
             said = drained;
             const svc_sync_stats_t stats = svc_sync_stats();
@@ -1563,8 +1560,7 @@ static void cam_task(void *arg)
                 drawn_serial = 0;
                 // Panel memory still holds the old scene, so the lamp waits.
                 relight = true;
-                // The rate window spans the whole nap otherwise, and prints a
-                // frame rate the kiosk never ran at.
+                // Restarted here, or the rate window spans the nap and prints a frame rate the kiosk never ran at.
                 window_started = esp_timer_get_time();
                 frames = 0;
                 framed_at = window_started;
@@ -1642,8 +1638,7 @@ static void cam_task(void *arg)
                 drawn_serial = 0;
                 ESP_LOGE(TAG, "no frame for %lld ms: screens go on without video", (long long)silent_ms);
             }
-            // Spinning here at this priority would starve the idle task and
-            // trip the watchdog, so a dry pool costs one tick, not the core.
+            // Spinning at this priority starves idle and trips the watchdog, so a dry pool costs one tick.
             vTaskDelay(1);
             continue;
         }
@@ -1737,8 +1732,7 @@ static void ai_task(void *arg)
             ESP_LOGI(TAG, "models awake");
         }
         camera_fb_t *frame = NULL;
-        // A dry queue is the camera's fault, so feeding the watchdog here keeps
-        // the panic pointed at the task that stopped (KEHOACH 5.1).
+        // A dry queue is the camera's fault: the wdt is fed so the panic names the stalled task (KEHOACH 5.1).
         if (xQueueReceive(wiring->frames, &frame, pdMS_TO_TICKS(FRAME_WAIT_MS)) != pdTRUE) {
             esp_task_wdt_reset();
             ESP_LOGE(TAG, "no frame in %d ms", FRAME_WAIT_MS);
@@ -1763,8 +1757,7 @@ static void ai_task(void *arg)
                      (int)(result.primary.box[2] - result.primary.box[0]), result.primary.yaw,
                      result.live_score, result.match_score, (unsigned)result.employee_id);
             if (ui_kiosk_enrolling()) {
-                // Enrolling keeps attendance out of it, but a refused sample still
-                // has to reach the glass or the screen waits mute (KEHOACH 4.5.5h.2).
+                // A refused sample must still reach the glass, or the screen waits mute (KEHOACH 4.5.5h.2).
                 if (result.kind == SVC_VISION_SPOOF) {
                     ui_kiosk_enrol_refused();
                 }
@@ -2209,8 +2202,7 @@ static void ota_task(void *arg)
             .origin = CONFIG_NET_PROVISION_API_URL,
         };
         char why[NET_OTA_WHY_CAP] = { 0 };
-        // Vetted while the link is still up: a manifest refused on arithmetic
-        // does not get to cost the broker connection.
+        // Vetted while the link is up, so a manifest refused on arithmetic costs no broker connection.
         if (net_ota_check(&image, models, why, sizeof(why)) != ESP_OK) {
             ota_refused(&offer, why);
             continue;
@@ -2294,8 +2286,7 @@ static void ui_task(void *arg)
             ticket = svc_vision_enrol_cancel();
         }
         if (enrolling && !now_enrolling) {
-            // The enrolled track has already matched, and a matched track is
-            // never verified again (KEHOACH 4.5.5d).
+            // The enrolled track already matched, and a matched track is never verified again (KEHOACH 4.5.5d).
             svc_vision_reset();
             // Leaving early drops this session's samples and leaves any older ones matching.
             if (new_employee != 0 && !ui_kiosk_enrol_complete()) {
@@ -2330,8 +2321,7 @@ static void ui_task(void *arg)
                 }
             }
         }
-        // Coming back from a menu is routine; a face outliving every verdict
-        // it is owed means a model stopped answering.
+        // A menu return is routine; a face outliving every verdict it is owed means a model stopped answering.
         bool stuck = false;
         if (ui_kiosk_take_vision_reset(&stuck)) {
             svc_vision_reset();
@@ -2355,8 +2345,7 @@ static void ui_task(void *arg)
             continue;
         }
         svc_attendance_policy_t policy = { 0 };
-        // A template taken with no liveness answer is a spoof wearing a name, and
-        // the bit that already governs the door answers this too (KEHOACH 4.5.5h.2).
+        // Without liveness a template is a spoof wearing a name; the door's bit decides here too (KEHOACH 4.5.5h.2).
         if (ai_engine_spoof_input_bytes() == 0 &&
             (svc_attendance_policy(&policy) != ESP_OK || !policy.allow_no_spoof)) {
             ESP_LOGE(TAG, "enrol refused for %s: no spoof branch and the policy forbids it", name);
@@ -2506,28 +2495,24 @@ static void tof_task(void *arg)
             heard_ms = now_ms;
         }
         if (ranged != ESP_OK) {
-            // No sample yet is the normal gap between measurements; a broken
-            // sensor is not, and it must not be what puts the kiosk to sleep.
+            // A timeout is the gap between measurements; a broken sensor must not be what puts the kiosk to sleep.
             if (ranged != ESP_ERR_TIMEOUT) {
                 stay_awake("tof broken");
                 note_fault(DEVICE_EVENT_TYPE_TOF_FAULT, ranged, "range read failed");
             }
             continue;
         }
-        // The first rangings carry nothing behind them: one read 59 mm into an
-        // empty room (E7-T7).
+        // The first rangings carry nothing: one read 59 mm into an empty room (E7-T7).
         if (settling > 0) {
             --settling;
             continue;
         }
-        // An empty field reads 65535 mm with the status clear (E7-T7), so a bad
-        // status is nobody standing there rather than nothing to report.
+        // An empty field reads 65535 mm with a clear status (E7-T7), so a bad status counts as nobody there.
         const uint32_t reading_mm = status_ok ? distance_mm : UINT16_MAX;
         // SET_CONFIG may move the gate while the sensor runs (KEHOACH 4.6).
         const uint32_t gate_mm = atomic_load(&s_gate_mm);
         const uint32_t edge_mm = present ? gate_mm + PRESENCE_HYSTERESIS_MM : gate_mm;
-        // One bad range status is not an answer to whether somebody is standing
-        // there, so absence has to hold for a run of samples (KEHOACH 5.4).
+        // One bad status does not say nobody is there, so absence must hold for a run of samples (KEHOACH 5.4).
         if (reading_mm <= edge_mm) {
             away = 0;
         } else if (away < PRESENCE_AWAY_SAMPLES) {

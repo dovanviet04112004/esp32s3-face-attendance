@@ -151,8 +151,7 @@ TEST_CASE("the lamp on its own, panel asleep and no pwm anywhere", "[drv_lcd][ma
     TEST_ASSERT_EQUAL(ESP_OK, gpio_set_level(APP_LCD_BLK_GPIO, 1));
     for (int round = 0; round < LAMP_ROUNDS; ++round) {
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_sleep(false));
-        // Black while awake and untwisted glass while asleep, so the two phases
-        // cannot be mistaken for each other on a normally white panel.
+        // Black while awake, untwisted glass asleep: on a normally white panel the phases cannot be confused.
         TEST_ASSERT_EQUAL(ESP_OK, fill(0));
         printf("  round %d: DARK, panel awake driving black, %d ms, power mode %06" PRIx32 "\n",
                round + 1, LAMP_AWAKE_MS, read_reg(POWER_MODE_REG));
@@ -231,8 +230,7 @@ TEST_CASE("white held at each backlight level, then with the lamp driven flat",
 {
     static const uint8_t levels[] = {100, 70, 40, 20, 10, 5, 100};
     panel_up();
-    // A static fill with no camera in the picture: flicker seen here belongs to
-    // the panel or the lamp, never to the exposure loop (KEHOACH 2.3A).
+    // A static fill with no camera: any flicker here is the panel or the lamp, never exposure (KEHOACH 2.3A).
     TEST_ASSERT_EQUAL(ESP_OK, fill(WHITE));
     for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); ++i) {
         TEST_ASSERT_EQUAL(ESP_OK, drv_lcd_backlight(levels[i]));
@@ -378,8 +376,7 @@ TEST_CASE("the panel's own oscillator timed under a white fill and under a black
             const int64_t period = s_wrap_at[i] - s_wrap_at[i - 1];
             shortest = period < shortest ? period : shortest;
         }
-        // A descheduled poll loop misses a wrap and reports two frames as one,
-        // so only periods close to the shortest are a frame.
+        // A descheduled poll misses wraps and merges frames, so only periods near the shortest count.
         const int64_t ceiling = shortest + shortest / 10;
         int64_t total = 0, widest = 0;
         int kept = 0;
@@ -400,8 +397,7 @@ TEST_CASE("the panel's own oscillator timed under a white fill and under a black
 
 TEST_CASE("corner marks name the panel's origin and axis directions", "[drv_lcd]")
 {
-    // Runs last on purpose: the marks have to survive on the glass for someone
-    // to read the axes off them, so no later case may paint over them.
+    // Runs last on purpose: the marks must stay on the glass for someone to read the axes off them.
     static const uint16_t colours[] = {RGB565(0xFF, 0, 0), RGB565(0, 0xFF, 0), RGB565(0, 0, 0xFF)};
     const int xs[] = {0, APP_LCD_H_RES - MARK_SIDE, 0};
     const int ys[] = {0, 0, APP_LCD_V_RES - MARK_SIDE};

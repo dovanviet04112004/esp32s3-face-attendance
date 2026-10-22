@@ -50,8 +50,7 @@ esp_err_t EmbeddingTable::reserve(size_t capacity) noexcept
         return ESP_ERR_INVALID_ARG;
     }
     const size_t bytes = sizeof(storage_file_header_t) + capacity * sizeof(storage_face_record_t);
-    // Header 32 B and record 576 B are both multiples of 8, so every embedding
-    // sits 8-byte aligned once the image does (the SIMD kernel needs that).
+    // Header 32 B and record 576 B are multiples of 8, so an aligned image aligns every embedding for SIMD.
     image_ = static_cast<uint8_t *>(heap_caps_aligned_calloc(kImageAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
     norm_sq_ = static_cast<uint32_t *>(heap_caps_calloc(capacity, sizeof(uint32_t), MALLOC_CAP_SPIRAM));
     if (image_ == nullptr || norm_sq_ == nullptr) {

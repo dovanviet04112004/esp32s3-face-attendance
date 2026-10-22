@@ -199,8 +199,7 @@ TEST_CASE("a slot is signed for once and the second signature is refused", "[net
 
 void app_main(void)
 {
-    // esp_http_client reaches straight into lwip, which asserts on a missing
-    // mailbox rather than returning, so the stack comes up with no route on it.
+    // esp_http_client calls into lwip, which asserts on a missing mailbox, so the stack comes up with no route.
     ESP_ERROR_CHECK(esp_netif_init());
     UNITY_BEGIN();
     unity_run_all_tests();

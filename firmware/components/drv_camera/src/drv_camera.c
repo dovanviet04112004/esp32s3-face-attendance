@@ -68,8 +68,7 @@ static int centre_green(const camera_fb_t *frame)
     for (int y = y0; y < y1; y += METER_SAMPLE_STEP) {
         const uint16_t *row = pixels + (size_t)y * frame->width;
         for (int x = x0; x < x1; x += METER_SAMPLE_STEP) {
-            // The DVP lands RGB565 high byte first, and green carries most of
-            // the luminance, so its six bits stand in for brightness.
+            // The DVP lands RGB565 high byte first; green's six bits stand in for brightness.
             sum += (uint32_t)((__builtin_bswap16(row[x]) >> 5) & 0x3F);
             taken++;
         }
@@ -79,8 +78,7 @@ static int centre_green(const camera_fb_t *frame)
 
 static esp_err_t pick_50hz_band(sensor_t *sensor)
 {
-    // Mains here is 50 Hz and auto-detect wanders under fluorescent light:
-    // 0x3C01 bit 7 takes the band off auto, 0x3C00 bit 2 picks 50 over 60.
+    // Mains here is 50 Hz, and the sensor's auto-detect wanders under fluorescent light.
     sensor->set_reg(sensor, HZ5060_CTRL01_REG, BAND_MANUAL_BIT, BAND_MANUAL_BIT);
     sensor->set_reg(sensor, HZ5060_CTRL00_REG, BAND_50HZ_BIT, BAND_50HZ_BIT);
     const int mode = sensor->get_reg(sensor, HZ5060_CTRL01_REG, BAND_MANUAL_BIT);
@@ -94,12 +92,10 @@ static esp_err_t pick_50hz_band(sensor_t *sensor)
 
 static esp_err_t hold_exposure_still(sensor_t *sensor)
 {
-    // The sensor's own metering reads the whole scene, so a bright wall behind
-    // a face drags the face into shadow (KEHOACH 2.1).
+    // The sensor meters the whole scene, so a bright wall behind a face drags it into shadow (KEHOACH 2.1).
     sensor->set_exposure_ctrl(sensor, 0);
     sensor->set_gain_ctrl(sensor, 0);
-    // Those two report the write, not the sensor: an AEC left running steers
-    // the frame out from under this loop while every log line says manual.
+    // Those two report the write, not the sensor: a running AEC would steer the frame while logs say manual.
     const int manual = sensor->get_reg(sensor, AEC_PK_MANUAL_REG, AEC_PK_MANUAL_BOTH);
     if (manual != AEC_PK_MANUAL_BOTH) {
         ESP_LOGE(TAG, "aec/agc still automatic: 0x%04X reads 0x%02X", AEC_PK_MANUAL_REG, manual);
@@ -143,8 +139,7 @@ static esp_err_t learn_band(void)
     if (seen == 0) {
         return ESP_ERR_TIMEOUT;
     }
-    // One frame spans exposure_max lines, so a line lasts that fraction of the
-    // frame and the half-period is worth this many of them.
+    // One frame spans exposure_max lines, which turns the half-period into a line count.
     const int64_t period = total_us / seen;
     s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max_lines) / period);
     s_band_lines = s_band_lines < 1 ? 1 : s_band_lines;
@@ -192,8 +187,7 @@ esp_err_t drv_camera_init(void)
     if (sensor == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    // The module sits with the lens above the connector, so its own frame
-    // arrives upside down, and a kiosk preview reads as a mirror (KEHOACH 2.1).
+    // The lens sits above the connector: frames arrive upside down and a preview reads as a mirror (KEHOACH 2.1).
     sensor->set_vflip(sensor, 1);
     sensor->set_hmirror(sensor, 1);
     APP_RETURN_ON_ERR(pick_50hz_band(sensor), TAG, "band filter");
@@ -238,8 +232,7 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
     if (sensor == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    // The sensor takes a frame or two to act on a new exposure, so measuring
-    // every frame would read a stale one and drive the loop into a flicker.
+    // A new exposure shows a frame or two late; metering every frame would chase stale ones into flicker.
     if (s_settle > 0) {
         s_settle--;
         return ESP_OK;
@@ -251,8 +244,7 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
         return ESP_OK;
     }
 
-    // Exposure and gain are one quantity here. Steering them separately makes
-    // them fight: dropping gain darkens the frame, which asks for gain back.
+    // Exposure times gain is one quantity; steered apart they fight, since less gain darkens and asks for more.
     const int light = s_exposure_lines * s_gain16;
     int want;
     if (level >= METER_SATURATED) {
@@ -273,8 +265,7 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
         return ESP_OK;
     }
 
-    // Exposure moves in whole half-periods so no row sees a different slice of
-    // the mains cycle, and gain takes the remainder at its finer step.
+    // Whole half-periods keep every row on the same slice of the mains cycle; gain takes the finer remainder.
     const int max_bands = s_exposure_max_lines / s_band_lines;
     int bands = next / (s_band_lines * METER_BASE_GAIN16);
     bands = bands < 1 ? 1 : (bands > max_bands ? max_bands : bands);

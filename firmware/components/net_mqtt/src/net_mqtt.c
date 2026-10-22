@@ -243,8 +243,7 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
 
     char user[STORAGE_DEVICE_ID_CAP] = { 0 };
     const bool has_user = setting(NVS_USER, user, sizeof(user), s_link.device_id) == ESP_OK;
-    // esp-mqtt strdups every config string, so a token this long never has to
-    // hold internal ram past esp_mqtt_client_init.
+    // esp-mqtt strdups every config string, so a token this long holds no internal ram past client init.
     char *pass = heap_caps_calloc(1, TOKEN_CAP, MALLOC_CAP_SPIRAM);
     if (pass == NULL) {
         return ESP_ERR_NO_MEM;

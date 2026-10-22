@@ -48,8 +48,7 @@ static uint32_t seed_of(uint32_t employee_id, uint16_t idx)
 
 static void synth(uint32_t seed, int8_t *out)
 {
-    // A deterministic generator, so every boot enrols the same templates and
-    // the load path can be checked against them without anything else on flash.
+    // Deterministic: every boot enrols the same templates, so loading checks them with nothing else on flash.
     uint32_t x = seed * 2654435761u + 12345u;
     for (size_t i = 0; i < STORAGE_EMBED_DIM; ++i) {
         x = x * 1664525u + 1013904223u;

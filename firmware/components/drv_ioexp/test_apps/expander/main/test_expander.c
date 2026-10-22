@@ -45,8 +45,7 @@ static void record_power_up(uint32_t lines_before_init)
 
 TEST_CASE("the first init since power-up answered, and a second init is refused", "[drv_ioexp]")
 {
-    // E7-T13 fails on the first write since power-up, so the boot that matters
-    // is the one RTC memory recorded, not this one.
+    // E7-T13 fails on the first write since power-up, so the init that counts is the one RTC memory recorded.
     TEST_ASSERT_EQUAL(ESP_OK, s_cold_init);
     TEST_ASSERT_EQUAL(ESP_OK, s_this_init);
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, drv_ioexp_init());
@@ -60,8 +59,7 @@ TEST_CASE("a pin past P7 is refused", "[drv_ioexp]")
 
 TEST_CASE("changing one line leaves the other seven where they stood", "[drv_ioexp]")
 {
-    // The chip takes all eight lines in one byte, so this is the invariant the
-    // shadow register exists to hold.
+    // The chip takes all eight lines in one byte; keeping the other seven is the shadow register's job.
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, false));
     uint8_t port = 0;
     TEST_ASSERT_EQUAL(ESP_OK, drv_ioexp_read(&port));

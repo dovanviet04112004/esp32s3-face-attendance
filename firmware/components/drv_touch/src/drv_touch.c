@@ -71,8 +71,7 @@ static esp_err_t check_product_id(void)
 {
     uint8_t id[PRODUCT_ID_LEN] = {0};
     uint8_t again[PRODUCT_ID_LEN] = {0};
-    // A panel whose flex is unseated still acks its address and serves noise,
-    // and the gt911 component logs the id it reads without checking it.
+    // An unseated flex still acks and serves noise, and the gt911 component never checks the id it logs.
     APP_RETURN_ON_ERR(esp_lcd_panel_io_rx_param(s_io, PRODUCT_ID_REG, id, sizeof(id)), TAG, "id");
     APP_RETURN_ON_ERR(esp_lcd_panel_io_rx_param(s_io, PRODUCT_ID_REG, again, sizeof(again)), TAG,
                       "id again");
@@ -110,8 +109,7 @@ esp_err_t drv_touch_init(void)
     if (s_touch != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    // The controller latches its address off INT while RST is released, and it
-    // is indeterminate until this runs (KEHOACH 2.3).
+    // The controller latches its address off INT as RST releases; it is unknown until this runs (KEHOACH 2.3).
     APP_RETURN_ON_ERR(select_address(), TAG, "address select");
 
     esp_lcd_panel_io_i2c_config_t io_cfg = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
@@ -121,8 +119,7 @@ esp_err_t drv_touch_init(void)
     APP_RETURN_ON_ERR(check_product_id(), TAG, "product id");
 
     const esp_lcd_touch_config_t cfg = {
-        // The controller reports in the panel's own portrait frame, which is
-        // the frame the display now uses, so nothing needs turning.
+        // Touch reports in the panel's portrait frame, the one the display uses, so nothing turns.
         .x_max = APP_LCD_H_RES,
         .y_max = APP_LCD_V_RES,
         .rst_gpio_num = GPIO_NUM_NC,
@@ -144,8 +141,7 @@ esp_err_t drv_touch_read(drv_touch_point_t *points, uint8_t max, uint8_t *count)
         return ESP_ERR_INVALID_STATE;
     }
     esp_lcd_touch_point_data_t touched[CONFIG_ESP_LCD_TOUCH_MAX_POINTS];
-    // esp_lcd_touch fills up to the count it is handed, so a caller asking for
-    // more than this array holds would write past it.
+    // esp_lcd_touch fills as many points as it is asked for, so asking past this array overruns it.
     const uint8_t room = max < CONFIG_ESP_LCD_TOUCH_MAX_POINTS
                              ? max
                              : (uint8_t)CONFIG_ESP_LCD_TOUCH_MAX_POINTS;

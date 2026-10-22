@@ -72,8 +72,7 @@ static void join_probe(void)
 
 TEST_CASE("both i2c lines carry an external pull-up", "[bsp_board]")
 {
-    // Reads the pins as plain GPIO, which stops being possible once bsp_board_init
-    // hands them to the I2C driver, so this case has to run first.
+    // Runs first: after bsp_board_init the I2C driver owns these pins and they cannot be read as GPIO.
     TEST_ASSERT_TRUE_MESSAGE(holds_its_level_against_the_chip(APP_I2C_SDA_GPIO),
                              "SDA sits low against an internal pull-down: no 4.7k, or an open wire");
     TEST_ASSERT_TRUE_MESSAGE(holds_its_level_against_the_chip(APP_I2C_SCL_GPIO),
@@ -107,8 +106,7 @@ TEST_CASE("unlock hands the bus to the task waiting on it", "[bsp_board]")
 
 TEST_CASE("init hands back a bus that already carries a transfer", "[bsp_board]")
 {
-    // Both devices are silent 4 ms after boot, so an init that only creates the
-    // bus lets whichever driver runs first NACK (KEHOACH 2.3).
+    // Both devices are silent 4 ms after boot, so a bare bus makes the first driver NACK (KEHOACH 2.3).
     uint8_t all_high = 0xFF;
     i2c_master_dev_handle_t dev = NULL;
     const i2c_device_config_t cfg = {
@@ -135,8 +133,7 @@ TEST_CASE("the expander answers where app_config places it", "[bsp_board]")
 TEST_CASE("the bus answers for a populated count, not every address", "[bsp_board]")
 {
     int found = 0;
-    // A silent address is how a scan reports absence, so the driver's own timeout
-    // error is noise here and would bury the addresses that answered.
+    // Silence is how a scan reports absence; the driver's timeout errors would bury the addresses that answered.
     esp_log_level_set("i2c.master", ESP_LOG_NONE);
     TEST_ASSERT_EQUAL(ESP_OK, bsp_i2c_lock(LOCK_WAIT_MS));
     for (uint16_t addr = SCAN_FIRST_ADDR; addr <= SCAN_LAST_ADDR; ++addr) {
@@ -147,8 +144,7 @@ TEST_CASE("the bus answers for a populated count, not every address", "[bsp_boar
     }
     bsp_i2c_unlock();
     esp_log_level_set("i2c.master", ESP_LOG_INFO);
-    // Every address answering means SDA reads low during each ACK window, which
-    // is a wiring fault that looks like a full bus (KEHOACH 2.3).
+    // All addresses answering is SDA low in every ACK window: a wiring fault, not a full bus (KEHOACH 2.3).
     TEST_ASSERT_GREATER_OR_EQUAL(DEVICES_MIN, found);
     TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(DEVICES_MAX, found, "bus faulty, not populated");
 }

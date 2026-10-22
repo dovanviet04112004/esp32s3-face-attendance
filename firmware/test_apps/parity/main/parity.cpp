@@ -362,8 +362,7 @@ TEST_CASE("align matches the golden block", "[parity]")
         free_case(gold);
     }
     free(block);
-    // align.py runs float64 and the device float32, so the warp cannot agree
-    // to the last bit; ALIGN_LSB is the floor that difference sits at.
+    // align.py warps in float64 and the device in float32; ALIGN_LSB is the floor of that difference.
     TEST_ASSERT_LESS_OR_EQUAL_INT(ALIGN_LSB, worst);
 }
 

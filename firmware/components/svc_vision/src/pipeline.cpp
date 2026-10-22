@@ -112,8 +112,7 @@ void VisionPipeline::reset() noexcept
 
 const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
 {
-    // The face already followed keeps its turn while it is still there; a larger
-    // newcomer only takes over once it is lost (KEHOACH 4.5.5d).
+    // The followed face keeps its turn while present; a bigger newcomer waits until it is lost (KEHOACH 4.5.5d).
     if (tracking_ && seen_ != Seen::OffGuide) {
         size_t best = count;
         float best_iou = kSameFaceIou;
@@ -175,8 +174,7 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
 
 bool VisionPipeline::may_verify() const noexcept
 {
-    // An enrol needs the embedding of the face that just matched, and matched_
-    // otherwise closes this path on that track for good.
+    // An enrol needs the embedding of the face that just matched, which matched_ would shut out for good.
     return (enrol_id_ != 0 && enrol_spoofs_ < kEnrolSpoofTries) || since_verdict_ < 0 ||
            (!matched_ && since_verdict_ >= kRetryDetects);
 }
@@ -211,8 +209,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
     }
     uint32_t employee_id = 0;
     float score = -1.0f;
-    // A request outlives a table that refused the sample, so the next verified
-    // frame tries again (KEHOACH 4.5.5d).
+    // A request outlives a refused sample, so the next verified frame tries again (KEHOACH 4.5.5d).
     const float turn = yaw_of(primary.landmarks);
     if (enrol_id_ != 0 && turn >= enrol_yaw_min_ && turn <= enrol_yaw_max_ &&
         matcher_.keep(embedding_, scale, enrol_id_, enrol_idx_, enrol_name_) == ESP_OK) {
@@ -237,8 +234,7 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
         memcpy(out.name, name, sizeof(out.name));
         return;
     }
-    // Refusing on the first sample calls an employee a stranger and grants them
-    // a second later, because genuine frames do fall under match_min (KEHOACH 4.5.5d).
+    // Genuine frames do fall under match_min: refusing on one would call an employee a stranger (KEHOACH 4.5.5d).
     if (++unknown_tries_ < kUnknownTries) {
         return;
     }
@@ -315,19 +311,16 @@ svc_vision_result_t VisionPipeline::step(const ai_engine_frame_t &frame) noexcep
         tracking_ = false;
     }
     inside_ = inside;
-    // Four arithmetic checks scored here so the glass learns the stage on the
-    // fast path, not after the slow models return (KEHOACH 4.5.5h.1).
+    // Scored on the fast path so the glass learns the stage ahead of the slow models (KEHOACH 4.5.5h.1).
     const bool small = side_of(primary.box) < static_cast<float>(thresholds_.face_min_px);
     const bool fits = square_fits(primary.box, frame.width, frame.height);
-    // Saying FACE_OK is saying this track is still owed an answer, and only this
-    // line knows whether it is (KEHOACH 4.5.5h.1).
+    // FACE_OK claims this track is still owed an answer, and only this line knows (KEHOACH 4.5.5h.1).
     const bool working = stable_ >= kStableDetects ? !concluded_ || may_verify() : true;
     const svc_vision_kind_t settled = working ? SVC_VISION_FACE_OK : SVC_VISION_FACE_SETTLED;
     const svc_vision_kind_t stage =
         !inside ? SVC_VISION_FACE_OFF_GUIDE
                 : (small ? SVC_VISION_FACE_SMALL : (fits ? settled : SVC_VISION_FACE_OUT_OF_FRAME));
-    // The slow models below hold this step for up to a second, and a box that
-    // waits for them is a second old by the time it is drawn (KEHOACH 4.5.5d).
+    // The models below take up to a second; a box sent after them is drawn that stale (KEHOACH 4.5.5d).
     tell(out, count, stage);
     if (!inside) {
         stable_ = 0;

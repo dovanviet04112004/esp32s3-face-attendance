@@ -113,8 +113,7 @@ static esp_err_t chip_select_up(void)
 
 static esp_err_t reader_up(void)
 {
-    // The bus leaves this pin's output driver on, and an esp driving it is an
-    // esp the panel cannot pull low: every read comes back all ones.
+    // The bus leaves this pin driven, and the panel cannot pull it low: every read comes back all ones.
     APP_RETURN_ON_ERR(gpio_set_direction(APP_LCD_SDO_GPIO, GPIO_MODE_INPUT), TAG, "sdo as input");
     const spi_device_interface_config_t cfg = {
         .clock_speed_hz = APP_LCD_READ_HZ,
@@ -171,8 +170,7 @@ static uint32_t read_reg(uint8_t reg)
 static int scan_line(void)
 {
     uint8_t raw[2] = {0};
-    // esp_lcd disables the dc output driver after each of its transactions, so
-    // a level set here would float and the panel would take the command as data.
+    // esp_lcd disables the dc driver after each transaction, and a floating dc turns the command into data.
     gpio_set_direction(APP_LCD_DC_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(APP_LCD_CS_GPIO, 1);
     esp_rom_delay_us(CS_FRAME_GAP_US);
@@ -223,8 +221,7 @@ static void wait_for_scan_lead(void)
         if (line < 0 || line > SCANLINE_UNITS) {
             return;
         }
-        // Both ends matter: the ceiling is what leaves the write a run-up the
-        // scan cannot close (KEHOACH 2.3A).
+        // The ceiling matters too: it leaves the write a run-up the scan cannot close (KEHOACH 2.3A).
         if (line >= SCANLINE_LEAD_MIN && line <= SCANLINE_LEAD_MAX) {
             return;
         }
@@ -240,8 +237,7 @@ static esp_err_t panel_up(void)
         .spi_mode = 0,
         .pclk_hz = APP_LCD_SPI_HZ,
         .trans_queue_depth = BOUNCE_COUNT,
-        // The transfer is queued, not done, when draw_bitmap returns, so a
-        // buffer is only free to refill once this callback hands it back.
+        // draw_bitmap returns with the transfer queued; a buffer is free only once this hands it back.
         .on_color_trans_done = bounce_sent,
         .lcd_cmd_bits = PANEL_CMD_BITS,
         .lcd_param_bits = PANEL_PARAM_BITS,
@@ -259,13 +255,11 @@ static esp_err_t panel_up(void)
 
     APP_RETURN_ON_ERR(esp_lcd_panel_reset(s_panel), TAG, "reset");
     APP_RETURN_ON_ERR(esp_lcd_panel_init(s_panel), TAG, "init");
-    // This module answers INVON with a negative and carries its column driver
-    // reversed; the corner marks in test_apps/panel read both off the glass.
+    // This module shows a negative on INVON and drives its columns reversed, read off test_apps/panel's marks.
     APP_RETURN_ON_ERR(esp_lcd_panel_invert_color(s_panel, false), TAG, "invert");
     APP_RETURN_ON_ERR(esp_lcd_panel_swap_xy(s_panel, false), TAG, "swap xy");
     APP_RETURN_ON_ERR(esp_lcd_panel_mirror(s_panel, true, false), TAG, "mirror");
-    // One frame takes longer to write than the scan takes to cross it, and the
-    // writer only stays ahead if the scan is the slower of the two (KEHOACH 2.3A).
+    // A frame write outlasts the scan, so the scan is slowed until it never catches the writer (KEHOACH 2.3A).
     slow_the_scan();
     return esp_lcd_panel_disp_on_off(s_panel, true);
 }
@@ -275,8 +269,7 @@ esp_err_t drv_lcd_init(void)
     if (s_panel != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    // SPI DMA reaches internal RAM only, so every pixel bound for the panel
-    // crosses one of these, claimed once at boot and never freed.
+    // SPI DMA reaches internal RAM only: every panel pixel crosses one of these, claimed at boot and kept.
     s_bounce_free = xSemaphoreCreateCounting(BOUNCE_COUNT, BOUNCE_COUNT);
     if (s_bounce_free == NULL) {
         return ESP_ERR_NO_MEM;
@@ -507,8 +500,7 @@ esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565
     if (overlay == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    // This writes the whole panel too, so it tears the same way a frame does
-    // when the scan catches the write pointer (KEHOACH 2.3A).
+    // This writes the whole panel too, so it tears like a frame when the scan catches the write (KEHOACH 2.3A).
     wait_for_scan_lead();
     const int rows_per_strip = BOUNCE_PIXELS / APP_LCD_H_RES;
     for (int y = 0; y < APP_LCD_V_RES; y += rows_per_strip) {

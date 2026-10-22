@@ -71,8 +71,7 @@ TEST_CASE("the heap floor under the running kiosk", "[bench_mem]")
     printf("  internal floor %" PRIu32 " KB, largest block now %" PRIu32 " KB\n", internal / KB,
            largest / KB);
     printf("  psram floor %" PRIu32 " KB\n", psram / KB);
-    // A region that serves 32-bit access only still counts as internal, so the
-    // byte-addressable total is the one a buffer can actually be cut from.
+    // 32-bit-only regions count as internal too; buffers are cut from the byte-addressable total.
     printf("  8-bit internal: free %u B, largest %u B\n",
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));

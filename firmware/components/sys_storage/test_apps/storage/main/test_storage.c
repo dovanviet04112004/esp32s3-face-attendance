@@ -51,8 +51,7 @@ static void fill_header(storage_file_header_t *header, uint32_t magic, uint32_t 
 
 static bool exists(const char *path)
 {
-    // access() is not among the calls esp_littlefs registers with the VFS, so
-    // it fails for every path; stat() is.
+    // esp_littlefs registers stat() with the VFS but not access(), which fails for every path.
     struct stat st;
     return stat(path, &st) == 0;
 }
@@ -155,8 +154,7 @@ TEST_CASE("a server count at or under this boot stays, one above lifts past it",
 
 TEST_CASE("whatever the last power-up left behind still reads back checked", "[sys_storage]")
 {
-    // Runs first: the cases below rewrite faces.bin, and this one has to see
-    // the file exactly as a power cut in the [manual] loop left it.
+    // Runs first: later cases rewrite faces.bin, and this one needs it as the [manual] power cut left it.
     uint32_t loop_ran = 0;
     sys_storage_get_u32(STORAGE_NS_SYS, CUT_LOOP_KEY, &loop_ran);
     const bool primary = exists(FACES_PATH);
@@ -164,13 +162,11 @@ TEST_CASE("whatever the last power-up left behind still reads back checked", "[s
     const bool temp = exists(FACES_PATH ".tmp");
     char newest[PATH_LEN];
     log_path_of(newest_log_index(), newest, sizeof(newest));
-    // The log keeps at least one file through every case here, so that name
-    // going missing means a wipe, not two renames losing one file.
+    // Every case here keeps at least one log file, so this name missing is a wipe, not two renames losing one.
     const bool other = exists(newest);
     printf("after the last power-up: loop marker %lu, primary %d, backup %d, tmp %d, log %d\n",
            (unsigned long)loop_ran, primary, backup, temp, other);
-    // The board boots on its own when power returns, so the reading is kept
-    // in nvs for whoever attaches a console afterwards.
+    // The board boots unattended when power returns, so the reading waits in nvs for a later console.
     if (loop_ran) {
         sys_storage_set_u32(STORAGE_NS_SYS, CUT_STATE_KEY, (uint32_t)primary | (uint32_t)backup << 1 |
                                                (uint32_t)temp << 2 | (uint32_t)other << 3);
@@ -234,8 +230,7 @@ static void scan_log(uint32_t boot, uint32_t *count, uint32_t *highest)
 
 TEST_CASE("the log kept every record the last power-up confirmed", "[sys_storage]")
 {
-    // Runs early: the log cases below rewrite these files, and this one has to
-    // see them exactly as the power cut left them.
+    // Runs early: later log cases rewrite these files, and this one needs them as the power cut left them.
     const esp_err_t up = sys_storage_init();
     TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
     uint32_t loop_ran = 0;
@@ -255,8 +250,7 @@ TEST_CASE("the log kept every record the last power-up confirmed", "[sys_storage
     }
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_CUT_KEY, 0));
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(confirmed, count);
-    // Sequence numbers start at one, so a gap anywhere puts the count below the
-    // highest number seen even when nothing looks torn.
+    // Sequence numbers start at one, so any gap puts the count below the highest, even with nothing torn.
     TEST_ASSERT_EQUAL_UINT32(highest, count);
 }
 
@@ -287,8 +281,7 @@ TEST_CASE("an atomic write replaces the file whole", "[sys_storage]")
 
 TEST_CASE("the previous copy is kept, not overwritten in place", "[sys_storage]")
 {
-    // Two-phase writing is only worth its cost if the older copy is still
-    // whole, so the fallback in the next case has something to reach for.
+    // The older copy must stay whole, or the next case's fallback has nothing to reach for.
     storage_file_header_t previous;
     size_t len = 0;
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_read(FACES_PATH ".bak", &previous, sizeof(previous),
@@ -298,8 +291,7 @@ TEST_CASE("the previous copy is kept, not overwritten in place", "[sys_storage]"
 
 TEST_CASE("a torn primary is answered from the backup", "[sys_storage]")
 {
-    // What a power cut between the two renames leaves behind: a primary that
-    // exists but does not pass its own checksum.
+    // What a power cut between the two renames leaves: a primary that fails its own checksum.
     FILE *torn = fopen(FACES_PATH, "wb");
     TEST_ASSERT_NOT_NULL(torn);
     const char rubbish[] = "half a header";
@@ -418,8 +410,7 @@ TEST_CASE("a buffer too small is refused rather than filled halfway", "[sys_stor
 
 TEST_CASE("the scratch directory is emptied at boot", "[sys_storage]")
 {
-    // Enrol drops crops here and nothing reads them across a reboot, so a file
-    // surviving init would grow the partition for the device's whole life.
+    // Enrol drops crops here that no reboot reads, so any file surviving init grows the partition forever.
     uint32_t left = 0;
     sys_storage_get_u32(STORAGE_NS_SYS, SCRATCH_LEFT_KEY, &left);
     const bool survived = exists(SCRATCH_PATH);
@@ -650,8 +641,7 @@ TEST_CASE("append records forever so power can be cut mid-append", "[sys_storage
     for (uint32_t seq = 1;; ++seq) {
         fill_record(&record, seq);
         TEST_ASSERT_EQUAL(ESP_OK, sys_storage_attend_append(&record));
-        // The count reaches nvs only every so often, so it stays a floor on
-        // what the log must hold rather than a second write per record.
+        // Saved only every so often, the count is a floor on what the log holds, not a second write per record.
         if (seq % CUT_LOOP_REPORT == 0) {
             TEST_ASSERT_EQUAL(ESP_OK, sys_storage_set_u32(STORAGE_NS_SYS, LOG_SEQ_KEY, seq));
             printf("record %lu confirmed, cut power whenever you like\n", (unsigned long)seq);
@@ -709,8 +699,7 @@ TEST_CASE("a string setting comes back whole and a short buffer is refused", "[s
 
 void app_main(void)
 {
-    // The mount-failed-so-format path in esp_littlefs logs only at verbose,
-    // and it is the path the power-cut cases exist to catch.
+    // esp_littlefs logs its mount-failed-so-format path, the one power-cut cases hunt, only at verbose.
     esp_log_level_set("esp_littlefs", ESP_LOG_VERBOSE);
     const gpio_config_t boot_button = {
         .pin_bit_mask = 1ULL << APP_FACTORY_RESET_GPIO,
@@ -721,8 +710,7 @@ void app_main(void)
     UNITY_BEGIN();
     unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
-    // GPIO0 low at reset is the download-mode strap, so the button is read in
-    // a window once the suite is done: press it then to start the power-cut loop.
+    // GPIO0 low at reset straps download mode, so the button is read in a window after the suite.
     printf("within %d s: tap BOOT for the attendance log loop, hold %d s for faces.bin\n",
            BOOT_WINDOW_MS / 1000, BOOT_HOLD_MS / 1000);
     bool pressed = false;

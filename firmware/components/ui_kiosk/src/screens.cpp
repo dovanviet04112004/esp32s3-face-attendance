@@ -583,8 +583,7 @@ public:
         stuck_ = false;
         gave_up_ = false;
         absent_ms_ = 0;
-        // The person standing here now gets a fresh look, not whatever the
-        // pipeline settled on while a menu covered the preview.
+        // Whoever stands here gets a fresh look, not what the pipeline settled on under the menu.
         s_vision_reset = Restart::Returned;
     }
 
@@ -597,8 +596,7 @@ public:
         const bool carded = up && card;
         const char *refused = up ? refusal(seen.verdict) : (theirs ? refused_ : nullptr);
         const bool answered = theirs || up;
-        // Saying work is happening is a claim, and one that outlives every
-        // verdict the pipeline could owe is a lie the glass keeps telling.
+        // A working claim that outlives every verdict the pipeline could owe is a lie on the glass.
         const bool claiming = seen.face && seen.stage == UI_KIOSK_STAGE_WORKING && !answered;
         working_ms_ = claiming && seen.track == watched_ ? working_ms_ + (int64_t)dt_ms : 0;
         watched_ = seen.track;
@@ -685,8 +683,7 @@ public:
                              DRV_LCD_WARN, Align::Centre);
             return;
         }
-        // The card keeps its own clock; the latch above only silences guidance,
-        // or a stamped face standing still would pin the card (KEHOACH 4.5.5h.1).
+        // The card keeps its own clock; the latch above only silences guidance (KEHOACH 4.5.5h.1).
         if (carded_) {
             granted(to, seen);
         }
@@ -1141,8 +1138,7 @@ public:
     {
         feed(seen);
         since_ms_ += dt_ms;
-        // The operator ends this screen, not a timer: the line naming who joined
-        // the table has to survive a glance away (KEHOACH 4.5.5h.2).
+        // The operator ends this screen, not a timer, so who joined survives a glance away (KEHOACH 4.5.5h.2).
         if (kept_ >= kSamples || failed_) {
             return false;
         }
@@ -1160,8 +1156,7 @@ public:
             return true;
         }
         wait_ms_ += dt_ms;
-        // Liveness refusing every frame must not hold a person here, and taking
-        // one anyway would write a spoof into the table (KEHOACH 4.5.5h.2).
+        // Endless refusals must not hold a person here, nor force a spoof into the table (KEHOACH 4.5.5h.2).
         if (wait_ms_ >= kSampleWaitMs) {
             enrol_request().waiting = false;
             failed_ = true;
@@ -1250,8 +1245,7 @@ public:
         }
         uint8_t tone = DRV_LCD_INK;
         char line[64];
-        // One line, one place. A correction and an instruction are the same kind
-        // of sentence, and the guide leaves room for exactly one of them.
+        // Corrections and instructions share this one line: the guide leaves room for exactly one.
         if (done()) {
             snprintf(line, sizeof(line), text(StrId::CaptureAddedFmt), enrol_request().name);
             tone = DRV_LCD_OK;
@@ -1439,8 +1433,7 @@ private:
 
     void begin() noexcept
     {
-        // The pipeline counts its tries per sample, and a screen counting any
-        // other way either gives up early or waits out a dead budget.
+        // Counted per sample like the pipeline, or the screen gives up early or waits out a dead budget.
         spoofs_ = 0;
         since_ms_ = 0;
         wait_ms_ = 0;
@@ -1457,8 +1450,7 @@ private:
         float low = mid - kFrontalYaw;
         float high = mid + kFrontalYaw;
         if (kept_ > 0) {
-            // The screen has settled the pose; the pipeline only has to catch a
-            // face that came back to frontal (KEHOACH 4.5.5h.2).
+            // The screen settled the pose; the pipeline only catches a face back at frontal (KEHOACH 4.5.5h.2).
             const float edge = reach() < kFrontalYaw ? reach() : kFrontalYaw;
             low = wanted() > 0.0f ? mid + edge : -kOpenYaw;
             high = wanted() > 0.0f ? kOpenYaw : mid - edge;

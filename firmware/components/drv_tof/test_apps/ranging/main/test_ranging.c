@@ -45,8 +45,7 @@ TEST_CASE("a measurement completes and lands inside the short mode range", "[drv
 
 TEST_CASE("the ready line fires once per measurement", "[drv_tof]")
 {
-    // The semaphore proves the GPIO3 wiring, which polling CheckForDataReady
-    // over i2c would pass even with the line disconnected.
+    // The semaphore proves the GPIO3 wire; polling CheckForDataReady over i2c passes with it cut.
     SemaphoreHandle_t ready = drv_tof_ready_signal();
     TEST_ASSERT_NOT_NULL(ready);
     int signalled = 0;

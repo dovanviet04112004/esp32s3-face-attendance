@@ -321,8 +321,7 @@ TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
     s_now_ms += COOLDOWN_MS + 1;
     svc_attendance_tick(s_now_ms);
 
-    // Nobody left the frame: the next person stepped up while the first walked
-    // off, so the machine never hears NoFace between the two.
+    // No NoFace between the two: the next person steps up as the first walks off.
     const uint32_t before = svc_attendance_records();
     feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE);
     printf("second in the queue landed in state %d\n", (int)svc_attendance_state());
@@ -350,8 +349,7 @@ TEST_CASE("a stranger in the queue ends the last person's turn", "[svc_attendanc
     s_now_ms += COOLDOWN_MS + 1;
     svc_attendance_tick(s_now_ms);
 
-    // Somebody nobody enrolled stands there next, so no record moves the machine
-    // on, and the frame never empties.
+    // An unenrolled person stands there next: no record moves the machine on, and the frame never empties.
     feed(SVC_VISION_UNKNOWN, 0, LIVE_SCORE);
     s_now_ms += DENY_HOLD_MS + 1;
     svc_attendance_tick(s_now_ms);

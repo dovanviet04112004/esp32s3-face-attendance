@@ -79,8 +79,7 @@ TEST_CASE("a face crop comes back as a probability", "[ai_spoof]")
 TEST_CASE("the crop reaches the graph rather than a zeroed tensor", "[ai_spoof]")
 {
     need_branch();
-    // Two runs that differ only in their input must differ in their answer,
-    // which is what a crop landing in the wrong tensor would not do.
+    // A crop landing in the wrong tensor gives both inputs the same answer.
     float first = 0.0F, second = 0.0F;
     TEST_ASSERT_EQUAL(ESP_OK, ai_engine_spoof(s_face, &first));
     memset(s_face, -128, s_len);

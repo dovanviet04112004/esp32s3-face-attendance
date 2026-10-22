@@ -223,8 +223,7 @@ esp_err_t sys_storage_init(void)
     atomic_store(&s_boot_count, highest + 1);
     APP_RETURN_ON_ERR(keep_boot_count(highest + 1), TAG, "boot count");
 
-    // Enrol leaves crops here and nothing reads them after a reboot, so the
-    // directory starts empty rather than filling up over the device's life.
+    // Enrol leaves crops here that nothing reads after a reboot, and left alone they fill the partition.
     empty_scratch();
 
     size_t total = 0, used = 0;
@@ -412,8 +411,7 @@ static esp_err_t write_whole(const char *path, const void *data, size_t len)
         return ESP_ERR_NOT_FOUND;
     }
     const size_t written = fwrite(data, 1, len, file);
-    // Closing alone leaves the bytes in LittleFS's cache, so a power cut there
-    // loses a write the caller already counts as durable (KEHOACH 6.2.6).
+    // Closing alone leaves the bytes in LittleFS's cache, losing a durable write to a power cut (KEHOACH 6.2.6).
     const int synced = fflush(file) == 0 ? fsync(fileno(file)) : -1;
     fclose(file);
     return (written == len && synced == 0) ? ESP_OK : ESP_FAIL;
@@ -429,8 +427,7 @@ static esp_err_t replace_locked(const char *path, const void *data, size_t len)
     }
     esp_err_t err = write_whole(scratch, data, len);
     if (err == ESP_OK) {
-        // The old copy steps aside first, so the moment the new name appears
-        // there is always a complete file under one of the two names.
+        // The old copy steps aside first, so a complete file sits under one of the two names at every moment.
         unlink(previous);
         rename(path, previous);
         err = rename(scratch, path) == 0 ? ESP_OK : ESP_FAIL;
@@ -458,8 +455,7 @@ static esp_err_t read_locked(const char *path, void *buf, size_t cap, size_t *ou
     if (file == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    // The end-of-file flag only rises after a read runs past the last byte, so
-    // a file exactly the size of the buffer would look like an overflow.
+    // EOF only rises after a read past the last byte, so a buffer-sized file would look like an overflow.
     fseek(file, 0, SEEK_END);
     const long size = ftell(file);
     rewind(file);
@@ -511,8 +507,7 @@ esp_err_t sys_storage_read_checked(const char *path, uint32_t magic, void *buf, 
         return ESP_OK;
     }
     const esp_err_t primary = err == ESP_OK ? ESP_ERR_INVALID_CRC : err;
-    // Two-phase writing leaves a whole previous copy on purpose, and this is
-    // the only path that spends it (KEHOACH 6.2.6).
+    // The whole previous copy that two-phase writing keeps is spent here and only here (KEHOACH 6.2.6).
     char previous[PATH_MAX_LEN];
     if (snprintf(previous, sizeof(previous), "%s.bak", path) >= (int)sizeof(previous)) {
         return ESP_ERR_INVALID_SIZE;
@@ -716,8 +711,7 @@ static esp_err_t active_log(char *path, size_t cap)
     while (s_log_index < STORAGE_ATTEND_FILES) {
         log_path_of(s_log_index, path, cap);
         long size = file_size(path);
-        // Absent, or a header the last power cut never finished: no record can
-        // live in those bytes, so the file starts over.
+        // Absent, or a header a power cut left unfinished: no record lives in those bytes, so it starts over.
         if (size < (long)LOG_HEADER_BYTES) {
             return write_log_header(path);
         }
@@ -898,8 +892,7 @@ esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_rec
                 give();
                 return ESP_OK;
             }
-            // KEHOACH 6.2.6 drops such a record, and the cursor has to be able
-            // to move past it or the uplink stalls here forever.
+            // KEHOACH 6.2.6 drops such a record; the cursor must pass it or the uplink stalls here forever.
             ESP_LOGW(TAG, "%s record at %ld failed its check, skipped", path,
                      offset - (long)LOG_RECORD_BYTES);
             err = ESP_ERR_NOT_FOUND;
@@ -930,8 +923,7 @@ esp_err_t sys_storage_models_open(const storage_models_header_t **header)
                       TAG, "mmap");
 
     const storage_models_header_t *candidate = base;
-    // An erased partition reads back all ones, so a wrong magic means no image
-    // has been written yet; only a matching magic makes a bad crc corruption.
+    // Erased flash reads all ones, so only a matching magic turns a bad crc into corruption.
     if (candidate->magic != STORAGE_MODELS_MAGIC) {
         esp_partition_munmap(s_models_map);
         ESP_LOGE(TAG, "no models image: magic %08" PRIx32, candidate->magic);
@@ -978,8 +970,7 @@ esp_err_t sys_storage_models_stage_begin(size_t size_bytes)
     if (!s_ready || s_stage != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    // Always the slot this boot is not reading: erasing the live one would take
-    // the kiosk down mid-write with nothing to fall back to (KEHOACH 6.2.2).
+    // Always the idle slot: erasing the live one would down the kiosk mid-write with no fallback (KEHOACH 6.2.2).
     const esp_partition_t *spare = slot_partition(serving_slot() == 0 ? 1 : 0);
     if (spare == NULL) {
         return ESP_ERR_NOT_FOUND;
@@ -1026,8 +1017,7 @@ esp_err_t sys_storage_models_stage_end(void)
     if (err == ESP_OK) {
         const uint32_t crc = esp_crc32_le(0, (const uint8_t *)&head,
                                           offsetof(storage_models_header_t, crc32));
-        // Read back from flash, not from the caller's buffer: what the next boot
-        // mmaps is the only copy that matters.
+        // Read back from flash, not the caller's buffer: the next boot mmaps only what landed.
         if (head.magic != STORAGE_MODELS_MAGIC || head.format_ver < STORAGE_MODELS_VER_OLDEST ||
             head.format_ver > STORAGE_MODELS_VER || crc != head.crc32) {
             ESP_LOGE(TAG, "staged image has no usable header");
@@ -1095,8 +1085,7 @@ esp_err_t sys_storage_model_find(const char *name, const void **data, size_t *si
         if (strncmp(entry->name, name, STORAGE_MODEL_NAME_LEN) != 0) {
             continue;
         }
-        // The header crc covers the header, not the payloads, so an entry can
-        // point anywhere; esp-nn also needs the weights 16-byte aligned.
+        // The crc covers only the header, so an entry can point anywhere; esp-nn wants weights 16-byte aligned.
         if (entry->size == 0 || entry->offset < sizeof(*s_models) ||
             entry->offset % STORAGE_MODEL_ALIGN != 0 ||
             (uint64_t)entry->offset + entry->size > s_models_bytes) {

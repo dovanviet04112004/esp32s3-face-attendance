@@ -136,8 +136,7 @@ esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
             return encoded;
         }
         if (encoded != ESP_OK) {
-            // A record that cannot be written as json never will be, so moving
-            // past it is the only way the ones behind it ever leave.
+            // A record that will not encode never will, so skipping it is how the ones behind it leave.
             ESP_LOGE(TAG, "record %llu will not encode, skipped",
                      (unsigned long long)rec.local_id);
             ++stats_.stalled;
@@ -151,8 +150,7 @@ esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
                      esp_err_to_name(sent));
             return sent;
         }
-        // The cursor is persisted after the ack on purpose: at-least-once
-        // (KEHOACH 6.2.6).
+        // The cursor is persisted after the ack on purpose: at-least-once (KEHOACH 6.2.6).
         const esp_err_t moved = store_.cursor_set(&next);
         if (moved != ESP_OK) {
             ++stats_.orphans;

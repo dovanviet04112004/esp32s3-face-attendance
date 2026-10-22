@@ -58,8 +58,7 @@ TEST_CASE("polling holds the bus for a whole watch window", "[drv_touch]")
     uint8_t count = 0;
     int reports = 0;
     ESP_LOGI(TAG, "touch all four corners, watching for %d s", WATCH_SECONDS);
-    // Asserts only that every read lands: a window with no finger in it is a
-    // quiet pass, and the coordinates it logs are what a person reads off.
+    // Asserts only that reads land: no finger is a quiet pass, and a person reads the logged coordinates.
     for (int tick = 0; tick < WATCH_SECONDS * (1000 / WATCH_POLL_MS); ++tick) {
         TEST_ASSERT_EQUAL(ESP_OK, drv_touch_read(points, 1, &count));
         if (count) {

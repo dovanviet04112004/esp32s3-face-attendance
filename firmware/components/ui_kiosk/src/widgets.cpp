@@ -35,8 +35,7 @@ void arc_band(Canvas &to, int cx, int cy, float radius, float thick, uint8_t col
     for (int dy = -reach; dy <= 0; ++dy) {
         for (int dx = -reach; dx <= reach; ++dx) {
             const float ax = dx < 0 ? (float)-dx : (float)dx;
-            // The fan spans about 100 degrees, so it reads as wifi and not as a
-            // full ring with its bottom rubbed out.
+            // A fan of about 100 degrees reads as wifi, not as a ring with its bottom rubbed out.
             if (ax > (float)-dy * 1.2f) {
                 continue;
             }
@@ -78,8 +77,7 @@ void draw_lock(Canvas &to, int x, int y, int size, uint8_t colour)
     const int bx = x + (size - body_w) / 2;
     const int by = y + size - body_h - size / 8;
     to.card(bx, by, body_w, body_h, 3, colour);
-    // The shackle is a half ring on two legs, not a wedge: a quarter arc at this
-    // size reads as a smudge sitting on a block.
+    // The shackle is a half ring on two legs: a quarter arc at this size reads as a smudge on a block.
     const int r = body_w * 2 / 5;
     const int cx = x + size / 2;
     const int cy = by - size / 6;
@@ -318,8 +316,7 @@ void row(Canvas &to, int x, int y, int w, int h, const Row &what, bool pressed) 
     int room = right - pen;
     const bool stacked = what.stacked && what.value != nullptr;
     if (what.value != nullptr && !stacked) {
-        // A label that already fits keeps its width; only a long one gives way,
-        // and never below what still reads as a name.
+        // A label that fits keeps its width; a long one gives way, but never below what reads as a name.
         const int wide = theme::text_width(theme::Font::Body, what.value);
         const int named = theme::text_width(theme::Font::Body, what.label);
         const int after = room - named - theme::kGapM;

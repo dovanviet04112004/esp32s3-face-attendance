@@ -260,8 +260,7 @@ esp_err_t sys_time_write_rtc(void)
 
     uint8_t status = 0;
     APP_RETURN_ON_ERR(read_regs(STATUS_REG, &status, 1), TAG, "status");
-    // The flag latches from the moment the oscillator stopped and only firmware
-    // clears it, so a fresh time is worthless until this write happens.
+    // OSF latches when the oscillator stops and only firmware clears it, so a fresh time needs this write.
     status &= (uint8_t)~OSF_BIT;
     return write_regs(STATUS_REG, &status, 1);
 }

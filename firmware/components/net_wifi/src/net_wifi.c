@@ -308,8 +308,7 @@ esp_err_t net_wifi_start(void)
     APP_RETURN_ON_ERR(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                           on_wifi_event, NULL, NULL),
                       TAG, "ip events");
-    // Credentials live in the plan's own namespace (KEHOACH 6.2.1), so the
-    // driver keeps nothing of its own across a reboot.
+    // Credentials live in our own namespace (KEHOACH 6.2.1), so the driver keeps nothing across a reboot.
     APP_RETURN_ON_ERR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "storage");
     APP_RETURN_ON_ERR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "mode");
     if (s_saved->count > 0) {
@@ -491,8 +490,7 @@ esp_err_t net_wifi_join(const char *ssid, const char *pass, uint32_t timeout_ms,
     }
     portEXIT_CRITICAL(&s_lock);
     if (joined) {
-        // Only a network that answered is worth keeping: a typo written to nvs
-        // locks the kiosk out of the one network it can still reach.
+        // Only a network that answered is kept: a typo in nvs locks the kiosk out of the one network it can reach.
         APP_RETURN_ON_ERR(write_saved(), TAG, "saved");
         ESP_LOGI(TAG, "joined %s and kept it", ssid);
         return ESP_OK;

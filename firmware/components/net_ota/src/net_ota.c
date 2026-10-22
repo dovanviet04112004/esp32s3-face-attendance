@@ -343,8 +343,7 @@ esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap)
         }
         return end_download(err);
     }
-    // The digest is checked while the slot is still inert: esp_ota_end is what
-    // makes it bootable, so a mismatch never reaches the bootloader.
+    // Checked while the slot is inert: only esp_ota_end makes it bootable, so a mismatch never boots.
     if (strcmp(digest, image->sha256) != 0) {
         ESP_LOGE(TAG, "digest %s, manifest %s", digest, image->sha256);
         esp_ota_abort(writing);

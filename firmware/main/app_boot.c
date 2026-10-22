@@ -136,8 +136,7 @@ static void load_models(void)
     }
     ESP_LOGE(TAG, "models would not load: %s", esp_err_to_name(loaded));
     if (trial != STORAGE_OTA_MODELS_ON_TRIAL) {
-        // Nothing to go back to, so the kiosk says so and carries on blind
-        // rather than rebooting into the same wall.
+        // Nothing to go back to, so the kiosk says so and runs blind rather than rebooting into the same wall.
         models_error = loaded;
         return;
     }
@@ -493,8 +492,7 @@ esp_err_t app_boot(void)
     start_vision(app_wiring()->flags);
     settle_models(app_wiring()->flags);
 
-    // A door that will not take a pulse is a miswired kiosk, not a degraded
-    // one: granting access with nothing to open is worse than not booting.
+    // A door that takes no pulse is a miswired kiosk: granting with nothing to open is worse than not booting.
     reach(BOOT_STEP_SERVO);
     ESP_ERROR_CHECK(drv_servo_init());
     reach(BOOT_STEP_ZONE);

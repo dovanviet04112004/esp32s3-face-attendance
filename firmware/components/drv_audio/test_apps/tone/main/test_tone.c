@@ -115,8 +115,7 @@ static int edges_on(int gpio)
 
 TEST_CASE("sd_mode is high for the length of a clip and low after it", "[drv_audio]")
 {
-    // The expander sources only ~100 uA on a high line, so a high read here means
-    // the amp's SD input accepts that as high rather than dragging it down.
+    // The expander sources ~100 uA on a high line; a high read proves the amp's SD pin does not drag it down.
     fill_tone(CLIP_SAMPLES, HIGH_TONE_HZ);
     TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(play_clip, "play", PLAYER_STACK_BYTES, NULL, PLAYER_PRIORITY, NULL));
     vTaskDelay(pdMS_TO_TICKS(MID_CLIP_MS));
