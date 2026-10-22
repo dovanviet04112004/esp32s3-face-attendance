@@ -3898,8 +3898,10 @@ kéo cả màn hình đứng theo: đồng hồ dừng, menu không mở, trong 
 không ai nhìn thấy.
 
 **Trạng thái từ task khác tới `ui_task` qua hộp thư, không ghi thẳng.** Thông tin máy và mạng
-(`attend_task`), dải vé (`ota_task`), trang danh sách chờ (`sync_task`) đều là những giá trị nhiều
-byte mà `ui_task` đang vẽ từ đó. Mỗi thứ đi qua một hộp thư khoá bằng spinlock: bên gửi sửa giá trị
+(`attend_task`), dải vé (`ota_task`), trang danh sách chờ, mức sáng, âm lượng và ngôn ngữ của
+`SET_CONFIG` (`sync_task`), và khuôn mặt detect vừa thấy (`ai_task`) đều là những giá trị nhiều
+byte mà `ui_task` đang vẽ từ đó. Chặng của `svc_vision` thì vừa một từ máy nên đi bằng một atomic,
+như điểm chạm, và chỉ `ui_task` đánh dấu màn cần vẽ lại. Mỗi thứ đi qua một hộp thư khoá bằng spinlock: bên gửi sửa giá trị
 trong hộp, `ui_task` chép nó ra ở nhịp kế, và hộp chỉ báo có thư khi byte thật sự đổi — nên bảng
 thông tin máy không bắt vẽ lại cả panel mỗi 3 giây, và quạt Wi-Fi chỉ vẽ lại khi sóng đổi vạch.
 Danh sách chờ chỉ `sync_task` đọc và ghi; màn `Enrol` xin trang nào thì `sync_task` trả lời ở đó.
