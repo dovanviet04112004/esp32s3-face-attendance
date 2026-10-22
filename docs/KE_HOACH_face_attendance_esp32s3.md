@@ -6329,7 +6329,7 @@ Chia hai nhóm:
 | Nhóm | Thiết bị | Hỏng thì |
 |---|---|---|
 | **Sống còn** | `sys_storage`, `bsp_board`, `drv_lcd`, `ui_kiosk`, `drv_ioexp`, `drv_camera`, `drv_servo`, `svc_attendance` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
-| **Suy giảm được** | `ai_engine`, `svc_facedb`, RTC của `sys_time`, `drv_touch`, `drv_tof`, `drv_audio`, `net_wifi` | log rồi đi tiếp. Gói model hay bảng mặt không nạp được thì máy chạy mù và nói ra trên kính (§4.5.5h); riêng gói model đang chạy thử thì lùi ngăn rồi khởi động lại (A/B dưới đây). RTC vắng thì giờ đợi SNTP. Cảm ứng chỉ phục vụ màn cài đặt và ghi danh, ToF chỉ đánh thức máy, loa chỉ báo mở cửa, Wi-Fi chỉ đưa bản ghi đi: mất chúng là mất tính năng, không mất máy |
+| **Suy giảm được** | `ai_engine`, `svc_facedb`, RTC của `sys_time`, `drv_touch`, `drv_tof`, `drv_audio`, `net_wifi` | log rồi đi tiếp. Gói model không nạp được thì máy chạy mù và nói ra trên kính (§4.5.5h); riêng gói model đang chạy thử thì lùi ngăn rồi khởi động lại (A/B dưới đây). File bảng mặt không đọc được thì máy mở bảng rỗng và xin lại cả danh sách (§6.2.4); chỉ khi `svc_facedb` không dựng nổi bảng trong PSRAM thì máy mới chạy mù. RTC vắng thì giờ đợi SNTP. Cảm ứng chỉ phục vụ màn cài đặt và ghi danh, ToF chỉ đánh thức máy, loa chỉ báo mở cửa, Wi-Fi chỉ đưa bản ghi đi: mất chúng là mất tính năng, không mất máy |
 
 Đây là đúng cách `ai_engine` đã làm với ảnh model thiếu nhánh ở §6.2.2, áp cho ngoại vi.
 Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái trước khi dùng, thay vì cho rằng
@@ -6448,8 +6448,21 @@ chối mà gửi lại không chữa được.
 không đọc được file format 3.** Nên dấu đầu tiên chỉ được ghi xuống khi bản firmware đã được giữ:
 máy khởi động thường thì ghi ngay, còn bản đang chạy thử (§7.7) ghi lúc nó tự xác nhận. Một lần
 bootloader lùi về bản cũ vì thế không gặp file nó không đọc được — trừ khi chính 30 giây chạy
-thử ấy có một lượt ghi bảng khác, vd. lượt đồng bộ lại, rồi bản mới hỏng; ca ấy bản cũ khởi
-động với bảng không nạp được cho tới khi có người can thiệp.
+thử ấy có một lượt ghi bảng khác, vd. lượt đồng bộ lại, rồi bản mới hỏng; ca ấy bản cũ gặp đúng
+luật của đoạn dưới.
+
+**Bảng trên flash không đọc được thì máy mở bảng rỗng và xin lại cả danh sách, không chạy mù.**
+Ba ca dẫn tới đây: `format_ver` của một firmware mới hơn (ca vừa nói), cả `faces.bin` lẫn
+`faces.bak` hỏng kiểm tra, và file lớn hơn sức chứa của bản build đang chạy. `svc_facedb` vẫn mở
+với bảng rỗng và nói lý do; máy đặt `device/roster_ver` về 0 **trước** mọi việc khác, như ca tag
+lệch ở bảng trên, phát `STORAGE_FAULT` rồi chạy tiếp. Heartbeat khai 0 nên máy chủ đồng bộ lại cả
+danh sách (§9.23), và cổng số phiên bản ở đó giữ mọi lệnh đếm tăng cho tới lượt `REPLACE_ALL`, nên
+không lệnh lẻ nào ghi một bảng thiếu người đè lên file cũ. Dấu tag lúc khởi động không được ghi
+xuống trong ca này, nên file cũ còn nguyên tới lần ghi bảng đầu tiên sau lượt đồng bộ. Không chọn
+"khoá bảng chờ người": máy chủ tự hội tụ mỗi khi số của cửa lệch số nó giữ, nên từ chối mà không
+đếm là một vòng đồng bộ lại không bao giờ dừng, còn đếm thì cửa khai khớp trong khi bảng rỗng.
+Cùng luật áp cho file **vắng** mà `roster_ver` khác 0, vd. phân vùng `storage` bị format lại:
+số hiệu chỉ có nghĩa khi đi cùng một bảng nạp được.
 
 #### 6.2.5 `log/attend.NNN` — header 32 B + bản ghi 48 B, chỉ ghi thêm
 
