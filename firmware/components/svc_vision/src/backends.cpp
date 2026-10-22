@@ -52,7 +52,7 @@ esp_err_t FacedbMatcher::keep(const int8_t *emb, float scale, uint32_t employee_
                               uint16_t template_idx, const char *name) noexcept
 {
     // The table stays in ram until the last sample lands: persisting each one
-    // writes 552 KB three times and can leave a half-added person on flash.
+    // writes 576 KB three times and can leave a half-added person on flash.
     return svc_facedb_enroll(employee_id, template_idx, 255, emb, scale, name);
 }
 

@@ -1,6 +1,6 @@
 /** Slides the last detector box along with the face between two detects,
  *  by matching a small brightness patch from frame to frame (KEHOACH 4.5.5h).
- *  @ctx ui_task | non-blocking, about one to two ms per frame | display only
+ *  @ctx task | non-blocking, about one to two ms per frame | off the kiosk's drawing path (KEHOACH 4.5.5h)
  */
 #pragma once
 
