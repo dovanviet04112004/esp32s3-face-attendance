@@ -1206,6 +1206,13 @@ static esp_err_t set_config(const device_command_config_t *c, char *note, size_t
     return err;
 }
 
+// The trial mark goes down first, the slot flips second: a slot armed unmarked is kept unjudged (KEHOACH 6.2.1).
+static esp_err_t arm_spare_models(void)
+{
+    const esp_err_t marked = sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_ON_TRIAL);
+    return marked != ESP_OK ? marked : sys_storage_models_activate();
+}
+
 // The other slot boots on trial as an OTA'd one does, so a pack that will not load sends it back (KEHOACH 6.2.2).
 static esp_err_t set_active_slot(const device_command_t *cmd, char *note, size_t cap)
 {
@@ -1219,8 +1226,7 @@ static esp_err_t set_active_slot(const device_command_t *cmd, char *note, size_t
         snprintf(note, cap, "slot %u holds no whole image", (unsigned)cmd->active_slot);
         return held;
     }
-    esp_err_t err = sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_ON_TRIAL);
-    err = err != ESP_OK ? err : sys_storage_models_activate();
+    const esp_err_t err = arm_spare_models();
     snprintf(note, cap, "slot %u on trial, rebooting", (unsigned)cmd->active_slot);
     return err;
 }
@@ -2209,11 +2215,13 @@ static void ota_task(void *arg)
         ui_kiosk_set_update(UI_KIOSK_UPDATE_CONNECTING, 0, offer.version, UI_KIOSK_UPDATE_WHY_OTHER);
         xEventGroupSetBits(wiring->flags, APP_EG_OTA_RUNNING);
         net_mqtt_stop();
-        const esp_err_t took = models ? net_ota_models(&image, why, sizeof(why))
-                                      : net_ota_firmware(&image, why, sizeof(why));
+        esp_err_t took = models ? net_ota_models(&image, why, sizeof(why))
+                                : net_ota_firmware(&image, why, sizeof(why));
         if (took == ESP_OK && models) {
-            // The slot only counts once a boot has read it (KEHOACH 6.2.1).
-            sys_storage_set_u32(STORAGE_NS_SYS, STORAGE_KEY_LAST_OTA, STORAGE_OTA_MODELS_ON_TRIAL);
+            took = arm_spare_models();
+            if (took != ESP_OK) {
+                strlcpy(why, "the slot would not arm", sizeof(why));
+            }
         }
         xEventGroupClearBits(wiring->flags, APP_EG_OTA_RUNNING);
         if (took != ESP_OK) {

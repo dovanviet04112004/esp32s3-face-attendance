@@ -38,11 +38,11 @@ esp_err_t net_ota_check(const net_ota_image_t *image, bool models, char *why,
  */
 esp_err_t net_ota_firmware(const net_ota_image_t *image, char *why, size_t cap);
 
-/** Download into the models slot this boot is not reading and arm it.
- *  @ctx ota_task | blocking, erasing 3 MB then pulling the image | why takes
- *       NET_OTA_WHY_CAP bytes
- *  @ret ESP_OK and the caller reboots | ESP_ERR_INVALID_ARG on a refused
- *       manifest | ESP_ERR_INVALID_CRC on a bad digest or header
+/** Download into the models slot this boot is not reading; the caller arms it.
+ *  @ctx ota_task | blocking, erasing the spare slot then pulling the image |
+ *       why takes NET_OTA_WHY_CAP bytes
+ *  @ret ESP_OK with a whole, verified image staged | ESP_ERR_INVALID_ARG on a
+ *       refused manifest | ESP_ERR_INVALID_CRC on a bad digest or header
  */
 esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap);
 

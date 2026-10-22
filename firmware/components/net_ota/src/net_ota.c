@@ -230,8 +230,7 @@ esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap)
     if (vetted != ESP_OK) {
         return end_download(vetted);
     }
-    // The connection is opened first: erasing three megabytes for a url that
-    // turns out to be dead costs seconds and the spare image with it.
+    // Dialled first: erasing the spare slot for a dead url costs seconds and the spare image.
     esp_http_client_handle_t http = dial(image, why, cap);
     if (http == NULL) {
         return end_download(ESP_FAIL);
@@ -266,12 +265,6 @@ esp_err_t net_ota_models(const net_ota_image_t *image, char *why, size_t cap)
     }
     if (err != ESP_OK) {
         sys_storage_models_stage_abort();
-        return end_download(err);
-    }
-    // Only now: the slot the kiosk is running keeps serving until it reboots.
-    err = sys_storage_models_activate();
-    if (err != ESP_OK) {
-        say(why, cap, "the slot would not arm");
     }
     return end_download(err);
 }
