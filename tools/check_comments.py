@@ -8,8 +8,11 @@ Exit code is 1 when any rule is violated.
 from __future__ import annotations
 
 import argparse
+import ast
+import io
 import re
 import sys
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +45,7 @@ YAML_SUFFIXES = {".yaml", ".yml"}
 SCANNED_SUFFIXES = C_HEADER_SUFFIXES | C_BODY_SUFFIXES | PY_SUFFIXES | TS_SUFFIXES | YAML_SUFFIXES
 
 MAX_CONSECUTIVE_BODY_COMMENTS = 2
+MAX_FUNCTION_COMMENT_LINES = 1
 MAX_DOC_COMMENT_LINES = 6
 MAX_TRAILING_COMMENT_CHARS = 60
 MAX_COMMENT_DENSITY = 0.10
@@ -83,6 +87,10 @@ CODE_LIKE_RE = re.compile(
     r")"
 )
 GENERATED_FIRST_LINE = "// GENERATED FILE - DO NOT EDIT."
+
+BODY_QUALIFIERS = {"const", "noexcept", "override", "final", "mutable", "try"}
+TRAILING_WORD_RE = re.compile(r"[A-Za-z_]\w*$")
+TS_RETURN_TYPE_RE = re.compile(r"\)\s*:\s*[\w<>\[\]|&.,?\s'\"]+$")
 
 
 @dataclass
@@ -133,8 +141,7 @@ def iter_source_files(targets: list[Path]) -> list[Path]:
 
 
 def strip_string_literals(line: str) -> str:
-    # Backticks count: a url inside a template literal carries // and would
-    # otherwise read as the start of a comment.
+    # Backticks count: a url in a template literal carries a // that is no comment.
     return re.sub(
         r"(\"(\\.|[^\"\\])*\"|'(\\.|[^'\\])*'|`(\\.|[^`\\])*`)",
         '""',
@@ -231,6 +238,115 @@ def check_runs_and_density(
     return problems
 
 
+def opens_body(before: str, inside: bool, typescript: bool) -> bool:
+    """Whether a brace that follows this code starts a function body, or sits in one."""
+    if inside:
+        return True
+    code = before.rstrip()
+    word = TRAILING_WORD_RE.search(code)
+    if code.endswith((")", "]")) or (word is not None and word.group(0) in BODY_QUALIFIERS):
+        return True
+    return typescript and (code.endswith("=>") or TS_RETURN_TYPE_RE.search(code) is not None)
+
+
+def brace_body_lines(lines: list[str], typescript: bool) -> set[int]:
+    """Lines inside a function body, found by matching braces.
+
+    A brace opens a body after a parameter list, a lambda capture, a qualifier or,
+    in TypeScript, an arrow or a return type; any brace inside a body is body too.
+    """
+    body: set[int] = set()
+    stack: list[bool] = []
+    in_block = False
+    before = ""
+    for lineno, raw in enumerate(lines, 1):
+        line = strip_string_literals(raw)
+        if not typescript and line.lstrip().startswith("#"):
+            continue
+        if any(stack):
+            body.add(lineno)
+        i = 0
+        while i < len(line):
+            if in_block:
+                end = line.find("*/", i)
+                if end == -1:
+                    break
+                in_block = False
+                i = end + 2
+            elif line.startswith("/*", i):
+                in_block = True
+                i += 2
+            elif line.startswith("//", i):
+                break
+            else:
+                ch = line[i]
+                if ch == "{":
+                    stack.append(opens_body(before, any(stack), typescript))
+                    before = ""
+                elif ch == "}":
+                    if stack:
+                        stack.pop()
+                    before = ""
+                else:
+                    before = "" if ch == ";" else before + ch
+                i += 1
+        before += " "
+    return body
+
+
+def python_body_lines(source: str) -> set[int]:
+    """Lines under a def, from the line after it to the last line of its body."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    body: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.end_lineno:
+            body.update(range(node.lineno + 1, node.end_lineno + 1))
+    return body
+
+
+def python_comment_lines(source: str) -> set[int]:
+    """Lines that hold nothing but a comment, as the tokenizer reads them."""
+    found: set[int] = set()
+    coded: set[int] = set()
+    quiet = (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT)
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            row = token.start[0]
+            if token.type == tokenize.COMMENT and row not in coded:
+                found.add(row)
+            elif token.type not in quiet:
+                coded.add(row)
+    except (tokenize.TokenError, SyntaxError):
+        return set()
+    return found
+
+
+def check_function_comments(path: Path, body: set[int], alone: set[int]) -> list[Problem]:
+    """Section 2.3: a comment inside a function body is one line."""
+    problems = []
+    hits = sorted(body & alone)
+    start = 0
+    for at, lineno in enumerate(hits):
+        if at == 0 or lineno != hits[at - 1] + 1:
+            start = lineno
+        ends = at == len(hits) - 1 or hits[at + 1] != lineno + 1
+        length = lineno - start + 1
+        if ends and length > MAX_FUNCTION_COMMENT_LINES:
+            problems.append(
+                Problem(
+                    path,
+                    start,
+                    "2.3",
+                    f"{length}-line comment inside a function, limit is "
+                    f"{MAX_FUNCTION_COMMENT_LINES}",
+                )
+            )
+    return problems
+
+
 def check_c_like(
     path: Path, lines: list[str], is_header: bool, allows_doc: bool | None = None
 ) -> list[Problem]:
@@ -303,6 +419,9 @@ def check_c_like(
 
     problems += check_common(path, comments)
     problems += check_runs_and_density(path, lines, comment_lines, is_header)
+    alone = {n for n, raw in enumerate(lines, 1) if raw.strip().startswith("//")}
+    typescript = path.suffix in TS_SUFFIXES
+    problems += check_function_comments(path, brace_body_lines(lines, typescript), alone)
     return problems
 
 
@@ -327,8 +446,6 @@ def check_python(path: Path, lines: list[str]) -> list[Problem]:
 
 def check_docstrings(path: Path, source: str) -> list[Problem]:
     """Section 2.3 for Python doc comments, which the line scanners never see."""
-    import ast
-
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -395,10 +512,14 @@ def check_file(path: Path) -> list[Problem]:
     if path.suffix in YAML_SUFFIXES:
         return check_yaml(path, lines)
     if path.suffix in PY_SUFFIXES:
-        return check_python(path, lines) + check_docstrings(path, source)
+        body = python_body_lines(source)
+        return (
+            check_python(path, lines)
+            + check_docstrings(path, source)
+            + check_function_comments(path, body, python_comment_lines(source))
+        )
     is_header = path.suffix in C_HEADER_SUFFIXES
-    # Section 2.6 gives TypeScript TSDoc at exported symbols, which the C body
-    # rule would otherwise refuse outright.
+    # Section 2.6 grants TypeScript TSDoc at exported symbols, which the C body rule refuses.
     allows_doc = is_header or path.suffix in TS_SUFFIXES
     return check_c_like(path, lines, is_header, allows_doc)
 
