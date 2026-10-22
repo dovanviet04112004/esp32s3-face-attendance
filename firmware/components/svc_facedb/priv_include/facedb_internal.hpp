@@ -19,7 +19,7 @@ struct MatchResult {
     uint16_t template_idx;
     float score;
     bool found;
-    const char *name;                     // points into the table, never copied
+    char name[STORAGE_NAME_CAP];          // copied under m_facedb
 };
 
 /** The file image itself, header first, so persisting is one write of this block.

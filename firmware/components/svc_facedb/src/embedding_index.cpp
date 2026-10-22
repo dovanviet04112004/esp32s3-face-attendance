@@ -55,12 +55,13 @@ uint32_t norm_sq(const int8_t *emb) noexcept
 MatchResult CosineLinearMatcher::best(const int8_t *emb, float scale) const noexcept
 {
     (void)scale;
-    MatchResult result = { 0, 0, -1.0f, false, nullptr };
+    MatchResult result = { 0, 0, -1.0f, false, {} };
     const float query_sq = static_cast<float>(norm_sq(emb));
     if (query_sq == 0.0f) {
         return result;
     }
     memcpy(s_query, emb, STORAGE_EMBED_DIM);
+    const storage_face_record_t *winner = nullptr;
     for (size_t i = 0; i < table_.count(); ++i) {
         const storage_face_record_t *rec = table_.record(i);
         if (!live(*rec) || table_.norm_sq(i) == 0) {
@@ -70,9 +71,16 @@ MatchResult CosineLinearMatcher::best(const int8_t *emb, float scale) const noex
         // positive factor cancels (KEHOACH 6.2.4).
         const float score = static_cast<float>(dot_aligned_query(rec->embedding)) /
                             sqrtf(query_sq * static_cast<float>(table_.norm_sq(i)));
-        if (!result.found || score > result.score) {
-            result = { rec->employee_id, rec->template_idx, score, true, rec->name };
+        if (winner == nullptr || score > result.score) {
+            winner = rec;
+            result.score = score;
         }
+    }
+    if (winner != nullptr) {
+        result.employee_id = winner->employee_id;
+        result.template_idx = winner->template_idx;
+        result.found = true;
+        strlcpy(result.name, winner->name, sizeof(result.name));
     }
     return result;
 }

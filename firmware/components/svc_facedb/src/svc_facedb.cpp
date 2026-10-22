@@ -28,8 +28,7 @@ esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *
         out->employee_id = result.employee_id;
         out->template_idx = result.template_idx;
         out->score = result.score;
-        // The table may move under a later enrol, so the name is copied out.
-        strlcpy(out->name, result.name != nullptr ? result.name : "", sizeof(out->name));
+        strlcpy(out->name, result.name, sizeof(out->name));
     }
     return err;
 }
