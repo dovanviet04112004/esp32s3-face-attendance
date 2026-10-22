@@ -288,8 +288,7 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             node = list(node)
             if unquote(node[1]) == "Reference":
                 node[2] = f'"{ref}"'
-            # Modulo 180, the way KiCad's own boards store it: a name follows a
-            # quarter turn but never ends up upside down at a half one.
+            # Modulo 180 as KiCad's own boards store it: a name turns a quarter, never upside down.
             if rot:
                 node = [
                     (
@@ -303,8 +302,7 @@ def place(ref: str, spec: str, pin_nets: dict, net_id: dict, spot: tuple) -> lis
             number = unquote(node[1])
             net = pin_nets.get(number)
             node = list(node)
-            # A pad carries the footprint's angle even when it is round: the library
-            # parity check reads pad orientation, and a bare (at x y) fails against it.
+            # Even a round pad takes the footprint's angle: the library parity check reads it.
             if rot:
                 node = [
                     (
@@ -426,8 +424,7 @@ def track(tag: str, a: tuple, b: tuple, width: float, layer: str, net: int) -> l
 
 def via(tag: str, at: tuple, width: float, net: int) -> list:
     size, drill = VIA[width]
-    # Mask covers every via: a module standing over one cannot reach it, and silk
-    # printed across one keeps its letters (KEHOACH 2.5).
+    # Mask covers every via on both sides (KEHOACH 2.5).
     return [
         "via",
         ["at", str(at[0]), str(at[1])],
@@ -459,8 +456,7 @@ def every_pad(doc: list) -> dict:
             a, size, net = first(pad, "at"), first(pad, "size"), first(pad, "net")
             lx, ly = float(a[1]), float(a[2])
             wide, tall = float(size[1]), float(size[2])
-            # A square pad reaches further at its corners than any circle drawn on its
-            # side does, and pin 1 of every header is square.
+            # A square pad reaches furthest at its corners, and pin 1 of every header is square.
             reach = (
                 math.hypot(wide, tall) if pad[3] in ("rect", "roundrect") else max(wide, tall)
             ) / 2.0
@@ -741,8 +737,7 @@ def one_run(pads: dict, stamp: dict, rim: dict, ink: set, placed: list, job: tup
                 for cell in ink:
                     field[cell] = 1
             for run in placed:
-                # A declared tree stays a tree: its own branches block each other, so
-                # two loads never share copper the plan says they must not (rule 6).
+                # A declared tree blocks its own branches: two loads never share copper (rule 6).
                 if run["tag"] == tag and tag not in RAIL_TREE:
                     continue
                 for cell in run["halo"][layer][(clear, probe)]:
@@ -961,14 +956,12 @@ def pin_labels(doc: list) -> list:
             if not label:
                 continue
             px, py, lx = seats[number]
-            # Between the two rows is exactly where the devkit's body lands, so a label
-            # put there is legible until the moment the board is actually used.
+            # The devkit body lands between the two rows and would hide a label put there.
             if ref == "U1":
                 ax, ay = px + (-2.0 if lx < 0 else 2.0), py
                 rot, just = 0, ("right" if lx < 0 else "left")
             elif len(pads) == 2:
-                # Beside its pad a label reaches the next part once two sit close, so
-                # it goes above instead, nudged outward off the centred reference.
+                # Beside the pad a label hits a close part: above, clear of the centred reference.
                 away = -1.0 if px <= sum(s[0] for s in seats.values()) / 2 else 1.0
                 ax, ay = px + 1.5 * away, py - 6.0
                 rot, just = 0, None
