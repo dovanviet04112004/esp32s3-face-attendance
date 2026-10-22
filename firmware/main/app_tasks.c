@@ -473,7 +473,7 @@ static void net_task(void *arg)
 }
 
 // Until OTA writes model/version the image's own digest is the honest answer:
-// the header crc covers all three model hashes (KEHOACH 7.1).
+// the header crc covers all three model hashes (KEHOACH 7.7).
 static void model_version(char *out, size_t cap)
 {
     if (sys_storage_get_str(STORAGE_NS_MODEL, NVS_MODEL_VERSION, out, cap) == ESP_OK &&
@@ -666,7 +666,7 @@ static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
     return false;
 }
 
-// Only sync_task reads and writes s_pending; the screen gets a copy (KEHOACH 5.3).
+// Only sync_task reads and writes s_pending; the screen gets a copy (KEHOACH 4.5.5h).
 static void offer_pending(void)
 {
     ui_kiosk_pending_t shown[UI_KIOSK_PENDING_ROWS];
@@ -1778,8 +1778,7 @@ static void ai_task(void *arg)
     }
 }
 
-// One button until the enrol screen of E10-T7 lands; ui_kiosk owns where it
-// sits and this task only says where the finger went.
+// ui_kiosk owns every control on the glass; this task only says where the finger went.
 static void touch_task(void *arg)
 {
     (void)arg;
@@ -2709,8 +2708,7 @@ esp_err_t app_tasks_start(void)
     if (s_pending == NULL || s_scratch == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    // Core 1 stays clear for ai_task, whose one Invoke holds a core for
-    // 100-400 ms and would stall everything sharing it (KEHOACH 5.1).
+    // Core 1 stays clear for ai_task, whose model runs hold a core and would stall whatever shares it (KEHOACH 5.1).
     const EventBits_t up = xEventGroupGetBits(wiring->flags);
     ui_kiosk_set_recognition((up & APP_EG_AI_READY) != 0);
     for (size_t i = 0; i < TASK_COUNT; ++i) {

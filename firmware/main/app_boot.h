@@ -26,7 +26,7 @@ uint8_t app_boot_brightness(void);
  */
 esp_err_t app_boot_models_error(void);
 
-/** Why the chip last started, in a few words for the boot log and the BOOTED note (KEHOACH 4.8).
+/** Why the chip last started, in a few words for the boot log and the BOOTED note (KEHOACH 4.6).
  *  @ctx any | non-blocking
  */
 const char *app_boot_reset_cause(void);
