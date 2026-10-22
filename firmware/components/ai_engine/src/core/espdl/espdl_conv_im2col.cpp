@@ -34,8 +34,8 @@ constexpr int kRgbRowOf3x3Bytes = 3 * kRgbChannels;
 constexpr int kWindowRows = 3;
 constexpr int kWindowTaps = kWindowRows * kRgbRowOf3x3Bytes;
 // The left pad reads the lead's zeros; the last window's two 16-byte loads reach into the tail.
-constexpr size_t kRowLead = 16;
-constexpr size_t kRowTail = 32;
+constexpr size_t kRowLeadBytes = 16;
+constexpr size_t kRowTailBytes = 32;
 constexpr int kNoRow = INT_MIN;
 constexpr int kNoClamp = INT8_MAX;
 
@@ -86,8 +86,8 @@ public:
         y[2] = (x[2] + pads_[2] + pads_[3] - kernel_[1]) / strides_[1] + 1;
         y[3] = w[3];
         windowed_ = kernel_[0] == kWindowRows && kernel_[1] * x[3] == kRgbRowOf3x3Bytes && x[3] == kRgbChannels &&
-            static_cast<size_t>(pads_[2]) * x[3] <= kRowLead;
-        const size_t padded_row_bytes = kRowLead + static_cast<size_t>(x[2] + pads_[3]) * x[3] + kRowTail;
+            static_cast<size_t>(pads_[2]) * x[3] <= kRowLeadBytes;
+        const size_t padded_row_bytes = kRowLeadBytes + static_cast<size_t>(x[2] + pads_[3]) * x[3] + kRowTailBytes;
         row_stride_bytes_ = (padded_row_bytes + kVectorAlignBytes - 1) / kVectorAlignBytes * kVectorAlignBytes;
         // esp-dl's planner asks for shapes while the model is built, so the scratch rows are reserved then.
         reserve_scratch(windowed_ ? kWindowRows * row_stride_bytes_ : static_cast<size_t>(y[2]) * w[2]);
@@ -236,13 +236,13 @@ private:
         int8_t *row = scratch_ + slot * row_stride_bytes_;
         if (held_[slot] != iy) {
             if (iy < 0 || iy >= shape[1]) {
-                std::memset(row + kRowLead, 0, image_row_bytes);
+                std::memset(row + kRowLeadBytes, 0, image_row_bytes);
             } else {
-                dl::tool::copy_memory(row + kRowLead, x + iy * image_row_bytes, image_row_bytes);
+                dl::tool::copy_memory(row + kRowLeadBytes, x + iy * image_row_bytes, image_row_bytes);
             }
             held_[slot] = iy;
         }
-        return row + kRowLead - pads_[2] * shape[3];
+        return row + kRowLeadBytes - pads_[2] * shape[3];
     }
 
     // Each pixel's patch takes depth bytes; the bytes past the kernel's stay zero from the calloc.
