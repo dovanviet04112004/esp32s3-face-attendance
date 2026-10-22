@@ -99,8 +99,7 @@ describe("d02-lt extract (e2e)", () => {
       data: {
         employeeId: lapsed.id,
         kind: "FIXED_TERM",
-        // Over by now, and still the contract covering the day this filing
-        // asks about.
+        // Over by now, yet still the contract covering the day this filing asks about.
         state: "ENDED",
         startDate: new Date("2026-01-01T00:00:00.000Z"),
         endDate: new Date("2026-08-31T00:00:00.000Z"),

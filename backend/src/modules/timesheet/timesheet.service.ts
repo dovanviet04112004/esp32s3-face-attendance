@@ -346,8 +346,7 @@ export class TimesheetService implements OnModuleInit {
    */
   async correct(viewer: Viewer, id: string, body: CorrectDayDto): Promise<AttendanceDay> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
-    // The key is (id, date) since the table is partitioned, and a caller
-    // holding only an id still finds the row through the key's first column.
+    // The partitioned table keys on (id, date), and an id alone still finds the row through the first column.
     const held = DAY_ID.test(id)
       ? await this.db.attendanceDay.findFirst({ where: { id: BigInt(id), ...ScopeService.ownedWhere(viewer, visible) } })
       : null;
@@ -719,8 +718,7 @@ export class TimesheetService implements OnModuleInit {
       measuredMinutes: worked,
       lateMinutes: late,
       earlyLeaveMinutes: early,
-      // Counted, not paid: only minutes matching an approved request become
-      // money, which E17-T8 enforces (KEHOACH 9.17).
+      // Counted, not paid: only minutes an approved request covers become money, enforced by E17-T8 (KEHOACH 9.17).
       overtimeMinutes: over,
       punchCount: marks.count,
       clockUnsynced: marks.unsynced,

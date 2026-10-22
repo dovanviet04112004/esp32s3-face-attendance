@@ -232,8 +232,7 @@ export class AssetsService {
       throw new ConflictException("ASSET_HELD_BY_SOMEBODY_ELSE");
     }
     const moved = await this.db.$transaction(async (tx) => {
-      // The state is claimed by the update itself, so two people handing the
-      // same laptop out at once cannot both read it as free.
+      // The update itself claims the state, so two concurrent hand-outs cannot both read it as free.
       const claimed = await tx.asset.updateMany({
         where: {
           id: assetId,

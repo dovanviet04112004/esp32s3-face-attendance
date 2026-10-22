@@ -132,8 +132,7 @@ describe("enrollment (e2e)", () => {
     assert.equal(now.rosterVersion, before.rosterVersion + 1);
   });
 
-  // Waits on the round trip's last write rather than guessing how long it
-  // takes: the template row lands first, the pair turns ENROLLED after it.
+  // Waits on the round trip's last write: the template row lands first, the pair turns ENROLLED after it.
   async function settled() {
     for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_POLL_MS) {
       const [row, pair] = await Promise.all([
@@ -270,8 +269,7 @@ describe("enrollment (e2e)", () => {
       made.map(() => 201),
     );
 
-    // The version a kiosk is told to reach has to count every change, so a
-    // counter read in this process and written back loses the ones between.
+    // The version a kiosk must reach counts every change; a counter read here and written back loses some.
     const after = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
     assert.equal(after.rosterVersion - before.rosterVersion, made.length);
   });

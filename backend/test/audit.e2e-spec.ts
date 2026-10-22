@@ -81,8 +81,7 @@ describe("audit trail (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
-    // Its own identity: every suite signs in as the seed admin, and the tenth
-    // of those logins evicts whichever session has sat idle longest.
+    // Its own login: every suite signs in as the seed admin, and the tenth login evicts the idlest session.
     await db.user.create({
       data: {
         email: CARRIER,

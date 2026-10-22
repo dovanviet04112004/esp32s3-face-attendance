@@ -129,8 +129,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
   }
 
   async function makePerson(code: string, email: string, personalEmail?: string): Promise<number> {
-    // One statement so no other suite can see an employee with a personal
-    // address and no login, which is what provisioning picks up.
+    // One statement, so no other suite sees a personal address without a login, which provisioning picks up.
     const made = await db.employee.create({
       data: {
         code,
@@ -288,8 +287,7 @@ describe("changing a personal detail through an approval (e2e)", () => {
     assert.equal((await held()).bankAccount, NEW_ACCOUNT);
   });
 
-  // The figure on the payslip stays right either way; only the person at the
-  // other end changes, which is why this is worth its own case.
+  // The payslip figure is right either way; only who receives it differs.
   it("pays the locked period into the account it locked with", async () => {
     const res = await request(http)
       .get(`/payroll-periods/${periodId}/export?kind=bank`)
@@ -405,13 +403,11 @@ describe("changing a personal detail through an approval (e2e)", () => {
         .set("Authorization", `Bearer ${desk}`);
       assert.equal(given.status, 201);
 
-      // Straight at what the worker calls: every process in this run shares one
-      // notify queue, so waiting on it measures the queue rather than the mail.
+      // Straight at what the worker calls: the notify queue is shared run-wide, so waiting on it measures the queue.
       assert.equal(await app.get(ProfileService).mailNotice(row.id), true);
       const letter = await sink.waitFor(MOVED);
       assert.match(letter, new RegExp(`RCPT TO:\\s*<${MOVED}>`, "i"));
-      // Quoted-printable may fold a long line mid-number, so joining first
-      // keeps the search from missing what it looks for.
+      // Quoted-printable may fold a long line mid-number, so the soft breaks are joined first.
       const plain = letter.replaceAll("=\r\n", "");
       assert.ok(!plain.includes(WIRED_ACCOUNT), "the warning carried the new account number");
       let stamped: Date | null = null;

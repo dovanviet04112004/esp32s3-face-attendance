@@ -168,8 +168,7 @@ export class DevicesService {
       return waiting;
     }
 
-    // An approved machine holding a token never asks again, so this call says
-    // its storage is gone; it goes back to the queue a person works through.
+    // An approved machine holding a token never asks again, so this call means its storage is gone.
     if (held.status === "APPROVED" && held.tokenHash !== null) {
       await this.db.device.update({
         where: { id: held.id },

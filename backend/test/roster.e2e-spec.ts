@@ -95,8 +95,7 @@ describe("my shift roster (e2e)", () => {
     const late = await db.shift.create({
       data: { name: LATE, startTime: "14:00", endTime: "22:00", graceMinutes: 5 },
     });
-    // The early shift all month, then the late one from the 16th: a roster
-    // change is a second row, not an edit of the first.
+    // Early shift all month, then the late one from the 16th: a roster change is a second row, not an edit.
     await db.shiftAssignment.create({
       data: { shiftId: early.id, employeeId, validFrom: new Date(Date.UTC(YEAR, MONTH - 1, 1)) },
     });
@@ -153,8 +152,7 @@ describe("my shift roster (e2e)", () => {
     assert.equal(weekends, 9, "November 2026 has nine weekend days");
   });
 
-  // A month earlier than the first assignment, not later than the last: the
-  // late shift has no end date, so every later month is covered on purpose.
+  // A month earlier than the first assignment: the late shift has no end, so later months are covered.
   it("answers a month with no assignment empty rather than failing", async () => {
     const res = await request(http)
       .get(`/shifts/roster?year=${YEAR}&month=1`)

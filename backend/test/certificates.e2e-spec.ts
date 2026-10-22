@@ -185,12 +185,10 @@ describe("letters of employment and income (e2e)", () => {
     assert.equal(new Set(serials).size, serials.length, "two letters share a number");
   });
 
-  // Sequentially, a row count looks like a sequence. Only issuing at the same
-  // moment tells them apart (KEHOACH 9.23 rule 2).
+  // Only issuing at once tells a sequence from a row count (KEHOACH 9.23 rule 2).
   it("gives each letter its own number when several are issued at once", async () => {
     const AT_ONCE = 8;
-    // Only the issuing has to race; asking one at a time keeps the http side
-    // out of the measurement.
+    // Only the issuing has to race; asking one at a time keeps http out of the measurement.
     const waiting: string[] = [];
     for (let at = 0; at < AT_ONCE; at += 1) {
       const ask = await request(http)
@@ -200,8 +198,7 @@ describe("letters of employment and income (e2e)", () => {
       assert.equal(ask.status, 201);
       waiting.push((ask.body as Letter).id);
     }
-    // Straight at the service: supertest opens a server per call, and eight at
-    // once resets connections while no serial has been minted yet.
+    // Straight at the service: supertest opens a server per call, so eight at once hit resets and mint nothing.
     const given = await Promise.all(
       waiting.map((id) => app.get(CertificatesService).issue(deskViewer, id)),
     );
@@ -228,12 +225,10 @@ describe("letters of employment and income (e2e)", () => {
     assert.equal((res.body as { rows: Letter[] }).rows.length, 0);
   });
 
-  // The self service page asks for its own list, and the desk sees everybody,
-  // so the filter has to survive the scope clause beside it.
+  // Self-service asks for its own list while the desk sees everybody, so the filter must survive the scope clause.
   it("narrows the list to one person when asked, even for an unscoped viewer", async () => {
     const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
-    // A second person has to own a letter, or every row matches whatever the
-    // filter says and the assertion cannot fail.
+    // A second owner is needed, or every row matches whatever the filter says and the assertion cannot fail.
     const theirLetter = await request(http)
       .post("/certificates")
       .set("Authorization", `Bearer ${theirs}`)

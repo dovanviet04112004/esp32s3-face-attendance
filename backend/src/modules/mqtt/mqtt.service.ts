@@ -55,8 +55,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
     const caPath = this.config.get("MQTT_CA_CERT_PATH", { infer: true });
     if (caPath) {
-      // The broker is signed by the fleet's own authority, so the public trust
-      // store has nothing to say about it (KEHOACH 7.4).
+      // The fleet's own authority signs the broker, so the public trust store has no say (KEHOACH 7.4).
       options.ca = [await readFile(caPath)];
       options.rejectUnauthorized = true;
     }

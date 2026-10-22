@@ -68,8 +68,7 @@ describe("crud (e2e)", () => {
     await app.close();
   });
 
-  // The default role reads the route and gets its own rows, which for an
-  // account with no employee record is none (KEHOACH 9.4).
+  // The default role gets its own rows: none for an account with no employee record (KEHOACH 9.4).
   it("lets a viewer read employees, and hands them nobody", async () => {
     const res = await request(http)
       .get("/employees")

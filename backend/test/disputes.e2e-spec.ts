@@ -68,8 +68,7 @@ describe("disputing a payslip (e2e)", () => {
     await db.legalEntity.deleteMany({ where: { code: ENTITY } });
   }
 
-  // Copied rather than typed out: the rates belong to the seed, and a second
-  // set of them here would be a second thing to keep right (KEHOACH 4.9).
+  // Copied, not typed out: the rates belong to the seed (KEHOACH 4.9).
   async function copyPolicyTo(holder: string): Promise<void> {
     const { id, legalEntityId, createdAt, brackets, ...rates } =
       await db.payrollPolicy.findFirstOrThrow({
@@ -340,8 +339,7 @@ describe("disputing a payslip (e2e)", () => {
     assert.equal(await db.retroAdjustment.count({ where: { employeeId, code: LINE } }), 1, "a second answer minted money");
   });
 
-  // The whole point of the record: the answer is a figure somebody receives,
-  // not a sentence somebody wrote (KEHOACH 9.17 item 11).
+  // The answer is a figure somebody receives, not a sentence somebody wrote (KEHOACH 9.17 item 11).
   it("pays it on the next payslip and settles it when that period locks", async () => {
     const next = await db.payrollRun.create({
       data: { periodId: nextPeriodId, kind: "REGULAR", state: "DRAFT" },

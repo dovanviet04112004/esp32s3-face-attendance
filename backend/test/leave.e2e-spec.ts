@@ -207,8 +207,7 @@ describe("leave balance (e2e)", () => {
       data: { employeeId: made.id, leaveTypeId, year: 2026, entitled: ENTITLED },
     });
 
-    // Made here rather than by provisioning: this suite needs an employee who
-    // can sign in, not the invitation flow that password-setup covers.
+    // Made here, not by provisioning: this suite needs a login, not the invitation flow password-setup covers.
     await db.user.create({
       data: {
         email: EMAIL,

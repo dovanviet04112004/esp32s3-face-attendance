@@ -74,8 +74,7 @@ describe("insurance changes (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
-    // Named, not whichever entity turns up first: only this one carries the
-    // seeded policy this report reads its threshold from.
+    // Named, not the first found: only this entity carries the seeded policy holding the threshold.
     const holder = await db.legalEntity.findUniqueOrThrow({ where: { code: SEED_ENTITY } });
     entityId = holder.id;
 
@@ -86,8 +85,7 @@ describe("insurance changes (e2e)", () => {
       return made.id;
     }
 
-    // Hired inside the window, and given a first salary the same day: that is
-    // one filing, not a rise on top of it.
+    // Hired inside the window with a first salary the same day: one filing, not a rise on top of it.
     const joined = await make(JOINED, { hireDate: new Date("2026-04-07T00:00:00.000Z") });
     await db.compensationRecord.create({
       data: {

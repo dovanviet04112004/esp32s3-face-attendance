@@ -1059,8 +1059,7 @@ export class EmployeesService implements OnModuleInit {
     if (query.ending) {
       return this.endingPage(query, viewer, visible, where);
     }
-    // Code is unique, so resuming needs no tiebreak and the comparison stays
-    // one index bound (KEHOACH 9.9 rule 3).
+    // Code is unique, so resuming needs no tiebreak and stays one index bound (KEHOACH 9.9 rule 3).
     const from = query.cursor ? decodeCursor(query.cursor) : null;
     const resumed: Prisma.EmployeeWhereInput = from
       ? { AND: [where, { code: { gt: from.sortValue } }] }
@@ -1262,8 +1261,7 @@ export class EmployeesService implements OnModuleInit {
       skipped.push("NO_CHECKLIST_TEMPLATE_OR_ALREADY_STARTED");
     }
 
-    // Outside the transaction on purpose: the letter must not go out for a
-    // pass that rolls back, and a login opened without one is re-invited.
+    // Outside the transaction: no letter goes out for a rollback, and a login left without one is re-invited.
     let login: LoginOpened | null = null;
     if (body.openLogin !== false) {
       login = await this.users.openFor(person.id);
@@ -1310,8 +1308,7 @@ export class EmployeesService implements OnModuleInit {
       skipped.push("CONTRACT_EXISTS");
       return held.id;
     }
-    // DRAFT, because the onboarding list carries the task of signing it and
-    // only an activation stamps signedAt (KEHOACH 9.14).
+    // DRAFT: signing it is an onboarding task, and only an activation stamps signedAt (KEHOACH 9.14).
     const made = await tx.employmentContract.create({
       data: {
         employeeId,
@@ -1640,8 +1637,7 @@ export class EmployeesService implements OnModuleInit {
     if (written.saved.managerId !== held.managerId) {
       await this.items.regroupPeople("REQUESTS", [id]);
     }
-    // Field names only: a second copy of personal data is a second place the
-    // right to erasure has to reach (KEHOACH 9.24 rule 4).
+    // Field names only, never values (KEHOACH 9.24 rule 4).
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.EMPLOYEE_UPDATE,

@@ -149,8 +149,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
           this.log.warn(`${body.deviceId}: ${body.reason} (no webhook configured)`);
           return;
         }
-        // A third party that is slow or down is the reason this is a job at
-        // all, so a failure here throws and BullMQ tries again later.
+        // A failure throws so BullMQ retries: a third party slow or down is why this is a job at all.
         const sent = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

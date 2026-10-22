@@ -112,8 +112,7 @@ export class OrgService {
    */
   async reorg(viewer: Viewer, body: ReorgDto, apply: boolean): Promise<ReorgPlan> {
     const chosen = body.employeeCodes?.length ? body.employeeCodes : null;
-    // A body with nothing to narrow by would move the whole company, which is
-    // one typo away from a department id that came out empty.
+    // Nothing to narrow by would move the whole company, one typo away from an empty department id.
     if (!chosen && !body.fromDepartmentId) {
       throw new BadRequestException("REORG_NEEDS_A_SELECTION");
     }
@@ -207,8 +206,7 @@ export class OrgService {
       if (!toManager) {
         return [];
       }
-      // Left with its old approver, a request reaches somebody who lacks the
-      // standing to see the person, so nobody can answer it.
+      // Left with its old approver, a request reaches somebody who cannot see the person, so nobody answers it.
       await tx.request.updateMany({
         where: { employeeId: { in: ids }, state: "PENDING" },
         data: { approverId: toManager.id },

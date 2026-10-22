@@ -124,8 +124,7 @@ describe("who the feed talks to (e2e)", () => {
     await db.user.create({
       data: { email: STRANGER_MAIL, passwordHash, role: "EMPLOYEE", employeeId: stranger.id },
     });
-    // Through the service: the login door is counted by the minute and this
-    // suite would spend the allowance on setup.
+    // Through the service: the login door is counted by the minute, and setup would spend the allowance.
     const auth = app.get(AuthService);
     bossToken = tokensOf(await auth.signIn(BOSS_MAIL, PASSWORD, {})).accessToken;
     underToken = tokensOf(await auth.signIn(UNDER_MAIL, PASSWORD, {})).accessToken;

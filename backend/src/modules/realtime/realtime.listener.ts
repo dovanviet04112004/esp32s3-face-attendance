@@ -33,8 +33,7 @@ export class RealtimeListener {
     }
     this.feed.publish(FEED.event, body);
     if (body.severity === "ERROR") {
-      // Telling someone is somebody else's job and may be slow, so it leaves
-      // through the queue rather than holding up the broker callback.
+      // Through the queue: telling someone may be slow and must not hold up the broker callback.
       const queue: Queue = this.queues[QUEUE.notify];
       await queue.add(JOB.webhook, { deviceId: message.deviceId, reason: body.type });
     }

@@ -218,8 +218,7 @@ export class AttendanceService {
     const resumed: Prisma.AttendanceRecordWhereInput = query.cursor
       ? { AND: [where, resumeAfter("ts", "desc", query.cursor, { id: "bigint" })] }
       : where;
-    // Both halves of one transaction so the pager's total cannot describe a
-    // different set of rows than the page above it.
+    // One transaction, so the pager's total and the page above it describe the same rows.
     const [rows, found] = await this.db.$transaction([
       this.db.attendanceRecord.findMany({
         where: resumed,
@@ -305,8 +304,7 @@ export class AttendanceService {
         this.log.error(`punch names employee ${punch.employeeId}, who is not on the roster`);
         return "unknown-employee";
       }
-      // A second delivery can land between the read above and this write, and
-      // the unique index is what settles it (CLAUDE.md 4.3).
+      // A second delivery racing the read above lands here, and the unique index settles it (CLAUDE.md 4.3).
       if (isPrismaCode(error, UNIQUE_VIOLATION)) {
         return "duplicate";
       }

@@ -315,8 +315,7 @@ export function checkShape(row: ImportRow, line: number): RowFault[] {
       faults.push({ row: line, column, code: "VALUE_TOO_LONG", value: value.slice(0, most) });
     }
   }
-  // Insurance is charged on its own figure, and half a pay record cannot be
-  // written: either both sides arrive or neither does.
+  // Both salaries or neither: insurance is charged on its own figure, and half a pay record cannot be written.
   if (Boolean(valueOf("baseSalary")) !== Boolean(valueOf("insuranceSalary"))) {
     faults.push({ row: line, column: "insuranceSalary", code: "SALARY_PAIR_INCOMPLETE", value: "" });
   }

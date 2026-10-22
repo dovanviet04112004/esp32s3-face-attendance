@@ -179,8 +179,7 @@ describe("row scope (e2e)", () => {
     }
   });
 
-  // It is the default on a new account, so it has to be the narrowest role
-  // rather than the widest (KEHOACH 9.4).
+  // The default on a new account, so the narrowest role rather than the widest (KEHOACH 9.4).
   it("narrows the default role to its own record", async () => {
     const stranger = idOf.get(STRANGER) as number;
     assert.equal((await as("viewer")(`/employees/${stranger}`)).status, 404);

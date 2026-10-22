@@ -217,12 +217,10 @@ export class UsersService {
     const expiresAt = new Date(
       Date.now() + this.config.get("PASSWORD_SETUP_TTL_HOURS", { infer: true }) * HOUR_MS,
     );
-    // Both statements or neither: an account with no link is one nobody can
-    // reach, and a link with no account points at nothing.
+    // Both or neither: an account with no link is unreachable, and a link with no account points nowhere.
     await this.db.$transaction(async (tx) => {
       const asked = invites.map((one) => one.person.id);
-      // Held under a share lock for the insert: somebody offboarded between
-      // the list above and this key breaks it, and the batch opens nothing.
+      // Share-locked for the insert: anyone offboarded since the list above would break the key and the batch.
       const standing = await tx.$queryRaw<{ id: number }[]>`
         SELECT "id" FROM "Employee" WHERE "id" = ANY(${asked}::int[]) FOR SHARE
       `;
@@ -239,8 +237,7 @@ export class UsersService {
           })),
         skipDuplicates: true,
       });
-      // An address another login already holds gets skipped above, so the
-      // links follow the rows that landed, not the ones on offer.
+      // skipDuplicates drops an address another login holds, so the links follow the rows that landed.
       const born = await tx.user.findMany({
         where: { id: { in: invites.map((one) => one.userId) } },
         select: { id: true },

@@ -518,8 +518,7 @@ export class NotificationsService {
       }
       const wants = await this.channelsFor(kind, sends.map((one) => one.userId));
       const landed: Announced[] = [];
-      // Twelve parameters a row: a thousand rows stay far under the 65,535 one statement takes.
-      // A login deleted after the lookup is skipped, not fatal to the batch.
+      // 12 params a row keep a 1,000-row batch under 65,535 per statement; a login deleted after lookup is skipped.
       for (let at = 0; at < sends.length; at += kBatch) {
         const rows = sends.slice(at, at + kBatch).map((one) => this.newsRow(kind, one, !wants(one.userId, "IN_APP")));
         landed.push(

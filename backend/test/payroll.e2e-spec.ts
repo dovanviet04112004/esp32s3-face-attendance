@@ -46,8 +46,7 @@ function byShortcut(assessable: bigint): bigint {
   if (!band) {
     return 0n;
   }
-  // Half up, the same convention a payslip reader expects; the point of this
-  // helper is the table, not the rounding.
+  // Half up, the convention a payslip reader expects; this helper checks the table, not the rounding.
   const scaled = assessable * BigInt(band.rateBp) + 5_000n;
   return scaled / 10_000n - band.less;
 }

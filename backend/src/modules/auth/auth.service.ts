@@ -92,11 +92,9 @@ export class AuthService {
     }
     const id = await this.accountIdOf(email);
     const user = id === null ? null : await this.db.user.findUnique({ where: { id } });
-    // The same answer whether the address is unknown or the password is wrong,
-    // so a caller cannot learn which addresses exist.
+    // The same answer for an unknown address and a wrong password, so no caller learns which exist.
     const ok = await verifyPassword(password, user?.passwordHash);
-    // A closed account answers like a wrong password on purpose: the caller
-    // has proved nothing yet, so it must not learn the address exists.
+    // A closed account answers like a wrong password on purpose: the caller has proved nothing yet.
     if (!user || !ok || !user.active) {
       await this.lockout.missed(email, user?.id ?? null, from.ip);
       throw new UnauthorizedException("CREDENTIALS_REJECTED");

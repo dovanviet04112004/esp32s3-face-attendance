@@ -17,8 +17,7 @@ const HOUR_S = 3600;
       provide: QUEUE_TOKEN,
       inject: [RedisService],
       useFactory: (redis: RedisService): Queues => {
-        // Every job retries with a growing gap, because the thing it waits on
-        // is usually a third party that came back a moment later.
+        // Retries back off, since what a job waits on is usually a third party back a moment later.
         const defaults = {
           attempts: 3,
           backoff: { type: "exponential" as const, delay: 1000 },

@@ -117,8 +117,7 @@ describe("documents (e2e)", () => {
     const other = await db.department.create({
       data: { code: OTHER_DEPT, name: "Phòng thử tài liệu", legalEntityId: entity },
     });
-    // The reader gets a department of their own, so "and nobody else" is a
-    // claim about one person rather than about whoever a page happened to hold.
+    // Own department, so "and nobody else" means one person, not whoever a page happened to hold.
     const own = await db.department.create({
       data: { code: OWN_DEPT, name: "Phòng của người đọc", legalEntityId: entity },
     });
@@ -203,8 +202,7 @@ describe("documents (e2e)", () => {
   });
 
   it("aims a targeted document at its department and nobody else", async () => {
-    // A company-wide document reaches everybody by design, so the claim is
-    // about the two this suite published, not about the whole shelf.
+    // Company-wide documents reach everybody by design, so the claim is about this suite's two.
     const ours = new Set<string>([GENERAL, TARGETED]);
     const seen = (await mine()).map((row) => row.code).filter((code) => ours.has(code)).sort();
     assert.deepEqual(seen, [GENERAL, TARGETED].sort());
@@ -303,8 +301,7 @@ describe("documents (e2e)", () => {
   });
 
   it("counts an expired paper as a gap again", async () => {
-    // Re-received with an old date, so the expiry is derived rather than typed:
-    // the constraint refuses an expiry that precedes its own receipt.
+    // Old receipt date, derived expiry: the constraint refuses one preceding its receipt.
     const res = await request(http)
       .post("/personnel-files")
       .set("Authorization", `Bearer ${adminToken}`)

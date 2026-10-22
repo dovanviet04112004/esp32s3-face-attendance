@@ -88,8 +88,7 @@ describe("onboarding (e2e)", () => {
     assert.equal(signedIn.status, 200, "admin could not sign in");
     token = signedIn.body.accessToken;
 
-    // A template bound to a job title outscores the general one, so the run
-    // this suite reads is the one it wrote.
+    // A template bound to a job title outscores the general one, so the run read here is the one written.
     const title = await db.jobTitle.create({
       data: {
         code: TITLE,
@@ -141,8 +140,7 @@ describe("onboarding (e2e)", () => {
     });
     goneId = left.id;
 
-    // Onboarding seeds a balance for every active type, so the claims below
-    // name one rather than taking whichever row the table hands back.
+    // Onboarding seeds a balance per active type, so the claims below name one, not whichever row comes back.
     const paid = await paidLeaveType(db);
     paidTypeId = paid.id;
     paidCode = paid.code;
@@ -274,8 +272,7 @@ describe("onboarding (e2e)", () => {
     assert.equal(res.status, 409);
   });
 
-  // A probation that ran out undecided is already a hire (KEHOACH 9.18), so
-  // only the ones still ahead are a decision to make.
+  // A probation that ran out undecided is already a hire, so only those ahead need deciding (KEHOACH 9.18).
   it("lists a probation ending within the month and leaves out one already over", async () => {
     const dayMs = 86_400_000;
     const today = dayAsDate(localDay(new Date(), validateEnv().APP_TIMEZONE)).getTime();

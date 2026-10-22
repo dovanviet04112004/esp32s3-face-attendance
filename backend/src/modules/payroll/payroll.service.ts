@@ -465,8 +465,7 @@ export class PayrollService {
         },
       }),
       this.paidElsewhereCount(periodId),
-      // Somebody who left this month and still holds a laptop: the last payslip
-      // is the last moment anything can be set against (KEHOACH 9.16 item 10).
+      // A leaver still holding an asset: the last payslip is the last chance to deduct it (KEHOACH 9.16 item 10).
       this.db.employee.count({
         where: {
           leaveDate: { gte: period.startDate, lte: period.endDate },
@@ -474,8 +473,7 @@ export class PayrollService {
           assetsHeld: { some: { state: "ISSUED" } },
         },
       }),
-      // A deadline nobody feels is a decoration, so an unanswered one costs
-      // somebody a signature here (KEHOACH 9.17 item 11).
+      // Overdue disputes, so a missed deadline costs somebody a signature (KEHOACH 9.17 item 11).
       this.db.payslipDispute.count({
         where: {
           state: "OPEN",
@@ -541,8 +539,7 @@ export class PayrollService {
     if (open.length > 0 && !body.note?.trim()) {
       throw new BadRequestException("LOCK_NOTE_REQUIRED");
     }
-    // Issuing and spending are one act: a half-applied lock leaves a period
-    // closed with its back payments still owed.
+    // Issuing and spending are one act, or a period closes with its back payments still owed.
     const locked = await this.db.$transaction(
       async (tx) => {
         // The row lock execute and discard take too, so no run starts or goes between the check and the lock.
@@ -755,8 +752,7 @@ export class PayrollService {
       throw new BadRequestException("RUN_ALREADY_RUNNING");
     }
     try {
-      // BullMQ keeps completed jobs, so a job id derived from the run would let
-      // only the first start do anything; RUNNING is what stops a double start.
+      // BullMQ keeps completed jobs, so a run-derived job id would make a rerun a no-op; RUNNING stops a double start.
       await this.queues[QUEUE.payroll].add(JOB.run, { type: JOB.run, runId } satisfies PayrollJob);
     } catch (error) {
       await this.db.payrollRun.update({ where: { id: run.id }, data: { state: "FAILED", finishedAt: new Date() } });
@@ -933,8 +929,7 @@ export class PayrollService {
       where: { id: runId },
       data: { state: "RUNNING", startedAt: new Date(), employeeCount: ids.length, doneCount: 0, failedCount: 0, failure: null },
     });
-    // A rerun of a draft recomputes rather than appends: one payslip per person
-    // per run, whatever any earlier attempt left behind.
+    // A rerun of a draft recomputes: one payslip per person per run, whatever an earlier attempt left.
     await this.db.payslip.deleteMany({ where: { runId } });
 
     let grossTotal = 0n;
@@ -1557,8 +1552,7 @@ export class PayrollService {
       this.db.payslip.findMany({
         where,
         include: PAYSLIP_ROW,
-        // A bonus run gives one person two slips in a month, so id breaks the
-        // tie that period and employee leave (KEHOACH 9.9 rule 3).
+        // A bonus run gives one person two slips a month, so id breaks the tie (KEHOACH 9.9 rule 3).
         orderBy: [
           { period: { year: "desc" } },
           { period: { month: "desc" } },

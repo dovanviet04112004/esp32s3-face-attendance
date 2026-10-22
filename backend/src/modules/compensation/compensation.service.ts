@@ -340,8 +340,7 @@ export class CompensationService {
     const branch = body.departmentId ? await departmentSubtree(this.db, body.departmentId) : null;
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const self = viewer.employeeId ?? 0;
-    // DISTINCT ON takes the latest record per person in one pass; asking per
-    // employee is one query each, which stops working at a few thousand (KEHOACH 9.9).
+    // DISTINCT ON takes each latest record in one pass; a query per employee breaks at a few thousand (KEHOACH 9.9).
     const rows = await this.db.$queryRaw<
       { employeeId: number; code: string; fullName: string; baseSalary: string; insuranceSalary: string }[]
     >`

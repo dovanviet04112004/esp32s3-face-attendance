@@ -34,8 +34,7 @@ export class AttendanceListener {
     }
     const questionableTime = isQuestionable(new Date(punch.ts), message.receivedAt);
     const held = outcome === "held";
-    // Announced only once the row is written, since the dashboard answers by
-    // asking for the list again.
+    // Announced only once the row is written: the dashboard answers by asking for the list again.
     this.feed.publish(FEED.attendance, { ...punch, questionableTime, held }, punch.employeeId);
     // A held punch has not counted yet, so its person hears nothing of it (KEHOACH 9.8).
     if (!questionableTime && !held) {

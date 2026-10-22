@@ -35,8 +35,7 @@ export class AuditInterceptor implements NestInterceptor {
     }
     return next.handle().pipe(
       tap(() => {
-        // Success only: a refused request leaves nothing behind, and a log of
-        // attempts answers a different question.
+        // Success only: a log of attempts answers a different question.
         void this.audit.record({
           actorId: req.user?.sub ?? req[ACTOR],
           action: AUDIT_ACTIONS.ROUTE_WRITE,

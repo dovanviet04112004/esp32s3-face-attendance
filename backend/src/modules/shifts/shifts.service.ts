@@ -91,8 +91,7 @@ export class ShiftsService {
         orderBy: { validFrom: "asc" },
       }),
       this.db.holiday.findMany({ where: { date: { gte: from, lt: to } } }),
-      // The same four conditions the day build uses, so a day planned here and
-      // the same day once measured cannot disagree (KEHOACH 9.8).
+      // The day build's four conditions, so a day planned here and once measured cannot disagree (KEHOACH 9.8).
       this.db.request.findMany({
         where: {
           employeeId,

@@ -412,8 +412,7 @@ function punchAt(day: Date, hour: number, minute: number): Date {
 }
 
 async function wipe(): Promise<void> {
-  // TRUNCATE CASCADE empties every table referencing one it names, whatever
-  // that reference says on delete, and User points at Employee.
+  // Employee stays out: TRUNCATE CASCADE would empty User, which points at it, whatever its ON DELETE says.
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "PayslipLine", "Payslip", "PayrollRun", "BonusItem", "SettlementItem",
@@ -427,14 +426,12 @@ async function wipe(): Promise<void> {
       "AuditLog", "PayrollPeriod"
     RESTART IDENTITY CASCADE
   `);
-  // Deleting is what hands User.employeeId back as null rather than taking the
-  // login with it; the tables it cascades into are empty by now.
+  // A DELETE hands User.employeeId back as null and keeps the login; what it cascades into is empty by now.
   await prisma.$executeRawUnsafe(`DELETE FROM "Employee"`);
   await prisma.$executeRawUnsafe(
     `SELECT setval(pg_get_serial_sequence('"Employee"', 'id'), 1, false)`,
   );
-  // A login opened for a demo employee outlives them as an address nobody
-  // holds, and the next run mints that address again (KEHOACH 9.3).
+  // A demo login outlives its employee, and the next run mints that address again (KEHOACH 9.3).
   await prisma.user.deleteMany({
     where: { employeeId: null, email: { endsWith: `@${PERSON_EMAIL_DOMAIN}` } },
   });
@@ -782,8 +779,7 @@ async function buildPeople(org: Org): Promise<Person[]> {
     if (person.titleCode === "TGD" || person.grade >= 9) {
       continue;
     }
-    // A leaver keeps their record and loses their login, which is the split
-    // the schema draws (KEHOACH 9.3).
+    // A leaver keeps their record and loses their login (KEHOACH 9.3).
     if (chance(LEAVER_SHARE) && person.hireDate.getUTCFullYear() < YEAR) {
       const month = between(1, LAST_MONTH);
       person.leaveDate = dateOf(YEAR, month, between(1, daysInMonth(YEAR, month)));
@@ -931,8 +927,7 @@ async function buildPay(people: Person[]): Promise<Map<number, string>> {
   for (const person of people) {
     const steps: { from: Date; base: number; reason: "HIRE" | "ANNUAL_REVIEW" | "PROMOTION" }[] = [];
     const startYear = person.hireDate.getUTCFullYear();
-    // A raise appends a row, so March pay recomputed in December still reads
-    // March's figure (KEHOACH 9.6).
+    // A raise appends a row, so March pay recomputed in December still reads March's figure (KEHOACH 9.6).
     let base = roundTo(person.baseSalary / Math.pow(1.07, YEAR - startYear), 100_000);
     steps.push({ from: person.hireDate, base, reason: "HIRE" });
     for (let year = startYear + 1; year <= YEAR; year += 1) {
@@ -1107,8 +1102,7 @@ function planMonth(person: Person, month: number, holidays: Set<string>): DayPla
       plan.push({ date: at, state: "HOLIDAY", overtimeMinutes: 0, leaveCode: null });
       continue;
     }
-    // Nobody takes leave one scattered day at a time, so a spell runs on until
-    // its days are used up.
+    // A spell runs on until its days are used up: nobody takes leave one scattered day at a time.
     if (leaveLeft > 0) {
       leaveLeft -= 1;
       plan.push({ date: at, state: "LEAVE", overtimeMinutes: 0, leaveCode });
@@ -1483,8 +1477,7 @@ async function buildDesk(org: Org, people: Person[]): Promise<void> {
   const working = people.filter((one) => one.leaveDate === null);
   const from = dateOf(YEAR, LAST_MONTH, DESK_WINDOW_DAY);
   const to = dateOf(YEAR, LAST_MONTH, daysInMonth(YEAR, LAST_MONTH));
-  // One leave request per person per window: the database refuses two that
-  // overlap, and a desk with two from one person is not what it looks like.
+  // One leave request per person per window: the database refuses overlaps, and two would mislead the desk.
   const busy = await prisma.request.findMany({
     where: { kind: "LEAVE", state: { in: ["PENDING", "APPROVED"] }, fromDate: { lte: to }, toDate: { gte: from } },
     select: { employeeId: true },

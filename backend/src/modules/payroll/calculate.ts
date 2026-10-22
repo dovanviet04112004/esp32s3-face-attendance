@@ -179,8 +179,7 @@ export function calculate(input: CalcInput): CalcResult {
     }
   }
 
-  // Only the premium above the normal rate is exempt, so the normal part stays
-  // in taxable income (Thong tu 111/2013/TT-BTC dieu 3).
+  // Only the premium above the normal rate is tax-exempt (Thong tu 111/2013/TT-BTC dieu 3).
   const rate = hourlyRate(input.baseSalary, policy.standardDayHundredths);
   let overtimeExempt = 0n;
   for (const band of overtimeBands(policy, input.overtime)) {
@@ -226,8 +225,7 @@ export function calculate(input: CalcInput): CalcResult {
     .filter((line) => line.kind === "EARNING")
     .reduce((total, line) => total + line.amount, 0n);
 
-  // A month mostly unpaid owes no contribution, which is also what keeps a net
-  // figure from going negative when nobody worked (KEHOACH 9.7).
+  // A mostly unpaid month owes no contribution, which also stops an idle month's net going negative (KEHOACH 9.7).
   const exempt =
     input.unpaidDayHundredths >= BigInt(policy.noContributionUnpaidDays) * kHundred;
   const insuranceBase = exempt ? 0n : input.insuranceSalary + insurableExtra;

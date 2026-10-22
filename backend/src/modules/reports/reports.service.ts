@@ -752,8 +752,7 @@ export class ReportsService {
   /** Hand a long roll-up to the queue; it outlives the request that asked. */
   async schedule(job: ReportJob): Promise<string> {
     const queue: Queue = this.queues[QUEUE.report];
-    // The range decides the id, so asking twice enqueues one run. It is hashed
-    // because BullMQ refuses a colon, and an ISO instant is mostly colons.
+    // The range decides the id, so a repeat ask enqueues one run; hashed, as BullMQ refuses a colon in an id.
     const id = createHash("sha256").update(`${job.type}|${job.from}|${job.to}`).digest("hex");
     // BullMQ keeps a finished job and answers a repeat id with it, so a re-ask would run nothing.
     const held = await queue.getJob(id);
@@ -832,8 +831,7 @@ export class ReportsService {
       where: {
         legalEntityId,
         AND: [
-          // A missing hire date must not quietly drop somebody from a filing:
-          // an empty return reads as "this company employs nobody".
+          // A missing hire date must not drop somebody: an empty filing reads as "this company employs nobody".
           { OR: [{ hireDate: null }, { hireDate: { lte: on } }] },
           { OR: [{ leaveDate: null }, { leaveDate: { gte: on } }] },
         ],
@@ -849,8 +847,7 @@ export class ReportsService {
         leaveDate: true,
         jobTitle: { select: { name: true, laborCategory: true } },
         contracts: {
-          // In force on the closing day, not in force today: a filing for June
-          // asks what June looked like, and by now that term may have ended.
+          // In force on the closing day, not today, so a term that has ended since still counts.
           where: {
             state: { in: ["ACTIVE", "ENDED"] },
             startDate: { lte: on },
@@ -996,8 +993,7 @@ export class ReportsService {
     const increases = joined.map((one) => asChange(one, "HIRED", one.hireDate as Date));
     const decreases = [
       ...gone.map((one) => asChange(one, "LEFT", one.leaveDate as Date)),
-      // Fourteen unpaid days stops the contribution for the month, the same
-      // rule the payslip applies (KEHOACH 9.7).
+      // Fourteen unpaid days stop the month's contribution, the rule the payslip applies (KEHOACH 9.7).
       ...away.map((one) => asChange({ ...one, id: one.employeeId }, "UNPAID_14", to)),
     ];
     const adjustments = moved

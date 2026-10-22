@@ -28,8 +28,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const known = error instanceof HttpException ? coded(error, req) : null;
     const statusCode = known ? known.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    // An unknown failure says nothing about itself outward: the detail is for
-    // the log, because it tends to name tables, files and versions.
+    // An unknown failure says nothing outward: its detail tends to name tables, files and versions.
     const message = known ? messageOf(known) : "INTERNAL_ERROR";
     if (!known) {
       this.log.error(`${req.method} ${req.path}: ${String(error)}`);

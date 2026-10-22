@@ -53,8 +53,7 @@ describe("sessions across devices (e2e)", () => {
     return db.session.count({ where: { userId, revokedAt: null } });
   }
 
-  // Sign in over http only where the route itself is what is under test: the
-  // throttler counts every call and this suite would spend its own allowance.
+  // Over http only where the route is under test, or the throttler spends this suite's allowance.
   async function signIn(agent: string): Promise<Device> {
     const res = await postLogin(http, EMAIL, FIRST_PASSWORD).set("User-Agent", agent);
     assert.equal(res.status, 200, `${agent} could not sign in`);
@@ -148,8 +147,7 @@ describe("sessions across devices (e2e)", () => {
     await auth.signIn(EMAIL, FIRST_PASSWORD, { userAgent: "e2e-b/1.0" });
     assert.ok((await live()) >= 2);
 
-    // The only way a password is ever set is a one-time link, so the test
-    // mints one the way provisioning does and spends it.
+    // A password is only ever set through a one-time link, so the test mints one as provisioning does.
     const link = randomBytes(32).toString("base64url");
     await db.passwordSetup.create({
       data: {

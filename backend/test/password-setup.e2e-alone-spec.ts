@@ -105,8 +105,7 @@ describe("first password (e2e)", () => {
     }
   });
 
-  // Not through the login route: its body validator refuses anything under
-  // eight characters, so the sentinel never reaches the check being tested.
+  // Not through the login route: its validator refuses anything under eight characters, sentinel included.
   it("stores a hash no password can match, not an empty one", async () => {
     const account = await db.user.findUniqueOrThrow({ where: { email: EMAIL } });
     assert.equal(account.passwordHash, UNUSABLE_PASSWORD);
@@ -212,8 +211,7 @@ describe("first password (e2e)", () => {
   });
 
   it("changes a password only for somebody who holds the current one", async () => {
-    // Signing in goes through the service: the login door is counted by the
-    // minute and this suite would spend the whole allowance on setup.
+    // Through the service: the login door is counted by the minute, and setup would spend the allowance.
     const access = tokensOf(await auth.signIn(EMAIL, NEXT_ONE, {})).accessToken;
 
     const wrong = await request(http)

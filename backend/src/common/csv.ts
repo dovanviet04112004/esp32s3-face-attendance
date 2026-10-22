@@ -7,8 +7,7 @@ export const EXPORT_MAX_ROWS = 50_000;
 export const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
 function cell(value: string): string {
-  // A name with a comma or a quote in it has broken more payment files than
-  // any other single thing, so every cell is quoted and quotes are doubled.
+  // Every cell is quoted: a comma or a quote in a name breaks payment files more than anything else.
   return `"${value.replace(/"/g, '""')}"`;
 }
 

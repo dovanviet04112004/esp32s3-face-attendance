@@ -111,8 +111,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
       this.log.warn(`payslip ${job.payslipId} is gone, nothing to send`);
       return;
     }
-    // At-least-once delivery means this job can arrive twice; the column is
-    // what makes the second arrival a no-op (KEHOACH 9.11).
+    // Delivery is at least once, and sentAt makes the second arrival a no-op (KEHOACH 9.11).
     if (slip.sentAt !== null) {
       return;
     }

@@ -20,8 +20,7 @@ export class ReportProcessor implements OnModuleInit, OnModuleDestroy {
       QUEUE.report,
       async (job) => {
         const { from, to } = job.data as ReportJob;
-        // Running twice writes the same cache entry, which is what lets the
-        // queue deliver at least once without a second result (CLAUDE.md 4.3).
+        // Idempotent: a rerun rewrites the same cache entry (CLAUDE.md 4.3).
         const page = await this.reports.warm(new Date(from), new Date(to));
         this.log.log(`report ${job.id} covered ${page.total} employees`);
         return { employees: page.total };

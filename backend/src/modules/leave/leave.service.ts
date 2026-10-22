@@ -318,8 +318,7 @@ export class LeaveService {
     if (viewer.employeeId === null) {
       throw new ForbiddenException("NOT_AN_EMPLOYEE");
     }
-    // A redelivery from a phone that lost the answer ends where the first one
-    // did, rather than filing a second request (KEHOACH 9.21.3 rule 2).
+    // A redelivery from a phone that lost the answer ends where the first did (KEHOACH 9.21.3 rule 2).
     if (body.clientKey !== undefined) {
       const already = await this.db.request.findUnique({ where: { clientKey: body.clientKey } });
       if (already) {
@@ -393,8 +392,7 @@ export class LeaveService {
     try {
       filed = await file();
     } catch (error) {
-      // Two redeliveries can both miss the read above. Letting this throw is
-      // what rolls back the leave days the loser had already reserved.
+      // Two redeliveries can both miss the read above; the loser's throw rolls back the days it reserved.
       const raced =
         body.clientKey !== undefined && isPrismaCode(error, UNIQUE_VIOLATION)
           ? await this.db.request.findUnique({ where: { clientKey: body.clientKey } })
@@ -577,8 +575,7 @@ export class LeaveService {
       if (held.kind === "LEAVE" && !held.halfDay && body.approve) {
         await this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "LEAVE");
       }
-      // Registered in advance, so a kiosk that never sees their face is not
-      // evidence of anything (KEHOACH 9.17 item 3).
+      // Registered in advance, so a kiosk that never sees their face proves nothing (KEHOACH 9.17 item 3).
       if (OFF_SITE.includes(held.kind) && body.approve) {
         await this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "WORKED");
       }

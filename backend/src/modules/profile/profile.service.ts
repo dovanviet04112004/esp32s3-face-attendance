@@ -235,8 +235,7 @@ export class ProfileService {
   async approve(viewer: Viewer, id: string): Promise<ProfileChange> {
     const held = await this.decidable(viewer, id);
     const asked = held.newValue as ProfileValues;
-    // Rebuilt from the declared columns rather than spread: a row carrying a
-    // stray key writes nothing extra (KEHOACH 9.17 item 6 rule 1).
+    // Rebuilt from the declared columns, not spread, so a stray key writes nothing (KEHOACH 9.17 item 6 rule 1).
     const write: ProfileValues = {};
     for (const column of PROFILE_FIELDS[held.field].columns) {
       write[column] = asked[column] ?? null;

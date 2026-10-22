@@ -41,8 +41,7 @@ describe("onboarding checklist (e2e)", () => {
   let token = "";
   const idOf = new Map<string, number>();
 
-  // People first: a template with a run against it is kept on purpose, so the
-  // runs leave with their employee and only then can the template go.
+  // People first: a template with a run against it is kept on purpose, so runs must leave with their employee.
   async function sweep(): Promise<void> {
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
     await db.checklistTemplate.deleteMany({ where: { name: { in: [PLAIN, EXACT] } } });
