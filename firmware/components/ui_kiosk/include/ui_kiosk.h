@@ -217,7 +217,7 @@ bool ui_kiosk_update_covers(void);
 /** Seed what the two settings sliders rest at, from main's copy of NVS.
  *  @ctx ui_task | non-blocking
  */
-void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume);
+void ui_kiosk_set_levels(uint8_t brightness_pct, uint8_t volume_pct);
 
 /** Seed the language from NVS ui/lang; an absent or unknown code is Vietnamese.
  *  @ctx task | non-blocking | KEHOACH 6.2.1

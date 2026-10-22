@@ -48,8 +48,8 @@ static const char *TAG = "drv_camera";
 #define BAND_MANUAL_BIT 0x80
 
 static bool s_ready;
-static int s_exposure;
-static int s_exposure_max;
+static int s_exposure_lines;
+static int s_exposure_max_lines;
 static int s_gain16 = METER_BASE_GAIN16;
 static int s_settle;
 static int s_level;
@@ -106,12 +106,12 @@ static esp_err_t hold_exposure_still(sensor_t *sensor)
         return ESP_ERR_INVALID_RESPONSE;
     }
     sensor->set_agc_gain(sensor, METER_BASE_GAIN16 / 16);
-    s_exposure_max = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
-    if (s_exposure_max <= 0) {
+    s_exposure_max_lines = sensor->get_reg(sensor, VTS_REG, VTS_MASK);
+    if (s_exposure_max_lines <= 0) {
         return ESP_ERR_INVALID_RESPONSE;
     }
-    s_exposure = s_exposure_max / 2;
-    sensor->set_aec_value(sensor, s_exposure);
+    s_exposure_lines = s_exposure_max_lines / 2;
+    sensor->set_aec_value(sensor, s_exposure_lines);
     return ESP_OK;
 }
 
@@ -146,10 +146,10 @@ static esp_err_t learn_band(void)
     // One frame spans exposure_max lines, so a line lasts that fraction of the
     // frame and the half-period is worth this many of them.
     const int64_t period = total_us / seen;
-    s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max) / period);
+    s_band_lines = (int)((BAND_PERIOD_US * (int64_t)s_exposure_max_lines) / period);
     s_band_lines = s_band_lines < 1 ? 1 : s_band_lines;
     ESP_LOGI(TAG, "frame %lld us, one 50 Hz half-period is %d lines, vts %d",
-             (long long)period, s_band_lines, s_exposure_max);
+             (long long)period, s_band_lines, s_exposure_max_lines);
     return ESP_OK;
 }
 
@@ -253,7 +253,7 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
 
     // Exposure and gain are one quantity here. Steering them separately makes
     // them fight: dropping gain darkens the frame, which asks for gain back.
-    const int light = s_exposure * s_gain16;
+    const int light = s_exposure_lines * s_gain16;
     int want;
     if (level >= METER_SATURATED) {
         want = light / 2;
@@ -266,7 +266,7 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
     if (next == light) {
         next += want > light ? 1 : -1;
     }
-    const int ceiling = s_exposure_max * METER_MAX_GAIN16;
+    const int ceiling = s_exposure_max_lines * METER_MAX_GAIN16;
     next = next > ceiling ? ceiling : next;
     next = next < METER_BASE_GAIN16 ? METER_BASE_GAIN16 : next;
     if (next == light) {
@@ -275,17 +275,17 @@ esp_err_t drv_camera_expose(const camera_fb_t *frame)
 
     // Exposure moves in whole half-periods so no row sees a different slice of
     // the mains cycle, and gain takes the remainder at its finer step.
-    const int max_bands = s_exposure_max / s_band_lines;
+    const int max_bands = s_exposure_max_lines / s_band_lines;
     int bands = next / (s_band_lines * METER_BASE_GAIN16);
     bands = bands < 1 ? 1 : (bands > max_bands ? max_bands : bands);
-    const int exposure = bands * s_band_lines;
-    int gain16 = next / exposure;
+    const int exposure_lines = bands * s_band_lines;
+    int gain16 = next / exposure_lines;
     gain16 = gain16 < METER_BASE_GAIN16 ? METER_BASE_GAIN16 : gain16;
     gain16 = gain16 > METER_MAX_GAIN16 ? METER_MAX_GAIN16 : gain16;
 
-    if (exposure != s_exposure) {
-        sensor->set_aec_value(sensor, exposure);
-        s_exposure = exposure;
+    if (exposure_lines != s_exposure_lines) {
+        sensor->set_aec_value(sensor, exposure_lines);
+        s_exposure_lines = exposure_lines;
     }
     if (gain16 != s_gain16) {
         set_gain16(sensor, gain16);
@@ -321,13 +321,13 @@ esp_err_t drv_camera_rest(bool resting)
     return ESP_OK;
 }
 
-void drv_camera_exposure_state(int *level, int *exposure, int *gain16)
+void drv_camera_exposure_state(int *level, int *exposure_lines, int *gain16)
 {
     if (level != NULL) {
         *level = s_level;
     }
-    if (exposure != NULL) {
-        *exposure = s_exposure;
+    if (exposure_lines != NULL) {
+        *exposure_lines = s_exposure_lines;
     }
     if (gain16 != NULL) {
         *gain16 = s_gain16;

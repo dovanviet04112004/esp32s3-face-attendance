@@ -19,14 +19,14 @@ namespace {
 
 const char *TAG = "mul_add";
 
-constexpr size_t kVectorAlign = 16;
+constexpr size_t kVectorAlignBytes = 16;
 constexpr int kChannelStep = 16;
 // esp-dl's requantize broadcasts the left scale as one int8, so 2^6 is the largest it holds.
 constexpr int kMaxLeftShift = 6;
 
 bool aligned(dl::TensorBase *tensor) noexcept
 {
-    return reinterpret_cast<uintptr_t>(tensor->get_element_ptr()) % kVectorAlign == 0;
+    return reinterpret_cast<uintptr_t>(tensor->get_element_ptr()) % kVectorAlignBytes == 0;
 }
 
 // Inputs as esp_ppq_patches.mul_add_from writes them: x [1, H, W, C], its gate [1, 1, 1, C], the

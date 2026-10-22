@@ -170,10 +170,10 @@ static rest_t rest_level(void)
 static void report_rate(int frames, int64_t elapsed_us)
 {
     const int mfps = elapsed_us > 0 ? (int)((int64_t)frames * 1000000000 / elapsed_us) : 0;
-    int level = 0, exposure = 0, gain16 = 0;
-    drv_camera_exposure_state(&level, &exposure, &gain16);
+    int level = 0, exposure_lines = 0, gain16 = 0;
+    drv_camera_exposure_state(&level, &exposure_lines, &gain16);
     ESP_LOGI(TAG, "preview %d.%03d fps, blit %" PRIu32 " us, level %d, exposure %d lines, gain %d/16",
-             mfps / 1000, mfps % 1000, drv_lcd_blit_us(), level, exposure, gain16);
+             mfps / 1000, mfps % 1000, drv_lcd_blit_us(), level, exposure_lines, gain16);
 }
 
 // A broken sensor repeats, a person does not: one fault every minute is enough

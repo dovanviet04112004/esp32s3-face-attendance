@@ -856,13 +856,13 @@ bool ui_kiosk_update_covers(void)
     return covering((ui_kiosk_update_t)s_update_state.load(std::memory_order_acquire));
 }
 
-void ui_kiosk_set_levels(uint8_t brightness, uint8_t volume)
+void ui_kiosk_set_levels(uint8_t brightness_pct, uint8_t volume_pct)
 {
     if (!s_ready) {
         return;
     }
-    ui::brightness().percent = brightness;
-    ui::volume().percent = volume;
+    ui::brightness().percent = brightness_pct;
+    ui::volume().percent = volume_pct;
     s_dirty = true;
 }
 

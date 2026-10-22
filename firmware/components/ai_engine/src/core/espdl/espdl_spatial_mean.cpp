@@ -22,7 +22,7 @@ namespace {
 const char *TAG = "spatial_mean";
 
 constexpr int kChannelStep = 16;
-constexpr size_t kVectorAlign = 16;
+constexpr size_t kVectorAlignBytes = 16;
 constexpr int kLaneBits = 20;
 // esp-dl's sum kernel dumps each 16 channels' QACC as 64 bytes: lanes 0-7 from word 0, lanes 8-15 from word 8.
 constexpr int kDumpWords = 16;
@@ -57,7 +57,7 @@ public:
         // esp-dl's planner asks for shapes while the model is built, so the dump is reserved then.
         if (bytes > dump_bytes_) {
             heap_caps_free(dump_);
-            dump_ = static_cast<uint32_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, bytes, MALLOC_CAP_SPIRAM));
+            dump_ = static_cast<uint32_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
             dump_bytes_ = dump_ != nullptr ? bytes : 0;
         }
         return {{x[0], 1, 1, x[3]}};
@@ -71,7 +71,7 @@ public:
         const int pixels = x->shape[1] * x->shape[2];
         int8_t *xs = x->get_element_ptr<int8_t>();
         if (channels % kChannelStep != 0 || pixels > kMaxPixels || dump_ == nullptr ||
-            reinterpret_cast<uintptr_t>(xs) % kVectorAlign != 0) {
+            reinterpret_cast<uintptr_t>(xs) % kVectorAlignBytes != 0) {
             ESP_LOGE(TAG, "%s: %d pixels of %d channels do not sum in QACC", name, pixels, channels);
             return;
         }

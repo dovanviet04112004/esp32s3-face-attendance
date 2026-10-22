@@ -180,10 +180,10 @@ TEST_CASE("metered frames reach the host as raw rgb565", "[drv_camera][manual]")
         }
         camera_fb_t *frame = drv_camera_grab();
         TEST_ASSERT_NOT_NULL(frame);
-        int level, exposure, gain16;
-        drv_camera_exposure_state(&level, &exposure, &gain16);
+        int level, exposure_lines, gain16;
+        drv_camera_exposure_state(&level, &exposure_lines, &gain16);
         printf("\n--RAW %ux%u level %d exposure %d gain16 %d--\n", (unsigned)frame->width,
-               (unsigned)frame->height, level, exposure, gain16);
+               (unsigned)frame->height, level, exposure_lines, gain16);
         hex_out(frame->buf, frame->len);
         printf("\n--END--\n");
         drv_camera_release(frame);
@@ -286,8 +286,8 @@ static size_t keep_shot(int index, int scene)
     if (frame == NULL) {
         return 0;
     }
-    int level, exposure, gain16;
-    drv_camera_exposure_state(&level, &exposure, &gain16);
+    int level, exposure_lines, gain16;
+    drv_camera_exposure_state(&level, &exposure_lines, &gain16);
     uint8_t *jpeg = NULL;
     size_t len = 0;
     const bool encoded = frame2jpg(frame, SHOT_QUALITY, &jpeg, &len);
@@ -297,15 +297,15 @@ static size_t keep_shot(int index, int scene)
     }
     char path[96];
     snprintf(path, sizeof(path), SHOT_DIR "/s%02d_%03d_L%02d_E%03d_G%02d.jpg", scene, index, level,
-             exposure, gain16);
+             exposure_lines, gain16);
     FILE *out = fopen(path, "wb");
     const size_t put = out != NULL ? fwrite(jpeg, 1, len, out) : 0;
     if (out != NULL) {
         fclose(out);
     }
     free(jpeg);
-    printf("kept %s  %u B  level %d exposure %d gain16 %d\n", path, (unsigned)put, level, exposure,
-           gain16);
+    printf("kept %s  %u B  level %d exposure %d gain16 %d\n", path, (unsigned)put, level,
+           exposure_lines, gain16);
     return put == len ? put : 0;
 }
 
@@ -315,11 +315,11 @@ static size_t keep_raw(int index)
     if (frame == NULL) {
         return 0;
     }
-    int level, exposure, gain16;
-    drv_camera_exposure_state(&level, &exposure, &gain16);
+    int level, exposure_lines, gain16;
+    drv_camera_exposure_state(&level, &exposure_lines, &gain16);
     char path[SHOT_PATH_MAX];
     snprintf(path, sizeof(path), RAW_DIR "/r%03d_%ux%u_L%02d_E%03d_G%02d.raw", index,
-             (unsigned)frame->width, (unsigned)frame->height, level, exposure, gain16);
+             (unsigned)frame->width, (unsigned)frame->height, level, exposure_lines, gain16);
     FILE *out = fopen(path, "wb");
     const size_t want = frame->len;
     const size_t put = out != NULL ? fwrite(frame->buf, 1, want, out) : 0;
@@ -365,10 +365,10 @@ TEST_CASE("the button keeps one raw frame, the led says it landed", "[drv_camera
             led_show(0, 0, 8);
             continue;
         }
-        int level, exposure, gain16;
-        drv_camera_exposure_state(&level, &exposure, &gain16);
+        int level, exposure_lines, gain16;
+        drv_camera_exposure_state(&level, &exposure_lines, &gain16);
         printf("\n--RAW %ux%u level %d exposure %d gain16 %d--\n", (unsigned)frame->width,
-               (unsigned)frame->height, level, exposure, gain16);
+               (unsigned)frame->height, level, exposure_lines, gain16);
         hex_out(frame->buf, frame->len);
         printf("\n--END--\n");
         drv_camera_release(frame);

@@ -93,7 +93,7 @@ esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
         stats_.backlog = true;
         return ESP_ERR_INVALID_STATE;
     }
-    char payload[kPayloadCap];
+    char payload[kPayloadCapBytes];
     for (size_t i = 0; i < batch; ++i) {
         storage_cursor_t at = {};
         const esp_err_t known = store_.cursor_get(&at);

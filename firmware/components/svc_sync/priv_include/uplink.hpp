@@ -71,7 +71,7 @@ public:
 
 private:
     // Long enough for the widest record the schema can produce (KEHOACH 6.2.5).
-    static constexpr size_t kPayloadCap = 320;
+    static constexpr size_t kPayloadCapBytes = 320;
 
     // ESP_ERR_NO_MEM passes and the record waits; ESP_ERR_INVALID_SIZE stays, so the record is skipped.
     esp_err_t encode(const storage_attend_record_t &rec, int64_t ts_ms, char *out,

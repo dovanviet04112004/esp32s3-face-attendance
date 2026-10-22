@@ -17,7 +17,7 @@ const char *TAG = "svc_facedb";
 constexpr uint32_t kLockMs = 200;
 // A writer queues behind a 1.8-2.3 s save of the whole table (KEHOACH 5.3).
 constexpr uint32_t kIoLockMs = 4000;
-constexpr size_t kImageAlign = 16;
+constexpr size_t kImageAlignBytes = 16;
 constexpr size_t kHeaderCrcBytes = offsetof(storage_file_header_t, crc32);
 constexpr size_t kRecordCrcBytes = offsetof(storage_face_record_t, crc32);
 // Deleting only flags a record; the file drops the dead ones past this share (KEHOACH 6.2.4).
@@ -52,7 +52,7 @@ esp_err_t EmbeddingTable::reserve(size_t capacity) noexcept
     const size_t bytes = sizeof(storage_file_header_t) + capacity * sizeof(storage_face_record_t);
     // Header 32 B and record 576 B are both multiples of 8, so every embedding
     // sits 8-byte aligned once the image does (the SIMD kernel needs that).
-    image_ = static_cast<uint8_t *>(heap_caps_aligned_calloc(kImageAlign, 1, bytes, MALLOC_CAP_SPIRAM));
+    image_ = static_cast<uint8_t *>(heap_caps_aligned_calloc(kImageAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
     norm_sq_ = static_cast<uint32_t *>(heap_caps_calloc(capacity, sizeof(uint32_t), MALLOC_CAP_SPIRAM));
     if (image_ == nullptr || norm_sq_ == nullptr) {
         heap_caps_free(image_);

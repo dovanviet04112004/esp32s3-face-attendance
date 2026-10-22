@@ -8,7 +8,7 @@ namespace {
 
 constexpr float kInt8Min = -128.0f;
 constexpr float kInt8Max = 127.0f;
-constexpr int kMaxSide = 320;
+constexpr int kMaxSidePx = 320;
 
 int clamp_index(int value, int limit) noexcept
 {
@@ -116,10 +116,10 @@ void sample_bilinear(const ai_engine_frame_t &frame, float x, float y, float rgb
 bool resample_square(const ai_engine_frame_t &frame, float left, float top, float side, int size, int8_t *out,
                      const Quantizer &quant, int planes) noexcept
 {
-    if (size > kMaxSide) {
+    if (size > kMaxSidePx) {
         return false;
     }
-    int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
+    int col_first[kMaxSidePx], col_last[kMaxSidePx], row_first[kMaxSidePx], row_last[kMaxSidePx];
     cell_bounds(left, side, size, frame.width, col_first, col_last);
     cell_bounds(top, side, size, frame.height, row_first, row_last);
     for (int row = 0; row < size; ++row) {
@@ -132,10 +132,10 @@ bool resample_square(const ai_engine_frame_t &frame, float left, float top, floa
 bool resample_frame(const ai_engine_frame_t &frame, int new_w, int new_h, int8_t *out, int out_w,
                     const Quantizer &quant) noexcept
 {
-    if (new_w > kMaxSide || new_h > kMaxSide) {
+    if (new_w > kMaxSidePx || new_h > kMaxSidePx) {
         return false;
     }
-    int col_first[kMaxSide], col_last[kMaxSide], row_first[kMaxSide], row_last[kMaxSide];
+    int col_first[kMaxSidePx], col_last[kMaxSidePx], row_first[kMaxSidePx], row_last[kMaxSidePx];
     cell_bounds(0.0f, static_cast<float>(frame.width), new_w, frame.width, col_first, col_last);
     cell_bounds(0.0f, static_cast<float>(frame.height), new_h, frame.height, row_first, row_last);
     for (int row = 0; row < new_h; ++row) {

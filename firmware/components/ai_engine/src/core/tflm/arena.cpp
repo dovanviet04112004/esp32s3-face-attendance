@@ -10,18 +10,18 @@ namespace {
 const char *TAG = "ai_arena";
 
 // TFLM plans tensors on the assumption the arena starts 16-byte aligned.
-constexpr size_t kAlign = 16;
+constexpr size_t kAlignBytes = 16;
 
 uint8_t *take(size_t bytes, uint32_t caps)
 {
-    return static_cast<uint8_t *>(heap_caps_aligned_alloc(kAlign, bytes, caps | MALLOC_CAP_8BIT));
+    return static_cast<uint8_t *>(heap_caps_aligned_alloc(kAlignBytes, bytes, caps | MALLOC_CAP_8BIT));
 }
 
 }  // namespace
 
 esp_err_t Arena::reserve(size_t bytes, uint32_t caps) noexcept
 {
-    if (buffer_ != nullptr || bytes < kAlign) {
+    if (buffer_ != nullptr || bytes < kAlignBytes) {
         return ESP_ERR_INVALID_STATE;
     }
     buffer_ = take(bytes, caps);

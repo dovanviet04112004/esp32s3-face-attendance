@@ -32,7 +32,7 @@ const char *TAG = "pointwise_depthwise";
 
 constexpr int kSpatialDims = 2;
 constexpr int kChannelStep = 16;
-constexpr size_t kVectorAlign = 16;
+constexpr size_t kVectorAlignBytes = 16;
 constexpr int kNoClamp = INT8_MAX;
 constexpr size_t kRowRunWords = 9;
 constexpr int kPool = 2;
@@ -43,7 +43,7 @@ using RowRun = std::array<int32_t, kRowRunWords>;
 
 bool aligned(dl::TensorBase *tensor) noexcept
 {
-    return reinterpret_cast<uintptr_t>(tensor->get_element_ptr()) % kVectorAlign == 0;
+    return reinterpret_cast<uintptr_t>(tensor->get_element_ptr()) % kVectorAlignBytes == 0;
 }
 
 struct Band {
@@ -56,7 +56,8 @@ struct Band {
             return;
         }
         // Grown first: freeing the old block for a grow that fails would strip every module built so far.
-        int8_t *grown = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, wanted, MALLOC_CAP_SPIRAM));
+        int8_t *grown =
+            static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, wanted, MALLOC_CAP_SPIRAM));
         if (grown == nullptr) {
             return;
         }
@@ -209,7 +210,7 @@ public:
             depthwise.output_height = oy1 - oy0;
             dl::base::depthwise_conv2d<int8_t, int32_t, int32_t>(&depthwise);
             if (top_ != kNoClamp) {
-                ai_engine_clamp_s8_esp32s3(rows_out, (oy1 - oy0) * depthwise_row_bytes / kVectorAlign, &top_);
+                ai_engine_clamp_s8_esp32s3(rows_out, (oy1 - oy0) * depthwise_row_bytes / kVectorAlignBytes, &top_);
             }
             if (projected()) {
                 project_run_[0] = (oy1 - oy0) * y->shape[2];
@@ -437,9 +438,9 @@ private:
         heap_caps_free(pointwise_filter_);
         heap_caps_free(depthwise_filter_);
         pointwise_filter_ = static_cast<int8_t *>(
-            heap_caps_aligned_calloc(kVectorAlign, 1, static_cast<size_t>(inputs) * channels_, MALLOC_CAP_SPIRAM));
+            heap_caps_aligned_calloc(kVectorAlignBytes, 1, static_cast<size_t>(inputs) * channels_, MALLOC_CAP_SPIRAM));
         depthwise_filter_ = static_cast<int8_t *>(
-            heap_caps_aligned_calloc(kVectorAlign, 1, static_cast<size_t>(taps) * channels_, MALLOC_CAP_SPIRAM));
+            heap_caps_aligned_calloc(kVectorAlignBytes, 1, static_cast<size_t>(taps) * channels_, MALLOC_CAP_SPIRAM));
         if (pointwise_filter_ == nullptr || depthwise_filter_ == nullptr) {
             return false;
         }

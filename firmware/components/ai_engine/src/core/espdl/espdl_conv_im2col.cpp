@@ -28,7 +28,7 @@ const char *TAG = "conv_im2col";
 
 constexpr int kSpatialDims = 2;
 constexpr int kChannelStep = 16;
-constexpr size_t kVectorAlign = 16;
+constexpr size_t kVectorAlignBytes = 16;
 constexpr int kRgbChannels = 3;
 constexpr int kRgbRowOf3x3Bytes = 3 * kRgbChannels;
 constexpr int kWindowRows = 3;
@@ -87,10 +87,10 @@ public:
         y[3] = w[3];
         windowed_ = kernel_[0] == kWindowRows && kernel_[1] * x[3] == kRgbRowOf3x3Bytes && x[3] == kRgbChannels &&
             static_cast<size_t>(pads_[2]) * x[3] <= kRowLead;
-        row_stride_ = (kRowLead + static_cast<size_t>(x[2] + pads_[3]) * x[3] + kRowTail + kVectorAlign - 1) /
-            kVectorAlign * kVectorAlign;
+        const size_t padded_row_bytes = kRowLead + static_cast<size_t>(x[2] + pads_[3]) * x[3] + kRowTail;
+        row_stride_bytes_ = (padded_row_bytes + kVectorAlignBytes - 1) / kVectorAlignBytes * kVectorAlignBytes;
         // esp-dl's planner asks for shapes while the model is built, so the scratch rows are reserved then.
-        reserve_scratch(windowed_ ? kWindowRows * row_stride_ : static_cast<size_t>(y[2]) * w[2]);
+        reserve_scratch(windowed_ ? kWindowRows * row_stride_bytes_ : static_cast<size_t>(y[2]) * w[2]);
         return {y};
     }
 
@@ -213,7 +213,7 @@ public:
 private:
     bool fits(int channels, int depth, int outputs, size_t row_bytes) const noexcept
     {
-        const size_t wanted = windowed_ ? kWindowRows * row_stride_ : row_bytes;
+        const size_t wanted = windowed_ ? kWindowRows * row_stride_bytes_ : row_bytes;
         return scratch_ != nullptr && wanted <= scratch_bytes_ && depth % kChannelStep == 0 &&
             outputs % kChannelStep == 0 && kernel_[0] * kernel_[1] * channels <= depth;
     }
@@ -224,7 +224,7 @@ private:
             return;
         }
         heap_caps_free(scratch_);
-        scratch_ = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlign, 1, bytes, MALLOC_CAP_SPIRAM));
+        scratch_ = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
         scratch_bytes_ = scratch_ != nullptr ? bytes : 0;
     }
 
@@ -233,7 +233,7 @@ private:
     {
         const size_t image_row_bytes = static_cast<size_t>(shape[2]) * shape[3];
         const int slot = (iy % kWindowRows + kWindowRows) % kWindowRows;
-        int8_t *row = scratch_ + slot * row_stride_;
+        int8_t *row = scratch_ + slot * row_stride_bytes_;
         if (held_[slot] != iy) {
             if (iy < 0 || iy >= shape[1]) {
                 std::memset(row + kRowLead, 0, image_row_bytes);
@@ -289,7 +289,7 @@ private:
     const std::vector<int> ones_ = std::vector<int>(kSpatialDims, 1);
     int8_t *scratch_ = nullptr;
     size_t scratch_bytes_ = 0;
-    size_t row_stride_ = 0;
+    size_t row_stride_bytes_ = 0;
     std::array<int, kWindowRows> held_ = {};
     bool windowed_ = false;
     bool bias_laid_ = false;
