@@ -86,6 +86,10 @@ TEST_CASE("the year the rtc carries is a year this project can have", "[sys_time
 TEST_CASE("writing the rtc back leaves the clock where it stood", "[sys_time]")
 {
     clock_up();
+    if (sys_time_now_ms() < SYS_TIME_FLOOR_MS) {
+        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, sys_time_write_rtc());
+        TEST_IGNORE_MESSAGE("no time to write: an unset clock is refused, which this case just saw");
+    }
     const int64_t before_write = sys_time_now_ms();
     TEST_ASSERT_EQUAL(ESP_OK, sys_time_write_rtc());
     const int64_t after_write = sys_time_now_ms();

@@ -84,7 +84,8 @@ esp_err_t sys_time_set_zone(const char *posix_tz);
 
 /** Overwrite the RTC from the system clock and clear its oscillator-stopped flag.
  *  @ctx task | blocking | takes m_i2c
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE without an RTC on the bus | an i2c error
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE without an RTC on the bus, or while the system clock
+ *       is unset or past the RTC's last year | an i2c error
  */
 esp_err_t sys_time_write_rtc(void);
 

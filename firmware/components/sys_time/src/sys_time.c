@@ -237,10 +237,17 @@ esp_err_t sys_time_write_rtc(void)
     if (s_rtc == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
+    // An unset clock reads 1970, whose year lands in BCD as 2066 and would be trusted once OSF clears.
+    if (wall_ms() < SYS_TIME_FLOOR_MS) {
+        return ESP_ERR_INVALID_STATE;
+    }
     struct timeval now = { 0 };
     gettimeofday(&now, NULL);
     struct tm parts;
     gmtime_r(&now.tv_sec, &parts);
+    if (parts.tm_year + EPOCH_YEAR > RTC_LAST_YEAR) {
+        return ESP_ERR_INVALID_STATE;
+    }
     const uint8_t regs[TIME_BYTES] = {
         to_bcd((unsigned)parts.tm_sec),
         to_bcd((unsigned)parts.tm_min),
