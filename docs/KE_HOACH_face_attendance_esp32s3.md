@@ -5940,7 +5940,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
 | **`m_facedb`** | Mutex | — | `ai_task` (tra bảng, chờ 200 ms); người ghi lấy nó ngắn lúc sửa và lúc nén bảng | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
-| **`m_facedb_io`** | Mutex, chờ 4 s | — | mọi đường ghi bảng: `sync_task` (roster, đánh dấu mẫu đã báo), `ui_task`, `ai_task` (giữ mẫu đăng ký) | — | Ghi 576 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
+| **`m_facedb_io`** | Mutex | — | mọi đường ghi bảng: `sync_task` (roster, đánh dấu mẫu đã báo) và `ui_task` chờ tới 4 s; `ai_task` (giữ mẫu đăng ký) chờ 200 ms | — | Ghi 576 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
 | **`m_littlefs`** | Mutex, chờ 5 s | — | mọi task gọi `sys_storage`, cho cả LittleFS lẫn NVS | — | LittleFS không thread-safe mặc định |
 | `s_send_lock` | Mutex, nội bộ `net_mqtt` | — | người publish | — | Mỗi lúc một lượt publish QoS 1 cộng chờ PUBACK |
 | `s_acked` | Binary semaphore, nội bộ `net_mqtt` | — | handler sự kiện của esp-mqtt | người publish | PUBACK đã về. Báo hiệu giữa hai task, không làm khoá |
@@ -5978,7 +5978,7 @@ Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb_io` → `m_f
 đường giữ `m_facedb` lâu hơn thế đều là lỗi, kể cả khi thứ tự khoá đúng. Phép ghi bảng xuống
 flash là đường duy nhất như vậy, và nó ra ngoài bằng `m_facedb_io`: lấy `m_facedb_io`, lấy
 `m_facedb` đúng lúc nén và đóng dấu header rồi thả ngay, ghi flash dưới một mình `m_facedb_io`.
-Người ghi khác chờ ở cửa `m_facedb_io`; lượt tra bảng của `ai_task` không chờ phép ghi nào.
+Người ghi khác chờ ở cửa `m_facedb_io` tới 4 s; `ai_task` thì không đứng sau phép ghi nào. Lượt tra bảng không qua cửa ấy, còn lúc giữ một mẫu đăng ký nó chỉ chờ 200 ms như lượt tra bảng: quá hạn thì mẫu ấy chưa được giữ, và khung xác thực kế tiếp thử lại (§4.5.5d). Chờ lâu hơn là đứng nguyên một bước trong lúc watchdog 5 s đang đếm.
 
 ### 5.4 Các mức nghỉ và đường đánh thức
 
