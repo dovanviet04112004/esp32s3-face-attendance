@@ -156,15 +156,16 @@ static bool models_answer(void)
     }
     size_t most = detect > spoof ? detect : spoof;
     most = most > recog ? most : recog;
-    int8_t *blank = heap_caps_calloc(1, most, MALLOC_CAP_SPIRAM);
+    // The embedding rides behind the input: the main task's stack is sized for setup, not for a model pass.
+    int8_t *blank = heap_caps_calloc(1, most + STORAGE_EMBED_DIM, MALLOC_CAP_SPIRAM);
     if (blank == NULL) {
         return false;
     }
     float live = -1.0f;
     float scale = 0.0f;
-    int8_t embedding[STORAGE_EMBED_DIM];
+    int8_t *embedding = blank + most;
     const bool answered = ai_engine_detect(blank) == ESP_OK && ai_engine_spoof(blank, &live) == ESP_OK &&
-                          ai_engine_recognize(blank, embedding, sizeof(embedding), &scale) == ESP_OK;
+                          ai_engine_recognize(blank, embedding, STORAGE_EMBED_DIM, &scale) == ESP_OK;
     heap_caps_free(blank);
     return answered && live >= 0.0f && live <= 1.0f && isfinite(scale) && scale > 0.0f;
 }
