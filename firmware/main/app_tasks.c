@@ -96,7 +96,7 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define SYNC_TASK_STACK_BYTES 5120
 #define SYNC_POLL_MS 5000
 #define SYNC_REPORT_BATCHES 8
-#define HEARTBEAT_PAYLOAD_CAP 384
+#define HEARTBEAT_PAYLOAD_CAP 512 // every heartbeat field at its schema maximum
 #define NVS_MODEL_VERSION "version"
 #define EMBEDDING_VERSION_CAP 33
 #define EVENT_PAYLOAD_CAP 384
@@ -529,15 +529,18 @@ static void publish_heartbeat(void)
     if (root == NULL) {
         return;
     }
-    char payload[HEARTBEAT_PAYLOAD_CAP];
-    const bool printed = cJSON_PrintPreallocated(root, payload, sizeof(payload), 0);
+    // PSRAM, not the stack: sync_task's 5 KB has no measured room for half a kilobyte more.
+    char *payload = heap_caps_malloc(HEARTBEAT_PAYLOAD_CAP, MALLOC_CAP_SPIRAM);
+    const bool printed = payload != NULL && cJSON_PrintPreallocated(root, payload, HEARTBEAT_PAYLOAD_CAP, 0);
     cJSON_Delete(root);
     if (!printed) {
         ESP_LOGW(TAG, "heartbeat will not fit %d B", HEARTBEAT_PAYLOAD_CAP);
+        heap_caps_free(payload);
         return;
     }
     // QoS 0 carries no ack, so this returns as soon as the packet is queued.
     net_mqtt_publish(GEN_TOPIC_HEARTBEAT, payload, strlen(payload), 0);
+    heap_caps_free(payload);
 }
 
 static _Atomic uint32_t s_event_count;
