@@ -108,7 +108,7 @@ static void empty_scratch(void)
 }
 
 // Read-only and its own mount: an asset is never written at run time, so it
-// shares neither the lock nor the failure mode of the writable volume.
+// shares no failure mode with the writable volume, only the lock its reads take.
 static void mount_assets(void)
 {
     const esp_vfs_spiffs_conf_t cfg = {

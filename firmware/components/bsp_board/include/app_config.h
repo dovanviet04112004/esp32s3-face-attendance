@@ -33,8 +33,8 @@
 #define APP_LCD_DC_GPIO 39
 #define APP_LCD_RST_GPIO 40
 #define APP_LCD_BLK_GPIO 21
-// The panel answers reads only between 2 and 6.6 MHz: below it the esp samples
-// early, above it the read cycle is shorter than 150 ns (KEHOACH 2.3A).
+// Reads come back whole at 4 MHz: 1-2 MHz give nothing and 3 MHz is right 42 %, for no known
+// reason, while past 6.6 MHz the cycle is shorter than the panel's 150 ns read (KEHOACH 2.3A).
 #define APP_LCD_SDO_GPIO 43
 #define APP_LCD_READ_HZ 4000000
 // The panel is physically 320x480 portrait, and the kiosk stands it that way.

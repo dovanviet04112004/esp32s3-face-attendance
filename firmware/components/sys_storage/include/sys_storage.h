@@ -196,7 +196,7 @@ uint8_t sys_storage_models_slot(void);
 size_t sys_storage_models_slot_bytes(void);
 
 /** Erase the slot this boot is not using and open it for a fresh image.
- *  @ctx task | blocking, erasing 3 MB takes seconds | one stage at a time
+ *  @ctx task | blocking, erasing the slot takes seconds | one stage at a time
  *  @ret ESP_OK | ESP_ERR_INVALID_SIZE past the slot | ESP_ERR_INVALID_STATE
  */
 esp_err_t sys_storage_models_stage_begin(size_t size_bytes);
