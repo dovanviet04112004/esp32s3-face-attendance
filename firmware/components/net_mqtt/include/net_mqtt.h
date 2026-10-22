@@ -44,7 +44,8 @@ typedef struct {
 /** Connect and keep reconnecting, publishing the contract's online status.
  *  Logs in as mqtt_user or the deviceId, with mqtt_pass or the ticket.
  *  @ctx task | blocking | reads device/mqtt_uri, mqtt_user, mqtt_pass, jwt
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND with no broker configured | ESP_ERR_INVALID_ARG
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND with no broker in NVS and none built in | ESP_ERR_INVALID_ARG
+ *       | ESP_ERR_INVALID_STATE while a client runs | ESP_ERR_NO_MEM | an esp-mqtt start error
  */
 esp_err_t net_mqtt_start(const net_mqtt_config_t *config);
 

@@ -153,9 +153,9 @@ TEST_CASE("a qos 0 publish does not wait for an acknowledgement", "[net_mqtt]")
     TEST_ASSERT_LESS_THAN(ACK_TIMEOUT_MS / 2, (int)waited_ms);
 }
 
-// The client subscribes to its own down topics, and the acl grants it the whole
-// kiosk/{deviceId}/# subtree, so a command it publishes comes back to it.
-TEST_CASE("a message on a down topic reaches the handler", "[net_mqtt]")
+// The command loops back only through a bench broker letting the device write its own
+// down topics; the fleet's ACL lets it write up/# alone (KEHOACH 7.4), so it is [manual].
+TEST_CASE("a message on a down topic reaches the handler", "[net_mqtt][manual]")
 {
     atomic_store(&s_messages, 0);
     s_seen_payload[0] = '\0';
@@ -206,6 +206,7 @@ TEST_CASE("stopping takes the link down and a second stop is refused", "[net_mqt
 void app_main(void)
 {
     UNITY_BEGIN();
-    unity_run_all_tests();
+    unity_run_tests_by_tag("[manual]", true);
     UNITY_END();
+    unity_run_menu();
 }

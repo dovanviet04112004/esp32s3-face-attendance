@@ -159,7 +159,7 @@ TEST_CASE("a refused manifest costs neither a connection nor an erase", "[net_ot
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, net_ota_models(&plain, why, sizeof(why)));
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, net_ota_firmware(&plain, why, sizeof(why)));
     const int spent_us = (int)(esp_timer_get_time() - t0);
-    printf("both downloads gave up in %d us, erasing three megabytes takes seconds\n", spent_us);
+    printf("both downloads gave up in %d us, erasing the spare slot takes seconds\n", spent_us);
     TEST_ASSERT_LESS_THAN(CHEAP_REFUSAL_US, spent_us);
     TEST_ASSERT_EQUAL_UINT8(slot, sys_storage_models_slot());
     // A staged slot left open is what an abandoned erase would show up as here.
