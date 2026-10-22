@@ -496,3 +496,36 @@ PSRAM trống 2.034.524 B, khối lớn nhất 1.933.300 B.
 Tái lập: `make fw-fleet`, `make flash PROFILE=fleet MONITOR= PORT=/dev/ttyACM0`, chờ vài phút rồi
 `make fw-console PROFILE=fleet PORT=/dev/ttyACM0 CMD=heap LOG_S=6`.
 
+## 13. Đáy RAM nội qua 16 phút trên kiosk thật — heartbeat, profile `bench`, 22/10
+
+Cùng board (`kiosk-2884859fd3c8`). Ảnh `bench` dựng từ 5d10dd31, chạy đủ giao diện, không phải
+`bench_mem`: ESP-DL, đệm bounce 20 dòng, bộ model khoá 14/10.
+
+Số lấy từ heartbeat, kiosk gửi 30 s một lần, đọc lại từ dòng `Device` trên server mỗi phút:
+- `heapMinFreeBytes` là `heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)` tính từ lúc boot.
+- `psramFreeBytes` là PSRAM còn trống lúc gửi.
+
+Heartbeat tới được server tức là phiên MQTT/TLS sống suốt lượt đo.
+
+| Chạy được | Đáy RAM nội từ lúc boot | RAM nội trống | PSRAM trống |
+|---:|---:|---:|---:|
+| 1,5 phút | 29.363 B | 37.935 B | 1.788.464 B |
+| 4,5 phút | 29.183 B | 38.123 B | 1.788.464 B |
+| 14,8 phút | 28.675 B | 38.143 B | 1.788.464 B |
+| 15,9 phút | **28.675 B** | 38.143 B | 1.788.464 B |
+
+- **Cổng 24 KB của E9-T31 qua đủ 10 phút**, còn dư 4.099 B.
+- Console chỉ đọc hai lượt: 40 s đầu và 30 s ở phút 17. Cả hai không có dòng `E`/`W` nào. Khoảng
+  giữa hai lượt không ghi.
+- Đáy thấp hơn §11 (`bench_mem`, 29.755 B qua 1,5 phút) 1.080 B.
+- **PSRAM trống 1.788 KB, dưới mốc 2.000 KB mà E9-T31 đặt cho đáy PSRAM.** Heartbeat không mang
+  đáy PSRAM, nên đáy thật bằng hoặc thấp hơn số này.
+- Phần lớn chỗ hụt PSRAM là nhánh anti-spoof `int16_top1` của bộ khoá 14/10. Lúc dựng, nhánh này
+  chiếm 1.137.644 B so với 811.276 B của bản đo ở §11, tức thêm 326.368 B. Hai nhánh kia:
+  detect 362.428 B, recog 2.159.996 B.
+- Không ghi lại có ai đứng trước camera trong 16 phút này. Lượt thử có người ngay trước đó (7 lần
+  khớp, 1 bản ghi) thuộc boot trước, và heartbeat của boot sau đã ghi đè số của lượt ấy.
+
+Tái lập: `make flash PROFILE=bench MONITOR= PORT=/dev/ttyACM0`, đợi ít nhất 10 phút, rồi đọc
+`heapMinFreeBytes` và `psramFreeBytes` của dòng `Device` trên server (chỉ đọc).
+

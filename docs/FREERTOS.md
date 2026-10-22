@@ -84,8 +84,9 @@ vì chúng chỉ nổ khi hai task chạm nhau đúng lúc, hoặc khi một đ�
 
 Cả mười task của KẾ HOẠCH §5.2 đều đã chạy và đã soát lại từng mục dưới đây theo code ngày
 12/10; ngày 22/10 soát lại thêm 2.6, 6.6, 9.1, 9.10, 10.2, 10.3, 10.4 cùng lượt rà firmware, ra
-P6–P10, đều đã sửa. Phần còn lại cần board, không đọc code ra được: watermark của `ai`
-khi spoof và recog chạy với mặt thật, đáy heap, và lượt soak 24 giờ (§14). **Danh mục này chỉ
+P6–P10, đều đã sửa. Đáy RAM nội của kiosk đã đo trên board ngày 22/10: 28.675 B qua 16 phút
+(`measurements/ram.md` §13). Phần còn lại cần board, không đọc code ra được: watermark của `ai`
+khi spoof và recog chạy với mặt thật, và lượt soak 24 giờ (§14). **Danh mục này chỉ
 đúng tới ngày ghi** — thêm một task là phải soát lại từ §1.
 
 ---
