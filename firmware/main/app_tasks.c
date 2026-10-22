@@ -652,7 +652,7 @@ static_assert(UI_KIOSK_PENDING_ROWS <= STORAGE_PENDING_CAP, "a page never runs p
 // The list and its NVS image at once, in PSRAM: 64 rows are 2.3 KB (KEHOACH 6.2.1).
 static storage_pending_t *s_pending;
 static bool s_roster_gapped;
-static _Atomic uint8_t s_brightness = 100;
+static _Atomic uint8_t s_brightness_pct = 100;
 
 static bool holds_face(uint32_t employee_id, uint16_t first_idx, uint16_t count)
 {
@@ -1161,7 +1161,7 @@ static esp_err_t set_config(const device_command_config_t *c, char *note, size_t
     sys_storage_get_u32(STORAGE_NS_UI, STORAGE_KEY_VOLUME, &volume);
     if (c->has_brightness) {
         const uint8_t lamp = c->brightness < CONFIG_UI_MIN_BRIGHTNESS ? CONFIG_UI_MIN_BRIGHTNESS : c->brightness;
-        atomic_store(&s_brightness, lamp);
+        atomic_store(&s_brightness_pct, lamp);
         // A resting panel takes the new level as it wakes.
         if (rest_level() != REST_ALL) {
             drv_lcd_backlight(lamp);
@@ -1174,7 +1174,7 @@ static esp_err_t set_config(const device_command_config_t *c, char *note, size_t
         err = err != ESP_OK ? err : sys_storage_set_u32(STORAGE_NS_UI, STORAGE_KEY_VOLUME, volume);
     }
     if (c->has_brightness || c->has_volume) {
-        ui_kiosk_set_levels(atomic_load(&s_brightness), (uint8_t)volume);
+        ui_kiosk_set_levels(atomic_load(&s_brightness_pct), (uint8_t)volume);
     }
     if (c->has_lang) {
         const char *code = device_command_config_lang_str(c->lang);
@@ -1203,7 +1203,7 @@ static esp_err_t set_config(const device_command_config_t *c, char *note, size_t
     char lang[8] = "vi";
     sys_storage_get_str(STORAGE_NS_UI, STORAGE_KEY_LANG, lang, sizeof(lang));
     snprintf(note, cap, "light %u vol %" PRIu32 " %s dedup %" PRIu32 " face %d wake %" PRIu32,
-             (unsigned)atomic_load(&s_brightness), volume, lang, now.dedup_min, svc_vision_face_min_px(),
+             (unsigned)atomic_load(&s_brightness_pct), volume, lang, now.dedup_min, svc_vision_face_min_px(),
              atomic_load(&s_gate_mm) / 10);
     return err;
 }
@@ -1589,7 +1589,7 @@ static void cam_task(void *arg)
             ui_kiosk_release();
             if (relight && painted == ESP_OK && drawn_serial != 0) {
                 relight = false;
-                drv_lcd_backlight(atomic_load(&s_brightness));
+                drv_lcd_backlight(atomic_load(&s_brightness_pct));
             }
             ui_kiosk_wait_publish(COVER_WAIT_MS);
             continue;
@@ -1604,7 +1604,7 @@ static void cam_task(void *arg)
             ui_kiosk_release();
             if (relight && last_blit == ESP_OK && drawn_serial != 0) {
                 relight = false;
-                drv_lcd_backlight(atomic_load(&s_brightness));
+                drv_lcd_backlight(atomic_load(&s_brightness_pct));
             }
             if (!drv_camera_has_frame()) {
                 ui_kiosk_wait_publish(COVER_WAIT_MS);
@@ -1650,7 +1650,7 @@ static void cam_task(void *arg)
         offer_to_ai(wiring->frames, frame);
         if (relight && err == ESP_OK) {
             relight = false;
-            drv_lcd_backlight(atomic_load(&s_brightness));
+            drv_lcd_backlight(atomic_load(&s_brightness_pct));
         }
         if (err != last_blit) {
             ESP_LOGE(TAG, "blit %s", esp_err_to_name(err));
@@ -1894,7 +1894,7 @@ static void take_levels(void)
     while (ui_kiosk_take_level(&which, &percent, &settled)) {
         const bool lamp = which == UI_KIOSK_LEVEL_BRIGHTNESS;
         if (lamp) {
-            atomic_store(&s_brightness, percent);
+            atomic_store(&s_brightness_pct, percent);
             drv_lcd_backlight(percent);
         } else {
             drv_audio_set_volume(percent);
@@ -2121,9 +2121,9 @@ static bool renewal_due(const app_wiring_t *wiring, EventBits_t flags, renewal_t
     if (now_ms < renewal->next_ms || (!asked && !sys_time_trusted())) {
         return false;
     }
-    uint32_t exp = 0;
-    const bool due = asked || (net_provision_held_exp(&exp) == ESP_OK &&
-                               net_provision_renew_due(exp, sys_time_now_ms()));
+    uint32_t exp_s = 0;
+    const bool due = asked || (net_provision_held_exp(&exp_s) == ESP_OK &&
+                               net_provision_renew_due(exp_s, sys_time_now_ms()));
     if (due && net_mqtt_login() == NET_MQTT_LOGIN_TICKET) {
         return true;
     }
@@ -2276,7 +2276,7 @@ static void ui_task(void *arg)
     uint32_t owed_employee = 0;           // a bank to drop once the step in flight is over
     uint16_t owed_bank = 0;
     // A wake relights the panel at this level, so it starts as the one NVS holds.
-    atomic_store(&s_brightness, app_boot_brightness());
+    atomic_store(&s_brightness_pct, app_boot_brightness_pct());
 
     for (;;) {
         const uint32_t tick_ms =

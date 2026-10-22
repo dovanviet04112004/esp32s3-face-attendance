@@ -41,15 +41,15 @@ net_provision_answer_t net_provision_renew(void);
 
 /** The exp of the ticket in NVS, as net_provision_ticket_exp read it when it landed,
  *  or read off the held ticket again and kept when that exp never reached NVS.
- *  @ctx task | blocking | reads NVS | exp in epoch seconds
+ *  @ctx task | blocking | reads NVS
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND no ticket, or none with an exp | ESP_ERR_NO_MEM
  */
-esp_err_t net_provision_held_exp(uint32_t *exp);
+esp_err_t net_provision_held_exp(uint32_t *exp_s);
 
-/** Whether a ticket expiring at exp is inside the renewal window (KEHOACH 7.3).
+/** Whether a ticket expiring at exp_s is inside the renewal window (KEHOACH 7.3).
  *  @ctx any | non-blocking | now_ms from a clock NTP or the api vouches for, else 0
  */
-bool net_provision_renew_due(uint32_t exp, int64_t now_ms);
+bool net_provision_renew_due(uint32_t exp_s, int64_t now_ms);
 
 /** The six-digit claim code of this registration, made and kept on first ask.
  *  @ctx task | blocking | writes NVS the first time | cap at least 7
@@ -63,10 +63,10 @@ esp_err_t net_provision_claim(char *out, size_t cap);
 esp_err_t net_provision_forget(void);
 
 /** Read the exp claim of a ticket without trusting the kiosk's own clock.
- *  @ctx any | non-blocking | exp in epoch seconds
+ *  @ctx any | non-blocking
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG not a JWT or no numeric exp
  */
-esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp);
+esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp_s);
 
 /** The pause ahead of ask number attempt, counted from 0 (KEHOACH 7.3).
  *  @ctx any | non-blocking | random: any 32 bits, esp_random() on the kiosk

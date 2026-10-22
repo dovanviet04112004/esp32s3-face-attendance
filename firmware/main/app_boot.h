@@ -18,7 +18,7 @@ esp_err_t app_boot(void);
 /** The backlight percent NVS holds, kept to the floor a dark panel cannot be read below.
  *  @ctx task | blocking | reads NVS
  */
-uint8_t app_boot_brightness(void);
+uint8_t app_boot_brightness_pct(void);
 
 /** Why the models pack would not load this boot, so the uplink can say so.
  *  @ctx any | non-blocking | set by app_boot

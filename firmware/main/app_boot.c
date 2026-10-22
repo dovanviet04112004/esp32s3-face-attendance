@@ -241,7 +241,7 @@ static uint32_t setting(const char *ns, const char *key, uint32_t fallback)
     return sys_storage_get_u32(ns, key, &value) == ESP_OK ? value : fallback;
 }
 
-uint8_t app_boot_brightness(void)
+uint8_t app_boot_brightness_pct(void)
 {
     const uint32_t stored = setting(STORAGE_NS_UI, STORAGE_KEY_BRIGHTNESS, CONFIG_UI_SEED_BRIGHTNESS);
     if (stored < CONFIG_UI_MIN_BRIGHTNESS) {
@@ -428,7 +428,7 @@ esp_err_t app_boot(void)
     ESP_ERROR_CHECK(bsp_board_init());
     reach(BOOT_STEP_LCD);
     ESP_ERROR_CHECK(drv_lcd_init());
-    const uint8_t lamp = app_boot_brightness();
+    const uint8_t lamp = app_boot_brightness_pct();
     const uint8_t loud = (uint8_t)setting(STORAGE_NS_UI, STORAGE_KEY_VOLUME, CONFIG_UI_SEED_VOLUME);
     ESP_ERROR_CHECK(drv_lcd_backlight(lamp));
     reach(BOOT_STEP_UI);

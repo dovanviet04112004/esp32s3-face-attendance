@@ -213,9 +213,9 @@ static bool keep_ticket(const char *reply)
     }
     bool kept = usable && sys_storage_set_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET,
                                               token->valuestring) == ESP_OK;
-    uint32_t exp = 0;
-    if (kept && net_provision_ticket_exp(token->valuestring, &exp) == ESP_OK) {
-        sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp);
+    uint32_t exp_s = 0;
+    if (kept && net_provision_ticket_exp(token->valuestring, &exp_s) == ESP_OK) {
+        sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp_s);
     }
     cJSON_Delete(root);
     if (!kept) {
@@ -330,12 +330,12 @@ net_provision_answer_t net_provision_renew(void)
     return ask_with_ticket(HTTP_METHOD_POST, RENEW_PATH, true);
 }
 
-esp_err_t net_provision_held_exp(uint32_t *exp)
+esp_err_t net_provision_held_exp(uint32_t *exp_s)
 {
-    if (exp == NULL) {
+    if (exp_s == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp) == ESP_OK) {
+    if (sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp_s) == ESP_OK) {
         return ESP_OK;
     }
     // A ticket whose exp never landed is read again: unrenewed, it dies at that exp and takes the faces.
@@ -344,19 +344,19 @@ esp_err_t net_provision_held_exp(uint32_t *exp)
         return ESP_ERR_NO_MEM;
     }
     esp_err_t err = sys_storage_get_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET, ticket, TICKET_CAP);
-    err = err == ESP_OK ? net_provision_ticket_exp(ticket, exp) : err;
+    err = err == ESP_OK ? net_provision_ticket_exp(ticket, exp_s) : err;
     heap_caps_free(ticket);
     if (err != ESP_OK) {
         return ESP_ERR_NOT_FOUND;
     }
-    sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, *exp);
+    sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, *exp_s);
     return ESP_OK;
 }
 
-bool net_provision_renew_due(uint32_t exp, int64_t now_ms)
+bool net_provision_renew_due(uint32_t exp_s, int64_t now_ms)
 {
     const uint64_t window_s = (uint64_t)CONFIG_NET_PROVISION_RENEW_BEFORE_DAYS * S_PER_DAY;
-    return exp != 0 && now_ms > 0 && (uint64_t)now_ms / MS_PER_S + window_s >= exp;
+    return exp_s != 0 && now_ms > 0 && (uint64_t)now_ms / MS_PER_S + window_s >= exp_s;
 }
 
 esp_err_t net_provision_forget(void)
@@ -366,12 +366,12 @@ esp_err_t net_provision_forget(void)
     return sys_storage_erase_key(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET);
 }
 
-esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp)
+esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp_s)
 {
     const char *start = ticket != NULL ? strchr(ticket, '.') : NULL;
     const char *end = start != NULL ? strchr(start + 1, '.') : NULL;
     const size_t len = end != NULL ? (size_t)(end - start - 1) : 0;
-    if (exp == NULL || len == 0 || len + 4 > CLAIMS_CAP) {
+    if (exp_s == NULL || len == 0 || len + 4 > CLAIMS_CAP) {
         return ESP_ERR_INVALID_ARG;
     }
     unsigned char coded[CLAIMS_CAP];
@@ -393,7 +393,7 @@ esp_err_t net_provision_ticket_exp(const char *ticket, uint32_t *exp)
     const bool found = cJSON_IsNumber(field) && field->valuedouble > 0 &&
                        field->valuedouble < (double)UINT32_MAX;
     if (found) {
-        *exp = (uint32_t)field->valuedouble;
+        *exp_s = (uint32_t)field->valuedouble;
     }
     cJSON_Delete(claims);
     return found ? ESP_OK : ESP_ERR_INVALID_ARG;

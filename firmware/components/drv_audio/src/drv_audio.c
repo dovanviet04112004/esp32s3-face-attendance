@@ -21,7 +21,7 @@ static const char *TAG = "drv_audio";
 #define AMP_SD_TRIES 3
 
 static i2s_chan_handle_t s_tx;
-static uint8_t s_volume = DRV_AUDIO_VOLUME_MAX;
+static uint8_t s_volume_pct = DRV_AUDIO_VOLUME_MAX;
 static int16_t s_chunk[CHUNK_SAMPLES];
 
 static esp_err_t amp_awake(bool awake)
@@ -45,7 +45,7 @@ static esp_err_t push_scaled(const int16_t *pcm, size_t samples)
     while (samples > 0) {
         const size_t n = samples < CHUNK_SAMPLES ? samples : CHUNK_SAMPLES;
         for (size_t i = 0; i < n; ++i) {
-            s_chunk[i] = (int16_t)(((int32_t)pcm[i] * s_volume) / DRV_AUDIO_VOLUME_MAX);
+            s_chunk[i] = (int16_t)(((int32_t)pcm[i] * s_volume_pct) / DRV_AUDIO_VOLUME_MAX);
         }
         APP_RETURN_ON_ERR(push_chunk(n), TAG, "write");
         pcm += n;
@@ -114,7 +114,7 @@ esp_err_t drv_audio_set_volume(uint8_t percent)
     if (percent > DRV_AUDIO_VOLUME_MAX) {
         return ESP_ERR_INVALID_ARG;
     }
-    s_volume = percent;
+    s_volume_pct = percent;
     return ESP_OK;
 }
 
@@ -124,7 +124,7 @@ esp_err_t drv_audio_play_pcm(const int16_t *pcm, size_t samples)
         return ESP_ERR_INVALID_STATE;
     }
     // A class-D stage switches even on zeros, so a muted kiosk keeps the amp in shutdown.
-    if (s_volume == 0) {
+    if (s_volume_pct == 0) {
         return ESP_OK;
     }
     APP_RETURN_ON_ERR(amp_awake(true), TAG, "amp on");
