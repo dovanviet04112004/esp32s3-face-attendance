@@ -58,7 +58,7 @@ soát lại mỗi lần sửa.
 
 ### 0.3 Đã dính, đã sửa — tìm ra bằng đọc code
 
-Ba ca ở §0.1 chỉ lộ ra khi đo. Sáu ca dưới đây thì ngược lại: **phép đo không thấy cái nào**,
+Ba ca ở §0.1 chỉ lộ ra khi đo. Tám ca dưới đây thì ngược lại: **phép đo không thấy cái nào**,
 vì chúng chỉ nổ khi hai task chạm nhau đúng lúc, hoặc khi một đường hiếm chạy tới — mà cái
 "đúng lúc" ấy chưa từng xảy ra trên bàn. Danh mục này là thứ tìm ra chúng.
 
@@ -70,6 +70,8 @@ vì chúng chỉ nổ khi hai task chạm nhau đúng lúc, hoặc khi một đ�
 | **P6** | Đọc dữ liệu dùng chung sau khi nhả khoá (9.1) | `FaceDb::lookup` nhả `m_facedb` rồi trả về con trỏ vào bảng, và tên được chép từ đó sau; một lượt đăng ký hay nén bảng trên `sync_task` chen giữa là máy chào đúng mã nhân viên bằng tên của bản ghi khác, hoặc tên rỗng | Chép tên vào kết quả ngay dưới khoá (3f52a66f) |
 | **P7** | Mảng lớn trên stack (6.6) | `normalized_int8` của recog đệm 512 float, tức 2 KB trên stack, mà lượt chạy thử model lúc boot gọi nó từ `main` 3.584 B | Tính lại giá trị mỗi lượt thay cho đệm, và lượt chạy thử xin vùng embedding ở PSRAM (22ebf6d7, b29bc595) |
 | **P8** | Ghim lõi sai (2.6) | `mqtt_task` của esp-mqtt không ghim lõi và chạy prio 5, nên có thể rơi sang lõi 1 và đứng sau một lượt chạy model của `ai_task` đúng lúc đang chờ PUBACK | Ghim lõi 0, prio 3 như §5.2 (63ce8f09) |
+| **P9** | Task có watchdog chờ khoá lâu (10.3, 12.2) | `ai_task` giữ một mẫu đăng ký qua `svc_facedb_enroll` và chờ `m_facedb_io` tới 4 s; gặp đúng lúc `sync_task` ghi bảng 1,8–2,3 s thì `ai` đứng nguyên một bước, sát watchdog 5 s mà bản `fleet` panic | Đường camera chỉ chờ 200 ms như lượt tra bảng, quá hạn thì khung xác thực sau thử lại; ca mới của `facedb` dựng đúng cảnh ấy (fbac6828) |
+| **P10** | Biến dùng chung không qua hộp thư (9.1) | `sync_task` gọi `ui_kiosk_set_levels` và `ui_kiosk_set_language`; `ai_task` gọi `ui_kiosk_on_faces` và `ui_kiosk_on_stage`. Chúng ghi `Level.percent`, ngôn ngữ, `s_seen`, `s_wanted`, `s_dirty` mà `ui_task` cũng ghi → mất một lần vẽ lại, hoặc màn Capture ghép mẫu mới với mặt cũ | Ba hộp thư mới và một atomic cho chặng; chỉ `ui_task` đánh dấu vẽ lại (71f2d950). **Chưa thử trên kính** |
 
 ### 0.4 Đang dính, chưa sửa
 
@@ -77,18 +79,12 @@ vì chúng chỉ nổ khi hai task chạm nhau đúng lúc, hoặc khi một đ�
 |---|---|---|---|
 | **P4** | App chạy lâu nhất không bật bắt lỗi heap (7.3) | `soak` đã lấy `sdkconfig.dev` và `bench_mem` lấy `sdkconfig.bench`; **còn nợ lượt chạy 24 giờ** | E10-T8 |
 | **P5** | `prod` tắt poisoning nên hỏng heap ngoài hiện trường là vô hình | profile build | — |
-| **P9** | Task có watchdog chờ khoá lâu (10.3, 12.2) | `ai_task` giữ một mẫu đăng ký qua `svc_facedb_enroll`, chờ `m_facedb_io` tới 4 s. Gặp đúng lúc `sync_task` ghi bảng 1,8–2,3 s thì `ai` đứng nguyên một bước, còn biên mỏng trước watchdog 5 s mà bản `fleet` panic. KẾ HOẠCH §5.3 chỉ hứa lượt **tra bảng** không chờ | — |
-| **P10** | Biến dùng chung không qua hộp thư (9.1) | `sync_task` gọi `ui_kiosk_set_levels`; `ai_task` gọi `ui_kiosk_on_faces` và `ui_kiosk_on_stage`. Chúng ghi `Level.percent`, `s_seen`, `s_wanted`, `s_dirty` mà `ui_task` cũng ghi, trái luật "qua hộp thư" của §4.5.5h. Hậu quả đã biết: mất một lần vẽ lại, hoặc màn Capture ghép mẫu mới với mặt cũ trong một nhịp | — |
-
-P9 và P10 chờ chủ repo chọn hướng sửa, vì cả hai đụng tới thiết kế: P9 là hạn chờ ngắn cho đường
-của `ai_task` hay dời việc giữ mẫu sang task khác; P10 là đi qua `Mailbox` cùng `s_dirty` atomic,
-và cần thử lại các màn trên kính.
 
 ### 0.5 Chưa kiểm được
 
 Cả mười task của KẾ HOẠCH §5.2 đều đã chạy và đã soát lại từng mục dưới đây theo code ngày
 12/10; ngày 22/10 soát lại thêm 2.6, 6.6, 9.1, 9.10, 10.2, 10.3, 10.4 cùng lượt rà firmware, ra
-P6–P8 đã sửa và P9, P10 còn mở. Phần còn lại cần board, không đọc code ra được: watermark của `ai`
+P6–P10, đều đã sửa. Phần còn lại cần board, không đọc code ra được: watermark của `ai`
 khi spoof và recog chạy với mặt thật, đáy heap, và lượt soak 24 giờ (§14). **Danh mục này chỉ
 đúng tới ngày ghi** — thêm một task là phải soát lại từ §1.
 
@@ -263,7 +259,7 @@ không phải phiền toái.
 
 | # | Kiểu hỏng | Cách kiểm | Trạng thái |
 |---|---|---|---|
-| 9.1 | Biến dùng chung không khoá: giẫm chân nhau, đọc ra thứ **dở dang** | Tìm biến ghi bởi task này đọc bởi task kia | ⚠ đường liên task đi qua queue, event group, hộp thư có spinlock hoặc atomic; còn hai đường ghi thẳng vào trạng thái của `ui_kiosk` (P10). P6 là ca cùng loại, đã sửa |
+| 9.1 | Biến dùng chung không khoá: giẫm chân nhau, đọc ra thứ **dở dang** | Tìm biến ghi bởi task này đọc bởi task kia | ✅ đường liên task đi qua queue, event group, hộp thư có spinlock hoặc atomic. P6 và P10 là hai ca cùng loại, đã sửa |
 | 9.1b | Có chỗ chứa nhưng **không có nhịp** — lỗi này ít người để ý hơn lỗi trên. Ghi hai lần đọc một lần thì **mất một giá trị mà không ai biết**; muốn chờ giá trị mới thì phải quay vòng hỏi, đốt CPU | Đối chiếu §5.3 | ✅ cái thiếu không phải chỗ chứa mà là nhịp, và queue cho cả hai |
 | 9.2 | **Không kiểm giá trị trả về của `xQueueReceive`** — trả `pdFALSE` thì biến đích **không đổi**, in lại giá trị cũ y như thật | `grep xQueueReceive` không kèm điều kiện | ✅ **0 chỗ**, mọi lời gọi đều kiểm |
 | 9.3 | Gửi với timeout 0 rồi bỏ qua kết quả — **mất bản ghi âm thầm** | `grep "xQueueSend(.*, 0)"` | ✅ `ai_task` chờ 100 ms rồi log kind phải bỏ. Năm chỗ gửi 0 đều có nhánh trượt: `offer_to_ai` trả khung về pool; event, lệnh và gói OTA log cái bị rơi; uplink log một lần vì bản ghi đã nằm trên flash (§6.2.6) |
@@ -302,7 +298,7 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 |---|---|---|---|
 | 10.1 | `portMAX_DELAY` khi lấy mutex — treo vô hạn, không cách nào biết | `grep "xSemaphoreTake.*portMAX_DELAY"` | ✅ **0 chỗ** |
 | 10.2 | Khoá lồng nhau sai thứ tự → deadlock | Thứ tự §5.3: `m_facedb_io` → `m_facedb` → `m_littlefs` → `m_i2c` | ✅ chỉ đường ghi bảng mặt lồng khoá: `m_facedb` bên trong `m_facedb_io`, và `persist` thả `m_facedb` trước khi xuống `m_littlefs`; đều đúng chiều |
-| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ⚠ `m_facedb_io` xếp hàng người ghi, phép ghi ~580 KB chạy ngoài `m_facedb` (§5.3 của kế hoạch), nên lượt tra bảng không chờ; nhưng `ai_task` lúc giữ mẫu đăng ký thì chờ đúng phép ghi ấy (P9). `audio_task` đọc file WAV đúng một lần lúc khởi động vào PSRAM rồi phát từ đó, nên không giữ khoá lưu trữ lúc phát |
+| 10.3 | **Giữ khoá suốt một lời gọi chặn dài** | Tìm I/O flash, I2C, nhận queue bên trong vùng khoá | ✅ `m_facedb_io` xếp hàng người ghi, phép ghi ~580 KB chạy ngoài `m_facedb` (§5.3 của kế hoạch), nên lượt tra bảng không chờ; `ai_task` lúc giữ mẫu đăng ký chỉ chờ 200 ms ở cửa ấy rồi để khung sau thử lại (P9). `audio_task` đọc file WAV đúng một lần lúc khởi động vào PSRAM rồi phát từ đó, nên không giữ khoá lưu trữ lúc phát |
 | 10.4 | Dùng binary semaphore thay mutex — **mất kế thừa ưu tiên** | Kiểm từng semaphore | ✅ năm semaphore đều chỉ báo hiệu: ba từ ngắt sang task (ToF, touch, bounce LCD), hai giữa hai task (ack MQTT, overlay UI) |
 | 10.5 | Lấy lại mutex không đệ quy từ nhánh đang giữ | Đọc hàm public gọi lẫn nhau | ✅ |
 | 10.6 | Lấy mutex trong ISR — sai tuyệt đối | `grep` trong ISR | ✅ |
@@ -328,7 +324,7 @@ chờ của chính queue ấy, nên nó **biến mất khỏi tầm nhìn bộ l
 | # | Kiểu hỏng | Trạng thái |
 |---|---|---|
 | 12.1 | Chặn trong callback timer — task timer dùng chung, nghẽn một cái là nghẽn tất | ✅ chỉ `servo_door`, chờ ≤ 50 ms |
-| 12.2 | Task đăng ký watchdog rồi chặn vô hạn | ✅ chỉ `ai_task` đăng ký, và nó chờ có hạn (P2, §0.3); lần chờ dài nhất là `m_facedb_io` 4 s lúc giữ mẫu đăng ký (P9) |
+| 12.2 | Task đăng ký watchdog rồi chặn vô hạn | ✅ chỉ `ai_task` đăng ký, và nó chờ có hạn (P2, §0.3): lâu nhất là 2 s ở hàng khung; ở bảng mặt nó chờ 200 ms cả lúc tra lẫn lúc giữ mẫu (P9) |
 | 12.3 | Nạp nhầm ô watchdog — `esp_task_wdt_reset()` chỉ nạp ô của task gọi nó | ✅ `ai_task` nhường tick cho IDLE1 (§5.1) |
 | 12.4 | Vùng tới hạn dài làm nổ interrupt watchdog | ✅ không có vùng tới hạn tự viết |
 
