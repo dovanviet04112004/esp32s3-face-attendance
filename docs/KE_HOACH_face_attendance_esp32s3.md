@@ -3845,7 +3845,7 @@ luôn thanh ấy. Kiosk không có danh sách cuộn, nên kéo không có nghĩ
 
 **Không dùng LVGL, và đó là hệ quả của chính đoạn dưới.** §4.5.5h đã chốt vùng preview vẽ
 thẳng, không qua LVGL — mà **màn hình chính của kiosk chính là preview**. Để LVGL vào thì hai
-bộ vẽ cùng ghi một panel SPI, đúng thứ `m_spi_lcd` sinh ra để chặn, và mỗi lần chuyển màn là
+bộ vẽ cùng ghi một panel SPI và phải xếp hàng sau một khoá chung, còn mỗi lần chuyển màn là
 một lần bàn giao panel — chỗ mà xé hình hay quay lại. Nên mọi màn dùng **một bộ vẽ duy nhất**:
 `Canvas` là một **cover map 1 byte mỗi pixel** mang chỉ số bảng màu cộng độ phủ (xem đoạn bảng
 màu ở §4.5.5h), chữ lấy từ bảng glyph 4bpp `assets/fonts/` sinh sẵn từ TTF, và `drv_lcd` cắt
@@ -3873,12 +3873,12 @@ lúc nhấn giống nhau ở mọi màn mà không ai phải nhớ con số — 
 cũng tự đi ra khỏi kiểu chung thì giao diện thành chắp vá, và đó đúng là thứ tầng này dựng ra để
 chặn.
 
-**Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` lấy `m_spi_lcd` và
-tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
+**Không ai bàn giao panel cho ai.** Ý đầu là màn không video thì `ui_task` giữ một khoá SPI của
+LCD và tự đẩy khung hình — nhưng mỗi lần chuyển màn khi ấy là một lần đổi chủ giữa hai task đang chạy,
 đúng chỗ xé hình hay sinh ra. Thay vào đó **`cam_task` vẫn là người duy nhất ghi panel ở mọi
 màn**, và màn không video chỉ **tô kín nền vào cover map của chính nó** — video vẫn chạy dưới
-lớp ấy nhưng không thấy được. Cái giá là một lượt gửi SPI không ai nhìn; cái được là `m_spi_lcd`
-không bao giờ bị tranh và không có đường mã nào chuyển quyền lúc đang chạy.
+lớp ấy nhưng không thấy được. Cái giá là một lượt gửi SPI không ai nhìn; cái được là panel không
+cần khoá nào vì chỉ một task ghi nó, và không có đường mã nào chuyển quyền lúc đang chạy.
 
 **Màn phủ kín vẽ theo nhịp UI, không theo nhịp camera.** Khi overlay đang hiện là loại đục,
 `cam_task` chờ `ui_kiosk` publish overlay mới tối đa một chu kỳ khung rồi mới lấy khung cho AI;
@@ -5870,9 +5870,17 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED`; bit `RENEW_TICKET`; mốc đổi vé | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, đổi vé khi sắp hết hạn, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
-| `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; và **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`** |
+| `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`**; áp lệnh của `q_cmd` và `q_roster`, phát sự kiện của `q_event` |
 | `net_task` | `net_wifi` | 0 | 3 | 4 KB | một nhịp lúc boot | Chờ link rồi giương `WIFI_OK`, để `app_main` không bị giữ chỉ để biết là không có sóng. Chờ **tới khi có**, không bỏ cuộc sau 30 s: máy mới lắp nhận Wi-Fi từ người lắp gõ trên màn, thường sau lúc boot rất lâu, và bỏ cuộc thì nó không đăng ký cho tới lần khởi động sau. Có vé thì nối broker, chưa có thì giương `NEED_TICKET` cho `ota_task`; rồi mở SNTP. Xong thì tự xoá |
-| `wifi` / `lwip` | hệ thống IDF | 0 | 18–23 | — | — | Do IDF quản lý, không tự tạo |
+| `console` | `main/app_console` | tự do | 2 | 8 KB | lúc boot, khi `CONFIG_APP_CONSOLE` bật | REPL trên USB: `nvs get/set/del` (§6.2.1) và `heap`. Có ở `dev` và `bench`, kể cả bản `fleet` dựng từ `bench`; `prod` tắt |
+| `cam_task` của driver | esp32-camera | 0 | 23 | 4 KB | ngắt DMA camera | Driver tự tạo: ghép dữ liệu DMA thành khung trong pool, đẩy khung đầy vào hàng đợi mà `esp_camera_fb_get()` chờ. Trùng tên với hàm `cam_task` của `app_tasks.c`, nhưng task của dự án tên là `cam` |
+| `wifi` | IDF | 0 | 23 | 6,5 KB | — | Driver Wi-Fi |
+| `tcpip` | lwIP | tự do | 18 | 3 KB | — | Ngăn xếp TCP/IP; SNTP chạy trong đây |
+| `esp_timer` | IDF | 0 | 22 | 3,5 KB | — | Callback hẹn giờ: tự đóng cửa (§4.5.5e), thử nối lại Wi-Fi |
+| `sys_evt` | IDF | — | 20 | 2,25 KB | — | Vòng sự kiện mặc định: sự kiện Wi-Fi và IP |
+| `ipc0` / `ipc1` | IDF | 0 / 1 | 24 | 1,25 KB mỗi cái | — | Chạy một hàm trên lõi kia, vd. đỗ lõi còn lại lúc ghi flash |
+| `IDLE0` / `IDLE1`, `Tmr Svc` | FreeRTOS | 0 / 1, — | 0, 1 | 1,5 KB mỗi cái, 2 KB | — | Idle dọn task đã xoá và bị watchdog canh; timer FreeRTOS thì dự án không dùng |
+| `main` | IDF | 0 | 1 | 3,5 KB | lúc boot | Chạy `app_boot`, khởi các task rồi return; IDF xoá nó và trả stack |
 
 **Ngăn xếp `mqtt_task` nằm ở PSRAM.** `CONFIG_MQTT_TASK_STACK_ON_EXTERNAL_MEMORY` đẩy 6 KB ấy
 ra bộ nhớ ngoài; khối điều khiển task vẫn ở RAM nội. Không phải chọn cho nhanh mà là chọn cho
@@ -5886,8 +5894,11 @@ thoả về mặt cấu trúc: `spi_flash_disable_interrupts_caches_and_other_cp
 tắt ngắt suốt lượt ghi flash, nên không task nào chạy được lúc đó. Cùng chính sách với
 `MBEDTLS_EXTERNAL_MEM_ALLOC` và hai arena TFLM: **RAM nội để dành cho DMA**.
 
-`ota_task` 8 KB **chưa có chỗ** trên `dev` — không vùng nào còn 8 KB liền. Nới thật thì phải hạ
-đệm bounce LCD, không phải đẩy thêm ngăn xếp sang PSRAM.
+`ota_task` 8 KB **thường trú từ lúc boot** ở mọi profile, và chỗ cho nó có được nhờ hạ đệm bounce
+LCD xuống 20 dòng (§6.4), không phải nhờ đẩy thêm ngăn xếp sang PSRAM: đủ mười task chạy, đáy RAM
+nội đo 23/09 còn 38.067 B (`ram.md` §10.1). Ngăn xếp xin sau cùng giờ là console 8 KB, nên nó là
+thứ hụt đầu tiên: bản `fleet` ngày 10/10 log `app_console: repl: ESP_FAIL` khi khối liền lớn nhất
+chỉ còn 4,3 KB (`ram.md` §12).
 
 **Xin vé đi chung `ota_task`, không dựng task riêng.** Hai việc cần đúng một thứ: một phiên
 HTTPS tin bộ CA công khai, chạy trên ngăn xếp RAM nội vì cuối việc là ghi flash (NVS hoặc
@@ -5918,26 +5929,29 @@ Nên khung **không đi đâu cả**: `cam_task` vẽ ngay tại chỗ nó đang
 Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn thêm một lượt quét PSRAM nào.
 `ui_task` không cầm panel ở màn nào; màn phủ kín cũng do `cam_task` vẽ, ngay khi overlay đổi (§4.5.5h).
 
-**Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ.
+**Không có semaphore giữa ISR camera và `cam_task`.** `esp_camera_fb_get()` đã tự chặn cho tới khi có khung, nên một binary semaphore nữa chỉ là tầng chờ thứ hai chờ đúng thứ mà tầng dưới đã chờ. Tầng dưới ấy là của esp32-camera: ngắt DMA báo cho `cam_task` riêng của driver (§5.2) qua một hàng sự kiện, và khung đầy nằm trong hàng 3 con trỏ — `GRAB_LATEST` với pool 4 khung — chờ `esp_camera_fb_get()` lấy.
 
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × 156 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả: tại chỗ ngón đặt xuống nếu ngón chưa trượt quá `kTapSlopPx`, còn trượt xa hơn là kéo, chỉ thanh trượt nhận (§4.5.5h) |
 | `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `app_sound_t` | 4 × 4 B | `attend_task` | `audio_task` | Phát âm không được chặn nghiệp vụ; chỉ lượt mở cửa lên tiếng (§6.2.8) |
-| `q_uplink` | Queue, depth 16, `attendance_rec_t` | 16 × ~96 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
-| `q_cmd` | Queue, depth 4, `device_command_t` | 4 × ~160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
+| `q_uplink` | Queue, depth 16, `storage_attend_record_t` | 16 × 48 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
+| `q_cmd` | Queue, depth 4, `device_command_t` | 4 × 160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
 | `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
-| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 72 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
-| `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × ~1,8 KB | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 88 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
+| `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × 1.856 B | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
-| **`m_spi_lcd`** | Mutex | — | `ui_task`, `ota_task` (màn hình tiến trình) | — | 1 bus SPI, tránh xé khung hình |
-| **`m_facedb`** | Mutex | — | `ai_task` (đọc), `mqtt_task` (ghi khi enroll) | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
-| **`m_facedb_io`** | Mutex | — | `mqtt_task` / `ui_task` (mọi đường ghi bảng) | — | Ghi 576 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
-| **`m_littlefs`** | Mutex | — | `attend_task`, `sync_task`, `ota_task`, `audio_task` | — | LittleFS không thread-safe mặc định |
+| **`m_facedb`** | Mutex | — | `ai_task` (tra bảng, chờ 200 ms); người ghi lấy nó ngắn lúc sửa và lúc nén bảng | — | Bảng embedding bị sửa giữa lúc đang so khớp = kết quả sai |
+| **`m_facedb_io`** | Mutex, chờ 4 s | — | mọi đường ghi bảng: `sync_task` (roster, đánh dấu mẫu đã báo), `ui_task`, `ai_task` (giữ mẫu đăng ký) | — | Ghi 576 KB xuống LittleFS mất 1,8–2,3 s, mà `m_facedb` chỉ chờ 200 ms: giữ `m_facedb` suốt phép ghi thì `lookup` hết giờ và người thật bị từ chối. Khoá này xếp hàng **người ghi với người ghi**, để phép ghi dài chạy ngoài `m_facedb` mà ảnh bảng vẫn không bị sửa giữa chừng |
+| **`m_littlefs`** | Mutex, chờ 5 s | — | mọi task gọi `sys_storage`, cho cả LittleFS lẫn NVS | — | LittleFS không thread-safe mặc định |
+| `s_send_lock` | Mutex, nội bộ `net_mqtt` | — | người publish | — | Mỗi lúc một lượt publish QoS 1 cộng chờ PUBACK |
+| `s_acked` | Binary semaphore, nội bộ `net_mqtt` | — | handler sự kiện của esp-mqtt | người publish | PUBACK đã về. Báo hiệu giữa hai task, không làm khoá |
 | `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
 | `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
+| `s_report` | Binary semaphore, nội bộ `drv_touch` | — | ISR GPIO14 | `touch_task` | GT911 có điểm chạm; cùng lý do `s_tof_int` |
+| `s_published` | Binary semaphore, nội bộ `ui_kiosk` | — | `ui_task` | `cam_task` | Màn phủ kín: `cam_task` chờ overlay mới tối đa một chu kỳ khung rồi mới vẽ (§5.2) |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED` `RENEW_TICKET`. Thay cho 10 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong. `RENEW_TICKET` do lệnh `ROTATE_TOKEN` giương, `ota_task` hạ khi đã có vé mới |
 | `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L5 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
@@ -5961,13 +5975,13 @@ nhất thấy đủ để dựng chúng là tầng nối dây ở L7 (§4.5.4 lu
 - Mutex **không dùng được** trong ISR — cần khoá thì dùng `portMUX_TYPE` + `portENTER_CRITICAL_ISR`.
 
 **Quy tắc chống deadlock**
-Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb_io` → `m_facedb` → `m_littlefs` → `m_i2c` → `m_spi_lcd`. Không bao giờ lấy ngược. Mọi `xSemaphoreTake` đều có timeout, không dùng `portMAX_DELAY` cho mutex.
+Thứ tự lấy khoá cố định trên toàn dự án: `m_facedb_io` → `m_facedb` → `m_littlefs` → `m_i2c`. Không bao giờ lấy ngược. Panel SPI không có khoá nào: chỉ `cam_task` ghi panel, kể cả màn tiến trình OTA (§4.5.5h). Mọi `xSemaphoreTake` đều có timeout, không dùng `portMAX_DELAY` cho mutex.
 
 **Vùng khoá của `m_facedb` phải ngắn hơn hạn chờ của chính nó.** `lookup` chờ 200 ms, nên mọi
 đường giữ `m_facedb` lâu hơn thế đều là lỗi, kể cả khi thứ tự khoá đúng. Phép ghi bảng xuống
 flash là đường duy nhất như vậy, và nó ra ngoài bằng `m_facedb_io`: lấy `m_facedb_io`, lấy
 `m_facedb` đúng lúc nén và đóng dấu header rồi thả ngay, ghi flash dưới một mình `m_facedb_io`.
-Người ghi khác chờ ở cửa `m_facedb_io`; `ai_task` không chờ gì cả.
+Người ghi khác chờ ở cửa `m_facedb_io`; lượt tra bảng của `ai_task` không chờ phép ghi nào.
 
 ### 5.4 Các mức nghỉ và đường đánh thức
 
