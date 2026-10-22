@@ -92,8 +92,7 @@ function Register() {
   const common = useTranslations("common");
   const words = useRequestWords();
   const notify = useNotify();
-  // Every state by default: filtering to pending here would repeat the
-  // approvals inbox under a second sidebar entry (KEHOACH 9.15).
+  // Every state by default: pending only would repeat the approvals inbox under a second entry (KEHOACH 9.15).
   const [url, setUrl] = useUrlState(DEFAULTS);
   const [typed, setTyped] = useState(url.q);
   const [open, setOpen] = useState<RequestRow | null>(null);

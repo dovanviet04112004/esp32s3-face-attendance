@@ -22,8 +22,7 @@ export default function ForgotPasswordPage() {
     try {
       await api.post("/auth/forgot-password", { email });
     } catch {
-      // The answer is the same either way, so a refusal says nothing a
-      // reader could act on and nothing this page should repeat.
+      // The answer is the same either way, so a refusal says nothing worth repeating.
     } finally {
       setBusy(false);
       setAsked(true);

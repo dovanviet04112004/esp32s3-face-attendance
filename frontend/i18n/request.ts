@@ -27,8 +27,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
     locale,
     messages: (await import(`../messages/${locale}.json`)).default,
     timeZone: env.NEXT_PUBLIC_APP_TIMEZONE,
-    // next-intl ships no named formats, so asking for one it does not hold
-    // throws and the cell renders nothing.
+    // next-intl ships no named formats; a missing one throws and blanks the cell.
     formats: {
       dateTime: {
         medium: { dateStyle: "medium", timeStyle: "short" },

@@ -164,8 +164,7 @@ export default function LoginPage() {
         holdStage(null);
         setStage({ at: "password" });
       }
-      // The api answers CREDENTIALS_REJECTED for a wrong address and a wrong
-      // password alike, so telling the truth here still says neither.
+      // CREDENTIALS_REJECTED covers a wrong address and a wrong password alike, so showing it reveals neither.
       setRefused(faultOf(fell));
       setBusy(false);
     }

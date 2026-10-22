@@ -184,8 +184,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   }, []);
 
   const owner = ownerOf(here);
-  // The tab, the history entry and the bookmark read this, off the same table
-  // the sidebar lights up (KEHOACH 9.15).
+  // Tab, history entry and bookmark read this, off the same table the sidebar lights up (KEHOACH 9.15).
   const tab = owner ? `${t(owner.key)} · ${app("name")}` : app("name");
 
   const signedOut = useSyncExternalStore(neverChanges, signedOutHere, () => false);
@@ -197,8 +196,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       router.replace("/login");
       return;
     }
-    // A reload empties the store but not the refresh cookie, so the cookie
-    // gets one chance and the login form is the fallback.
+    // A reload empties the store but not the refresh cookie, which gets one chance at the session.
     void reopenSession().then((token) => {
       if (!token) {
         router.replace("/login");
@@ -206,8 +204,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     });
   }, [accessToken, signedOut, router]);
 
-  // The sidebar hides what a role cannot use, but the address bar keeps the
-  // last one: signing in as a narrower role leaves it standing there (9.15).
+  // A narrower role signing in inherits the last address, which the sidebar cannot hide (KEHOACH 9.15).
   useEffect(() => {
     if (!accessToken || allows(role, hasRecord, here)) {
       return;

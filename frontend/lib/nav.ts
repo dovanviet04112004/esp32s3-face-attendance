@@ -396,8 +396,6 @@ export function tabsFor(role: Role | null, hasRecord = true): TabLayout {
   // An account with no record of its own has none of the five.
   const desk = ranked(DESK_TAB_ORDER, flat);
   const pool = own.length > 0 ? own : [...desk, ...flat.filter((entry) => !desk.includes(entry))];
-  // The menu button is a slot like any other, so a role that needs one gets
-  // four destinations and not five.
   const needsMenu = flat.length > kTabSlots;
   const items = pool.slice(0, needsMenu ? kTabSlots - 1 : kTabSlots);
   const shown = new Set(items.map((entry) => entry.href));

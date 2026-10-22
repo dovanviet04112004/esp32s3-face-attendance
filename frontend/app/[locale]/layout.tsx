@@ -35,8 +35,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: LocaleParams): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale: known(locale), namespace: "app" });
-  // No title here: metadata replaces the element on every move between pages,
-  // so the name a tab shows is rendered where the page is known.
+  // No title: metadata replaces it on every page move, so the tab name renders where the page is known.
   return {
     description: t("description"),
     icons: { icon: "/favicon.ico", apple: "/apple-touch-icon.png" },
