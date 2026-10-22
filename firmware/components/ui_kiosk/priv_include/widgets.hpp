@@ -21,10 +21,8 @@ enum class Icon : uint8_t {
     Globe,
     Brightness,
     Volume,
-    Keyboard,
     Sliders,
     Backspace,
-    Back,
     Check,
     Menu,
     None,
@@ -45,16 +43,16 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
 /** A tinted rounded square holding a white glyph, as every settings row has. */
 void icon_tile(Canvas &to, int x, int y, int size, Icon which, uint8_t tint) noexcept;
 
-/** The white card a group of rows sits on. */
+/** The raised card a group of rows sits on, in the surface grey. */
 void card(Canvas &to, int x, int y, int w, int h) noexcept;
 
 /** The hairline between two rows of one card, inset past the icon tile. */
 void divider(Canvas &to, int x, int y, int w) noexcept;
 
-/** One touchable row: icon tile, label, grey value, chevron (KEHOACH 4.5.5h.4). */
+/** One touchable row: icon tile, label and a grey value (KEHOACH 4.5.5h.4). */
 struct Row {
     const char *label;
-    const char *value;                    // NULL leaves the right side to the chevron
+    const char *value;                    // NULL leaves the right side empty
     Icon glyph;
     uint8_t tint;
     uint8_t label_colour;

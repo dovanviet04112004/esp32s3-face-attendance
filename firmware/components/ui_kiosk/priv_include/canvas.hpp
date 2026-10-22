@@ -20,8 +20,6 @@ public:
     {
     }
 
-    int width() const noexcept { return width_; }
-    int height() const noexcept { return height_; }
     uint8_t *cells() const noexcept { return cells_; }
 
     void clear() noexcept;

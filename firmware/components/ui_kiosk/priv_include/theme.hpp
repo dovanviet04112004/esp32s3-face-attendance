@@ -65,10 +65,7 @@ int fits(Font face, const char *utf8, int width) noexcept;
  */
 class Stack {
 public:
-    Stack(int top, int left = kGutter, int width = kContentW) noexcept
-        : y_(top), left_(left), width_(width)
-    {
-    }
+    explicit Stack(int top) noexcept : y_(top) {}
 
     int take(int height, int gap = kGapM) noexcept
     {
@@ -79,17 +76,8 @@ public:
 
     void skip(int gap) noexcept { y_ += gap; }
 
-    int y() const noexcept { return y_; }
-    int left() const noexcept { return left_; }
-    int width() const noexcept { return width_; }
-
-    /** True while another row of this height would still clear the panel. */
-    bool fits(int height) const noexcept { return y_ + height <= APP_LCD_V_RES; }
-
 private:
     int y_;
-    int left_;
-    int width_;
 };
 
 }  // namespace theme

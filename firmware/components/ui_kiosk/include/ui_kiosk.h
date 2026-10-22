@@ -77,8 +77,8 @@ void ui_kiosk_tick(uint32_t dt_ms);
 
 /** Collect a face the enrol screen is waiting for.
  *  @ctx ui_task | non-blocking | one shot: the request clears as it is taken
- *  @param employee_id 0 for a person with no id yet, which the caller assigns
- *  @param yaw the turn window the sample asks for (KEHOACH 4.5.5h.2)
+ *  @param employee_id the id the server assigned; 0 when it gave none, which main refuses (KEHOACH 7.5)
+ *  @param yaw_min the turn window the sample asks for, with yaw_max (KEHOACH 4.5.5h.2)
  *  @ret false when no screen is asking for one
  */
 bool ui_kiosk_take_enrol(uint32_t *employee_id, uint16_t *template_idx, char *name, size_t cap,

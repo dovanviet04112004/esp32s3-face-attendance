@@ -132,22 +132,6 @@ void draw_backspace(Canvas &to, int x, int y, int size, uint8_t colour)
     stroke(to, cx + arm, mid - arm, cx - arm, mid + arm, 2, DRV_LCD_GROUND);
 }
 
-void draw_keyboard(Canvas &to, int x, int y, int size, uint8_t colour)
-{
-    const int w = size * 5 / 6;
-    const int h = size * 3 / 5;
-    const int bx = x + (size - w) / 2;
-    const int by = y + (size - h) / 2;
-    to.outline(bx, by, w, h, 4, 2, colour);
-    const int step = w / 5;
-    for (int row = 0; row < 2; ++row) {
-        for (int col = 0; col < 4; ++col) {
-            to.fill(bx + step / 2 + col * step, by + h / 4 + row * h / 4, 2, 2, colour);
-        }
-    }
-    stroke(to, bx + step, by + h - h / 5, bx + w - step, by + h - h / 5, 2, colour);
-}
-
 void draw_person_add(Canvas &to, int x, int y, int size, uint8_t colour)
 {
     draw_person(to, x - size / 6, y, size, colour);
@@ -283,7 +267,6 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
         case Icon::Lock: draw_lock(to, x, y, size, colour); break;
         case Icon::Person: draw_person(to, x, y, size, colour); break;
         case Icon::PersonAdd: draw_person_add(to, x, y, size, colour); break;
-        case Icon::Keyboard: draw_keyboard(to, x, y, size, colour); break;
         case Icon::Sliders: draw_sliders(to, x, y, size, colour); break;
         case Icon::Backspace: draw_backspace(to, x, y, size, colour); break;
         case Icon::List: draw_list(to, x, y, size, colour); break;
@@ -291,7 +274,6 @@ void icon(Canvas &to, int x, int y, int size, Icon which, uint8_t colour) noexce
         case Icon::Globe: draw_globe(to, x, y, size, colour); break;
         case Icon::Brightness: draw_brightness(to, x, y, size, colour); break;
         case Icon::Volume: draw_volume(to, x, y, size, colour); break;
-        case Icon::Back: draw_back(to, x, y, size, colour); break;
         case Icon::Check: draw_check(to, x, y, size, colour); break;
         case Icon::Menu: draw_menu(to, x, y, size, colour); break;
         default: break;
