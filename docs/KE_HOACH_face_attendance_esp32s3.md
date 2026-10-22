@@ -3351,7 +3351,7 @@ components/svc_facedb/
 │   └── facedb_internal.hpp # nội bộ, component khác KHÔNG thấy
 ├── src/{facedb.cpp, embedding_index.cpp, persist.cpp, dot_s8_esp32s3.S}
 ├── test_apps/              # ★ chuẩn ESP-IDF: test app nằm TRONG component
-│   └── facedb/{main/test_facedb.c, CMakeLists.txt, pytest_facedb.py}
+│   └── facedb/{main/test_facedb.c, main/test_facedb_load.cpp, CMakeLists.txt, pytest_facedb.py}
 ├── Kconfig                 # tuỳ chọn hiện trong menuconfig (vd. FACEDB_MAX_PERSON)
 └── README.md               # chỉ khi có điều header, Kconfig và KẾ HOẠCH chưa nói: số đo, giới hạn, bring-up
 ```
