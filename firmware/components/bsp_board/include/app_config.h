@@ -65,6 +65,7 @@
 
 #define APP_TOF_INT_GPIO 3
 #define APP_TOF_I2C_ADDR 0x29
+#define APP_RTC_I2C_ADDR 0x68               // DS3231, no address pins
 
 #define APP_AUDIO_BCLK_GPIO 45              // GPIO43 carries the panel's SDO
 #define APP_AUDIO_LRC_GPIO 44               // frees U0RXD, needs USB-CDC console

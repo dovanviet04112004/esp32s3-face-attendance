@@ -1,5 +1,6 @@
 /** The only component allowed to touch NVS, LittleFS and the flash partitions.
- *  @ctx task | blocking | every path below is under the LittleFS mount
+ *  @ctx task | blocking | every path below is under the LittleFS mount | a caller that
+ *       writes needs its stack in internal RAM, since flash writes turn the cache off
  */
 #pragma once
 

@@ -47,8 +47,8 @@ typedef enum {
 #define APP_EG_BROKER_REFUSED 0x100u     // CONNACK refused, ota_task asks api
 #define APP_EG_RENEW_TICKET 0x200u       // ROTATE_TOKEN asked, ota_task renews now
 
-// What a task knows when something goes wrong: the identity and the clock are
-// the sender's business, so they are not in here (KEHOACH 7.1).
+// What a task knows when something goes wrong: sync_task, which publishes it,
+// adds the deviceId and the clock, so they are not in here (KEHOACH 5.3).
 typedef struct {
     int type;                             // device_event_type_t
     int severity;                         // device_event_severity_t

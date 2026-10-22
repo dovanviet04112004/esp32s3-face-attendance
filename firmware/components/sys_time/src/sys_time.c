@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "app_config.h"
 #include "app_err.h"
 #include "bsp_board.h"
 #include "esp_log.h"
@@ -15,7 +16,6 @@
 
 static const char *TAG = "sys_time";
 
-#define RTC_ADDR 0x68
 #define RTC_SPEED_HZ 100000
 #define TIME_REG 0x00
 #define STATUS_REG 0x0F
@@ -103,7 +103,7 @@ static esp_err_t attach(void)
 {
     const i2c_device_config_t cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = RTC_ADDR,
+        .device_address = APP_RTC_I2C_ADDR,
         .scl_speed_hz = RTC_SPEED_HZ,
     };
     return i2c_master_bus_add_device(bsp_i2c_bus(), &cfg, &s_rtc);
