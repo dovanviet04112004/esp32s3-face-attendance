@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "ai_engine.h"
 #include "dl_model_base.hpp"
 #include "esp_heap_caps.h"
 #include "sys_storage.h"
@@ -21,6 +22,8 @@ TEST_CASE("every espdl graph reproduces the test vector it was exported with", "
 {
     const esp_err_t up = sys_storage_init();
     TEST_ASSERT_TRUE(up == ESP_OK || up == ESP_ERR_INVALID_STATE);
+    const esp_err_t engine = ai_engine_init();
+    TEST_ASSERT_TRUE(engine == ESP_OK || engine == ESP_ERR_INVALID_STATE);
     const storage_models_header_t *header = nullptr;
     TEST_ASSERT_EQUAL(ESP_OK, sys_storage_models_open(&header));
     for (const char *branch : kBranches) {
