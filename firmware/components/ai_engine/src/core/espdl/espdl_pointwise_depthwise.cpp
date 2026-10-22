@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/espdl/espdl_model.hpp"
 #include "dl_base_conv2d.hpp"
 #include "dl_base_depthwise_conv2d.hpp"
 #include "dl_module_base.hpp"
@@ -50,20 +51,21 @@ struct Band {
     int8_t *rows = nullptr;
     size_t bytes = 0;
 
-    void reserve(size_t wanted) noexcept
+    bool reserve(size_t wanted) noexcept
     {
         if (wanted <= bytes) {
-            return;
+            return true;
         }
         // Grown first: freeing the old block for a grow that fails would strip every module built so far.
         int8_t *grown =
             static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, wanted, MALLOC_CAP_SPIRAM));
         if (grown == nullptr) {
-            return;
+            return false;
         }
         heap_caps_free(rows);
         rows = grown;
         bytes = wanted;
+        return true;
     }
 
     void release() noexcept
@@ -503,9 +505,10 @@ private:
             out_band_ = out_band_ > 1 ? out_band_ - 1 : kPool;
             band_rows_ = std::min(in_h, std::max(band_rows_, (out_band_ - 1) * strides_[0] + kernel_[0]));
         }
-        middle_band.reserve(row_bytes * band_rows_);
-        if (staging()) {
-            depthwise_band.reserve(static_cast<size_t>(depthwise_w_) * channels_ * out_band_);
+        const bool held = middle_band.reserve(row_bytes * band_rows_) &&
+            (!staging() || depthwise_band.reserve(static_cast<size_t>(depthwise_w_) * channels_ * out_band_));
+        if (!held) {
+            mark_plan_failed(name);
         }
     }
 

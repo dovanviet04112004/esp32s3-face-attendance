@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/espdl/espdl_model.hpp"
 #include "dl_base_conv2d.hpp"
 #include "dl_module_base.hpp"
 #include "dl_tool.hpp"
@@ -226,6 +227,9 @@ private:
         heap_caps_free(scratch_);
         scratch_ = static_cast<int8_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
         scratch_bytes_ = scratch_ != nullptr ? bytes : 0;
+        if (scratch_ == nullptr) {
+            mark_plan_failed(name);
+        }
     }
 
     // Image row iy in its scratch row, between the zero lead and tail, from the first output pixel's window.

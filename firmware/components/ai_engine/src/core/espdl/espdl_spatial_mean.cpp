@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/espdl/espdl_model.hpp"
 #include "dl_base_pool2d.hpp"
 #include "dl_base_tie728.h"
 #include "dl_define.hpp"
@@ -59,6 +60,9 @@ public:
             heap_caps_free(dump_);
             dump_ = static_cast<uint32_t *>(heap_caps_aligned_calloc(kVectorAlignBytes, 1, bytes, MALLOC_CAP_SPIRAM));
             dump_bytes_ = dump_ != nullptr ? bytes : 0;
+            if (dump_ == nullptr) {
+                mark_plan_failed(name);
+            }
         }
         return {{x[0], 1, 1, x[3]}};
     }

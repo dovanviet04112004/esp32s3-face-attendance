@@ -22,6 +22,11 @@ namespace ai {
  */
 void register_espdl_modules() noexcept;
 
+/** Fail the graph being built: a module's buffer found no memory while esp-dl planned it.
+ *  @ctx task | non-blocking | from get_output_shape, which esp-dl gives no error path
+ */
+void mark_plan_failed(const char *module) noexcept;
+
 /** A TensorBase seen through TensorView: scale 2^exponent, zero point 0, NHWC.
  *  @ctx any | non-blocking | invalid unless int8 of rank 4 or less
  */

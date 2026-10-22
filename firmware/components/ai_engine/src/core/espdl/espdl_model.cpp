@@ -33,7 +33,15 @@ public:
     ExternalMallocGuard &operator=(const ExternalMallocGuard &) = delete;
 };
 
+int s_plan_failures = 0;
+
 }  // namespace
+
+void mark_plan_failed(const char *module) noexcept
+{
+    ESP_LOGE(TAG, "%s: no memory for its buffer", module);
+    ++s_plan_failures;
+}
 
 void register_espdl_modules() noexcept
 {
@@ -76,6 +84,7 @@ esp_err_t EspdlModel::init(const void *blob, const char *name, bool copy_weights
     const size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     const int64_t started_us = esp_timer_get_time();
     dl::Model *model = nullptr;
+    s_plan_failures = 0;
     {
         const ExternalMallocGuard guard;
         register_espdl_modules();
@@ -84,6 +93,11 @@ esp_err_t EspdlModel::init(const void *blob, const char *name, bool copy_weights
                                              0, dl::MEMORY_MANAGER_GREEDY, nullptr, copy_weights);
     }
     if (model == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_plan_failures > 0) {
+        ESP_LOGE(TAG, "%s: %d modules have no buffer to run in", name_, s_plan_failures);
+        delete model;
         return ESP_ERR_NO_MEM;
     }
     // The constructor reports nothing; a graph it could not finish has no outputs.
