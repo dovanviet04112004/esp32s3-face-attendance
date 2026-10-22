@@ -70,7 +70,7 @@ TEST_CASE("every dvp data line toggles, so no bit is stuck", "[drv_camera]")
 
 TEST_CASE("frames keep coming, so every grab is returned to the pool", "[drv_camera]")
 {
-    // Three buffers: a grab that forgets to return starves the pool within a
+    // A pool of four buffers: a grab that forgets to return starves it within a
     // few rounds rather than at the end.
     for (int i = 0; i < GRAB_ROUNDS; ++i) {
         camera_fb_t *frame = drv_camera_grab();

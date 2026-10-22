@@ -9,8 +9,8 @@
 
 static const char *TAG = "drv_camera";
 
-#define CAM_LEDC_TIMER LEDC_TIMER_1
-#define CAM_LEDC_CHANNEL LEDC_CHANNEL_1
+#define CAM_LEDC_TIMER LEDC_TIMER_2       // off the backlight's 0 and the servo's 1
+#define CAM_LEDC_CHANNEL LEDC_CHANNEL_2
 // The preview holds one across the blit and ai_task one for up to two seconds,
 // so a fourth keeps the sensor from waiting on a return (KEHOACH 6.3).
 #define CAM_FB_COUNT 4
@@ -176,8 +176,7 @@ esp_err_t drv_camera_init(void)
         .pin_href = APP_CAM_HREF_GPIO,
         .pin_pclk = APP_CAM_PCLK_GPIO,
         .xclk_freq_hz = APP_CAM_XCLK_HZ,
-        // Timer 0 and channel 0 drive the LCD backlight, so the sensor clock
-        // takes the next pair rather than silently stealing that one.
+        // The S3's LCD_CAM makes XCLK and esp32-camera never reads these, so they only must not collide.
         .ledc_timer = CAM_LEDC_TIMER,
         .ledc_channel = CAM_LEDC_CHANNEL,
         .pixel_format = PIXFORMAT_RGB565,
