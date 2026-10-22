@@ -14,7 +14,8 @@ extern "C" {
 
 /** Latch the power-up state into the shadow and confirm the chip answers.
  *  @ctx task | blocking | call after bsp_board_init
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND when nothing answers at the address
+ *  @ret ESP_OK | ESP_ERR_INVALID_RESPONSE when nothing acks at the address
+ *       | ESP_ERR_INVALID_STATE on a second call | an i2c or bus lock error
  */
 esp_err_t drv_ioexp_init(void);
 

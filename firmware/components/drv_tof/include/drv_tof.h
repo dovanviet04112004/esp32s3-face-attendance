@@ -24,7 +24,8 @@ esp_err_t drv_tof_init(void);
 /** The distance of the last completed measurement.
  *  @ctx task | blocking | takes m_i2c
  *  @param status_ok receives false when the sensor flags the reading unreliable
- *  @ret ESP_OK | ESP_ERR_TIMEOUT when no measurement has completed yet
+ *  @ret ESP_OK | ESP_ERR_TIMEOUT when no measurement has completed yet | ESP_FAIL when the
+ *       bus or the chip fails a transfer | ESP_ERR_INVALID_STATE when not ranging
  */
 esp_err_t drv_tof_read_mm(uint16_t *distance_mm, bool *status_ok);
 

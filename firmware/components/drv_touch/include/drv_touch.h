@@ -22,7 +22,8 @@ typedef struct {
 
 /** Reset the controller onto a known address, then open it.
  *  @ctx task | blocking, holds about 60 ms | call after drv_ioexp_init
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the controller stays silent
+ *  @ret ESP_OK | ESP_ERR_INVALID_RESPONSE when the controller stays silent
+ *       | ESP_ERR_NOT_FOUND when it answers with another product id | ESP_ERR_INVALID_STATE
  */
 esp_err_t drv_touch_init(void);
 

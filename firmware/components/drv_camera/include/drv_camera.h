@@ -15,6 +15,7 @@ extern "C" {
 /** Start the sensor at HVGA RGB565 with its buffers in PSRAM.
  *  @ctx task | blocking | call once from app_main
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the sensor does not answer on SCCB
+ *       | an SCCB or frame-timing error from setting exposure up | ESP_ERR_INVALID_STATE
  */
 esp_err_t drv_camera_init(void);
 
