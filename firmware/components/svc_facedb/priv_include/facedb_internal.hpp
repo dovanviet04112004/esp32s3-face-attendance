@@ -96,6 +96,7 @@ public:
     FaceDb &operator=(const FaceDb &) = delete;
 
     esp_err_t init(size_t capacity) noexcept;
+    esp_err_t load_error() const noexcept { return load_error_; }
     esp_err_t lookup(const int8_t *emb, float scale, MatchResult *out) noexcept;
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                      const int8_t *emb, float scale, const char *name, Writer from) noexcept;
@@ -129,6 +130,7 @@ private:
     // Lock order: m_facedb_io -> m_facedb (KEHOACH 5.3).
     SemaphoreHandle_t io_mutex_ = nullptr;
     size_t active_ = 0;
+    esp_err_t load_error_ = ESP_OK;
     uint8_t model_tag_[STORAGE_MODEL_TAG_LEN] = {};  // all zero while untagged
 };
 

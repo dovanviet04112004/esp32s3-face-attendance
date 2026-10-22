@@ -25,12 +25,19 @@ typedef struct {
     char name[STORAGE_NAME_CAP];          // empty when the record carries none
 } svc_facedb_match_t;
 
-/** Reserve the table in PSRAM and load db/faces.bin, or start empty when there is none.
+/** Reserve the table in PSRAM and load db/faces.bin, or start empty when it is missing or unreadable.
  *  @ctx task | blocking | call after sys_storage_init
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE on a second call | ESP_ERR_NO_MEM
- *       | ESP_ERR_INVALID_VERSION when the file is another format | ESP_ERR_INVALID_SIZE
+ *  @ret ESP_OK, an unread file untouched until the next persist | ESP_ERR_INVALID_STATE on a second
+ *       call | ESP_ERR_NO_MEM
  */
 esp_err_t svc_facedb_init(void);
+
+/** Why the table this boot opened did not come from flash (KEHOACH 6.2.4).
+ *  @ctx any | non-blocking | set by svc_facedb_init
+ *  @ret ESP_OK when it loaded | ESP_ERR_NOT_FOUND when no file existed | ESP_ERR_INVALID_VERSION
+ *       | ESP_ERR_INVALID_CRC | ESP_ERR_INVALID_SIZE | ESP_FAIL when one did and would not read
+ */
+esp_err_t svc_facedb_load_error(void);
 
 /** The template closest to an embedding; the caller applies the match threshold.
  *  @ctx task | blocking, scans the whole table | takes m_facedb

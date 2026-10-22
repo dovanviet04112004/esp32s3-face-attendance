@@ -17,6 +17,11 @@ esp_err_t svc_facedb_init(void)
     return s_db.init(CONFIG_FACEDB_MAX_RECORDS);
 }
 
+esp_err_t svc_facedb_load_error(void)
+{
+    return s_db.load_error();
+}
+
 esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *out)
 {
     if (out == nullptr) {

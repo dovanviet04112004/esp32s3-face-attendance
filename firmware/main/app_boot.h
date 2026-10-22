@@ -26,6 +26,12 @@ uint8_t app_boot_brightness_pct(void);
  */
 esp_err_t app_boot_models_error(void);
 
+/** Why the face table opened empty and the kiosk asked for the whole roster again, for the uplink.
+ *  @ctx any | non-blocking | set by app_boot (KEHOACH 6.2.4)
+ *  @ret ESP_OK when the table loaded or none ever existed, else what svc_facedb_load_error answered
+ */
+esp_err_t app_boot_table_error(void);
+
 /** Why the chip last started, in a few words for the boot log and the BOOTED note (KEHOACH 4.6).
  *  @ctx any | non-blocking
  */

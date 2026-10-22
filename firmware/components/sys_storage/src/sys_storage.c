@@ -510,6 +510,7 @@ esp_err_t sys_storage_read_checked(const char *path, uint32_t magic, void *buf, 
     if (err == ESP_OK && header_holds(buf, *out_len, magic)) {
         return ESP_OK;
     }
+    const esp_err_t primary = err == ESP_OK ? ESP_ERR_INVALID_CRC : err;
     // Two-phase writing leaves a whole previous copy on purpose, and this is
     // the only path that spends it (KEHOACH 6.2.6).
     char previous[PATH_MAX_LEN];
@@ -517,12 +518,13 @@ esp_err_t sys_storage_read_checked(const char *path, uint32_t magic, void *buf, 
         return ESP_ERR_INVALID_SIZE;
     }
     err = sys_storage_read(previous, buf, cap, out_len);
-    if (err != ESP_OK || !header_holds(buf, *out_len, magic)) {
-        return ESP_ERR_NOT_FOUND;
+    if (err == ESP_OK && header_holds(buf, *out_len, magic)) {
+        *used_backup = true;
+        ESP_LOGW(TAG, "%s failed its check, backup served instead", path);
+        return ESP_OK;
     }
-    *used_backup = true;
-    ESP_LOGW(TAG, "%s failed its check, backup served instead", path);
-    return ESP_OK;
+    // A file that is there and will not read is not the same news as no file (KEHOACH 6.2.4).
+    return primary != ESP_ERR_NOT_FOUND ? primary : (err == ESP_OK ? ESP_ERR_INVALID_CRC : err);
 }
 
 static esp_err_t append_locked(const char *path, const void *record, size_t len)

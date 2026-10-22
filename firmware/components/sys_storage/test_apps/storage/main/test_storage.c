@@ -15,6 +15,7 @@
 #define FACES_PATH STORAGE_FACES_PATH
 #define APPEND_PATH "/lfs/tmp/append.bin"
 #define SCRATCH_PATH "/lfs/tmp/scratch.bin"
+#define CHECKED_PATH "/lfs/tmp/checked.bin"
 #define RECORDS 16
 #define CUT_LOOP_REPORT 50
 #define CUT_LOOP_KEY "cut_loop"
@@ -340,9 +341,38 @@ TEST_CASE("a wrong magic is refused even when the file reads cleanly", "[sys_sto
     storage_file_header_t got;
     size_t len = 0;
     bool used_backup = false;
-    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND,
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_CRC,
                       sys_storage_read_checked(FACES_PATH, STORAGE_ATTEND_MAGIC, &got, sizeof(got),
                                                &len, &used_backup));
+}
+
+TEST_CASE("a checked read tells a missing file from one that will not read", "[sys_storage]")
+{
+    storage_file_header_t got;
+    size_t len = 0;
+    bool used_backup = false;
+    unlink(CHECKED_PATH);
+    unlink(CHECKED_PATH ".bak");
+    TEST_ASSERT_EQUAL(ESP_ERR_NOT_FOUND, sys_storage_read_checked(CHECKED_PATH, STORAGE_FACES_MAGIC, &got,
+                                                                  sizeof(got), &len, &used_backup));
+    FILE *garbled = fopen(CHECKED_PATH, "wb");
+    TEST_ASSERT_NOT_NULL(garbled);
+    const uint8_t noise[sizeof(storage_file_header_t)] = { 0x5A };
+    fwrite(noise, 1, sizeof(noise), garbled);
+    fclose(garbled);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_CRC, sys_storage_read_checked(CHECKED_PATH, STORAGE_FACES_MAGIC, &got,
+                                                                    sizeof(got), &len, &used_backup));
+    storage_file_header_t good;
+    fill_header(&good, STORAGE_FACES_MAGIC, 1);
+    FILE *oversized = fopen(CHECKED_PATH, "wb");
+    TEST_ASSERT_NOT_NULL(oversized);
+    fwrite(&good, 1, sizeof(good), oversized);
+    fwrite(&good, 1, sizeof(good), oversized);
+    fclose(oversized);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_SIZE, sys_storage_read_checked(CHECKED_PATH, STORAGE_FACES_MAGIC, &got,
+                                                                     sizeof(got), &len, &used_backup));
+    TEST_ASSERT_FALSE(used_backup);
+    unlink(CHECKED_PATH);
 }
 
 // Sixteen records twice over do not fit beside LittleFS's own frames in the

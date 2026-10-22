@@ -101,18 +101,20 @@ esp_err_t FaceDb::init(size_t capacity) noexcept
     if (mutex_ == nullptr || io_mutex_ == nullptr) {
         return ESP_ERR_NO_MEM;
     }
-    const esp_err_t loaded = load();
-    if (loaded == ESP_ERR_NOT_FOUND) {
+    load_error_ = load();
+    if (load_error_ != ESP_OK) {
         table_.set_count(0);
         active_ = 0;
+        memset(model_tag_, 0, sizeof(model_tag_));
         seal_header();
-        ESP_LOGI(TAG, "no %s yet, table starts empty, capacity %u", STORAGE_FACES_PATH,
-                 static_cast<unsigned>(capacity));
+        if (load_error_ == ESP_ERR_NOT_FOUND) {
+            ESP_LOGI(TAG, "no %s yet, table starts empty, capacity %u", STORAGE_FACES_PATH,
+                     static_cast<unsigned>(capacity));
+        } else {
+            ESP_LOGE(TAG, "%s will not read (%s), table starts empty", STORAGE_FACES_PATH,
+                     esp_err_to_name(load_error_));
+        }
         return ESP_OK;
-    }
-    if (loaded != ESP_OK) {
-        ESP_LOGE(TAG, "%s: %s", STORAGE_FACES_PATH, esp_err_to_name(loaded));
-        return loaded;
     }
     ESP_LOGI(TAG, "%u templates in %s, %u active, capacity %u", static_cast<unsigned>(table_.count()),
              STORAGE_FACES_PATH, static_cast<unsigned>(active_), static_cast<unsigned>(capacity));

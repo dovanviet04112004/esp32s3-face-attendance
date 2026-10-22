@@ -131,9 +131,9 @@ esp_err_t sys_storage_read(const char *path, void *buf, size_t cap, size_t *out_
 
 /** Read a record file, falling back to its backup when the header is damaged.
  *  @ctx task | blocking | takes m_littlefs (KEHOACH 6.2.6)
- *  @param magic the file magic the header must carry
  *  @param used_backup set true when the primary copy failed its check
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND when neither copy is readable
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND when neither copy exists | ESP_ERR_INVALID_CRC when one exists
+ *       and fails its check | ESP_ERR_INVALID_SIZE when it outgrows cap | ESP_FAIL on a short read
  */
 esp_err_t sys_storage_read_checked(const char *path, uint32_t magic, void *buf, size_t cap,
                                    size_t *out_len, bool *used_backup);

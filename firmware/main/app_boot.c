@@ -33,6 +33,7 @@
 
 static const char *TAG = "app_boot";
 static esp_err_t models_error = ESP_OK;
+static esp_err_t table_error = ESP_OK;
 
 #define BOOT_MARK_MAGIC 0x424D4B31u
 
@@ -309,7 +310,27 @@ static bool running_recog_tag(uint8_t *tag)
 }
 
 // Templates of another recognition model live in another space, so they go (KEHOACH 7.5).
-static void bind_face_table(void)
+// A roster number means something only beside a table that loaded, so an empty one asks for all of it (KEHOACH 6.2.4).
+static void forget_lost_table(void)
+{
+    const esp_err_t loaded = svc_facedb_load_error();
+    if (loaded == ESP_OK) {
+        return;
+    }
+    uint32_t held = 0;
+    sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, &held);
+    if (loaded == ESP_ERR_NOT_FOUND && held == 0) {
+        return;
+    }
+    if (held != 0) {
+        sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, 0);
+    }
+    table_error = loaded;
+    ESP_LOGW(TAG, "face table %s under roster %" PRIu32 ", asking for all of it",
+             esp_err_to_name(loaded), held);
+}
+
+static void bind_face_table(bool may_save)
 {
     uint8_t tag[STORAGE_MODEL_TAG_LEN];
     if (!running_recog_tag(tag)) {
@@ -327,7 +348,7 @@ static void bind_face_table(void)
         sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_ROSTER_VER, 0);
         ESP_LOGW(TAG, "face table held another recognition model, all dropped: %s",
                  esp_err_to_name(svc_facedb_persist()));
-    } else if (outcome == SVC_FACEDB_BIND_STAMPED && !net_ota_on_trial()) {
+    } else if (outcome == SVC_FACEDB_BIND_STAMPED && may_save && !net_ota_on_trial()) {
         // An image on trial saves at sign-off, so a rollback reads its own format (KEHOACH 6.2.4).
         ESP_LOGI(TAG, "face table stamped with the running model: %s",
                  esp_err_to_name(svc_facedb_persist()));
@@ -343,7 +364,10 @@ static void start_vision(EventGroupHandle_t flags)
         ESP_LOGE(TAG, "face table: %s", esp_err_to_name(db));
         return;
     }
-    bind_face_table();
+    forget_lost_table();
+    const esp_err_t loaded = svc_facedb_load_error();
+    // A file this build could not read stays on flash until the resync saves over it.
+    bind_face_table(loaded == ESP_OK || loaded == ESP_ERR_NOT_FOUND);
     xEventGroupSetBits(flags, APP_EG_DB_LOADED);
     ESP_LOGI(TAG, "face table holds %u templates", (unsigned)svc_facedb_count());
 
@@ -362,6 +386,11 @@ static void start_vision(EventGroupHandle_t flags)
 esp_err_t app_boot_models_error(void)
 {
     return models_error;
+}
+
+esp_err_t app_boot_table_error(void)
+{
+    return table_error;
 }
 
 static void reach(boot_step_t step)

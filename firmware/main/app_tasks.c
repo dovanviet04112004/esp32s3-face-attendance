@@ -1442,6 +1442,10 @@ static void sync_task(void *arg)
     if (models != ESP_OK) {
         note_fault(DEVICE_EVENT_TYPE_MODEL_LOAD_FAILED, models, "models would not load");
     }
+    const esp_err_t table = app_boot_table_error();
+    if (table != ESP_OK) {
+        note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, table, "face table lost, roster asked again");
+    }
     report_update_outcome();
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
