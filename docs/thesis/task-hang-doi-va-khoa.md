@@ -23,7 +23,6 @@ nghĩa struct; số nào chưa đo đánh dấu 🔬.
 4. Khoá, semaphore, event group, timer
 5. Những đường không đi qua hàng đợi
 6. RAM: ai giữ bao nhiêu
-7. Hai điểm còn mở
 
 ---
 
@@ -136,7 +135,7 @@ khiển cỡ chục byte ở RAM nội 🔬.
 | `s_i2c_mutex` (`m_i2c`) | mutex | touch, tof, `drv_ioexp`, RTC của `sys_time` | mỗi driver tự đặt | Một bus I2C chung cho GT911, VL53L1X, PCF8574, DS3231 |
 | `s_lock` (`m_littlefs`) | mutex | mọi lời gọi đọc/ghi qua `sys_storage` | 5.000 ms | LittleFS và NVS không an toàn khi nhiều task gọi cùng lúc; chỉ `sys_storage` được gọi `lfs_*`, `nvs_*` |
 | `mutex_` (`m_facedb`) | mutex | ai khi tra bảng; người ghi lấy nó ngắn lúc sửa và lúc nén bảng | 200 ms | Bảng embedding ở PSRAM không bị sửa giữa lúc đang so khớp |
-| `io_mutex_` (`m_facedb_io`) | mutex | sync (roster, đánh dấu mẫu đã báo), ui (ghi xuống flash cuối phiên đăng ký), ai (giữ một mẫu đăng ký) | 4.000 ms | Xếp hàng các người ghi; lần ghi 576 KB xuống flash (1,8–2,3 s) chạy ngoài `m_facedb` |
+| `io_mutex_` (`m_facedb_io`) | mutex | sync (roster, đánh dấu mẫu đã báo), ui (ghi xuống flash cuối phiên đăng ký), ai (giữ một mẫu đăng ký) | 4.000 ms; ai chỉ 200 ms, quá hạn thì khung sau thử lại | Xếp hàng các người ghi; lần ghi 576 KB xuống flash (1,8–2,3 s) chạy ngoài `m_facedb` |
 | `mutex_` (`m_door`) | mutex | attend, task `esp_timer` | 50 ms | Trạng thái tay servo; khoá lá, không lấy khoá nào khác bên trong |
 | `s_send_lock` | mutex | người publish | 5.000 ms | Mỗi lúc một lượt publish QoS 1 cộng chờ PUBACK |
 | `s_acked` | semaphore nhị phân | handler MQTT cho, người publish lấy | theo publish | Báo PUBACK đã về |
@@ -169,12 +168,17 @@ mới nhất** thì đi qua một ô nhớ dùng chung, vì một hàng đợi �
 | Điểm chạm | `std::atomic<int32_t> s_touch` | touch | ui | UI chỉ cần biết ngón tay đang ở đâu mỗi nhịp 20 ms |
 | Phán quyết lên màn | spinlock `s_offer_lock` và một `ui_kiosk_verdict_t` 44 B | attend | ui | Màn chỉ cần câu mới nhất; dài hơn một từ máy nên phải chép dưới spinlock |
 | Thông tin máy, mạng, vé, danh sách chờ | bốn hộp thư `Mailbox`, mỗi cái một spinlock | attend (máy, mạng), ota (vé), sync (danh sách chờ) | ui | Mỗi lần sửa tăng số thứ tự; `ui` chỉ vẽ lại khi số đổi |
+| Khuôn mặt detect vừa thấy | hộp thư `Glimpse`: track, góc quay, số mẫu, có mặt hay không | ai | ui | Màn Capture phải đọc số mẫu và góc quay của cùng một lần detect |
+| Mức sáng, âm lượng, ngôn ngữ của `SET_CONFIG` | hai hộp thư, đếm từng lần hỏi | sync | ui | Một lệnh lặp lại giá trị cũ vẫn phải đè lên thanh trượt người dùng vừa kéo |
+| Chặng của `svc_vision` | atomic `s_wanted` | ai | ui | Vừa một từ máy |
 | Overlay trên kính | con trỏ atomic `s_shown`, `s_held`, `s_on_glass` | ui, cam | cam, ui | Hai ô overlay luân phiên; mỗi bên chỉ cần biết ô nào đang dùng |
 | Cờ trạng thái | bit của `eg_system` | nhiều task | nhiều task | Trạng thái kéo dài, không phải sự kiện xảy ra một lần |
 
-Có chín spinlock (`portMUX`): năm biến riêng và bốn hộp thư. Mỗi cái chỉ bọc vài chục byte cần
-chép cùng nhau, không gọi hàm nào bên trong. Còn khoảng 25 biến atomic cho các mức và cờ, vd. độ
-sáng, giờ máy thức dậy, số lần boot.
+Chỉ `ui_task` đánh dấu màn cần vẽ lại; task khác chỉ bỏ thư vào hộp. Có mười hai spinlock
+(`portMUX`): năm biến riêng và bảy hộp thư. Mỗi cái chỉ bọc vài chục byte cần chép cùng nhau,
+không gọi hàm nào bên trong. Còn khoảng 25 biến atomic cho các mức và cờ, vd. độ sáng, giờ máy
+thức dậy, số lần boot. Ba hộp thư của khuôn mặt, mức và ngôn ngữ mới qua build, chưa thử trên
+kính 🔬.
 
 ## 6. RAM: ai giữ bao nhiêu
 
@@ -217,14 +221,3 @@ lớn nhất chỉ còn 4,3 KB (`ram.md` §12).
 | Stack `mqtt_task` | 6.144 |
 
 PSRAM không phải chỗ chật: đáy đo 09/10 còn 2.046 KB (`ram.md` §11).
-
-## 7. Hai điểm còn mở
-
-Cả hai ghi ở `FREERTOS.md` §0.4, và đều cần chủ repo quyết hướng sửa vì đụng tới thiết kế.
-
-- **`ai` chờ `m_facedb_io` tới 4 s khi giữ một mẫu đăng ký.** Nếu lúc ấy `sync` đang ghi bảng
-  1,8–2,3 s, `ai` đứng nguyên một bước. Watchdog 5 s vẫn còn biên, nhưng biên ấy mỏng.
-- **Hai đường ghi thẳng vào trạng thái của `ui_kiosk`.** `sync` gọi `ui_kiosk_set_levels`, còn
-  `ai` gọi `ui_kiosk_on_faces` và `ui_kiosk_on_stage`; cả hai ghi vào biến mà `ui` cũng ghi, không
-  qua hộp thư như KẾ HOẠCH §4.5.5h quy định. Hậu quả đã biết chỉ là một lần vẽ lại bị bỏ, hoặc màn
-  Capture ghép mẫu mới với khuôn mặt cũ trong một nhịp.
