@@ -91,39 +91,55 @@ Cột DIRAM = `.bss` + `.data` + code IRAM của chính thư viện đó.
 
 | Khoản | Bytes | Nguồn | Có đẩy sang PSRAM được không |
 |---|---|---|---|
-| **Đệm bounce của LCD** | **40.960** | `drv_lcd.c`: `BOUNCE_ROWS` 32 × `APP_LCD_H_RES` 320 × 2 B × 2 đệm | **Không** — `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL`, SPI DMA không đọc thẳng PSRAM |
+| **Đệm bounce của LCD** | **25.600** | `drv_lcd.c`: `BOUNCE_ROWS` 20 × `APP_LCD_H_RES` 320 × 2 B × `BOUNCE_COUNT` 2 | **Không** — `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL`, SPI DMA không đọc thẳng PSRAM |
 | **Đệm DMA của camera** | **30.720** | driver esp32-camera: `dma_half_buffer` 15.360 B × 2 | **Không** — cùng lý do; khung ảnh thì đã ở PSRAM (`CAMERA_FB_IN_PSRAM`, 4 khung) |
-| Ngăn xếp 8 task của dự án | 38.912 | `app_tasks.c` | Không — ngăn xếp FreeRTOS lấy từ RAM nội |
-| Ngăn xếp task của IDF | ~30.976 | Kconfig, xem 3.1 | Không |
+| Ngăn xếp 10 task của dự án | 48.128 lúc boot, **44.032** khi `net` đã tự xoá | `app_tasks.c` | Không — `xTaskCreatePinnedToCore` lấy stack ở RAM nội |
+| Ngăn xếp task của IDF và esp32-camera | **27.392** thường trú, cộng `main` 3.584 lúc boot | Kconfig và driver, xem 3.1 | Không |
+| Ngăn xếp console REPL | 8.192 | `app_console.c`, chỉ khi `CONFIG_APP_CONSOLE` | Không |
+| Item của 8 hàng đợi trong `app_wiring` | 4.620, chưa kể khối điều khiển 🔬 | `app_wiring.c`; `q_ota` một mình 1.856 | Không — `pvPortMalloc` lấy RAM nội; `q_roster` thì dựng tĩnh trên PSRAM |
 
-Hai dòng đầu cộng lại **92.160 B — hơn một nửa heap lúc boot**, và **không có đường nào đẩy đi**.
-Đây là câu trả lời cho "sao RAM nội hết": không phải model, không phải code dự án, mà là **hai
-bộ đệm DMA của màn hình và camera**.
+Hai dòng đầu cộng lại **56.320 B** và **không có đường nào đẩy đi**. Ngăn xếp cộng lại còn lớn
+hơn: **79.616 B** thường trú kể cả console, và cũng lấy từ RAM nội, trừ `mqtt_task` 6.144 B mà
+esp-mqtt tạo bằng `xTaskCreatePinnedToCoreWithCaps` trên PSRAM (§8.1).
 
 ### 3.1 Ngăn xếp từng task
 
-| Task | Cấp | Còn trống (đo `bench` 18/09) | Nguồn |
-|---|---|---|---|
-| `ai` | 8.192 | **1.284** | `AI_TASK_STACK_BYTES` |
-| `ui` | **4.096** | 6.772 trên 8.192 lúc đo | `UI_TASK_STACK_BYTES`, cắt 19/09 |
-| `wifi` | 6.656 | 4.316 | driver Wi-Fi |
-| `cam` | 4.096 | 2.640 | `CAM_TASK_STACK_BYTES` |
-| `attend` | 4.096 | 2.836 | `ATTEND_TASK_STACK_BYTES` |
-| `audio` | 4.096 | 2.348 | `AUDIO_TASK_STACK_BYTES` |
-| `net` | 4.096 | — | `NET_TASK_STACK_BYTES`, task **tự xoá** sau khi SNTP chạy nên trả lại |
-| `cam_task` (esp32-camera) | 4.096 | 3.344 | `CONFIG_CAMERA_TASK_STACK_SIZE` |
-| `main` | 3.584 | 5.760 ⚠️ | `CONFIG_ESP_MAIN_TASK_STACK_SIZE` |
-| `esp_timer` | 3.584 | 3.124 | `CONFIG_ESP_TIMER_TASK_STACK_SIZE` |
-| `tcpip` | 3.072 | 1.784 | `CONFIG_LWIP_TCPIP_TASK_STACK_SIZE` |
-| `tof` | 3.072 | 1.640 | `TOF_TASK_STACK_BYTES` |
-| `touch` | 3.072 | 1.484 | `TOUCH_TASK_STACK_BYTES` |
-| `sys_evt` | 2.304 | 1.472 | `CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE` |
-| `Tmr Svc` | 2.048 | 1.448 | `CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH` |
-| `IDLE0` / `IDLE1` | 1.536 mỗi | 792 / 784 | `CONFIG_FREERTOS_IDLE_TASK_STACKSIZE` |
-| `ipc0` / `ipc1` | 1.280 mỗi | 444 / 564 | `CONFIG_ESP_IPC_TASK_STACK_SIZE` |
+Cột "cấp" theo code ngày 22/10. Hai cột đo là phần stack **chưa từng bị chạm tới** kể từ lúc task
+lên (`usStackHighWaterMark` của `uxTaskGetSystemState`), do `bench_mem` profile `bench` in ra. Lượt
+18/09 còn TFLM và mới có tám task dự án; lượt 23/09 là ESP-DL, đệm bounce 20 dòng, đủ mười task,
+Wi-Fi vào mạng thật nhưng chưa có TLS (§10.1).
+
+| Task | Cấp | Còn trống 18/09 | Còn trống 23/09 | Nguồn |
+|---|---|---|---|---|
+| `ai` | 8.192 | 1.284 | **1.060** | `AI_TASK_STACK_BYTES` |
+| `ota` | 8.192 | — | 5.540 | `OTA_TASK_STACK_BYTES` |
+| console REPL | 8.192 | — | chưa đo 🔬 | `REPL_STACK_BYTES`; `bench_mem` không mở console |
+| `wifi` | 6.656 | 4.316 | 4.364 | driver Wi-Fi |
+| `mqtt_task` (esp-mqtt) | 6.144, **PSRAM** | — | 4.372, chưa có TLS 🔬 | `CONFIG_MQTT_TASK_STACK_SIZE` |
+| `sync` | 5.120 | — | 1.752 | `SYNC_TASK_STACK_BYTES` |
+| `ui` | **4.096** | 6.772 trên 8.192 lúc đo | 2.052 | `UI_TASK_STACK_BYTES`, cắt 19/09 |
+| `cam` | 4.096 | 2.640 | 2.592 | `CAM_TASK_STACK_BYTES` |
+| `attend` | 4.096 | 2.836 | 2.304 | `ATTEND_TASK_STACK_BYTES` |
+| `audio` | 4.096 | 2.348 | 2.364 | `AUDIO_TASK_STACK_BYTES` |
+| `net` | 4.096 | — | — | `NET_TASK_STACK_BYTES`, task **tự xoá** sau khi SNTP chạy nên trả lại |
+| `cam_task` (esp32-camera) | 4.096 | 3.344 | 3.352 | `CONFIG_CAMERA_TASK_STACK_SIZE`, prio 23, lõi 0 |
+| `main` | 3.584 | 5.760 ⚠️ | 5.588 ⚠️ | `CONFIG_ESP_MAIN_TASK_STACK_SIZE` |
+| `esp_timer` | 3.584 | 3.124 | 3.124 | `CONFIG_ESP_TIMER_TASK_STACK_SIZE` |
+| `tcpip` | 3.072 | 1.784 | 1.720 | `CONFIG_LWIP_TCPIP_TASK_STACK_SIZE` |
+| `tof` | 3.072 | 1.640 | 1.560 | `TOF_TASK_STACK_BYTES` |
+| `touch` | 3.072 | 1.484 | 1.484 | `TOUCH_TASK_STACK_BYTES` |
+| `sys_evt` | 2.304 | 1.472 | 1.424 | `CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE` |
+| `Tmr Svc` | 2.048 | 1.448 | 1.452 | `CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH` |
+| `IDLE0` / `IDLE1` | 1.536 mỗi | 792 / 784 | 796 / 788 | `CONFIG_FREERTOS_IDLE_TASK_STACKSIZE` |
+| `ipc0` / `ipc1` | 1.280 mỗi | 444 / 564 | 444 / 500 | `CONFIG_ESP_IPC_TASK_STACK_SIZE` |
 
 ⚠️ `main` báo trống nhiều hơn mức cấp vì `bench_mem` chạy trong chính task ấy sau khi IDF đã
-nới nó; đây là số của app đo, không phải của kiosk.
+nới nó; đây là số của app đo, không phải của kiosk. Trên kiosk, `app_main` return và IDF xoá task
+này.
+
+Lượt 23/09 không chắc có người đứng trước camera, nên `ai` nhiều khả năng mới chạy detect 🔬. Lúc
+ấy `mqtt_task` còn chạy prio 5, không ghim lõi; nay nó ghim lõi 0, prio 3 (KẾ HOẠCH §5.2). Tái
+lập: `ml/artifacts/device/board_20260923/bench_mem_espdl_20rows.log`.
 
 **Hai chỗ thừa thấy ngay**: `ui` cấp 8.192 mà chỉ chạm hơn 1,4 KB — **đã cắt còn 4.096 ngày
 19/09**, thu về 4 KB, còn biên 2.676 B. `ai` thì ngược lại, chỉ còn **1.284 B** và đó là lúc **chưa có mặt người nào** trước
