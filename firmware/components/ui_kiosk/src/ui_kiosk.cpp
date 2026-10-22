@@ -54,7 +54,7 @@ bool s_dirty = true;
 SemaphoreHandle_t s_published;
 
 ui::Sight s_seen;
-ui_kiosk_stage_t s_wanted = UI_KIOSK_STAGE_NO_FACE;
+std::atomic<ui_kiosk_stage_t> s_wanted{ UI_KIOSK_STAGE_NO_FACE };
 int64_t s_stage_held_ms;
 // One writer, one reader, and the verdict is wider than a word (KEHOACH 5.3).
 portMUX_TYPE s_offer_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -140,10 +140,32 @@ struct PendingPage {
     ui_kiosk_pending_t row[UI_KIOSK_PENDING_ROWS];
 };
 
+struct Glimpse {
+    uint32_t track;
+    float yaw;
+    uint32_t samples;
+    bool face;
+};
+
+// The count makes a repeated SET_CONFIG land too, over a slider the user moved since.
+struct Levels {
+    uint32_t asked;
+    uint8_t brightness_pct;
+    uint8_t volume_pct;
+};
+
+struct Spoken {
+    uint32_t asked;
+    ui::Lang lang;
+};
+
 Mailbox<ui::Facts> s_facts_box;
 Mailbox<ui_kiosk_net_t> s_net_box;
 Mailbox<ui::Ticket> s_ticket_box;
 Mailbox<PendingPage> s_pending_box;
+Mailbox<Glimpse> s_glimpse_box;
+Mailbox<Levels> s_levels_box;
+Mailbox<Spoken> s_spoken_box;
 
 bool covering(ui_kiosk_update_t state)
 {
@@ -292,14 +314,15 @@ void mind_the_clock(int64_t dt_ms)
 void settle_stage(int64_t dt_ms)
 {
     s_stage_held_ms += dt_ms;
-    if (s_wanted == s_seen.stage) {
+    const ui_kiosk_stage_t wanted = s_wanted.load(std::memory_order_acquire);
+    if (wanted == s_seen.stage) {
         return;
     }
     // Losing the face is news at once; every other change waits its turn.
-    if (s_wanted != UI_KIOSK_STAGE_NO_FACE && s_stage_held_ms < kStageDwellMs) {
+    if (wanted != UI_KIOSK_STAGE_NO_FACE && s_stage_held_ms < kStageDwellMs) {
         return;
     }
-    s_seen.stage = s_wanted;
+    s_seen.stage = wanted;
     s_stage_held_ms = 0;
     s_dirty = true;
 }
@@ -370,6 +393,25 @@ void take_mail()
         memcpy(shown.row, held.row, sizeof(shown.row));
     });
     if (paged && at == ui::ScreenId::Enrol) {
+        s_dirty = true;
+    }
+    Glimpse glimpse = {};
+    if (s_glimpse_box.take([&glimpse](const Glimpse &held) { glimpse = held; })) {
+        s_seen.track = glimpse.track;
+        s_seen.yaw = glimpse.yaw;
+        s_seen.samples = glimpse.samples;
+        s_dirty = s_dirty || glimpse.face != s_seen.face;
+        s_seen.face = glimpse.face;
+    }
+    Levels levels = {};
+    if (s_levels_box.take([&levels](const Levels &held) { levels = held; })) {
+        ui::brightness().percent = levels.brightness_pct;
+        ui::volume().percent = levels.volume_pct;
+        s_dirty = true;
+    }
+    Spoken spoken = {};
+    if (s_spoken_box.take([&spoken](const Spoken &held) { spoken = held; })) {
+        ui::set_language(spoken.lang);
         s_dirty = true;
     }
 }
@@ -461,19 +503,18 @@ void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame
     (void)frame_height;
     (void)boxes;
     const bool face = count > 0;
-    s_seen.track = track;
     // Capture reads the turn every tick, so it lands whether or not the box moved.
-    s_seen.yaw = face ? yaw : 0.0f;
-    ++s_seen.samples;
-    if (face != s_seen.face) {
-        s_seen.face = face;
-        s_dirty = true;
-    }
+    s_glimpse_box.edit([&](Glimpse &held) {
+        held.track = track;
+        held.yaw = face ? yaw : 0.0f;
+        ++held.samples;
+        held.face = face;
+    });
 }
 
 void ui_kiosk_on_stage(ui_kiosk_stage_t stage)
 {
-    s_wanted = stage;
+    s_wanted.store(stage, std::memory_order_release);
 }
 
 void ui_kiosk_on_verdict(const ui_kiosk_verdict_t *verdict)
@@ -861,15 +902,20 @@ void ui_kiosk_set_levels(uint8_t brightness_pct, uint8_t volume_pct)
     if (!s_ready) {
         return;
     }
-    ui::brightness().percent = brightness_pct;
-    ui::volume().percent = volume_pct;
-    s_dirty = true;
+    s_levels_box.edit([&](Levels &held) {
+        ++held.asked;
+        held.brightness_pct = brightness_pct;
+        held.volume_pct = volume_pct;
+    });
 }
 
 void ui_kiosk_set_language(const char *code)
 {
-    ui::set_language(ui::language_of(code));
-    s_dirty = true;
+    const ui::Lang lang = ui::language_of(code);
+    s_spoken_box.edit([&](Spoken &held) {
+        ++held.asked;
+        held.lang = lang;
+    });
 }
 
 bool ui_kiosk_take_language(const char **code)

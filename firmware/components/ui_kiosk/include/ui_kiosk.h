@@ -36,7 +36,7 @@ typedef enum {
 } ui_kiosk_stage_t;
 
 /** Tell the screens what the detector saw, in sensor frame pixels.
- *  @ctx ai_task | non-blocking | boxes holds count sets of four
+ *  @ctx ai_task | non-blocking | by mailbox, taken on ui_task's next tick | count sets of four
  *  @param yaw of the tracked face, 0 facing the lens (KEHOACH 4.5.5h.2)
  */
 void ui_kiosk_on_faces(const float *boxes, int count, int frame_width, int frame_height,
@@ -214,13 +214,13 @@ void ui_kiosk_update_progress(ui_kiosk_update_t phase, uint8_t percent);
  */
 bool ui_kiosk_update_covers(void);
 
-/** Seed what the two settings sliders rest at, from main's copy of NVS.
- *  @ctx ui_task | non-blocking
+/** Set what the two settings sliders rest at, from main's copy of NVS.
+ *  @ctx task | non-blocking | by mailbox: ui_task applies it on its next tick, over a moved slider
  */
 void ui_kiosk_set_levels(uint8_t brightness_pct, uint8_t volume_pct);
 
-/** Seed the language from NVS ui/lang; an absent or unknown code is Vietnamese.
- *  @ctx task | non-blocking | KEHOACH 6.2.1
+/** Set the language from NVS ui/lang; an absent or unknown code is Vietnamese.
+ *  @ctx task | non-blocking | by mailbox: ui_task applies it on its next tick (KEHOACH 6.2.1)
  */
 void ui_kiosk_set_language(const char *code);
 
