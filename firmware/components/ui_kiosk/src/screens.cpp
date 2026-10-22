@@ -69,7 +69,7 @@ constexpr int64_t kPoseHoldMs = 300;
 constexpr int64_t kPoseWaitMs = 6000;
 constexpr int64_t kSampleWaitMs = 15000;
 constexpr int kGaugeSteps = 12;
-constexpr int kSpoofGiveUp = 3;
+constexpr int kSpoofGiveUp = APP_ENROL_SPOOF_TRIES;
 constexpr int64_t kRefusalShowMs = 2500;
 constexpr int64_t kRescanMs = 15000;
 // A stranger needs 2.9 s to be refused at worst (KEHOACH 4.5.5d), so past

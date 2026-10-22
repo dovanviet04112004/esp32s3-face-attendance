@@ -35,6 +35,9 @@ typedef enum {
     APP_UI_ALREADY,                       // answered this arrival already, nothing new to show
 } app_ui_verdict_t;
 
+// The pipeline and the Capture screen stop at the same count (KEHOACH 4.5.5h.2).
+#define APP_ENROL_SPOOF_TRIES 3          // spoof refusals one enrol takes
+
 // The bits of eg_system, one per question a task is allowed to ask.
 #define APP_EG_WIFI_OK 0x01u
 #define APP_EG_MQTT_OK 0x02u

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "app_events.h"
 #include "esp_log.h"
 
 namespace vision {
@@ -18,7 +19,7 @@ constexpr float kSameFaceIou = 0.5f;
 constexpr int kRetryDetects = 3;
 constexpr int kUnknownTries = 2;
 // Enrolling asks liveness on every frame, so the number of tries is bounded.
-constexpr int kEnrolSpoofTries = 3;
+constexpr int kEnrolSpoofTries = APP_ENROL_SPOOF_TRIES;
 // The detector drops a frame here and there on a face that never moved.
 constexpr int kMissesLost = 2;
 // A face leaves the guide below this part of the share that let it in (KEHOACH 4.5.5d).
