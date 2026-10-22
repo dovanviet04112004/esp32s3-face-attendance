@@ -64,8 +64,7 @@ def main() -> int:
         after = int(psql(url, f"SELECT count(*) FROM {table} WHERE {args.where}"))
         moved = left - after
         if moved <= 0:
-            # Rewriting the same rows forever is quieter than an error, so it
-            # is the one thing this stops on (KEHOACH 9.22.3).
+            # A batch that clears no row would rewrite forever, silently (KEHOACH 9.22.3).
             print(
                 f"backfill: {after} row(s) still match after a batch; "
                 "--set does not clear --where, so this would never end",

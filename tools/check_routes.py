@@ -116,8 +116,7 @@ def main() -> int:
             print(f"{path}: {name} has neither @Roles nor @CurrentViewer")
             faults += 1
 
-    # An exemption naming a route nobody declares would cover whatever takes
-    # that name next, so a stale entry is a fault of its own.
+    # A stale OPEN entry would exempt whatever route takes that name next.
     for name in sorted(set(OPEN) - claimed):
         print(f"OPEN lists {name}, which no controller declares")
         faults += 1

@@ -262,8 +262,7 @@ def render_ts(model: Model) -> str:
 
 
 def render_ts_index(models: list[Model]) -> str:
-    # The .js suffix is what an ESM resolver wants, and TypeScript maps it back
-    # to the .ts file beside it.
+    # ESM resolution needs the .js suffix; TypeScript maps it to the .ts file beside it.
     lines = [f'export * from "./{m.stem}.js";' for m in models]
     return banner("contracts/schema/") + "\n" + "\n".join(lines) + "\n"
 
@@ -282,8 +281,7 @@ def render_c_enums(model: Model) -> str:
         entries = "".join(
             f"    {prefix}_{screaming(v)} = {i},\n" for i, v in enumerate(spec["enum"])
         )
-        # A caller sizing an array by the last value writes a bound that a new
-        # enum member silently walks past, so the count comes from here.
+        # Callers size arrays by _COUNT: a bound on the last value misses a new member silently.
         out.append(
             f"typedef enum {{\n{entries}    {prefix}_COUNT = {len(spec['enum'])},\n}} {name};\n\n"
         )
@@ -584,8 +582,7 @@ def schema_const(topic: Topic) -> str:
 
 def render_topics_ts(topics: list[Topic], id_max: int) -> str:
     used = sorted({schema_stem(t) for t in topics if t.schema})
-    # A topic carries the validator its own yaml entry names, so no caller keeps
-    # a second table of which schema belongs to which topic.
+    # A topic carries the validator its yaml entry names: no caller keeps a second table.
     imports = "".join(f'import {{ {camel(s)}Schema }} from "./{s}.js";\n' for s in used)
     parts = [
         banner("contracts/mqtt_topics.yaml"),

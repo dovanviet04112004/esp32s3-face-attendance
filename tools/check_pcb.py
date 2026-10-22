@@ -114,8 +114,7 @@ def board_parts(tree: list) -> dict[str, dict]:
                     pt = first(node, tag)
                     if pt:
                         corners.append(place(ox, oy, deg, float(pt[1]), float(pt[2])))
-        # A can or a mounting hole draws its courtyard as a circle, and a part the
-        # overlap test cannot see is a part nothing stops from landing on another.
+        # Cans and mounting holes draw circular courtyards, which the overlap test must see too.
         for node in children(fp, "fp_circle"):
             layer = first(node, "layer")
             if not layer or layer[1] != "F.CrtYd":
@@ -422,8 +421,6 @@ def main() -> int:
         elif plus["shape"] not in ("rect", "roundrect"):
             problems.append(f"{ref}: pad 1 is {plus['shape']}, nothing marks which leg is plus")
 
-    # A plated hole the fab cannot drill, or a ring it cannot hold, is caught here
-    # rather than by the board house after the order is placed.
     for ref, part in sorted(parts.items()):
         for number, pad in sorted(part["pads"].items()):
             if pad["drill"] is None or not pad["plated"]:
@@ -451,8 +448,7 @@ def main() -> int:
                     )
                     break
 
-    # A module keeps its body once plugged in, so the dashed rectangle it stands on
-    # holds its own pins and nothing else wired. Mounting holes carry no net.
+    # A dashed outline is a plugged module's body: no other part's wired pad may sit under it.
     for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
         inside = sorted(
             ref
@@ -468,8 +464,7 @@ def main() -> int:
                 f"holds {', '.join(inside)}"
             )
 
-    # The body lands square on its socket only if the row is centred across the
-    # outline along the axis the row runs; 1 mm of drift is visible on the board.
+    # A body sits square only over a row centred in its outline; 1 mm of drift shows.
     for bx0, by0, bx1, by1 in boxes_from(outline(pcb, "F.SilkS", dashed=True)):
         for ref, part in sorted(parts.items()):
             # Every row, net or none: a row of bare holes sits off centre just as visibly.
@@ -486,8 +481,7 @@ def main() -> int:
                     f"{ref}: sits {mid - centre:+.2f} mm off the centre of the body it carries"
                 )
 
-    # A footprint placed twice brings its library uuids twice unless the generator
-    # renames them, and KiCad then treats two different pads as one object.
+    # A footprint placed twice repeats its uuids unless renamed; KiCad then sees two pads as one.
     doubled = sorted(
         value
         for value, count in Counter(
@@ -530,8 +524,7 @@ def main() -> int:
             r = float(first(node, "size")[1]) / 2
             if tx0 < vx + r and vx - r < tx1 and ty0 < vy + r and vy - r < ty1:
                 problems.append(f'"{text}": silkscreen covers the via at ({vx:.1f}, {vy:.1f})')
-        # A name printed under a module is legible until the module is fitted, which
-        # is the moment anyone needs it, so the body it belongs to must not reach it.
+        # A name under a module is hidden once it is fitted, the moment anyone needs it.
         for bx0, by0, bx1, by1 in bodies:
             if tx0 < bx1 and bx0 < tx1 and ty0 < by1 and by0 < ty1:
                 problems.append(f'"{text}": a module body at ({bx0:.0f}, {by0:.0f}) covers it')
