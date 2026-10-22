@@ -173,6 +173,7 @@ esp_err_t sys_storage_attend_pending(uint32_t *out);
  *  @ctx task | blocking | takes m_littlefs
  *  @param next untouched unless a record is returned
  *  @ret ESP_OK | ESP_ERR_NOT_FOUND when the log holds nothing past this point
+ *       | the read error of a record that would not come off flash, nothing skipped
  */
 esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_record_t *out,
                                   storage_cursor_t *next);

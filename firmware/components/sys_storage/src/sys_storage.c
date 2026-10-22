@@ -885,8 +885,10 @@ esp_err_t sys_storage_attend_read(const storage_cursor_t *at, storage_attend_rec
         while (size >= offset + (long)LOG_RECORD_BYTES) {
             err = read_at(path, offset, out, sizeof(*out));
             offset += (long)LOG_RECORD_BYTES;
+            // Moving on to a later file would let the cursor pass this one's unread tail, and drop it.
             if (err != ESP_OK) {
-                break;
+                give();
+                return err;
             }
             const uint32_t crc = sys_storage_crc32(out, offsetof(storage_attend_record_t, crc32));
             if (out->magic == STORAGE_ATTEND_REC_MAGIC && out->crc32 == crc) {
