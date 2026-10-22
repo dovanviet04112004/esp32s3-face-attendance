@@ -27,6 +27,8 @@
 #define PERSIST_TASK_STACK_BYTES 4096
 #define PROBE_GAP_MS 50
 #define PROBES_DURING_SAVE 10
+#define VISION_GIVE_UP_MS 400
+#define SAVE_CEILING_MS 5000
 #define RETAKER 777
 #define BANK 3
 #define OLD_SESSION_MS 1790000000000LL
@@ -223,6 +225,27 @@ TEST_CASE("a lookup keeps answering while the table is written to flash", "[svc_
     printf("%d lookups during the save, worst %lld us\n", probes, worst_us);
     TEST_ASSERT_EQUAL(ESP_OK, s_persist_err);
     TEST_ASSERT_GREATER_OR_EQUAL_INT(PROBES_DURING_SAVE, probes);
+}
+
+TEST_CASE("a capture gives up behind a save of the table, a server push waits it out", "[svc_facedb]")
+{
+    s_waiter = xTaskGetCurrentTaskHandle();
+    s_persist_err = ESP_FAIL;
+    TEST_ASSERT_EQUAL(pdPASS, xTaskCreate(persist_task, "persist", PERSIST_TASK_STACK_BYTES, NULL,
+                                          uxTaskPriorityGet(NULL), NULL));
+    vTaskDelay(pdMS_TO_TICKS(PROBE_GAP_MS));
+    synth(seed_of(PROBE_ID, PROBE_IDX), s_emb);
+    const int64_t t0 = esp_timer_get_time();
+    TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT,
+                      svc_facedb_enroll(PROBE_ID, PROBE_IDX, QUALITY, s_emb, SCALE, "Nhân viên"));
+    const int gave_up_ms = (int)((esp_timer_get_time() - t0) / 1000);
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      svc_facedb_enroll_pushed(PROBE_ID, PROBE_IDX, QUALITY, s_emb, SCALE, "Nhân viên"));
+    printf("capture gave up after %d ms, the push waited %lld ms\n", gave_up_ms,
+           (esp_timer_get_time() - t0) / 1000);
+    TEST_ASSERT_LESS_THAN_INT(VISION_GIVE_UP_MS, gave_up_ms);
+    TEST_ASSERT_NOT_EQUAL(0, ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_CEILING_MS)));
+    TEST_ASSERT_EQUAL(ESP_OK, s_persist_err);
 }
 
 TEST_CASE("a server push spares a capture the broker has not acked", "[svc_facedb]")

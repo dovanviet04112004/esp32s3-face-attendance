@@ -39,15 +39,16 @@ esp_err_t svc_facedb_init(void);
  */
 esp_err_t svc_facedb_lookup(const int8_t *emb, float scale, svc_facedb_match_t *out);
 
-/** Add a template, replacing the one with the same employee and index if it exists.
- *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
- *  @ret ESP_OK | ESP_ERR_NO_MEM when the table is full even after compaction | ESP_ERR_TIMEOUT
+/** Add a template the camera captured, replacing one with the same employee and index.
+ *  @ctx ai_task | waits <= 200 ms on m_facedb_io, then m_facedb | in RAM until svc_facedb_persist
+ *  @ret ESP_OK | ESP_ERR_NO_MEM when the table is full even after compaction
+ *       | ESP_ERR_TIMEOUT while another writer holds the table, so a later frame retries
  */
 esp_err_t svc_facedb_enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
                             const int8_t *emb, float scale, const char *name);
 
 /** Add a template the server pushed, sparing a sample captured here it has not seen.
- *  @ctx task | blocking | takes m_facedb | in RAM only until svc_facedb_persist
+ *  @ctx task | waits <= 4 s on m_facedb_io, then m_facedb | in RAM until svc_facedb_persist
  *  @ret ESP_OK | ESP_ERR_INVALID_STATE when that slot holds an unreported sample
  *       | ESP_ERR_NO_MEM when the table is full even after compaction | ESP_ERR_TIMEOUT
  */

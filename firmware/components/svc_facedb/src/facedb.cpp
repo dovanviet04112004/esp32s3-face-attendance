@@ -172,12 +172,13 @@ esp_err_t FaceDb::lookup(const int8_t *emb, float scale, MatchResult *out) noexc
 }
 
 esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality, const int8_t *emb,
-                         float scale, const char *name, bool spare_unreported) noexcept
+                         float scale, const char *name, Writer from) noexcept
 {
     if (emb == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-    app::LockGuard io(io_mutex_, kIoLockMs);
+    // ai_task never stands behind a save of the table (KEHOACH 5.3).
+    app::LockGuard io(io_mutex_, from == Writer::Vision ? kLockMs : kIoLockMs);
     if (!io.held()) {
         return ESP_ERR_TIMEOUT;
     }
@@ -194,7 +195,7 @@ esp_err_t FaceDb::enroll(uint32_t employee_id, uint16_t template_idx, uint8_t qu
         }
     }
     // The server decides between two sessions only once it has seen both (KEHOACH 7.5).
-    if (spare_unreported && slot != table_.count() && unreported(*table_.record(slot))) {
+    if (from == Writer::Server && slot != table_.count() && unreported(*table_.record(slot))) {
         return ESP_ERR_INVALID_STATE;
     }
     if (slot == table_.count()) {

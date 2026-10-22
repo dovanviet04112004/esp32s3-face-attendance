@@ -84,6 +84,11 @@ public:
  */
 uint32_t norm_sq(const int8_t *emb) noexcept;
 
+enum class Writer : uint8_t {
+    Vision,                               // ai_task: waits only as long as a lookup
+    Server,                               // a push: waits out a save, spares captures
+};
+
 class FaceDb {
 public:
     explicit FaceDb(IPersist &store) noexcept : matcher_(table_), store_(store) {}
@@ -93,8 +98,7 @@ public:
     esp_err_t init(size_t capacity) noexcept;
     esp_err_t lookup(const int8_t *emb, float scale, MatchResult *out) noexcept;
     esp_err_t enroll(uint32_t employee_id, uint16_t template_idx, uint8_t quality,
-                     const int8_t *emb, float scale, const char *name,
-                     bool spare_unreported) noexcept;
+                     const int8_t *emb, float scale, const char *name, Writer from) noexcept;
     esp_err_t bind_model(const uint8_t *tag, svc_facedb_bind_t *outcome) noexcept;
     esp_err_t model_tag(uint8_t *out) const noexcept;
     esp_err_t remove(uint32_t employee_id) noexcept;
