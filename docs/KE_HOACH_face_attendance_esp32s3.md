@@ -6790,6 +6790,9 @@ vùng riêng chưa ai từng xin. Nên "còn 40 KB" không có nghĩa là xin đ
 603 KB, bộ ghép tin MQTT bị chia mảnh 4 KB và danh sách chờ 2,3 KB đều nằm ở PSRAM, tức khoảng
 610 KB lấy từ đáy 5.070 KB; RAM nội lại nhẹ đi khoảng 3,7 KB vì hàng đợi bốn chỗ cũ nằm ở heap
 nội. Đáy PSRAM đo 09/10, có phiên TLS, là 2.046 KB: thấp hơn ngày 23/09 649 KB (`measurements/ram.md` §11).
+Bộ model khoá 14/10 có nhánh anti-spoof `int16_top1` dựng ra 1.138 KB PSRAM, hơn bản trước 326 KB.
+Vì vậy kiosk đo ngày 22/10 chỉ còn 1.788 KB PSRAM trống lúc chạy, dưới mốc 2.000 KB của E9-T31
+(`measurements/ram.md` §13).
 
 **Khoản duy nhất của bảng trên còn chưa trả là bắt tay TLS**, và đó là chỗ chật: mặc định
 mbedTLS của IDF là đệm vào 16 KB cộng đệm ra 4 KB **mỗi phiên**, trong đó đệm vào phải là một
@@ -6819,7 +6822,8 @@ Cổng của E9-T31: kiosk ESP-DL chạy 10 phút có Wi-Fi + MQTT/TLS phải gi
 và không một dòng `alloc failed`. Guard không đỡ được `malloc(MALLOC_CAP_INTERNAL)` tường minh
 nếu ESP-DL tự gọi lúc `run()`; đáy đo được trên kiosk là thứ phủ quyết. `bench_mem` với Wi-Fi,
 chưa có phiên TLS, giữ 38.067 B; có phiên TLS thật (09/10) giữ 29.755 B qua 1,5 phút
-(`measurements/ram.md` §11), lượt đủ 10 phút còn nợ 🔬. Trượt cổng thì revert cả lock contract lẫn
+(`measurements/ram.md` §11). Kiosk chạy đủ giao diện, profile `bench`, giữ 28.675 B qua 16 phút
+(22/10, `measurements/ram.md` §13), nên cổng RAM nội đã qua. Trượt cổng thì revert cả lock contract lẫn
 mặc định `AI_RUNTIME`.
 
 **Bản `fleet` trên kiosk thật mới là con số sát cổng nhất** (đo 10/10, `measurements/ram.md` §12).
