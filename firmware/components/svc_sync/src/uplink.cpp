@@ -55,8 +55,8 @@ esp_err_t UplinkQueue::init(const char *device_id) noexcept
     return ESP_OK;
 }
 
-bool UplinkQueue::encode(const storage_attend_record_t &rec, int64_t ts_ms, char *out,
-                         size_t cap) const noexcept
+esp_err_t UplinkQueue::encode(const storage_attend_record_t &rec, int64_t ts_ms, char *out,
+                              size_t cap) const noexcept
 {
     attendance_record_t wire = {};
     strlcpy(wire.device_id, device_id_, sizeof(wire.device_id));
@@ -77,11 +77,11 @@ bool UplinkQueue::encode(const storage_attend_record_t &rec, int64_t ts_ms, char
 
     cJSON *root = attendance_record_to_json(&wire);
     if (root == nullptr) {
-        return false;
+        return ESP_ERR_NO_MEM;
     }
     const bool printed = cJSON_PrintPreallocated(root, out, (int)cap, 0);
     cJSON_Delete(root);
-    return printed;
+    return printed ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
@@ -128,7 +128,14 @@ esp_err_t UplinkQueue::drain(size_t batch, uint32_t ack_timeout_ms) noexcept
             ESP_LOGI(TAG, "record %llu placed at %lld ms from %lld after boot",
                      (unsigned long long)rec.local_id, (long long)ts_ms, (long long)rec.ts_ms);
         }
-        if (!encode(rec, ts_ms, payload, sizeof(payload))) {
+        const esp_err_t encoded = encode(rec, ts_ms, payload, sizeof(payload));
+        if (encoded == ESP_ERR_NO_MEM) {
+            stats_.backlog = true;
+            ++stats_.stalled;
+            ESP_LOGW(TAG, "record %llu waits for memory to encode", (unsigned long long)rec.local_id);
+            return encoded;
+        }
+        if (encoded != ESP_OK) {
             // A record that cannot be written as json never will be, so moving
             // past it is the only way the ones behind it ever leave.
             ESP_LOGE(TAG, "record %llu will not encode, skipped",

@@ -30,7 +30,7 @@ esp_err_t svc_sync_init(void);
  *  @ctx task | blocking up to batch x ack timeout | takes m_littlefs
  *  @param wait_for_clock stop at this boot's unclocked stamp until a clock can place it
  *  @ret ESP_OK drained or nothing to do | ESP_ERR_INVALID_STATE broker down or waiting
- *       | ESP_ERR_TIMEOUT unacknowledged | ESP_ERR_NOT_FINISHED batch full
+ *       | ESP_ERR_TIMEOUT unacknowledged | ESP_ERR_NOT_FINISHED batch full | ESP_ERR_NO_MEM no heap to encode
  */
 esp_err_t svc_sync_drain(bool wait_for_clock);
 

@@ -1476,7 +1476,7 @@ static void sync_task(void *arg)
         const esp_err_t drained = svc_sync_drain(wait_for_clock);
         more = drained == ESP_ERR_NOT_FINISHED;
         if (drained != ESP_OK && !more && drained != ESP_ERR_INVALID_STATE &&
-            drained != ESP_ERR_TIMEOUT) {
+            drained != ESP_ERR_TIMEOUT && drained != ESP_ERR_NO_MEM) {
             note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, drained, "attendance log unreadable");
         }
         // A backlog is when progress is worth watching, so a long drain says
