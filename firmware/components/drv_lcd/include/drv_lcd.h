@@ -96,7 +96,8 @@ esp_err_t drv_lcd_sleep(bool sleeping);
 esp_err_t drv_lcd_blit_frame(const void *pixels, int src_width, int src_height,
                              const drv_lcd_overlay_t *overlay);
 
-/** Paint an overlay on its own, with no camera frame under it.
+/** Paint an overlay on its own, with no camera frame under it. Strips no mask or box
+ *  touches are not written, so ground_rgb565 fills only the strips the overlay reaches.
  *  @ctx task | blocking | for a screen that covers the panel (KEHOACH 4.5.5h)
  */
 esp_err_t drv_lcd_paint(const drv_lcd_overlay_t *overlay, uint16_t ground_rgb565);
@@ -110,7 +111,7 @@ bool drv_lcd_panel_to_frame(int src_width, int src_height, const int16_t box[4],
 
 /** Microseconds the last full-frame blit spent writing, past the phase wait.
  *  @ctx any | non-blocking | 0 until the first frame has gone out
- *  @ret the T_w of KEHOACH 6.4, which must stay inside one scan period
+ *  @ret the T_w of KEHOACH 6.4, which must stay under two scan periods
  */
 uint32_t drv_lcd_blit_us(void);
 

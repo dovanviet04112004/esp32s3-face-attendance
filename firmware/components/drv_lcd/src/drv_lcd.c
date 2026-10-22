@@ -214,8 +214,7 @@ static void wait_for_scan_lead(void)
 {
     drain_bounce();
     for (int tick = 0; tick < SYNC_TICK_CEILING; ++tick) {
-        // The first read after a panel write lands outside the counter's range,
-        // so a lone reading out there is worth one more try (KEHOACH 2.3A).
+        // A read right after a panel write lands outside the counter's range, so it is read again (KEHOACH 2.3A).
         int line = scan_line();
         for (int again = 0; again < SCANLINE_RETRIES && (line < 0 || line > SCANLINE_UNITS);
              ++again) {
