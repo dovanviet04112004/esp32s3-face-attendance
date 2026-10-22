@@ -15,11 +15,10 @@
 extern "C" {
 #endif
 
-/** The six states of KEHOACH 4.5.5f, in the order the table lists them. */
+/** The five states of KEHOACH 4.5.5f, in the order the table lists them. */
 typedef enum {
     SVC_ATTENDANCE_IDLE = 0,
     SVC_ATTENDANCE_DETECTING,
-    SVC_ATTENDANCE_VERIFYING,
     SVC_ATTENDANCE_GRANTED,
     SVC_ATTENDANCE_DENIED,
     SVC_ATTENDANCE_COOLDOWN,

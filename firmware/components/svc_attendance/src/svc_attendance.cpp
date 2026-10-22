@@ -17,7 +17,6 @@ const char *TAG = "svc_attendance";
 constexpr uint32_t kGrantedMs = 2500;
 constexpr uint32_t kDeniedMs = 2000;
 constexpr uint32_t kCooldownMs = 1500;
-constexpr uint32_t kVerifyingMs = 5000;
 constexpr uint32_t kDoorHoldMs = 3000;
 constexpr int64_t kMinutesToMs = 60 * 1000;
 // More people than this inside one dedup window and the oldest stamp is forgotten, so it is stamped again.
@@ -52,8 +51,6 @@ uint32_t hold_of(attend::St state)
             return kDeniedMs;
         case attend::St::Cooldown:
             return kCooldownMs;
-        case attend::St::Verifying:
-            return kVerifyingMs;
         default:
             return 0;
     }

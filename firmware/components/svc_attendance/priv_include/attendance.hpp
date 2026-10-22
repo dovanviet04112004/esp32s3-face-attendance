@@ -9,7 +9,6 @@ namespace attend {
 enum class St : uint8_t {
     Idle = SVC_ATTENDANCE_IDLE,
     Detecting = SVC_ATTENDANCE_DETECTING,
-    Verifying = SVC_ATTENDANCE_VERIFYING,
     Granted = SVC_ATTENDANCE_GRANTED,
     Denied = SVC_ATTENDANCE_DENIED,
     Cooldown = SVC_ATTENDANCE_COOLDOWN,
