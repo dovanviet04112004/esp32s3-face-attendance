@@ -282,17 +282,23 @@ esp_err_t net_mqtt_start(const net_mqtt_config_t *config)
     if (s_link.client == NULL) {
         return ESP_FAIL;
     }
-    APP_RETURN_ON_ERR(esp_mqtt_client_register_event(s_link.client, ESP_EVENT_ANY_ID, on_event,
-                                                     NULL),
-                      TAG, "register");
-    const esp_err_t running = esp_mqtt_client_start(s_link.client);
-    if (running != ESP_OK) {
-        // esp-mqtt spawns its own task, so a failure here is the stack (KEHOACH 5.2).
-        ESP_LOGE(TAG, "start: %s, internal ram %u B free, largest block %u B",
-                 esp_err_to_name(running),
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-        return running;
+    esp_err_t err = esp_mqtt_client_register_event(s_link.client, ESP_EVENT_ANY_ID, on_event, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "register: %s", esp_err_to_name(err));
+    } else {
+        err = esp_mqtt_client_start(s_link.client);
+        if (err != ESP_OK) {
+            // esp-mqtt spawns its own task, so a failure here is the stack (KEHOACH 5.2).
+            ESP_LOGE(TAG, "start: %s, internal ram %u B free, largest block %u B", esp_err_to_name(err),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        }
+    }
+    if (err != ESP_OK) {
+        // A client left in place makes every later start answer ESP_ERR_INVALID_STATE.
+        esp_mqtt_client_destroy(s_link.client);
+        s_link.client = NULL;
+        return err;
     }
     ESP_LOGI(TAG, "dialling %s", uri);
     return ESP_OK;
