@@ -1,5 +1,5 @@
 /** The recognition graph on TFLM: one aligned face in, its embedding tensor out.
- *  @ctx task | invoke blocks | layer 4 of the pipeline in KEHOACH 3
+ *  @ctx task | invoke blocks
  */
 #pragma once
 

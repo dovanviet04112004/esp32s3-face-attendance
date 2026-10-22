@@ -2,11 +2,13 @@
 
 #include <math.h>
 
+#include "storage_format.h"
+
 namespace ai {
 
 namespace {
 
-constexpr int kEmbedDim = 512;
+constexpr int kEmbedDim = STORAGE_EMBED_DIM;
 constexpr float kNormEps = 1e-10f;
 constexpr float kInt8Peak = 127.0f;
 

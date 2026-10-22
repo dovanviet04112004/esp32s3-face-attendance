@@ -6,7 +6,7 @@ namespace ai {
 
 namespace {
 
-// AllOpsResolver would link kernels this graph never reaches (KEHOACH 6).
+// AllOpsResolver would link kernels this graph never reaches (KEHOACH 3 layer 5).
 tflite::MicroMutableOpResolver<9> s_resolver;
 bool s_registered;
 

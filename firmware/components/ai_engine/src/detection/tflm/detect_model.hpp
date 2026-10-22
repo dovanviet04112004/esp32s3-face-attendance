@@ -1,5 +1,5 @@
 /** The detection graph on TFLM: one letterboxed frame in, raw head tensors out.
- *  @ctx task | invoke blocks | layer 2 of the pipeline in KEHOACH 3
+ *  @ctx task | invoke blocks
  */
 #pragma once
 

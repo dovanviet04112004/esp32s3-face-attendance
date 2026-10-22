@@ -1,5 +1,5 @@
 /** The anti-spoof branch on either runtime: the face crop in, one liveness score out.
- *  @ctx task | layer 3 of the pipeline in KEHOACH 3
+ *  @ctx task | runs on ai_task
  */
 #pragma once
 
@@ -18,8 +18,8 @@ namespace ai {
 float live_score(const TensorView &logits) noexcept;
 
 /** Cut the face crop of one box, in frame pixels, into a buffer shaped and
- *  quantised like the input tensor: the largest square that fits the frame,
- *  slid to hold the face, at most the face side (KEHOACH 3).
+ *  quantised like the input tensor: a square 2.7 times the face side, the
+ *  largest that fits the frame when that is less, slid to hold the face (KEHOACH 3).
  *  @ctx ai_task | blocking for the resample
  *  @param cap_bytes size of the buffer
  */

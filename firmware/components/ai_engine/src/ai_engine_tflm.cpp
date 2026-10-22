@@ -108,7 +108,7 @@ extern "C" esp_err_t ai_engine_init(void)
              static_cast<unsigned>(fast_bytes), s_fast.internal() ? "sram" : "psram",
              static_cast<unsigned>(big_bytes), static_cast<unsigned>(internal_before / 1024),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
-    // Detect runs every frame, so it gets internal RAM; spoof and recog share one PSRAM allocator (KEHOACH 3.8).
+    // Detect has an arena to itself; spoof and recog share one allocator, so their heads overlap (KEHOACH 3.8).
     struct {
         ai::ITfliteModel &model;
         const char *name;

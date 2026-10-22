@@ -1,5 +1,5 @@
 /** The anti-spoof graph on TFLM: the face crop in, its logits out.
- *  @ctx task | invoke blocks | layer 3 of the pipeline in KEHOACH 3
+ *  @ctx task | invoke blocks
  */
 #pragma once
 

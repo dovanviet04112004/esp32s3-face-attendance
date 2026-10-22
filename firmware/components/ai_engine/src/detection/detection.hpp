@@ -1,5 +1,5 @@
 /** The detection branch on either runtime: one frame letterboxed in, faces out of the heads.
- *  @ctx task | layer 2 of the pipeline in KEHOACH 3
+ *  @ctx task | runs on ai_task
  */
 #pragma once
 

@@ -12,7 +12,7 @@ constexpr int kClassChannels = 1;
 constexpr int kBoxChannels = 4;
 constexpr int kLandmarkChannels = 10;
 constexpr int kLandmarks = 5;
-// The cap sits ahead of the quadratic NMS on purpose: a device budget the scene cannot grow (KEHOACH 4.5.6).
+// The cap sits ahead of the quadratic NMS on purpose: a device budget the scene cannot grow.
 constexpr size_t kCandidates = 32;
 constexpr float kScoreEps = 1e-6f;
 

@@ -45,8 +45,7 @@ TEST_CASE("the branch comes up and reports where its arena landed", "[ai_spoof]"
     TEST_ASSERT_GREATER_THAN_UINT(0, stats.big_used_bytes);
 #endif
 
-    // The crop side belongs to the graph, which picks it so every feature map
-    // stays odd (KEHOACH 3 layer 1); pinning it here would pin two places.
+    // The crop side belongs to the graph; pinning it here would pin it in two places.
     s_len = ai_engine_spoof_input_bytes();
     if (s_len == 0) {
         TEST_IGNORE_MESSAGE("the image on models_0 carries no spoof branch (KEHOACH 6.2.2)");

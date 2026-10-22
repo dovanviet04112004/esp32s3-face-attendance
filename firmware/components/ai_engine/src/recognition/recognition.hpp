@@ -1,5 +1,5 @@
 /** The recognition branch on either runtime: one face aligned in, a unit int8 embedding out.
- *  @ctx task | layer 4 of the pipeline in KEHOACH 3
+ *  @ctx task | runs on ai_task
  */
 #pragma once
 
