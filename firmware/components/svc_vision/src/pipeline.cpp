@@ -114,7 +114,7 @@ const ai_engine_face_t &VisionPipeline::pick(size_t count) const noexcept
 {
     // The face already followed keeps its turn while it is still there; a larger
     // newcomer only takes over once it is lost (KEHOACH 4.5.5d).
-    if (stable_ > 0) {
+    if (tracking_ && seen_ != Seen::OffGuide) {
         size_t best = count;
         float best_iou = kSameFaceIou;
         for (size_t i = 0; i < count; ++i) {

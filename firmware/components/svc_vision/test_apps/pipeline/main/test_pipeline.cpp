@@ -402,6 +402,23 @@ TEST_CASE("a larger newcomer waits until the face being served has left", "[svc_
     TEST_ASSERT_EQUAL(2, rig.liveness.scores);
 }
 
+TEST_CASE("a face that dips out of the square keeps its turn against a larger newcomer", "[svc_vision]")
+{
+    Rig rig;
+    rig.detector.one(20.0f, 150.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+    rig.detector.count = 2;
+    rig.detector.set(0, 280.0f, 60.0f, kBigFace + 40.0f);
+    rig.detector.set(1, 20.0f, 180.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_FACE_OUT_OF_FRAME, rig.step());
+    const uint32_t track = rig.heard.track;
+    rig.detector.set(1, 20.0f, 150.0f, kBigFace);
+    const svc_vision_result_t back = rig.pipeline.step(kFrame);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, back.primary.box[0]);
+    TEST_ASSERT_EQUAL(track, rig.heard.track);
+}
+
 TEST_CASE("two faces of one size side by side do not swap the track", "[svc_vision]")
 {
     Rig rig;
