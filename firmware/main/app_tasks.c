@@ -2632,7 +2632,10 @@ static void attend_task(void *arg)
         if (xQueueReceive(wiring->results, &result, pdMS_TO_TICKS(ATTEND_TICK_MS)) == pdTRUE &&
             !ui_kiosk_screen_covers()) {
             svc_attendance_said_t said = SVC_ATTENDANCE_SAID_NOTHING;
-            svc_attendance_on_vision(&result, esp_timer_get_time() / 1000, &said);
+            const esp_err_t taken = svc_attendance_on_vision(&result, esp_timer_get_time() / 1000, &said);
+            if (taken != ESP_OK && taken != ESP_ERR_INVALID_STATE) {
+                note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, taken, "punch not written");
+            }
             tell(wiring, &result, said);
         }
         const int64_t now_ms = esp_timer_get_time() / 1000;

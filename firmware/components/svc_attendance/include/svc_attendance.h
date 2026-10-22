@@ -42,6 +42,7 @@ typedef enum {
 /** Take the door and the policy; nothing is allocated after this call.
  *  @ctx task | non-blocking | pass svc_door_fake() to run without a board
  *  @ret ESP_OK | ESP_ERR_INVALID_ARG on a null door | ESP_ERR_INVALID_STATE
+ *       | ESP_ERR_NO_MEM without PSRAM for the dedup stamps
  */
 esp_err_t svc_attendance_init(svc_door_t door, const svc_attendance_policy_t *policy);
 
@@ -55,7 +56,7 @@ esp_err_t svc_attendance_set_policy(const svc_attendance_policy_t *policy);
  *  @ctx task | blocking on the door and on LittleFS | takes m_door, m_littlefs
  *  @param now_ms esp_timer ms, timing states and the dedup window; sys_time stamps (KEHOACH 4.5)
  *  @param said what the event came to, or NULL when nobody asks
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init | the LittleFS error of a grant's lost record
  */
 esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result, int64_t now_ms,
                                    svc_attendance_said_t *said);

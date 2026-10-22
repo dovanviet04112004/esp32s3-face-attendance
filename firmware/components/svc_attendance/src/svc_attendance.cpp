@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "attendance.hpp"
-#include "esp_crc.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "sys_storage.h"
 #include "sys_time.h"
@@ -20,6 +20,13 @@ constexpr uint32_t kCooldownMs = 1500;
 constexpr uint32_t kVerifyingMs = 5000;
 constexpr uint32_t kDoorHoldMs = 3000;
 constexpr int64_t kMinutesToMs = 60 * 1000;
+// More people than this inside one dedup window and the oldest stamp is forgotten, so it is stamped again.
+constexpr size_t kRecentStamps = 32;
+
+struct Stamp {
+    uint32_t employee_id;                 // 0: an empty slot
+    int64_t at_ms;
+};
 
 attend::St s_state = attend::St::Idle;
 svc_door_t s_door = nullptr;
@@ -29,7 +36,8 @@ int64_t s_state_since_ms = 0;
 uint32_t s_seq = 0;
 uint32_t s_records = 0;
 uint32_t s_last_employee = 0;
-int64_t s_last_stamp_ms = 0;
+Stamp *s_recent = nullptr;
+size_t s_recent_next = 0;
 std::atomic<bool> s_link_up{false};
 storage_attend_record_t s_last_record = {};
 bool s_have_record = false;
@@ -67,13 +75,17 @@ bool liveness_allows(float live_score)
     return live_score >= 0.0f || s_policy.allow_no_spoof;
 }
 
+// Every employee_id keeps its own window: A, B, A inside it stamps A once (KEHOACH 4.5.5f).
 bool stamped_recently(uint32_t employee_id, int64_t now_ms)
 {
-    if (!s_have_record || employee_id != s_last_employee) {
-        return false;
-    }
     const int64_t window_ms = (int64_t)s_policy.dedup_min * kMinutesToMs;
-    return now_ms - s_last_stamp_ms < window_ms;
+    for (size_t i = 0; i < kRecentStamps; ++i) {
+        const Stamp &stamp = s_recent[i];
+        if (stamp.employee_id == employee_id && employee_id != 0 && now_ms - stamp.at_ms < window_ms) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // A face that never left is one arrival, so granting it twice would reopen the
@@ -99,22 +111,25 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
                              (s_link_up.load() ? 0 : STORAGE_ATTEND_FLAG_OFFLINE) |
                              (ntp ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
     record.model_version = 1;
-    record.crc32 = esp_crc32_le(0, (const uint8_t *)&record, offsetof(storage_attend_record_t, crc32));
+    record.crc32 = sys_storage_crc32(&record, offsetof(storage_attend_record_t, crc32));
 
     const esp_err_t err = sys_storage_attend_append(&record);
-    if (err == ESP_OK) {
-        s_last_record = record;
-        s_have_record = true;
-        s_last_employee = record.employee_id;
-        s_last_stamp_ms = now_ms;
-        ++s_records;
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "record for employee %" PRIu32 " lost: %s", record.employee_id, esp_err_to_name(err));
+        return err;
     }
-    ESP_LOGI(TAG, "record %" PRIu32 " employee %" PRIu32 " flags 0x%02X: %s", s_records,
-             record.employee_id, record.flags, esp_err_to_name(err));
-    return err;
+    s_last_record = record;
+    s_have_record = true;
+    s_recent[s_recent_next] = { record.employee_id, now_ms };
+    s_recent_next = (s_recent_next + 1) % kRecentStamps;
+    ++s_records;
+    ESP_LOGI(TAG, "record %" PRIu32 " employee %" PRIu32 " flags 0x%02X", s_records, record.employee_id,
+             record.flags);
+    return ESP_OK;
 }
 
-svc_attendance_said_t act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms)
+svc_attendance_said_t act_on(attend::Act act, const svc_vision_result_t *result, int64_t now_ms,
+                             esp_err_t *written)
 {
     if (act == attend::Act::Grant) {
         if (!liveness_allows(result->live_score)) {
@@ -124,12 +139,16 @@ svc_attendance_said_t act_on(attend::Act act, const svc_vision_result_t *result,
         }
         const bool opened = svc_door_open(s_door, kDoorHoldMs) == ESP_OK;
         s_left_since_grant = false;
+        s_last_employee = result->employee_id;
         if (stamped_recently(result->employee_id, now_ms)) {
             ESP_LOGI(TAG, "employee %" PRIu32 " stamped inside the window, door only",
                      result->employee_id);
             return SVC_ATTENDANCE_SAID_GRANTED;
         }
-        write_record(result, now_ms, opened);
+        const esp_err_t err = write_record(result, now_ms, opened);
+        if (written != nullptr) {
+            *written = err;
+        }
         return SVC_ATTENDANCE_SAID_GRANTED;
     }
     if (act == attend::Act::Rest) {
@@ -166,7 +185,8 @@ bool names_who(attend::Ev event)
     return event == attend::Ev::Match || event == attend::Ev::Unknown || event == attend::Ev::Spoof;
 }
 
-svc_attendance_said_t apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms)
+svc_attendance_said_t apply(attend::Ev event, const svc_vision_result_t *result, int64_t now_ms,
+                            esp_err_t *written)
 {
     // Leaving the guide is leaving (KEHOACH 4.5.5f), and in a queue a face stays in
     // shot throughout, so anyone else being seen ends the last person's turn too.
@@ -185,7 +205,7 @@ svc_attendance_said_t apply(attend::Ev event, const svc_vision_result_t *result,
     }
     s_state = step.to;
     s_state_since_ms = now_ms;
-    return act_on(step.act, result, now_ms);
+    return act_on(step.act, result, now_ms, written);
 }
 
 }  // namespace
@@ -197,6 +217,10 @@ extern "C" esp_err_t svc_attendance_init(svc_door_t door, const svc_attendance_p
     }
     if (s_ready) {
         return ESP_ERR_INVALID_STATE;
+    }
+    s_recent = static_cast<Stamp *>(heap_caps_calloc(kRecentStamps, sizeof(Stamp), MALLOC_CAP_SPIRAM));
+    if (s_recent == nullptr) {
+        return ESP_ERR_NO_MEM;
     }
     s_door = door;
     s_policy = *policy;
@@ -237,11 +261,12 @@ extern "C" esp_err_t svc_attendance_on_vision(const svc_vision_result_t *result,
     if (!carries) {
         return ESP_OK;
     }
-    const svc_attendance_said_t answer = apply(event, result, now_ms);
+    esp_err_t written = ESP_OK;
+    const svc_attendance_said_t answer = apply(event, result, now_ms, &written);
     if (said != nullptr) {
         *said = answer;
     }
-    return ESP_OK;
+    return written;
 }
 
 extern "C" esp_err_t svc_attendance_policy(svc_attendance_policy_t *out)
@@ -262,7 +287,7 @@ extern "C" esp_err_t svc_attendance_on_presence(bool present)
         return ESP_ERR_INVALID_STATE;
     }
     const svc_vision_result_t empty = {};
-    apply(present ? attend::Ev::PresenceOn : attend::Ev::PresenceOff, &empty, s_state_since_ms);
+    apply(present ? attend::Ev::PresenceOn : attend::Ev::PresenceOff, &empty, s_state_since_ms, nullptr);
     return ESP_OK;
 }
 
@@ -281,7 +306,7 @@ extern "C" esp_err_t svc_attendance_tick(int64_t now_ms)
         return ESP_OK;
     }
     const svc_vision_result_t empty = {};
-    apply(attend::Ev::Timeout, &empty, now_ms);
+    apply(attend::Ev::Timeout, &empty, now_ms, nullptr);
     return ESP_OK;
 }
 

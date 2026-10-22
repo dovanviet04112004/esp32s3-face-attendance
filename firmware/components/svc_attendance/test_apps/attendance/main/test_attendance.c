@@ -122,6 +122,24 @@ TEST_CASE("another person inside the window is stamped", "[svc_attendance]")
     TEST_ASSERT_EQUAL(before + 1, svc_attendance_records());
 }
 
+TEST_CASE("a person stamped ahead of someone else stays inside the window", "[svc_attendance]")
+{
+    machine_up(true);
+    s_now_ms += (int64_t)DEDUP_MIN * MINUTE_MS + 1;
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    const uint32_t before = svc_attendance_records();
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, feed(SVC_VISION_MATCH, EMPLOYEE_B, LIVE_SCORE));
+    back_to_idle();
+    svc_attendance_on_presence(true);
+    TEST_ASSERT_EQUAL(SVC_ATTENDANCE_SAID_GRANTED, feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE));
+    TEST_ASSERT_EQUAL(before + 2, svc_attendance_records());
+    TEST_ASSERT_TRUE(svc_door_is_open(svc_door_fake()));
+}
+
 TEST_CASE("a spoof denies and never reaches the door", "[svc_attendance]")
 {
     machine_up(true);
@@ -169,6 +187,7 @@ TEST_CASE("a face that never leaves is granted once, and again after it does",
           "[svc_attendance]")
 {
     machine_up(true);
+    s_now_ms += (int64_t)DEDUP_MIN * MINUTE_MS + 1;
     back_to_idle();
     svc_attendance_on_presence(true);
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
@@ -292,6 +311,7 @@ TEST_CASE("a refusal that keeps coming is told each time and holds the refusal",
 TEST_CASE("a queue behind the first face keeps its turn", "[svc_attendance]")
 {
     machine_up(true);
+    s_now_ms += (int64_t)DEDUP_MIN * MINUTE_MS + 1;
     back_to_idle();
     svc_attendance_on_presence(true);
     feed(SVC_VISION_MATCH, EMPLOYEE_A, LIVE_SCORE);
