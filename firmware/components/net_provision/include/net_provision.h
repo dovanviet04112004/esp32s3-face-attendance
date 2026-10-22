@@ -39,9 +39,10 @@ net_provision_answer_t net_provision_check(void);
  */
 net_provision_answer_t net_provision_renew(void);
 
-/** The exp of the ticket in NVS, as net_provision_ticket_exp read it when it landed.
+/** The exp of the ticket in NVS, as net_provision_ticket_exp read it when it landed,
+ *  or read off the held ticket again and kept when that exp never reached NVS.
  *  @ctx task | blocking | reads NVS | exp in epoch seconds
- *  @ret ESP_OK | ESP_ERR_NOT_FOUND no ticket or no exp kept
+ *  @ret ESP_OK | ESP_ERR_NOT_FOUND no ticket, or none with an exp | ESP_ERR_NO_MEM
  */
 esp_err_t net_provision_held_exp(uint32_t *exp);
 

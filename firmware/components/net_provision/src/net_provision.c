@@ -335,9 +335,22 @@ esp_err_t net_provision_held_exp(uint32_t *exp)
     if (exp == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    return sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp) == ESP_OK
-               ? ESP_OK
-               : ESP_ERR_NOT_FOUND;
+    if (sys_storage_get_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, exp) == ESP_OK) {
+        return ESP_OK;
+    }
+    // A ticket whose exp never landed is read again: unrenewed, it dies at that exp and takes the faces.
+    char *ticket = heap_caps_calloc(1, TICKET_CAP, MALLOC_CAP_SPIRAM);
+    if (ticket == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = sys_storage_get_str(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET, ticket, TICKET_CAP);
+    err = err == ESP_OK ? net_provision_ticket_exp(ticket, exp) : err;
+    heap_caps_free(ticket);
+    if (err != ESP_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    sys_storage_set_u32(STORAGE_NS_DEVICE, STORAGE_KEY_TICKET_EXP, *exp);
+    return ESP_OK;
 }
 
 bool net_provision_renew_due(uint32_t exp, int64_t now_ms)
