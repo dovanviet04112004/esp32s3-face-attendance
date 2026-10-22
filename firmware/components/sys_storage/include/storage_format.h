@@ -28,6 +28,8 @@
 #define STORAGE_ATTEND_FILES 1000u
 #define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
 #define STORAGE_BOOT_PATH "/lfs/log/boot.bin"
+#define STORAGE_ASSETS_MOUNT "/assets"    // KEHOACH 6.2.8, read-only
+#define STORAGE_SOUND_OK_PATH STORAGE_ASSETS_MOUNT "/snd/ok.wav"
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 3u
 #define STORAGE_FACES_VER_UNTAGGED 2u     // same records, no model tag in the header
@@ -117,7 +119,7 @@ typedef struct __attribute__((packed)) {
     uint32_t employee_id;
     uint16_t template_idx;
     uint8_t quality;                      // 0-255, picks between duplicates
-    uint8_t flags;                        // bit0 active, bit1 deleted
+    uint8_t flags;                        // bit0 active, bit1 deleted, bit2 unreported
     float scale;                          // dequant for the int8 embedding
     int8_t embedding[STORAGE_EMBED_DIM];
     int64_t updated_at_ms;

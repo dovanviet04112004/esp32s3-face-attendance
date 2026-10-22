@@ -31,7 +31,6 @@ static const char *TAG = "sys_storage";
 #define PARTITION_MODELS_B "models_1"
 #define MODELS_ERASE_STEP_BYTES 65536
 #define PARTITION_ASSETS "assets"
-#define ASSETS_POINT "/assets"
 #define NVS_LEGACY_NAMESPACE "kiosk"
 #define NVS_BOOT_COUNT "boot_count"
 #define NVS_SERIAL "serial"
@@ -113,7 +112,7 @@ static void empty_scratch(void)
 static void mount_assets(void)
 {
     const esp_vfs_spiffs_conf_t cfg = {
-        .base_path = ASSETS_POINT,
+        .base_path = STORAGE_ASSETS_MOUNT,
         .partition_label = PARTITION_ASSETS,
         .max_files = 2,
         .format_if_mount_failed = false,

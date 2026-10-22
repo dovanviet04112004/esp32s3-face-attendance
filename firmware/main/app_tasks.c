@@ -147,7 +147,6 @@ typedef enum { REST_NONE, REST_ALL } rest_t;
 #define AUDIO_TASK_CORE 0
 #define AUDIO_TASK_PRIORITY 6
 #define AUDIO_TASK_STACK_BYTES 4096
-#define AUDIO_CLIP_PATH "/assets/snd/ok.wav"
 #define AUDIO_CLIP_CAP_BYTES (128 * 1024)
 #define WAV_HEADER_MIN 44
 #define WAV_FMT_MIN 16                    // PCM fmt body: format, channels, rate, rates, align, bits
@@ -2435,15 +2434,15 @@ static void audio_task(void *arg)
     size_t samples = 0;
     size_t len = 0;
     const esp_err_t read = clip == NULL ? ESP_ERR_NO_MEM
-                                        : sys_storage_read(AUDIO_CLIP_PATH, clip, AUDIO_CLIP_CAP_BYTES, &len);
+                                        : sys_storage_read(STORAGE_SOUND_OK_PATH, clip, AUDIO_CLIP_CAP_BYTES, &len);
     if (read == ESP_OK) {
         samples = pcm_of(clip, len, &pcm);
     }
     if (samples > 0) {
-        ESP_LOGI(TAG, "audio: %s, %u samples", AUDIO_CLIP_PATH, (unsigned)samples);
+        ESP_LOGI(TAG, "audio: %s, %u samples", STORAGE_SOUND_OK_PATH, (unsigned)samples);
     } else {
-        ESP_LOGW(TAG, "audio: no clip, %s read %s at %u bytes, cap %u", AUDIO_CLIP_PATH, esp_err_to_name(read),
-                 (unsigned)len, (unsigned)AUDIO_CLIP_CAP_BYTES);
+        ESP_LOGW(TAG, "audio: no clip, %s read %s at %u bytes, cap %u", STORAGE_SOUND_OK_PATH,
+                 esp_err_to_name(read), (unsigned)len, (unsigned)AUDIO_CLIP_CAP_BYTES);
     }
 
     for (;;) {
