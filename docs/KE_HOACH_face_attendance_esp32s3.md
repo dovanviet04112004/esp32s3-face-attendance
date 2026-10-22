@@ -3686,14 +3686,14 @@ trước không còn mốc để cộng: gửi nguyên, và server xếp nó và
 ##### f) `svc_attendance` — máy trạng thái bảng, **cố ý không dùng State pattern**
 
 ```cpp
-enum class St : uint8_t { Idle, Detecting, Verifying, Granted, Denied, Cooldown };
+enum class St : uint8_t { Idle, Detecting, Granted, Denied, Cooldown };
 enum class Ev : uint8_t { PresenceOn, PresenceOff, NoFace, FaceSmall, Spoof, Unknown, Match, Timeout };
 enum class Act : uint8_t { None, Watch, Grant, Refuse, Rest };
 struct Transition { St from; Ev on; St to; Act act; };
 static constexpr Transition kTable[] = { … };   // nằm ở flash, 0 byte RAM
 ```
 
-State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn nhưng ở đây **tệ hơn**: 6 lớp + 6 vtable, chuyển trạng thái thành cấp phát/hủy đối tượng, và không nhìn được toàn bộ sơ đồ trạng thái trong một màn hình. Bảng `constexpr` nằm trong flash, đọc một phát thấy hết, kiểm chứng bằng unit test dễ. Dùng mẫu thiết kế phải có lý do, không phải để cho đủ.
+State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn nhưng ở đây **tệ hơn**: 5 lớp + 5 vtable, chuyển trạng thái thành cấp phát/hủy đối tượng, và không nhìn được toàn bộ sơ đồ trạng thái trong một màn hình. Bảng `constexpr` nằm trong flash, đọc một phát thấy hết, kiểm chứng bằng unit test dễ. Dùng mẫu thiết kế phải có lý do, không phải để cho đủ.
 
 **Sơ đồ, đọc hết trong một bảng.** Sự kiện không có trong bảng ở trạng thái hiện tại thì **bị bỏ**, không phải lỗi: `svc_vision` bắn `NONE` ở phần lớn khung và ToF bắn `PresenceOff` bất cứ lúc nào.
 
@@ -3707,9 +3707,6 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Detecting` | `Match` | `Granted` | `Grant` |
 | `Detecting` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
 | `Detecting` | `NoFace` / `PresenceOff` | `Idle` | `Rest` |
-| `Verifying` | `Match` | `Granted` | `Grant` |
-| `Verifying` | `Spoof` / `Unknown` | `Denied` | `Refuse` |
-| `Verifying` | `Timeout` | `Detecting` | `None` |
 | `Granted` | `Timeout` | `Cooldown` | `Rest` |
 | `Granted` | `Match` của người khác | `Granted` | `Grant` — người sau không chờ cửa người trước đóng |
 | `Granted` | `Spoof` / `Unknown` | `Denied` | `Refuse` — người sau bị từ chối ngay, cửa người trước tự đóng theo giờ của nó |
@@ -3721,7 +3718,7 @@ State pattern (mỗi trạng thái một lớp virtual) nghe "chuẩn OOP" hơn 
 | `Cooldown` | `Timeout` | `Idle` | `None` |
 | `Cooldown` | `PresenceOff` | `Idle` | `None` |
 
-`Verifying` tồn tại cho đường xác thực nhiều khung của §4.5.5d: `svc_vision` tự giữ nhịp thử lại, nên tầng này chỉ cần một trạng thái chờ có `Timeout` để không kẹt nếu `ai_task` chết.
+**Không có trạng thái riêng cho lúc đang xác thực.** Xác thực nhiều khung của §4.5.5d nằm trọn trong `svc_vision`, kể cả nhịp thử lại, nên với tầng này một lượt xác thực chỉ là `Detecting` cho tới khi có phán quyết. Một trạng thái chờ có `Timeout` để "không kẹt nếu `ai_task` chết" không thêm được gì: `ai_task` treo giữa một lượt chạy thì watchdog 5 s của nó báo, bản `fleet` thì khởi động lại máy (§5.1); người bỏ đi thì `PresenceOff` của ToF đưa máy về `Idle`; còn camera chết thì `ai_task` vẫn nạp watchdog và phát `CAMERA_FAULT`.
 
 **Một khuôn mặt cũng mở được máy, không chỉ ToF.** `PresenceOn` là **một cạnh**: chấm xong, máy về `Idle`, người vẫn đứng nguyên chỗ cũ nên không có cạnh nào nữa và ToF không mở máy lần thứ hai. Đo trên board 13/09: chỉ nghe ToF thì sau lần chấm đầu, mọi lần sau im cho tới khi reset. Bốn sự kiện thị giác ở `Idle` vì thế cũng mở máy — thấy mặt tức là có người, dù ToF chưa kịp nhả cạnh nào.
 
