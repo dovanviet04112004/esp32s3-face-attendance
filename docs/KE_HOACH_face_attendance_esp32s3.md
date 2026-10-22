@@ -39,7 +39,10 @@
 > landmark trên `val` gốc là đo trên nhãn không tồn tại. Box thì `val` vẫn đủ, AP vẫn đo bình thường.
 
 - Detect **bắt buộc phải ra 5 landmark**, nếu không thì không align được mặt trước khi vào MobileFaceNet, accuracy nhận diện rớt mạnh. YuNet ra sẵn 5 điểm.
-- Anti-spoof là **một backbone trên crop mặt 1,0×**. Bản tham chiếu minivision dùng hai
+- Anti-spoof là **một backbone, một lượt mỗi mặt**. Bản deploy là V1SE nhập (bảng dưới) và
+  đọc crop 2,7× đúng như lúc nó được train; student tự train `minifasnet_v2_se` đọc **crop mặt
+  1,0×** vì lý do ở phần còn lại của đoạn này, và `kFaceScale` đi theo model đang nạp (§3).
+  Bản tham chiếu minivision dùng hai
   backbone (1,0× và 2,7×) rồi ghép, và kế hoạch đã đi theo cho tới 11/09. Đo trên 111 khung
   camera (`measurements/antispoof` §22) thì nhánh 2,7× **phân loại căn phòng thay cho khuôn
   mặt**: CelebA-Spoof để mặt thật trong ảnh sự kiện studio và mặt giả trong phòng thường,
@@ -233,7 +236,7 @@ cắm, mà lúc ấy board đã in xong (§2.3I).
 | SIOC (SCCB SCL) | **GPIO5** | |
 | VSYNC | **GPIO6** | |
 | HREF | **GPIO7** | |
-| XCLK | **GPIO15** | LEDC phát 27 MHz (OV5640 nhận 6–27 MHz) |
+| XCLK | **GPIO15** | Khối LCD_CAM phát 27 MHz (OV5640 nhận 6–27 MHz); trên S3, esp32-camera không dùng LEDC cho XCLK |
 | PCLK | **GPIO13** | |
 | D0 / Y2 | **GPIO11** | |
 | D1 / Y3 | **GPIO9** | |
@@ -273,7 +276,7 @@ tiêu. Toàn bộ đi qua API có tên của `esp32-camera`, không gõ thẳng 
 
 Vòng lặp phải **giảm chấn**: sensor mất một tới hai khung mới áp dụng giá trị mới, nên đo
 mỗi khung rồi chỉnh ngay là đọc phải khung cũ và ảnh nhấp nháy sáng tối. Mỗi lần chỉnh đi
-một phần tư quãng đường còn thiếu, rồi nghỉ ba khung cho sensor bắt kịp.
+một phần tư quãng đường còn thiếu, rồi nghỉ hai khung cho sensor bắt kịp.
 
 Cửa sổ giữa khung là xấp xỉ dùng được ngay của "đo theo hộp mặt", vì kiosk luôn có mặt ở
 giữa. Khi E8 đưa detector lên board thì thay vùng lấy mẫu bằng hộp mặt thật — vòng lặp giữ
@@ -3254,7 +3257,9 @@ firmware/
 ├── sdkconfig.defaults                # chung mọi build
 ├── sdkconfig.defaults.esp32s3        # riêng target (PSRAM octal 80M, cache 32/64KB)
 ├── sdkconfig.ci                      # build CI: tắt secure boot, bật assert
-├── sdkconfig.prod                    # Flash Encryption + Secure Boot v2, chỉ nhận mqtts://
+├── sdkconfig.dev                     # -Og, assert, canary, poisoning, console: bản trên bàn
+├── sdkconfig.bench                   # -O2, console, trace task: bản nạp cho kiosk (§4.5.9)
+├── sdkconfig.prod                    # -O2, log WARN, tắt console, chỉ nhận mqtts://; FE + Secure Boot là E13
 ├── sdkconfig.fleet                   # chỉ build phát hành ghép thêm: panic và watchdog khởi động lại (§7.7)
 ├── sdkconfig.tflm                    # ghép sau sdkconfig.bench: kiosk bàn chạy TFLM để đối chứng (§6.2.2)
 ├── sdkconfig.secrets                 # ❌ gitignore — token bootstrap của lô, người build tự đặt (§4.5.9)
@@ -3266,6 +3271,7 @@ firmware/
 ├── main/
 │   ├── CMakeLists.txt
 │   ├── idf_component.yml             # ★ khai báo dependency registry
+│   ├── Kconfig.projbuild             # APP_CONSOLE, host SNTP mặc định
 │   ├── app_main.c            [C]     # điểm vào: gọi app_boot rồi app_tasks_start
 │   ├── app_boot.{c,h}        [C]     # ★ chuỗi khởi tạo, không chứa logic. Tách khỏi
 │   │                                 #   app_main.c để `test_apps/soak` dựng đúng
@@ -3304,7 +3310,7 @@ firmware/
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
 │   ├── fonts/{gen_font.py, kiosk_ui_{15,20,24,28}.{c,h}}  # 4bpp khử răng cưa, sinh từ MiSans Latin
-│   ├── icons/  ├── sounds/{ok.wav, denied.wav, spoof.wav}
+│   ├── sounds/xincamon-1_1.wav       # thành snd/ok.wav qua STAGE; biểu tượng vẽ bằng code
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
 ├── models/                           # ❌ gitignore trừ README và meta.json ✅; lock chỉ ở contracts/
@@ -3945,9 +3951,11 @@ bị đá ra oan: rải ba lần từ chối qua ba mẫu là đủ hỏng, mà 
 pipeline bỏ cuộc trước, màn đứng đợi hết hạn 15 s rồi mới báo — một khoảng treo không lý do. Cả
 hai vì thế reset ở đầu **mỗi mẫu**, và dòng "lần n/3" trên kính đếm đúng số lần của mẫu đang lấy.
 
-**Đăng ký hỏng giữa chừng phải dọn sạch dấu vết.** Mẫu nào đậu là `keep()` ghi ngay vào bảng và
-gọi `svc_facedb_persist()` — đúng, vì mất điện giữa chừng không được mất người đã lấy xong. Nhưng
-khi màn bỏ cuộc, những mẫu đã lỡ ghi **vẫn nằm lại**: bảng có một người mang `employee_id` thật,
+**Đăng ký hỏng giữa chừng phải dọn sạch dấu vết.** Mẫu nào đậu là `keep()` ghi vào bảng **trong
+RAM**; bảng chỉ xuống flash một lần, khi `ui_task` thấy đủ ba mẫu (`svc_facedb_persist`). Ghi từng
+mẫu là ba lần ghi 576 KB cho một người, và mất điện giữa phiên thì để lại trên flash đúng cái nửa
+người mà đoạn này cấm; giữ trong RAM thì mất điện chỉ mất phiên đang lấy. Nhưng khi màn bỏ cuộc,
+những mẫu đã giữ **vẫn nằm trong bảng**: bảng có một người mang `employee_id` thật,
 chỉ một template, **nhận diện được**, trong khi người vận hành vừa đọc "Chưa lấy được mẫu" và tin
 là không có gì xảy ra. Một người chỉ có mẫu chính diện sẽ trượt ngay khi hơi nghiêng mặt, và
 không ai hiểu vì sao — lỗi âm thầm tệ hơn việc phải đăng ký lại.
@@ -3998,8 +4006,9 @@ bằng một bộ so vân sáng chạy mỗi khung, và đo trên board 13/09 n�
 người quay nhanh. Khung ngắm **đứng yên** thì không có gì để trượt, không tốn phép tính nào, và nói
 được nhiều hơn: hộp bám chỉ nói "máy thấy anh", khung ngắm nói "đứng vào đây thì máy làm việc được".
 `BoxTracker` vì thế **ra khỏi đường vẽ**; mã giữ lại trong cây cho luồng nào cần bám thật (ví dụ
-nhiều người cùng khung ở E10-T7). Bộ bám ấy so một mẫu độ sáng 24×24 điểm dưới tâm hộp với cửa sổ
-±32 px khung quanh chỗ cũ, theo lưới thô rồi tinh — 298 phép so mỗi khung, mỗi phép bỏ dở ngay khi
+nhiều người cùng khung ở E10-T7). Bộ bám ấy so một mẫu độ sáng 16×16 điểm, lấy cách nhau 2 px
+khung, dưới tâm hộp với cửa sổ ±64 px khung quanh chỗ cũ, theo lưới thô rồi tinh — 307 phép so
+mỗi khung, mỗi phép bỏ dở ngay khi
 tổng sai đã vượt chỗ tốt nhất. Nối vào `cam_task` nó kéo preview **13,2 → 9,5 fps** ở profile `dev`;
 bỏ dở sớm đưa về 11,2–12,9 fps, vẫn là cái giá không đáng cho một hộp chỉ nói "máy thấy anh". Test
 app `tracker` giữ nó chạy được trên khung tổng hợp.
@@ -4658,7 +4667,9 @@ Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một 
 | Loại | Là gì | Vào flash bằng |
 |---|---|---|
 | `.tflite` (TFLM) · `.espdl` (ESP-DL) | **Artifact của `ml/`**, không phải source. Một ảnh chỉ mang file của **một** runtime, đúng runtime firmware đang biên dịch | `ml/scripts/50_pack_and_flash.sh` → verify sha256 theo `contracts/models.lock.json` (hoặc `--lock` thí nghiệm) → đọc `firmware/models/<nhánh>/meta.json` → gộp `models.bin` → `parttool.py write_partition` xuống `models_0` và `models_1` |
-| Font, icon, WAV | **Source**, commit trong `firmware/assets/` | `assets/build_assets.py` → `assets.bin` → `esptool` ghi partition `assets` |
+| Font | **Source**: bảng glyph 4bpp sinh từ MiSans bằng `assets/fonts/gen_font.py`, commit ở `firmware/assets/fonts/` | biên dịch thẳng vào `ui_kiosk`, đi cùng ảnh firmware |
+| Biểu tượng | vẽ bằng code ở `ui_kiosk/widgets.cpp`, không có file | đi cùng ảnh firmware |
+| WAV | **Source**, commit ở `firmware/assets/sounds/` | `assets/build_assets.py` → `assets.bin` → `esptool` ghi partition `assets` |
 
 **Firmware build không nhúng model.** Nhúng thành mảng C thì đổi model phải build lại toàn bộ firmware và mất khả năng OTA riêng model — mà model là thứ đổi nhiều nhất trong dự án này.
 
@@ -5950,7 +5961,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `s_report` | Binary semaphore, nội bộ `drv_touch` | — | ISR GPIO14 | `touch_task` | GT911 có điểm chạm; cùng lý do `s_tof_int` |
 | `s_published` | Binary semaphore, nội bộ `ui_kiosk` | — | `ui_task` | `cam_task` | Màn phủ kín: `cam_task` chờ overlay mới tối đa một chu kỳ khung rồi mới vẽ (§5.2) |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED` `RENEW_TICKET`. Thay cho 10 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong. `RENEW_TICKET` do lệnh `ROTATE_TOKEN` giương, `ota_task` hạ khi đã có vé mới |
-| `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L5 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
+| `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L3 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
 **Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
 chỗ biến khoảng cách thành hai cạnh: dưới `vision.present_mm` là có người, trên ngưỡng đó cộng
@@ -6317,8 +6328,8 @@ Chia hai nhóm:
 
 | Nhóm | Thiết bị | Hỏng thì |
 |---|---|---|
-| **Sống còn** | `sys_storage`, `ai_engine`, `bsp_board`, `drv_lcd`, `drv_ioexp`, `drv_camera` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
-| **Suy giảm được** | `drv_touch` | log cảnh báo rồi đi tiếp. Chấm công bằng mặt, cảm ứng chỉ phục vụ màn cài đặt và ghi danh; mất nó thì mất tính năng, không mất máy |
+| **Sống còn** | `sys_storage`, `bsp_board`, `drv_lcd`, `ui_kiosk`, `drv_ioexp`, `drv_camera`, `drv_servo`, `svc_attendance` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
+| **Suy giảm được** | `ai_engine`, `svc_facedb`, RTC của `sys_time`, `drv_touch`, `drv_tof`, `drv_audio`, `net_wifi` | log rồi đi tiếp. Gói model hay bảng mặt không nạp được thì máy chạy mù và nói ra trên kính (§4.5.5h); riêng gói model đang chạy thử thì lùi ngăn rồi khởi động lại (A/B dưới đây). RTC vắng thì giờ đợi SNTP. Cảm ứng chỉ phục vụ màn cài đặt và ghi danh, ToF chỉ đánh thức máy, loa chỉ báo mở cửa, Wi-Fi chỉ đưa bản ghi đi: mất chúng là mất tính năng, không mất máy |
 
 Đây là đúng cách `ai_engine` đã làm với ảnh model thiếu nhánh ở §6.2.2, áp cho ngoại vi.
 Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái trước khi dùng, thay vì cho rằng
@@ -6456,7 +6467,7 @@ Header file **giống hệt khuôn của `faces.bin`** (magic `'ALG1'`, `record_
 | 25 | 2 | `match_score` Q8.8 |
 | 27 | 2 | `liveness_score` Q8.8 |
 | 29 | 1 | `flags` (bit0 đã mở cửa, bit1 thu lúc mất mạng, bit2 giờ chưa đồng bộ NTP) |
-| 30 | 2 | `model_version` u16 |
+| 30 | 2 | `model_version` u16 — firmware ghi 1 ở mọi bản ghi; server kiểm theo hợp đồng nhưng không lưu |
 | 32 | 12 | `reserved` |
 | 44 | 4 | `crc32` |
 
@@ -6637,7 +6648,7 @@ Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch th
 | Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
 | Log chấm công offline | tới 4 MB | **Flash LittleFS** | append-only | Chịu được mất điện |
 | Cert TLS + device JWT | ~4 KB | **NVS mã hoá** | `nvs_flash` + NVS encryption | |
-| Cover map của `ui_kiosk` | 320×104 + 168×46 + 320×480 (màn không video) | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 4 bit chỉ số bảng màu (0 để lọt video) + 4 bit độ phủ (§4.5.5h) |
+| Cover map của `ui_kiosk` | 2 × 320×480 = 307.200 B: hai ô luân phiên, một ô trên kính và một ô đang vẽ | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 4 bit chỉ số bảng màu (0 để lọt video) + 4 bit độ phủ (§4.5.5h) |
 | Wi-Fi + lwIP buffer | ~55 KB | **SRAM (bắt buộc)** | IDF tự quản | Không thể để PSRAM |
 | Stack 10 task | ~53 KB | **SRAM (bắt buộc)** | FreeRTOS | |
 
