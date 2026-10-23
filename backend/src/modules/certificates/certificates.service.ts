@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Certificate, PayslipState, Prisma } from "@prisma/client";
+import type { Certificate, ContractKind, PayslipState, Prisma } from "@prisma/client";
 
 import { EXPORT_MAX_ROWS, toExcelCsv } from "../../common/csv.js";
 import { COUNT_CEILING, countedTo, nextCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
@@ -24,7 +24,7 @@ import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { NAMED, nameOf } from "../notifications/notifications.service.js";
 import { asDay, localDay } from "../timesheet/local-day.js";
-import { letterFor, type Earnings } from "./certificate-text.js";
+import { letterFor, type Earnings, type PrintedFacts } from "./certificate-text.js";
 import type { Order } from "../leave/dto/queue.dto.js";
 import type { AskCertificateDto, DecideCertificateDto, ListCertificatesDto } from "./dto/certificate.dto.js";
 
@@ -38,7 +38,33 @@ const DEFAULT_MONTHS = 3;
 // Every state a slip reaches once it has gone out; opening it does not unsay the income.
 const ISSUED_SLIPS: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
 
+// What a letter prints about the person's place in the company, as the record holds it now.
+const PLACED = {
+  jobTitle: { select: { name: true } },
+  department: { select: { name: true } },
+  contracts: { where: { state: "ACTIVE" }, select: { kind: true }, take: 1 },
+} satisfies Prisma.EmployeeInclude;
+
+type Placed = Prisma.EmployeeGetPayload<{ include: typeof PLACED }>;
+
 type Listed = Prisma.CertificateGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
+
+function placedFacts(person: Placed): PrintedFacts {
+  return {
+    jobTitle: person.jobTitle?.name ?? null,
+    department: person.department?.name ?? null,
+    contract: person.contracts[0]?.kind ?? null,
+  };
+}
+
+/** The facts a letter took at issue; null when it holds none, and it prints from the record (KEHOACH 9.17 item 5). */
+function keptFacts(stored: Prisma.JsonValue | null): PrintedFacts | null {
+  if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+    return null;
+  }
+  const text = (key: string): string | null => (typeof stored[key] === "string" ? (stored[key] as string) : null);
+  return { jobTitle: text("jobTitle"), department: text("department"), contract: text("contract") as ContractKind | null };
+}
 
 export interface CertificateRow extends Listed {
   waitedDays: number;
@@ -189,10 +215,17 @@ export class CertificatesService {
     `;
     const year = localDay(new Date(), this.config.get("APP_TIMEZONE", { infer: true })).slice(0, 4);
     const serial = `${year}/${String(next.n).padStart(SERIAL_DIGITS, "0")}`;
+    const person = await this.db.employee.findUniqueOrThrow({ where: { id: held.employeeId }, include: PLACED });
     // A second issue that read REQUESTED too loses here; its sequence value is left as a gap, never reused.
     const claimed = await this.db.certificate.updateMany({
       where: { id: held.id, state: "REQUESTED" },
-      data: { state: "ISSUED", serial, issuedAt: new Date(), issuedById: viewer.userId },
+      data: {
+        state: "ISSUED",
+        serial,
+        issuedAt: new Date(),
+        issuedById: viewer.userId,
+        facts: { ...placedFacts(person) },
+      },
     });
     if (claimed.count !== 1) {
       throw new ConflictException("CERTIFICATE_ALREADY_DECIDED");
@@ -259,16 +292,7 @@ export class CertificatesService {
   async letter(viewer: Viewer, id: string): Promise<{ serial: string; text: string }> {
     const held = await this.db.certificate.findUnique({
       where: { id },
-      include: {
-        employee: {
-          include: {
-            jobTitle: { select: { name: true } },
-            department: { select: { name: true } },
-            legalEntity: { select: { name: true } },
-            contracts: { where: { state: "ACTIVE" }, select: { kind: true }, take: 1 },
-          },
-        },
-      },
+      include: { employee: { include: { ...PLACED, legalEntity: { select: { name: true } } } } },
     });
     if (!held) {
       throw new NotFoundException("CERTIFICATE_NOT_FOUND");
@@ -281,7 +305,8 @@ export class CertificatesService {
     if (held.state !== "ISSUED" || held.serial === null) {
       throw new BadRequestException("CERTIFICATE_NOT_ISSUED");
     }
-    const earnings = held.kind === "INCOME" ? await this.earningsOf(held.employeeId, held.months) : [];
+    const issuedAt = held.issuedAt ?? new Date();
+    const earnings = held.kind === "INCOME" ? await this.earningsOf(held.employeeId, held.months, issuedAt) : [];
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.CERTIFICATE_READ,
@@ -293,27 +318,25 @@ export class CertificatesService {
       serial: held.serial,
       text: letterFor(held.kind, {
         serial: held.serial,
-        issuedOn: asDay(held.issuedAt) ?? "",
+        issuedOn: localDay(issuedAt, this.config.get("APP_TIMEZONE", { infer: true })),
         fullName: held.employee.fullName,
         code: held.employee.code,
         dateOfBirth: asDay(held.employee.dateOfBirth),
         nationalId: held.employee.nationalId,
-        jobTitle: held.employee.jobTitle?.name ?? null,
-        department: held.employee.department?.name ?? null,
+        ...(keptFacts(held.facts) ?? placedFacts(held.employee)),
         entity: held.employee.legalEntity?.name ?? null,
         hireDate: asDay(held.employee.hireDate),
-        contract: held.employee.contracts[0]?.kind ?? null,
         purpose: held.purpose,
         earnings,
       }),
     };
   }
 
-  // Monthly pay only: a bonus or a leaver's settlement is not the income a bank asks about.
-  private async earningsOf(employeeId: number, months: number | null): Promise<Earnings[]> {
+  // Monthly pay issued by the letter's own issue: a bonus or a settlement is not the income a bank asks about.
+  private async earningsOf(employeeId: number, months: number | null, issuedAt: Date): Promise<Earnings[]> {
     const wanted = months ?? DEFAULT_MONTHS;
     const slips = await this.db.payslip.findMany({
-      where: { employeeId, state: { in: ISSUED_SLIPS }, run: { kind: "REGULAR" } },
+      where: { employeeId, state: { in: ISSUED_SLIPS }, issuedAt: { lte: issuedAt }, run: { kind: "REGULAR" } },
       include: { period: { select: { year: true, month: true } } },
       orderBy: [{ period: { year: "desc" } }, { period: { month: "desc" } }, { createdAt: "desc" }],
       take: wanted * 2,

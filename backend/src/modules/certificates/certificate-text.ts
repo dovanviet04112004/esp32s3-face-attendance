@@ -22,6 +22,9 @@ export interface LetterFacts {
   earnings: Earnings[];
 }
 
+/** The facts about a person's place in the company that a letter keeps from the day it is issued. */
+export type PrintedFacts = Pick<LetterFacts, "jobTitle" | "department" | "contract">;
+
 type Said = readonly [vi: string, en: string];
 
 // The reader is whoever the holder hands it to: a bank, a landlord, a

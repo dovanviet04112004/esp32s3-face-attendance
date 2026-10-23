@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { Prisma } from "@prisma/client";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
@@ -11,6 +12,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { CertificatesService } from "../src/modules/certificates/certificates.service.js";
+import { asDay, localDay } from "../src/modules/timesheet/local-day.js";
 import type { Viewer } from "../src/common/scope/viewer.js";
 import { seedEntityId, signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
@@ -26,6 +28,12 @@ const CLERK_EMAIL = "e2ect-clerk@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
 const PURPOSE = "Vay ngân hàng";
 const PAY_YEAR = 1996;
+const HOUR_MS = 3_600_000;
+const FIRST_DEPARTMENT = { code: "E2ECT-DA", name: "Phòng thư xác nhận A" };
+const SECOND_DEPARTMENT = { code: "E2ECT-DB", name: "Phòng thư xác nhận B" };
+const TITLE = { code: "E2ECT-JT", name: "Chuyên viên thư xác nhận" };
+// Late in the UTC day, so the business day in an eastern zone is already the next one.
+const LATE_UTC = new Date("2026-03-09T23:30:00.000Z");
 
 interface Letter {
   id: string;
@@ -52,6 +60,27 @@ describe("letters of employment and income (e2e)", () => {
     await db.payrollPeriod.deleteMany({ where: { year: PAY_YEAR } });
     await db.user.deleteMany({ where: { email: { in: [EMAIL, OTHER_EMAIL, BOSS_EMAIL, CLERK_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [CODE, OTHER, BOSS, CLERK] } } });
+    await db.department.deleteMany({ where: { code: { in: [FIRST_DEPARTMENT.code, SECOND_DEPARTMENT.code] } } });
+    await db.jobTitle.deleteMany({ where: { code: TITLE.code } });
+  }
+
+  async function letterOf(id: string): Promise<string> {
+    const res = await request(http).get(`/certificates/${id}/letter`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return (res.body as { text: string }).text;
+  }
+
+  async function issued(kind: "EMPLOYMENT" | "INCOME", months?: number): Promise<string> {
+    const ask = await request(http)
+      .post("/certificates")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ kind, purpose: PURPOSE, ...(months ? { months } : {}) });
+    assert.equal(ask.status, 201, JSON.stringify(ask.body));
+    const given = await request(http)
+      .post(`/certificates/${(ask.body as Letter).id}/issue`)
+      .set("Authorization", `Bearer ${desk}`);
+    assert.equal(given.status, 201, JSON.stringify(given.body));
+    return (ask.body as Letter).id;
   }
 
   async function makePerson(code: string, email: string, role: "EMPLOYEE" | "MANAGER" | "HR" = "EMPLOYEE"): Promise<number> {
@@ -303,10 +332,10 @@ describe("letters of employment and income (e2e)", () => {
     assert.equal(self.body.message, "SELF_DECISION");
   });
 
-  it("lists income from issued monthly payslips only, opened ones included", async () => {
+  it("lists income from issued monthly payslips only, opened ones included, and none issued after the letter", async () => {
     const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
     const policy = await db.payrollPolicy.findFirstOrThrow();
-    const slipFor = async (month: number, kind: "REGULAR" | "BONUS", state: "ISSUED" | "VIEWED", net: number) => {
+    const slipFor = async (month: number, kind: "REGULAR" | "BONUS", state: "ISSUED" | "VIEWED", net: number, issuedAt: Date) => {
       const period =
         (await db.payrollPeriod.findFirst({ where: { year: PAY_YEAR, month } })) ??
         (await db.payrollPeriod.create({
@@ -320,29 +349,62 @@ describe("letters of employment and income (e2e)", () => {
         }));
       const run = await db.payrollRun.create({ data: { periodId: period.id, kind, state: "DONE" } });
       await db.payslip.create({
-        data: { runId: run.id, periodId: period.id, employeeId: employee.id, policyId: policy.id, state, grossPay: net, netPay: net },
+        data: {
+          runId: run.id,
+          periodId: period.id,
+          employeeId: employee.id,
+          policyId: policy.id,
+          state,
+          issuedAt,
+          grossPay: net,
+          netPay: net,
+        },
       });
     };
-    await slipFor(1, "REGULAR", "ISSUED", 11_111_111);
-    await slipFor(2, "REGULAR", "VIEWED", 22_222_222);
-    await slipFor(2, "BONUS", "ISSUED", 99_999_999);
-    const ask = await request(http)
-      .post("/certificates")
-      .set("Authorization", `Bearer ${mine}`)
-      .send({ kind: "INCOME", purpose: PURPOSE, months: 2 });
-    assert.equal(ask.status, 201);
-    const issued = await request(http)
-      .post(`/certificates/${(ask.body as Letter).id}/issue`)
-      .set("Authorization", `Bearer ${desk}`);
-    assert.equal(issued.status, 201);
-    const letter = await request(http)
-      .get(`/certificates/${(ask.body as Letter).id}/letter`)
-      .set("Authorization", `Bearer ${mine}`);
-    assert.equal(letter.status, 200);
-    const text = (letter.body as { text: string }).text;
+    const lockedAfter = (month: number) => new Date(Date.UTC(PAY_YEAR, month, 5));
+    await slipFor(1, "REGULAR", "ISSUED", 11_111_111, lockedAfter(1));
+    await slipFor(2, "REGULAR", "VIEWED", 22_222_222, lockedAfter(2));
+    await slipFor(2, "BONUS", "ISSUED", 99_999_999, lockedAfter(2));
+    const id = await issued("INCOME", 2);
+    const text = await letterOf(id);
     assert.ok(text.includes("22222222"), "a payslip the person opened dropped out of the letter");
     assert.ok(text.includes("11111111"));
     assert.ok(!text.includes("99999999"), "a bonus run was counted as monthly income");
+
+    const letter = await db.certificate.findUniqueOrThrow({ where: { id } });
+    await slipFor(3, "REGULAR", "ISSUED", 33_333_333, new Date((letter.issuedAt as Date).getTime() + HOUR_MS));
+    const later = await letterOf(id);
+    assert.ok(!later.includes("33333333"), "the letter lists a payslip issued after it");
+    assert.ok(later.includes("11111111") && later.includes("22222222"), "a later payslip pushed a month off the letter");
+  });
+
+  it("prints the business day it was issued on, not the UTC one", async () => {
+    const id = await issued("EMPLOYMENT");
+    await db.certificate.update({ where: { id }, data: { issuedAt: LATE_UTC } });
+    const local = localDay(LATE_UTC, validateEnv().APP_TIMEZONE);
+    assert.notEqual(local, asDay(LATE_UTC), "the suite's zone keeps 23:30 UTC on the same day, so this case proves nothing");
+    const text = await letterOf(id);
+    assert.ok(text.includes(`Issued on: ${local}`), text);
+  });
+
+  it("keeps what a letter printed after the person moves on, and prints the record for a letter that kept nothing", async () => {
+    const [first, second, title] = await Promise.all([
+      db.department.create({ data: { ...FIRST_DEPARTMENT, legalEntityId: entityId } }),
+      db.department.create({ data: { ...SECOND_DEPARTMENT, legalEntityId: entityId } }),
+      db.jobTitle.create({ data: TITLE }),
+    ]);
+    const employee = await db.employee.findUniqueOrThrow({ where: { code: CODE } });
+    await db.employee.update({ where: { id: employee.id }, data: { departmentId: first.id, jobTitleId: title.id } });
+    const id = await issued("EMPLOYMENT");
+    await db.employee.update({ where: { id: employee.id }, data: { departmentId: second.id, jobTitleId: null } });
+
+    const kept = await letterOf(id);
+    assert.ok(kept.includes(FIRST_DEPARTMENT.name) && !kept.includes(SECOND_DEPARTMENT.name), "the letter moved with its person");
+    assert.ok(kept.includes(TITLE.name), "the letter lost the job title it was issued with");
+
+    await db.certificate.update({ where: { id }, data: { facts: Prisma.DbNull } });
+    const live = await letterOf(id);
+    assert.ok(live.includes(SECOND_DEPARTMENT.name) && !live.includes(TITLE.name), "a letter with no kept facts ignored the record");
   });
 
   it("lets the asker withdraw a letter the desk has not answered, and nobody else", async () => {

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ContractKind } from "@prisma/client";
 import { Type } from "class-transformer";
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
@@ -74,6 +75,23 @@ export class ListCertificatesDto extends QueueQueryDto {
   employeeId?: number;
 }
 
+export class PrintedFactsView {
+  @ApiProperty({ type: String, nullable: true, description: "Job title on the day of issue", example: "Kỹ sư phần mềm" })
+  jobTitle!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, description: "Department on the day of issue", example: "Kỹ thuật" })
+  department!: string | null;
+
+  @ApiProperty({
+    enum: ContractKind,
+    enumName: "ContractKind",
+    nullable: true,
+    description: "Kind of the contract in force on the day of issue",
+    example: ContractKind.INDEFINITE,
+  })
+  contract!: ContractKind | null;
+}
+
 export class CertificateView {
   @ApiProperty({ description: "Certificate id", example: "9d0e1f2a-3b4c-4d5e-8f6a-7b8c9d0e1f2a" })
   id!: string;
@@ -122,6 +140,13 @@ export class CertificateView {
     example: "b5f0c3d2-8a41-4e6b-9c2d-7f1e3a5b9c04",
   })
   issuedById!: string | null;
+
+  @ApiProperty({
+    type: PrintedFactsView,
+    nullable: true,
+    description: "What the letter prints about the person's place, taken at issue; null until issued, and on letters that keep none",
+  })
+  facts!: PrintedFactsView | null;
 
   @ApiProperty({ type: String, nullable: true, description: "Why it was turned down; null otherwise" })
   note!: string | null;

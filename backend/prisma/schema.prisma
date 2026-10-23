@@ -784,6 +784,8 @@ model Certificate {
   serial     String?          @unique
   issuedAt   DateTime?
   issuedById String?
+  // What the letter printed about the person, taken at issue; null on a letter older than it (KEHOACH 9.17 item 5).
+  facts      Json?
   note       String?
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
