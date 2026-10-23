@@ -1676,6 +1676,7 @@
     "PASSWORD_PERSONAL": "A password cannot hold your email, your name or your employee code.",
     "MFA_CODE_NEEDED": "Your account signs in with two steps: give the six digits from your authenticator app to change the password.",
     "SHIFT_ALREADY_ASSIGNED": "This person already starts that shift on that date.",
+    "SHIFT_CROSSES_MIDNIGHT": "A shift has to end after it starts, on the same day. Shifts across midnight are not supported yet.",
     "SHIFT_NAME_TAKEN": "That shift name is taken.",
     "SHIFT_NOT_FOUND": "No such shift.",
     "TASK_ALREADY_DONE": "Somebody has already marked this done.",

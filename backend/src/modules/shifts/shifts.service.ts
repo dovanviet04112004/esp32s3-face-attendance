@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma, Shift, ShiftAssignment } from "@prisma/client";
 
@@ -18,7 +18,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
-import { asDay, dayAsDate, localDay } from "../timesheet/local-day.js";
+import { asDay, clockToMinutes, dayAsDate, localDay } from "../timesheet/local-day.js";
 import type {
   AssignManyDto,
   AssignShiftDto,
@@ -50,6 +50,13 @@ export interface ShiftBatch {
 const HELD_SHOWN = 50;
 const SATURDAY = 6;
 const SUNDAY = 0;
+
+/** Refuse hours that end on the next calendar day: a night shift has no design yet (KEHOACH 9.8). */
+function refuseOvernight(startTime: string, endTime: string): void {
+  if (clockToMinutes(endTime) <= clockToMinutes(startTime)) {
+    throw new BadRequestException("SHIFT_CROSSES_MIDNIGHT");
+  }
+}
 
 /** What somebody is doing on one future day, which is not what they did on a
  *  past one: a planned day has no measurement (KEHOACH 9.17 item 8).
@@ -160,6 +167,7 @@ export class ShiftsService {
   }
 
   async create(body: CreateShiftDto): Promise<Shift> {
+    refuseOvernight(body.startTime, body.endTime);
     try {
       return await this.db.shift.create({ data: body });
     } catch (error) {
@@ -172,6 +180,10 @@ export class ShiftsService {
 
   async update(id: string, body: UpdateShiftDto): Promise<Shift> {
     const held = await this.get(id);
+    // Hours left as they are pass, so a night shift already on file can still be renamed or retired (KEHOACH 9.8).
+    if (body.startTime !== undefined || body.endTime !== undefined) {
+      refuseOvernight(body.startTime ?? held.startTime, body.endTime ?? held.endTime);
+    }
     const updated = await this.db.shift.update({ where: { id }, data: body }).catch((error: unknown) => {
       throw isPrismaCode(error, UNIQUE_VIOLATION) ? new ConflictException("SHIFT_NAME_TAKEN") : error;
     });

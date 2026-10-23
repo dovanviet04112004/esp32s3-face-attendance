@@ -222,6 +222,22 @@ describe("crud (e2e)", () => {
     assert.equal(bad.status, 400);
   });
 
+  it("refuses hours that would cross midnight, and still lets a night shift on file take a new grace", async () => {
+    const add = (startTime: string, endTime: string) =>
+      request(http).post("/shifts").set("Authorization", `Bearer ${token.hr}`).send({ name: "Ca hỏng", startTime, endTime });
+    const edit = (id: string, body: object) =>
+      request(http).patch(`/shifts/${id}`).set("Authorization", `Bearer ${token.hr}`).send(body);
+    for (const [startTime, endTime] of [["22:00", "06:00"], ["08:00", "08:00"]]) {
+      const res = await add(startTime, endTime);
+      assert.deepEqual([res.status, res.body.message], [400, "SHIFT_CROSSES_MIDNIGHT"], `${startTime}-${endTime} was taken`);
+    }
+    const moved = await edit(madeShiftId, { endTime: "12:00" });
+    assert.deepEqual([moved.status, moved.body.message], [400, "SHIFT_CROSSES_MIDNIGHT"], "an edit turned a day shift overnight");
+    const night = await db.shift.create({ data: { name: "Ca hỏng", startTime: "22:00", endTime: "06:00" } });
+    const graced = await edit(night.id, { graceMinutes: 5 });
+    assert.equal(graced.status, 200, JSON.stringify(graced.body));
+  });
+
   it("assigns an employee to a shift and refuses an employee who does not exist", async () => {
     const ok = await request(http)
       .post(`/shifts/${madeShiftId}/assignments`)

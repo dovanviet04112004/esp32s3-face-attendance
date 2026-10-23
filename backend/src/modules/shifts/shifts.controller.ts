@@ -115,7 +115,7 @@ export class ShiftsController {
   @Post()
   @Roles("ADMIN", "HR")
   @Reach("catalogue")
-  @ApiOperation({ summary: "Add a shift" })
+  @ApiOperation({ summary: "Add a shift; it ends after it starts, on the same day (SHIFT_CROSSES_MIDNIGHT)" })
   @ApiCreatedResponse({ type: ShiftView })
   create(@Body() body: CreateShiftDto): Promise<Shift> {
     return this.shifts.create(body);
@@ -124,7 +124,7 @@ export class ShiftsController {
   @Patch(":id")
   @Roles("ADMIN", "HR")
   @Reach("catalogue")
-  @ApiOperation({ summary: "Change a shift's hours or its grace" })
+  @ApiOperation({ summary: "Change a shift's hours or its grace; new hours end after they start (SHIFT_CROSSES_MIDNIGHT)" })
   @ApiOkResponse({ type: ShiftView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND" })
   @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_NAME_TAKEN" })
