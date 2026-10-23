@@ -411,6 +411,7 @@ def render_c_serialize(model: Model) -> str:
         "    if (in == NULL) { return NULL; }\n",
         "    cJSON *root = cJSON_CreateObject();\n",
         "    if (root == NULL) { return NULL; }\n",
+        "    bool whole = true;\n",
     ]
     for field, spec in model.properties.items():
         _, kind = c_field(model, field, spec)
@@ -421,24 +422,29 @@ def render_c_serialize(model: Model) -> str:
         indent = "    " if required else "        "
         if not required:
             out.append(f"    if (in->has_{cname}) {{\n")
-        if kind == "string":
-            out.append(f'{indent}cJSON_AddStringToObject(root, "{field}", in->{cname});\n')
-        elif kind == "enum":
-            enum_fn = c_enum_name(model, field)[:-2]
+        if kind == "object":
             out.append(
-                f'{indent}cJSON_AddStringToObject(root, "{field}", {enum_fn}_str(in->{cname}));\n'
-            )
-        elif kind == "boolean":
-            out.append(f'{indent}cJSON_AddBoolToObject(root, "{field}", in->{cname});\n')
-        elif kind == "object":
-            out.append(
-                f'{indent}cJSON_AddItemToObject(root, "{field}", '
-                f"{model.c_prefix}_{cname}_to_json(&in->{cname}));\n"
+                f"{indent}cJSON *{cname} = {model.c_prefix}_{cname}_to_json(&in->{cname});\n"
+                f'{indent}if ({cname} == NULL || !cJSON_AddItemToObject(root, "{field}", {cname})) {{\n'
+                f"{indent}    cJSON_Delete({cname});\n"
+                f"{indent}    whole = false;\n"
+                f"{indent}}}\n"
             )
         else:
-            out.append(f'{indent}cJSON_AddNumberToObject(root, "{field}", (double) in->{cname});\n')
+            if kind == "string":
+                add = f'cJSON_AddStringToObject(root, "{field}", in->{cname})'
+            elif kind == "enum":
+                enum_fn = c_enum_name(model, field)[:-2]
+                add = f'cJSON_AddStringToObject(root, "{field}", {enum_fn}_str(in->{cname}))'
+            elif kind == "boolean":
+                add = f'cJSON_AddBoolToObject(root, "{field}", in->{cname})'
+            else:
+                add = f'cJSON_AddNumberToObject(root, "{field}", (double) in->{cname})'
+            out.append(f"{indent}whole = whole && {add} != NULL;\n")
         if not required:
             out.append("    }\n")
+    # A field cJSON could not add would ship a record the server drops yet acks (KEHOACH 6.2.6).
+    out.append("    if (!whole) {\n        cJSON_Delete(root);\n        return NULL;\n    }\n")
     out.append("    return root;\n}\n\n")
     return "".join(out)
 
