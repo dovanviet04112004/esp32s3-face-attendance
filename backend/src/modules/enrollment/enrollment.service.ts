@@ -7,7 +7,7 @@ import type { EnrollPayload } from "../../common/generated/enroll_payload.js";
 import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
-import { isPrismaCode, PrismaService, RECORD_NOT_FOUND } from "../../database/prisma.service.js";
+import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../queue/queues.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
@@ -258,17 +258,18 @@ export class EnrollmentService implements OnModuleInit {
     if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("ENROLLMENT_NOT_FOUND");
     }
-    return this.tell(deviceId, async (tx) => ({
-      value: await tx.deviceEnrollment
-        .update({
-          where: { deviceId_employeeId: { deviceId, employeeId } },
-          data: { state: "REVOKED", revokedAt: new Date() },
-        })
-        .catch((error: unknown) => {
-          throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("ENROLLMENT_NOT_FOUND") : error;
-        }),
-      builds: [(version, to) => this.dropAll(employeeId, version, to)],
-    }));
+    return this.tell(deviceId, async (tx) => {
+      // A pair already revoked keeps its time: punches its door took up to then still count (KEHOACH 9.8).
+      await tx.deviceEnrollment.updateMany({
+        where: { deviceId, employeeId, state: { not: "REVOKED" } },
+        data: { state: "REVOKED", revokedAt: new Date() },
+      });
+      const pair = await tx.deviceEnrollment.findUnique({ where: { deviceId_employeeId: { deviceId, employeeId } } });
+      if (!pair) {
+        throw new NotFoundException("ENROLLMENT_NOT_FOUND");
+      }
+      return { value: pair, builds: [(version, to) => this.dropAll(employeeId, version, to)] };
+    });
   }
 
   /**

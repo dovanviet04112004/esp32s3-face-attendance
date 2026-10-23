@@ -11,6 +11,7 @@ import { configure } from "../src/bootstrap.js";
 import { TOPICS } from "../src/common/generated/topics.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { AttendanceService } from "../src/modules/attendance/attendance.service.js";
 import { EnrollmentService } from "../src/modules/enrollment/enrollment.service.js";
 import { openTemplate } from "../src/modules/enrollment/template-crypto.js";
 import { MqttService } from "../src/modules/mqtt/mqtt.service.js";
@@ -25,6 +26,10 @@ const MODEL = "recog-f77969e342ab10b4";
 const CODE = "NV9100";
 const OUTSIDER = "NV9101";
 const SPREAD = "NV9102";
+const TWICE = "NV9103";
+// Wider than the half second the WSL wall clock steps back, so the punch falls between the two removals.
+const REMOVE_GAP_MS = 2000;
+const BETWEEN_MS = 500;
 const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
 const SETTLE_MS = 15000;
@@ -50,7 +55,7 @@ describe("enrollment (e2e)", () => {
   async function sweep(): Promise<void> {
     await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: DOORS } } });
     await db.faceTemplate.deleteMany({ where: { employee: { code: { in: [CODE, SPREAD] } } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, SPREAD, ...RACERS] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, SPREAD, TWICE, ...RACERS] } } });
     await db.device.deleteMany({ where: { id: { in: DOORS } } });
   }
 
@@ -387,5 +392,40 @@ describe("enrollment (e2e)", () => {
     } finally {
       down.mock.restore();
     }
+  });
+
+  it("keeps the time a person left a kiosk when they are removed again, so a punch in between is not theirs", async () => {
+    const person = await db.employee.create({
+      data: { code: TWICE, fullName: "Gỡ hai lần", active: true, legalEntityId: entityId },
+    });
+    await db.biometricConsent.create({ data: { employeeId: person.id, noticeVersion: "e2e", method: "PAPER" } });
+    await app.get(EnrollmentService).assign(DEVICE_ID, person.id);
+    const remove = () => request(http).delete(`/enrollments/${DEVICE_ID}/${person.id}`).set("Authorization", `Bearer ${admin}`);
+    const first = await remove();
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    const leftAt = new Date(first.body.revokedAt as string).getTime();
+    await sleep(REMOVE_GAP_MS);
+    const before = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    const second = await remove();
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.state, "REVOKED");
+    assert.equal(second.body.revokedAt, first.body.revokedAt, "removing again moved the time the person left");
+    const now = await db.device.findUniqueOrThrow({ where: { id: DEVICE_ID } });
+    assert.equal(now.rosterVersion, before.rosterVersion + 1, "the kiosk was not told to drop the person again");
+
+    const outcome = await app.get(AttendanceService).record(
+      {
+        deviceId: DEVICE_ID,
+        localId: String(Date.now()),
+        employeeId: person.id,
+        ts: leftAt + BETWEEN_MS,
+        direction: "IN",
+        matchScore: 0.9,
+        livenessScore: 0.9,
+        modelVersion: 1,
+      },
+      new Date(),
+    );
+    assert.equal(outcome, "not-on-device", "a punch taken after the person left the kiosk was counted");
   });
 });
