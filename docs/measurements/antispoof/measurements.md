@@ -3106,3 +3106,61 @@ tư thế recognition cũng không khớp được.
 cổng của firmware**, phía giả phải có đòn khó nhất định chống (giấy). Chưa có khung OV5640 nào của
 tiền, ảnh in, thẻ; có ~10 khung ấy thì cả bộ căn lẫn bộ đo mới nói được về giấy bằng số, không bằng
 thử trực tiếp.
+
+## 44. Điểm sống của mặt thật dao động theo khung — luật `kSpoofTries`, 23/10
+
+### 44.1 Triệu chứng trên kiosk
+
+Log console của kiosk bench ngày 23/10, một lần boot (12:06–12:51), file idf.py tự ghi
+`firmware/build_bench/log/idf_py_stdout_output_142190`. Một nhân viên (id 6) chấm nhiều lượt, có lượt
+đứng gần, có lượt ở mép. "Vùng cắt đạt" là `min(2,7, 320 / cạnh mặt)` theo `fitted()` của
+`preproc.cpp`, với cạnh mặt là cạnh dài của hộp:
+
+| Phán quyết | Số lần | Cạnh mặt | Vùng cắt đạt | live |
+|---|---:|---|---|---|
+| `MATCH`, mặt xa | 3 | 104–126 px | 2,54–2,7× | 0,811–0,981 |
+| `MATCH`, mặt gần | 6 | 187–206 px | 1,55–1,71× | 0,589–0,957 |
+| `SPOOF` | 4 | 190–209 px | 1,53–1,68× | 0,023–0,424 |
+
+Bốn khung `SPOOF` gom thành ba lượt đứng, một lượt trượt hai lần liền. Lượt nào cũng có lần thử kế
+tiếp qua ngưỡng và khớp, chậm nhất 1,12 s sau khung dưới ngưỡng đầu tiên. Dòng verdict lúc ấy không
+ghi vị trí mặt, nên không đếm được khung nào ở góc.
+
+### 44.2 Thử giả thuyết "thiếu ngữ cảnh" trên 87 khung
+
+Chấm bằng file đang trên `models.lock.json`: `minifasnet_s8.espdl`, sha `ed94406b…`, tức hàng
+`int16_top1` của run `20260918-0118_c1d09c8_5d7b35`, mô phỏng bằng executor của ESP-PPQ. Crop đi
+đúng đường board (`fitted_square` + `resample_square` của `postproc/preproc.py`), hộp mặt lấy từ
+`antispoof.detector`, trên 87 khung có mặt của `test_device` (62 thật, 25 giả). Đây là phép thăm dò
+một lần ở scratchpad, không có target.
+
+Crop như board cắt hôm nay: mặt thật 59/62 ≥ 0,5, ba khung thấp nhất là `s20260911d_033` 0,196,
+`s20260911a_008` 0,281 và `s20260911d_030` 0,486, cả ba đều có vùng cắt ≥ 2,09×. Khung giả 25/25
+dưới ngưỡng, cao nhất **0,010**.
+
+Cắt lại chính các khung thật ấy với vùng nhỏ dần, đặt giữa mặt. Có 17 khung đủ chỗ để vùng 2,0×
+nằm trọn trong ảnh:
+
+| Vùng cắt | dưới 0,5 | median |
+|---|---:|---:|
+| 2,0× | 1/17 | 0,955 |
+| 1,8× | 1/17 | 0,986 |
+| 1,6× | 1/17 | 0,976 |
+| 1,4× | 2/17 | 0,962 |
+| 1,2× | 6/17 | 0,622 |
+
+Đẩy mặt lệch tâm 0,3 cạnh vùng ở 1,6× (28 khung) đổi median −0,006, khung tệ nhất −0,538.
+
+Trong dải 1,6–2,0× kiosk gặp, thiếu ngữ cảnh hay lệch tâm không giải thích được bốn khung
+0,023–0,424. Nhưng bộ 87 khung không có mặt thật nào trên ~198 px, nên chưa loại hẳn được mặt rất
+gần. Thứ đo được chắc chắn là điểm của cùng một mặt thật nhảy từ 0,023 lên 0,877 trong chưa đầy một
+giây.
+
+### 44.3 Quyết định
+
+`kSpoofTries` = 3 (KẾ HOẠCH §4.5.5d). Trong lượt chấm công, liveness dưới `live_min` chưa tới lần
+thứ ba không phải phán quyết; pipeline thử lại theo nhịp `kRetryDetects` và log từng lần trượt kèm vị
+trí mặt. Áp vào log 44.1, cả ba lượt đều không còn hiện "giả". Mức an ninh không đổi: sau một `SPOOF`
+pipeline vẫn thử lại cùng nhịp ấy, lần qua vẫn chỉ cần một khung trên ngưỡng, và phía giả của 44.2
+đứng dưới 0,010. Không đổi: `live_min` 500‰, crop 2,7×, các cổng hình học. Còn mở: khung raw có nhãn
+của mặt thật ≥ 200 px và ở mép, để biết vùng cắt dưới 1,6× có phải nguyên nhân phụ hay không (E8-T12).
