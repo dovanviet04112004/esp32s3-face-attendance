@@ -301,11 +301,17 @@ export class ProfileService {
     return turned;
   }
 
-  /** Take back a change nobody has answered yet. */
+  /** Take back a change nobody has answered yet; one the viewer does not reach is not found, whatever its state (KEHOACH 9.4). */
   async cancel(viewer: Viewer, id: string): Promise<ProfileChange> {
-    const held = await this.waiting(id);
+    const held = await this.db.profileChange.findUnique({ where: { id } });
+    if (!held || !(await this.reaches(viewer, held.employeeId))) {
+      throw new NotFoundException("PROFILE_CHANGE_NOT_FOUND");
+    }
     if (held.employeeId !== viewer.employeeId && held.askedById !== viewer.userId) {
       throw new ForbiddenException("PROFILE_NOT_YOURS");
+    }
+    if (held.state !== "PENDING") {
+      throw new ConflictException("PROFILE_CHANGE_DECIDED");
     }
     const dropped = await this.db.$transaction(async (tx) => {
       await this.claim(tx, held.id, { state: "CANCELLED", decidedAt: new Date() });

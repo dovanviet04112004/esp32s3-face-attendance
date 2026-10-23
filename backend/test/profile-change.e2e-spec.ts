@@ -479,6 +479,23 @@ describe("changing a personal detail through an approval (e2e)", () => {
     assert.equal(res.body.message, "PROFILE_CHANGE_DECIDED");
   });
 
+  it("answers somebody else's change as missing when asked to take it back, waiting or decided", async () => {
+    const asked = await request(http)
+      .post("/profile-changes")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ field: "PHONE", phone: "0900000003" });
+    assert.equal(asked.status, 201, JSON.stringify(asked.body));
+    const waiting = (asked.body as Change).id;
+    for (const id of [waiting, bankChange]) {
+      const res = await request(http).post(`/profile-changes/${id}/cancel`).set("Authorization", `Bearer ${theirs}`);
+      assert.equal(res.status, 404, `another person's change answered ${res.status} ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.message, "PROFILE_CHANGE_NOT_FOUND");
+    }
+    const own = await request(http).post(`/profile-changes/${waiting}/cancel`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(own.status, 201, JSON.stringify(own.body));
+    assert.equal((own.body as Change).state, "CANCELLED");
+  });
+
   it("files every step under the person it is about", async () => {
     const res = await request(http)
       .get(`/audit?subjectType=employee&subjectId=${employeeId}`)
