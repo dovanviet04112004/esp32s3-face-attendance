@@ -27,6 +27,7 @@ const CODE = "NV9100";
 const OUTSIDER = "NV9101";
 const SPREAD = "NV9102";
 const TWICE = "NV9103";
+const AUDITED = "NV9104";
 // Wider than the half second the WSL wall clock steps back, so the punch falls between the two removals.
 const REMOVE_GAP_MS = 2000;
 const BETWEEN_MS = 500;
@@ -55,7 +56,7 @@ describe("enrollment (e2e)", () => {
   async function sweep(): Promise<void> {
     await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: DOORS } } });
     await db.faceTemplate.deleteMany({ where: { employee: { code: { in: [CODE, SPREAD] } } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, SPREAD, TWICE, ...RACERS] } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, SPREAD, TWICE, AUDITED, ...RACERS] } } });
     await db.device.deleteMany({ where: { id: { in: DOORS } } });
   }
 
@@ -427,5 +428,36 @@ describe("enrollment (e2e)", () => {
       new Date(),
     );
     assert.equal(outcome, "not-on-device", "a punch taken after the person left the kiosk was counted");
+  });
+
+  it("writes putting a person on a kiosk and taking them off under the person, with the kiosk and the state", async () => {
+    const person = await db.employee.create({
+      data: { code: AUDITED, fullName: "Ghi nhật ký", active: true, legalEntityId: entityId },
+    });
+    await db.biometricConsent.create({ data: { employeeId: person.id, noticeVersion: "e2e", method: "PAPER" } });
+    const actor = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
+    const routed = { subjectType: "route", subjectId: { startsWith: "/enrollments" } };
+    const routedBefore = await db.auditLog.count({ where: routed });
+
+    const put = await request(http)
+      .post("/enrollments")
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ deviceId: DEVICE_ID, employeeId: person.id });
+    assert.equal(put.status, 201, JSON.stringify(put.body));
+    const taken = await request(http).delete(`/enrollments/${DEVICE_ID}/${person.id}`).set("Authorization", `Bearer ${admin}`);
+    assert.equal(taken.status, 200, JSON.stringify(taken.body));
+
+    const lines = await db.auditLog.findMany({
+      where: { subjectType: "employee", subjectId: String(person.id), action: { in: ["enrollment.assign", "enrollment.remove"] } },
+      orderBy: { id: "asc" },
+    });
+    assert.deepEqual(
+      lines.map((one) => [one.action, one.actorId, one.meta]),
+      [
+        ["enrollment.assign", actor.id, { deviceId: DEVICE_ID, state: "ASSIGNED" }],
+        ["enrollment.remove", actor.id, { deviceId: DEVICE_ID, state: "REVOKED" }],
+      ],
+    );
+    assert.equal(await db.auditLog.count({ where: routed }), routedBefore, "the route wrote a line of its own beside the service's");
   });
 });

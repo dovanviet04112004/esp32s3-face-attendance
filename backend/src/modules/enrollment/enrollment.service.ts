@@ -10,7 +10,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../queue/queues.js";
-import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
+import { AUDIT_ACTIONS, AUDIT_SUBJECTS, type AuditAction } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { MqttService } from "../mqtt/mqtt.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
@@ -118,12 +118,14 @@ export class EnrollmentService implements OnModuleInit {
     }));
   }
 
-  /** `assign` on a viewer's word; a person outside their reach answers EMPLOYEE_NOT_FOUND (KEHOACH 9.4). */
+  /** `assign` on a viewer's word, written down under the person; one outside their reach answers EMPLOYEE_NOT_FOUND (KEHOACH 9.4). */
   async assignAs(viewer: Viewer, deviceId: string, employeeId: number): Promise<DeviceEnrollment> {
     if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    return this.assign(deviceId, employeeId);
+    const pair = await this.assign(deviceId, employeeId);
+    await this.notePair(viewer, AUDIT_ACTIONS.ENROLLMENT_ASSIGN, pair);
+    return pair;
   }
 
   /**
@@ -258,7 +260,7 @@ export class EnrollmentService implements OnModuleInit {
     if (!(await this.reaches(viewer, employeeId))) {
       throw new NotFoundException("ENROLLMENT_NOT_FOUND");
     }
-    return this.tell(deviceId, async (tx) => {
+    const pair = await this.tell(deviceId, async (tx) => {
       // A pair already revoked keeps its time: punches its door took up to then still count (KEHOACH 9.8).
       await tx.deviceEnrollment.updateMany({
         where: { deviceId, employeeId, state: { not: "REVOKED" } },
@@ -269,6 +271,18 @@ export class EnrollmentService implements OnModuleInit {
         throw new NotFoundException("ENROLLMENT_NOT_FOUND");
       }
       return { value: pair, builds: [(version, to) => this.dropAll(employeeId, version, to)] };
+    });
+    await this.notePair(viewer, AUDIT_ACTIONS.ENROLLMENT_REMOVE, pair);
+    return pair;
+  }
+
+  private notePair(viewer: Viewer, action: AuditAction, pair: DeviceEnrollment): Promise<void> {
+    return this.audit.record({
+      actorId: viewer.userId,
+      action,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(pair.employeeId),
+      meta: { deviceId: pair.deviceId, state: pair.state },
     });
   }
 

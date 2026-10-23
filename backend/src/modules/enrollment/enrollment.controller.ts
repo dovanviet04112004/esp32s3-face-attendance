@@ -11,6 +11,7 @@ import {
 import type { DeviceEnrollment } from "@prisma/client";
 
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
+import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { RateBucket } from "../../common/decorators/rate-bucket.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { ErrorBody } from "../../common/dto/error-body.dto.js";
@@ -60,6 +61,7 @@ export class EnrollmentController {
   }
 
   @Post()
+  @AuditedInService()
   @Roles("ADMIN", "HR")
   @Reach("person")
   @ApiOperation({
@@ -72,6 +74,7 @@ export class EnrollmentController {
   }
 
   @Delete(":deviceId/:employeeId")
+  @AuditedInService()
   @Roles("ADMIN", "HR")
   @Reach("person")
   @ApiOperation({ summary: "Withdraw a person from a kiosk" })
