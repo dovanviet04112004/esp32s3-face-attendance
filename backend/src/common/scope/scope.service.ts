@@ -10,6 +10,7 @@ import type { Viewer } from "./viewer.js";
 // a role nobody assigned must not read the company (KEHOACH 9.4).
 const UNSCOPED: ReadonlySet<string> = new Set(["ADMIN", "HR", "PAYROLL"]);
 const MAX_DEPTH = 64;
+const MANAGER_TREE_LOCK_KEY = 76;
 
 @Injectable()
 export class ScopeService {
@@ -68,11 +69,12 @@ export class ScopeService {
     await this.cache.drop(SCOPE_PREFIX);
   }
 
-  /** A loop makes the walk above return the whole ring; refuse to make one. */
+  /** A loop makes the walk above return the whole ring; refuse to make one, the tree locked to the commit so a racing move walks after it. */
   async assertNoManagerCycle(tx: Prisma.TransactionClient, employeeIds: number[]): Promise<void> {
     if (employeeIds.length === 0) {
       return;
     }
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${MANAGER_TREE_LOCK_KEY}::int, 0)`;
     const looped = await tx.$queryRaw<{ start: number }[]>`
       WITH RECURSIVE up AS (
         SELECT "id" AS "start", "managerId" AS "at", 1 AS "depth"

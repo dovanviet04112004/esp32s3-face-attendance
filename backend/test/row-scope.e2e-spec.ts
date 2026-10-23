@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -10,11 +11,16 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { UsersService } from "../src/modules/users/users.service.js";
 
 const BOSS = "E2ESC01";
 const MINE = "E2ESC02";
 const STRANGER = "E2ESC03";
-const MADE_CODES = [BOSS, MINE, STRANGER];
+const LEFT = "E2ESC04";
+const RIGHT = "E2ESC05";
+const MADE_CODES = [BOSS, MINE, STRANGER, LEFT, RIGHT];
+// Long enough for the second move to reach its own check, short of the transaction's five seconds.
+const OVERLAP_MS = 1500;
 
 const BOSS_EMAIL = "e2esc-boss@kiosk.local";
 const MINE_EMAIL = "e2esc-mine@kiosk.local";
@@ -278,6 +284,38 @@ describe("row scope (e2e)", () => {
     assert.equal(res.body.message, "MANAGER_CYCLE");
     const boss = await db.employee.findUnique({ where: { id: idOf.get(BOSS) as number } });
     assert.equal(boss?.managerId, null, "the refused write left nothing behind");
+  });
+
+  it("lets only one of two crossing manager changes land, so no loop is stored", async () => {
+    const [left, right] = [idOf.get(LEFT) as number, idOf.get(RIGHT) as number];
+    const move = (id: number, managerId: number) =>
+      request(http).patch(`/employees/${id}`).set("Authorization", `Bearer ${token.admin as string}`).send({ managerId });
+    const users = app.get(UsersService);
+    const settle = users.syncManagerRoles.bind(users);
+    let arrived = 0;
+    let letGo = (): void => undefined;
+    const secondIn = new Promise<void>((done) => {
+      letGo = done;
+    });
+    // Runs inside each move's transaction after its loop check, so holding the first makes the two overlap.
+    const gate = mock.method(users, "syncManagerRoles", async (...args: Parameters<UsersService["syncManagerRoles"]>) => {
+      arrived += 1;
+      if (arrived === 1) {
+        await Promise.race([secondIn, sleep(OVERLAP_MS)]);
+      } else {
+        letGo();
+      }
+      return settle(...args);
+    });
+    try {
+      const answers = await Promise.all([move(left, right), move(right, left)]);
+      assert.deepEqual(answers.map((one) => one.status).sort(), [200, 409], JSON.stringify(answers.map((one) => one.body)));
+      assert.equal(answers.find((one) => one.status === 409)?.body.message, "MANAGER_CYCLE");
+    } finally {
+      gate.mock.restore();
+    }
+    const held = await db.employee.findMany({ where: { id: { in: [left, right] } }, select: { managerId: true } });
+    assert.equal(held.filter((one) => one.managerId !== null).length, 1, "both moves landed and the two manage each other");
   });
 
   it("moves who can see whom the moment the manager changes", async () => {
