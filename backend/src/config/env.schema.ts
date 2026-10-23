@@ -6,6 +6,8 @@ const DEFAULT_MQTT_CLIENT_ID = "svc-api";
 const DEFAULT_MFA_ROLES = "ADMIN,HR,PAYROLL";
 const NO_MFA_ROLES = "none";
 const MFA_KEY_BYTES = 32;
+// The one shape ttlToMs and jsonwebtoken read alike; a bare number is seconds to one and milliseconds to the other.
+const TOKEN_TTL = /^[1-9]\d*[smhd]$/;
 
 // The e2e suites sign the seeded accounts in hundreds of times a minute; the two-step suite opts in (KEHOACH 9.4).
 function mfaRolesOf(held: string | undefined, nodeEnv: string): Role[] {
@@ -23,8 +25,14 @@ export const envSchema = z
 
     JWT_ACCESS_SECRET: z.string().min(32),
     JWT_REFRESH_SECRET: z.string().min(32),
-    JWT_ACCESS_TTL: z.string().min(1).default("15m"),
-    JWT_REFRESH_TTL: z.string().min(1).default("7d"),
+    JWT_ACCESS_TTL: z
+      .string()
+      .regex(TOKEN_TTL, "JWT_ACCESS_TTL must be a whole number and one unit of s, m, h or d, such as 15m")
+      .default("15m"),
+    JWT_REFRESH_TTL: z
+      .string()
+      .regex(TOKEN_TTL, "JWT_REFRESH_TTL must be a whole number and one unit of s, m, h or d, such as 7d")
+      .default("7d"),
 
     DEVICE_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
     DEVICE_BOOTSTRAP_TOKEN: z.string().min(16),

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { validateEnv } from "../src/config/env.schema.js";
+import { ttlToMs } from "../src/modules/auth/auth.service.js";
 
 // Spelled out rather than read from process.env: this suite never loads
 // AppModule, which is what puts the dotenv file there for every other one.
@@ -105,6 +106,17 @@ describe("environment (e2e)", () => {
       () => validateEnv({ ...BASE, JWT_DEVICE_SECRET: BASE.JWT_REFRESH_SECRET }),
       /JWT_DEVICE_SECRET must differ/,
     );
+  });
+
+  it("refuses a token lifetime that cutting a session cannot read, and reads the one it takes", () => {
+    for (const key of ["JWT_ACCESS_TTL", "JWT_REFRESH_TTL"]) {
+      for (const held of ["15min", "900", "0m", "1.5h", ""]) {
+        assert.throws(() => validateEnv({ ...BASE, [key]: held }), new RegExp(key), `${key}=${held} booted`);
+      }
+    }
+    const env = validateEnv({ ...BASE, JWT_ACCESS_TTL: "20m" });
+    assert.equal(ttlToMs(env.JWT_ACCESS_TTL), 20 * 60_000);
+    assert.equal(ttlToMs(env.JWT_REFRESH_TTL), 7 * 86_400_000);
   });
 
   it("opens the api reference outside production unless told otherwise", () => {
