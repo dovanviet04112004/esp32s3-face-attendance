@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -8,17 +8,21 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { COMMON_PASSWORDS } from "../src/modules/auth/common-passwords.generated.js";
 import { hashPassword } from "../src/modules/auth/password.js";
-import { seedEntityId, tokensOf } from "./fixtures.js";
+import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
+import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
+import { postLogin, seedEntityId, tokensOf } from "./fixtures.js";
 
 const CODE = "E2EPW01";
 const NAME = "Trần Thị Mật Khẩu";
 const EMAIL = "e2epw-holder@kiosk.local";
 const PASSWORD = "kiosk-e2e-password-rules";
 const NEXT = "an-entirely-fresh-phrase-9";
+const RECLAIMED = "back-in-the-owners-hands";
 const HOUR_MS = 3_600_000;
 
 // The server keeps only this hash of a one-use link (KEHOACH 9.4).
@@ -32,6 +36,7 @@ describe("a new password is new, uncommon and impersonal, and its mail can say n
   let auth: AuthService;
   let userId = "";
   let token = "";
+  let admin = "";
   const common = COMMON_PASSWORDS.find((one) => /^[a-z0-9]{12,40}$/.test(one)) as string;
 
   async function sweep(): Promise<void> {
@@ -69,6 +74,7 @@ describe("a new password is new, uncommon and impersonal, and its mail can say n
     });
     userId = user.id;
     token = tokensOf(await auth.signIn(EMAIL, PASSWORD, {})).accessToken;
+    admin = tokensOf(await auth.signIn("admin@kiosk.local", validateEnv().SEED_ADMIN_PASSWORD ?? "", {})).accessToken;
   });
 
   after(async () => {
@@ -114,12 +120,14 @@ describe("a new password is new, uncommon and impersonal, and its mail can say n
     assert.ok(alarm.expiresAt.getTime() > Date.now() + HOUR_MS, "the not-me link dies within the hour");
   });
 
-  it("answers not me once: every session closed, the other links spent, a reset link on its way", async () => {
+  it("answers not me once: every session closed, the password in hand dead, the other links spent, a reset link on its way", async () => {
     await auth.signIn(EMAIL, NEXT, {});
     assert.ok((await db.session.count({ where: { userId, revokedAt: null } })) > 0);
     const plain = await link("passwordAlarm", new Date(Date.now() + HOUR_MS));
     const pressed = new Date();
+    const mailed = mock.method(app.get<Queues>(QUEUE_TOKEN)[QUEUE.notify], "add");
     const res = await request(app.getHttpServer()).post("/auth/not-me").send({ token: plain });
+    mailed.mock.restore();
     assert.equal(res.status, 204, JSON.stringify(res.body));
     assert.equal(await db.session.count({ where: { userId, revokedAt: null } }), 0, "a session outlived not me");
     assert.equal(await db.passwordAlarm.count({ where: { userId, usedAt: null } }), 0, "another not-me link stayed live");
@@ -130,6 +138,21 @@ describe("a new password is new, uncommon and impersonal, and its mail can say n
     const again = await request(app.getHttpServer()).post("/auth/not-me").send({ token: plain });
     assert.equal(again.status, 401);
     assert.equal(again.body.message, "ALARM_SPENT");
+
+    const shut = await postLogin(app.getHttpServer(), EMAIL, NEXT);
+    assert.equal(shut.status, 401, "the password in hand still opened the account after not me");
+    assert.equal(shut.body.message, "CREDENTIALS_REJECTED");
+    const kept = await request(app.getHttpServer()).delete(`/users/${userId}`).set("Authorization", `Bearer ${admin}`);
+    assert.equal(kept.status, 409, "an account that answered not me read as an invitation nobody used");
+    assert.equal(kept.body.message, "ACCOUNT_HAS_HISTORY");
+    const reset = mailed.mock.calls
+      .map((call) => call.arguments[1] as PasswordSetupJob)
+      .find((data) => data.type === "password-setup" && data.userId === userId);
+    const set = await request(app.getHttpServer())
+      .post("/auth/set-password")
+      .send({ token: new URL(reset?.link ?? "http://none").searchParams.get("token") ?? "", password: RECLAIMED });
+    assert.equal(set.status, 204, JSON.stringify(set.body));
+    assert.equal((await postLogin(app.getHttpServer(), EMAIL, RECLAIMED)).status, 200, "the mailed link did not give the account back");
   });
 
   it("refuses a not-me link past its hours", async () => {

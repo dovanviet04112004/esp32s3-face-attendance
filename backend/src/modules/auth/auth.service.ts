@@ -26,7 +26,7 @@ import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
 import { MfaService, type PendingCode } from "./mfa.service.js";
 import { passwordFault } from "./password-policy.js";
-import { hashPassword, LINK_BYTES, needsRehash, verifyPassword } from "./password.js";
+import { hashPassword, LINK_BYTES, needsRehash, UNUSABLE_PASSWORD, verifyPassword } from "./password.js";
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -259,7 +259,7 @@ export class AuthService {
     await this.sendLink(user.id, user.employee?.locale, "forgot");
   }
 
-  /** The owner's "not me" to a new-password mail: every session closed and a reset link on its way (KEHOACH 9.4). */
+  /** The owner's "not me" to a new-password mail: every session closed, no password left that opens the account, and a reset link on its way (KEHOACH 9.4). */
   async notMe(token: string): Promise<string> {
     const now = new Date();
     const alarm = await this.db.passwordAlarm.findUnique({
@@ -283,6 +283,7 @@ export class AuthService {
       }
       await tx.passwordAlarm.updateMany({ where: { userId: alarm.userId, usedAt: null }, data: { usedAt: now } });
       await tx.session.updateMany({ where: { userId: alarm.userId, revokedAt: null }, data: { revokedAt: now } });
+      await tx.user.update({ where: { id: alarm.userId }, data: { passwordHash: UNUSABLE_PASSWORD } });
     });
     await this.cutAccess([alarm.userId]);
     await this.sendLink(alarm.userId, alarm.user.employee?.locale, "alarm");

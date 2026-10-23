@@ -742,8 +742,8 @@ export class UsersService {
     if (!target) {
       throw new NotFoundException("USER_NOT_FOUND");
     }
-    // The hash in the WHERE: a link redeemed between the read and this delete keeps the account.
-    const gone = await this.db.user.deleteMany({ where: { id, passwordHash: UNUSABLE_PASSWORD } });
+    // In the WHERE: a link redeemed since the read keeps the account, and so does a password ever set, which left an alarm.
+    const gone = await this.db.user.deleteMany({ where: { id, passwordHash: UNUSABLE_PASSWORD, passwordAlarms: { none: {} } } });
     if (gone.count === 0) {
       throw new ConflictException("ACCOUNT_HAS_HISTORY");
     }
