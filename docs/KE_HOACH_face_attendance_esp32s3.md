@@ -8215,16 +8215,16 @@ khoản biết ngay, thay vì phát hiện khi không đăng nhập được n�
 trang `not-me`: dùng một lần, sống `PASSWORD_ALARM_TTL_HOURS` (72), máy chủ giữ băm của nó ở bảng
 `PasswordAlarm` chứ không giữ bản rõ, như liên kết đặt mật khẩu. Mở liên kết **chưa làm gì**: trang
 hỏi lại bằng một nút, vì bộ lọc thư của nhiều hộp mở sẵn mọi liên kết để soi. Bấm nút thì trong một
-lượt máy chủ đóng mọi phiên, đóng mọi liên kết đặt mật khẩu còn sống, rồi gửi ngay một liên kết đặt
+lượt máy chủ đóng mọi phiên, đóng mọi liên kết đặt mật khẩu còn sống, thay băm mật khẩu bằng đúng giá trị không khớp được với gì của tài khoản chưa đặt mật khẩu, rồi gửi ngay một liên kết đặt
 lại sống `PASSWORD_RESET_TTL_MINUTES` — tức là đúng luồng xin lại, theo đúng luật một liên kết sống,
-không phải một luồng khôi phục thứ hai. Bấm lần hai, hay bấm khi đã hết hạn, nhận `ALARM_SPENT`. Kẻ
+không phải một luồng khôi phục thứ hai. Từ cú bấm tới lúc chủ đặt mật khẩu mới qua liên kết ấy, không mật khẩu nào mở được tài khoản: kẻ vừa đổi mật khẩu không đăng nhập lại được trong lúc liên kết còn sống, nên cũng không có phiên nào để đổi mật khẩu tại chỗ — lần đổi ấy sẽ đóng đúng liên kết vừa gửi cho chủ. Bấm lần hai, hay bấm khi đã hết hạn, nhận `ALARM_SPENT`. Kẻ
 chiếm tài khoản đổi mật khẩu thì chủ lấy lại bằng một cú bấm, mà kẻ ấy không chặn được thư vì địa
 chỉ nhận không đổi được từ trong tài khoản: tài khoản gắn hồ sơ chỉ đổi nó qua một đơn có người thứ
 hai duyệt và có thư báo về địa chỉ cũ, tài khoản không gắn hồ sơ thì chỉ quản trị viên đổi.
 
-**Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không.** Một câu trả lời
+**Màn xin lại trả lời giống hệt nhau dù địa chỉ ấy có tài khoản hay không, cả về nội dung lẫn thời gian.** Một câu trả lời
 khác đi biến nó thành chỗ dò danh sách nhân sự của công ty: gõ vào một tệp email và đọc xem cái
-nào được nhận. Nó có hai nhịp tính theo **giờ** chứ không theo phút như cửa đăng nhập, vì mỗi
+nào được nhận — hay bấm giờ xem cái nào trả lời chậm hơn. Nên cửa không tra tài khoản: nó đếm nhịp rồi xếp đúng một job `password-forgot` vào hàng `notify`, có tài khoản hay không cũng vậy, và worker mới tra địa chỉ, rồi phát liên kết hoặc không làm gì. Nó có hai nhịp tính theo **giờ** chứ không theo phút như cửa đăng nhập, vì mỗi
 lượt ở đây gửi đi một lá thư chứ không chỉ tốn một phép so: `FORGOT_ATTEMPTS_PER_HOUR` theo IP,
 và `FORGOT_PER_EMAIL_PER_HOUR` (3) theo **địa chỉ nhận**, đếm cả địa chỉ không có tài khoản.
 Nhịp thứ hai là thứ chặn kẻ xoay IP để dội thư vào một hộp và đốt hết hạn ngạch SMTP mà phiếu
@@ -8312,10 +8312,10 @@ e2e đăng nhập bằng tài khoản mồi hàng trăm lần mỗi phút, còn 
    hai rồi ghi danh điện thoại của kẻ chiếm, nên trả `SELF_ACCOUNT` như khoá hay hạ vai chính
    mình. Đổi điện thoại thì chuyển tài khoản ngay trong ứng dụng xác thực, hoặc nhờ một `ADMIN`
    khác đặt lại.
-8. **Cửa thoát hiểm nằm trên VPS.** `ADMIN` duy nhất mất cả điện thoại lẫn mã dự phòng thì không
+8. **Cửa thoát hiểm nằm trên VPS, và chỉ dành cho `ADMIN` cuối cùng.** `ADMIN` duy nhất mất cả điện thoại lẫn mã dự phòng thì không
    còn ai bấm đặt lại. `deploy/mfa-reset.sh <email>` chạy trên VPS — nơi vốn đọc được cả cơ sở
-   dữ liệu — và làm đúng việc của nút đặt lại trong một giao dịch, kể cả dòng audit, với người
-   làm để trống và `meta` ghi `console`.
+   dữ liệu — và trong một giao dịch xoá khoá, mã dự phòng và đếm sai, đóng mọi phiên, ghi dòng audit với người
+   làm để trống và `meta` ghi `console`. Nó chỉ chạm cơ sở dữ liệu, nên thiếu hai việc của nút ở luật 7: không cắt vé access đã cấp — vé ấy sống tới hết `JWT_ACCESS_TTL` (mặc định 15 phút) —, và không gửi thư cho chủ. Còn một `ADMIN` khác đăng nhập được thì dùng nút ấy.
 
 ### 9.5 Nghỉ phép
 
@@ -9603,8 +9603,8 @@ buộc, trừ đi những biên lai đã có, cộng thêm những biên lai đ�
 buộc mới — và nó sẽ lệch đúng vào lúc cần đọc.
 
 **Onboarding / offboarding (10).** Mẫu danh sách việc theo chức danh và phòng ban, sinh ra bản
-thể hiện có người phụ trách và hạn. **Offboarding chạy ngược lại và phải chặn được**: chưa thu
-tài sản, chưa bàn giao thì kỳ lương cuối không chốt được.
+thể hiện có người phụ trách và hạn. **Việc nào thì người phụ trách nó đánh dấu xong**: bàn nhân sự (`ADMIN`, `HR`) đánh dấu được mọi việc của người trong phạm vi mình, còn lại mỗi người chỉ đánh dấu việc mình phụ trách — người mới việc `SELF` của chính mình, quản lý việc `MANAGER` ghi tên mình —; việc của người khác trả `403 TASK_NOT_YOURS`, việc ngoài phạm vi trả `TASK_NOT_FOUND`, và người đang nhận hay nghỉ việc không đánh dấu được việc của vai khác trong danh sách của chính mình (`SELF_DECISION`, §9.4).
+**Offboarding chạy ngược lại, và kỳ lương cuối không chốt lặng lẽ khi nó còn dở**: người nghỉ trong kỳ còn giữ tài sản là mục `LEAVERS_HOLDING_ASSETS` của danh sách kiểm trước khi chốt, vì phiếu cuối là chỗ cuối cùng còn đối trừ được; chốt đè mục ấy được, nhưng như mọi mục treo, người chốt phải xác nhận và ghi lý do (§9.18 mục 4).
 
 **Tài sản (11).** Mỗi lần cấp và thu là một **bản ghi chuyển giao**, không phải sửa ô `holder`.
 Câu hỏi "cái máy này từng qua tay ai" chỉ trả lời được nếu lịch sử là dòng chứ không phải ô.
