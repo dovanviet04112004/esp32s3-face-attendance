@@ -19,8 +19,11 @@ const AWAY_CODE = "E2E-FLOW-B";
 const MOVER = "NV9F01";
 const STAYER = "NV9F02";
 const NEWCOMER = "NV9F03";
+const LATECOMER = "NV9F04";
 const STRAY = "NV9F09";
-const CODES = [MOVER, STAYER, NEWCOMER, STRAY];
+const CODES = [MOVER, STAYER, NEWCOMER, LATECOMER, STRAY];
+// Hired after April ends, so April owes them neither pay nor days.
+const LATE_HIRE = "2026-05-11";
 const YEAR = 2026;
 const BASE = 20_000_000;
 const ADVANCE = 1_000_000;
@@ -366,6 +369,16 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
 
     await hire(NEWCOMER, awayId);
     assert.equal(await countOf(april.body.id, "NOT_IN_RUN"), 1, "the checklist missed a person no run priced");
+
+    const missing = async () => [await countOf(april.body.id, "NO_COMPENSATION"), await countOf(april.body.id, "NO_ATTENDANCE_DAYS")];
+    const before = await missing();
+    const late = await db.employee.create({
+      data: { code: LATECOMER, fullName: `Thử luồng lương ${LATECOMER}`, active: true, legalEntityId: awayId, hireDate: dateOf(LATE_HIRE) },
+    });
+    await db.compensationRecord.create({
+      data: { employeeId: late.id, effectiveFrom: dateOf(LATE_HIRE), baseSalary: BASE, insuranceSalary: BASE },
+    });
+    assert.deepEqual(await missing(), before, "somebody hired after April counts as missing from April");
 
     const locked = await as("payroll").post(`/payroll-periods/${april.body.id}/lock`, { acceptOpenItems: true, note: "e2e" });
     assert.equal(locked.status, 201, JSON.stringify(locked.body));

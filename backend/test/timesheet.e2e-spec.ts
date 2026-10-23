@@ -29,6 +29,9 @@ const FIXED = "NV9105";
 const TRIP = "NV9106";
 const REMOTE = "NV9107";
 const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED, TRIP, REMOTE];
+// Hired the day after DAY, so DAY is no day of theirs.
+const UNHIRED = "NV9110";
+const HIRED_AFTER = "2026-03-17";
 
 // Made here rather than by provisioning, which opens a login for everyone
 // waiting and would race the leave suite for the same people.
@@ -51,7 +54,7 @@ describe("timesheet leave (e2e)", () => {
     await clearDeskNotices(db, MADE_CODES);
     await db.attendanceDay.deleteMany({ where: { date } });
     await db.user.deleteMany({ where: { email: FILER_EMAIL } });
-    await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
+    await db.employee.deleteMany({ where: { code: { in: [...MADE_CODES, UNHIRED] } } });
   }
 
   async function rowOf(code: string) {
@@ -127,6 +130,17 @@ describe("timesheet leave (e2e)", () => {
         data: { employeeId: made.id, leaveTypeId, year: 2026, entitled: 12 },
       });
     }
+    const unhired = await db.employee.create({
+      data: {
+        code: UNHIRED,
+        fullName: `Thử chưa vào làm ${UNHIRED}`,
+        active: true,
+        hireDate: new Date(`${HIRED_AFTER}T00:00:00.000Z`),
+        departmentId: template.departmentId,
+        legalEntityId: template.legalEntityId,
+      },
+    });
+    idOf.set(UNHIRED, unhired.id);
 
     await db.user.create({
       data: {
@@ -160,6 +174,10 @@ describe("timesheet leave (e2e)", () => {
     await timesheet.build(DAY);
     assert.equal(await stateOf(AHEAD), "LEAVE");
     assert.equal(await stateOf(BEHIND), "ABSENT");
+  });
+
+  it("builds no day for somebody hired after it", async () => {
+    assert.equal(await stateOf(UNHIRED), "MISSING", "a day before the hire date was counted as an absence");
   });
 
   it("counts that day as leave and not as absence in the summary", async () => {

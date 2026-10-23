@@ -555,9 +555,13 @@ export class TimesheetService implements OnModuleInit {
         orderBy: { ts: "asc" },
       }),
       this.db.employee.findMany({
-        // A last day is built after its record closes (KEHOACH 9.14), so `active` alone drops it.
         where: {
-          OR: [{ active: true }, { leaveDate: { gte: date } }],
+          AND: [
+            // A last day is built after its record closes (KEHOACH 9.14), so `active` alone drops it.
+            { OR: [{ active: true }, { leaveDate: { gte: date } }] },
+            // Somebody not hired yet is not absent (KEHOACH 9.8).
+            { OR: [{ hireDate: null }, { hireDate: { lte: date } }] },
+          ],
           ...(only === undefined ? {} : { id: only }),
           ...(entityIds === null ? {} : { legalEntityId: { in: entityIds } }),
         },

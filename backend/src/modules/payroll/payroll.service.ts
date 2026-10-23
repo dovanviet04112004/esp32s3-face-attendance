@@ -422,6 +422,8 @@ export class PayrollService {
     const period = await this.requirePeriod(periodId);
     const legalEntityId = period.legalEntityId;
     const ofEntity = { employee: { legalEntityId } };
+    // Somebody hired after the period owes it neither a pay record nor a built day (KEHOACH 9.8).
+    const hired = { OR: [{ hireDate: null }, { hireDate: { lte: period.endDate } }] } satisfies Prisma.EmployeeWhereInput;
     const [
       pendingRequests,
       missingPay,
@@ -446,6 +448,7 @@ export class PayrollService {
         where: {
           active: true,
           legalEntityId,
+          ...hired,
           compensation: { none: { effectiveFrom: { lte: period.endDate } } },
         },
       }),
@@ -456,6 +459,7 @@ export class PayrollService {
         where: {
           active: true,
           legalEntityId,
+          ...hired,
           days: { none: { date: { gte: period.startDate, lte: period.endDate } } },
         },
       }),
