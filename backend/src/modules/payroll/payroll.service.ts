@@ -1787,6 +1787,14 @@ export class PayrollService {
     return { queued: waiting.length };
   }
 
+  /** Record that a payslip's mail left: sentAt once, and only an ISSUED slip turns SENT, so an opened one stays VIEWED (KEHOACH 9.11). */
+  async markSent(payslipId: string): Promise<void> {
+    await this.db.$transaction([
+      this.db.payslip.updateMany({ where: { id: payslipId, sentAt: null }, data: { sentAt: new Date() } }),
+      this.db.payslip.updateMany({ where: { id: payslipId, state: "ISSUED" }, data: { state: "SENT" } }),
+    ]);
+  }
+
   /**
    * The file a bank or an accountant takes. Columns are chosen by kind rather
    * than hand-edited afterwards, which is where a payment file goes wrong.

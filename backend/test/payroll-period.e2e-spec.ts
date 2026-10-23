@@ -419,6 +419,28 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal(again.body.viewedAt, opened.body.viewedAt, "a second opening moved when it was first read");
   });
 
+  it("keeps an opened payslip VIEWED when its mail goes out, and stamps the send once", async () => {
+    const opened = await db.payslip.findFirstOrThrow({
+      where: { periodId, employeeId: idOf.get(STEADY), state: { not: "DRAFT" } },
+    });
+    assert.equal(opened.state, "VIEWED");
+    // Straight at what the delivery worker calls once the mail is handed over: the suite runs no mail server.
+    await payroll.markSent(opened.id);
+    const sent = await db.payslip.findUniqueOrThrow({ where: { id: opened.id } });
+    assert.equal(sent.state, "VIEWED", "the mail made a payslip its owner had read look unread");
+    assert.ok(sent.sentAt, "the send left no stamp");
+    await payroll.markSent(opened.id);
+    const twice = await db.payslip.findUniqueOrThrow({ where: { id: opened.id } });
+    assert.equal(twice.sentAt?.getTime(), sent.sentAt.getTime(), "a second delivery moved when the mail left");
+
+    const unread = await db.payslip.findFirstOrThrow({
+      where: { periodId, employeeId: idOf.get(ABSENT), state: { not: "DRAFT" } },
+    });
+    assert.equal(unread.state, "ISSUED");
+    await payroll.markSent(unread.id);
+    assert.equal((await db.payslip.findUniqueOrThrow({ where: { id: unread.id } })).state, "SENT");
+  });
+
   it("sums the period over what it issued, and finds one payslip with its advance", async () => {
     const totals = await as("hr").get(`/payroll-periods/${periodId}/totals`);
     assert.equal(totals.status, 200);

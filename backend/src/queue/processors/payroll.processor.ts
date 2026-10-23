@@ -137,10 +137,7 @@ export class PayrollProcessor implements OnModuleInit, OnModuleDestroy {
     } else {
       this.log.log(`would send "${body.subject}" to ${to}`);
     }
-    await this.db.payslip.update({
-      where: { id: slip.id },
-      data: { state: "SENT", sentAt: new Date() },
-    });
+    await this.payroll.markSent(slip.id);
     this.feed.publish(FEED.change, { resources: ["payslips"] }, slip.employeeId);
   }
 }
