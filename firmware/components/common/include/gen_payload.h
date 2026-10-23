@@ -135,22 +135,27 @@ static inline cJSON *attendance_record_to_json(const attendance_record_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "deviceId", in->device_id);
-    cJSON_AddStringToObject(root, "localId", in->local_id);
-    cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id);
-    cJSON_AddNumberToObject(root, "ts", (double) in->ts);
-    cJSON_AddStringToObject(root, "direction", attendance_record_direction_str(in->direction));
-    cJSON_AddNumberToObject(root, "matchScore", (double) in->match_score);
-    cJSON_AddNumberToObject(root, "livenessScore", (double) in->liveness_score);
-    cJSON_AddNumberToObject(root, "modelVersion", (double) in->model_version);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "deviceId", in->device_id) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "localId", in->local_id) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "ts", (double) in->ts) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "direction", attendance_record_direction_str(in->direction)) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "matchScore", (double) in->match_score) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "livenessScore", (double) in->liveness_score) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "modelVersion", (double) in->model_version) != NULL;
     if (in->has_door_opened) {
-        cJSON_AddBoolToObject(root, "doorOpened", in->door_opened);
+        whole = whole && cJSON_AddBoolToObject(root, "doorOpened", in->door_opened) != NULL;
     }
     if (in->has_captured_offline) {
-        cJSON_AddBoolToObject(root, "capturedOffline", in->captured_offline);
+        whole = whole && cJSON_AddBoolToObject(root, "capturedOffline", in->captured_offline) != NULL;
     }
     if (in->has_clock_unsynced) {
-        cJSON_AddBoolToObject(root, "clockUnsynced", in->clock_unsynced);
+        whole = whole && cJSON_AddBoolToObject(root, "clockUnsynced", in->clock_unsynced) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -247,23 +252,28 @@ static inline cJSON *device_command_config_to_json(const device_command_config_t
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
+    bool whole = true;
     if (in->has_brightness) {
-        cJSON_AddNumberToObject(root, "brightness", (double) in->brightness);
+        whole = whole && cJSON_AddNumberToObject(root, "brightness", (double) in->brightness) != NULL;
     }
     if (in->has_volume) {
-        cJSON_AddNumberToObject(root, "volume", (double) in->volume);
+        whole = whole && cJSON_AddNumberToObject(root, "volume", (double) in->volume) != NULL;
     }
     if (in->has_lang) {
-        cJSON_AddStringToObject(root, "lang", device_command_config_lang_str(in->lang));
+        whole = whole && cJSON_AddStringToObject(root, "lang", device_command_config_lang_str(in->lang)) != NULL;
     }
     if (in->has_dedup_window_minutes) {
-        cJSON_AddNumberToObject(root, "dedupWindowMinutes", (double) in->dedup_window_minutes);
+        whole = whole && cJSON_AddNumberToObject(root, "dedupWindowMinutes", (double) in->dedup_window_minutes) != NULL;
     }
     if (in->has_face_min_px) {
-        cJSON_AddNumberToObject(root, "faceMinPx", (double) in->face_min_px);
+        whole = whole && cJSON_AddNumberToObject(root, "faceMinPx", (double) in->face_min_px) != NULL;
     }
     if (in->has_wake_distance_cm) {
-        cJSON_AddNumberToObject(root, "wakeDistanceCm", (double) in->wake_distance_cm);
+        whole = whole && cJSON_AddNumberToObject(root, "wakeDistanceCm", (double) in->wake_distance_cm) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -387,23 +397,32 @@ static inline cJSON *device_command_to_json(const device_command_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "cmdId", in->cmd_id);
-    cJSON_AddNumberToObject(root, "ts", (double) in->ts);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "cmdId", in->cmd_id) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "ts", (double) in->ts) != NULL;
     if (in->has_expires_at) {
-        cJSON_AddNumberToObject(root, "expiresAt", (double) in->expires_at);
+        whole = whole && cJSON_AddNumberToObject(root, "expiresAt", (double) in->expires_at) != NULL;
     }
-    cJSON_AddStringToObject(root, "action", device_command_action_str(in->action));
+    whole = whole && cJSON_AddStringToObject(root, "action", device_command_action_str(in->action)) != NULL;
     if (in->has_issued_by) {
-        cJSON_AddStringToObject(root, "issuedBy", in->issued_by);
+        whole = whole && cJSON_AddStringToObject(root, "issuedBy", in->issued_by) != NULL;
     }
     if (in->has_open_ms) {
-        cJSON_AddNumberToObject(root, "openMs", (double) in->open_ms);
+        whole = whole && cJSON_AddNumberToObject(root, "openMs", (double) in->open_ms) != NULL;
     }
     if (in->has_active_slot) {
-        cJSON_AddNumberToObject(root, "activeSlot", (double) in->active_slot);
+        whole = whole && cJSON_AddNumberToObject(root, "activeSlot", (double) in->active_slot) != NULL;
     }
     if (in->has_config) {
-        cJSON_AddItemToObject(root, "config", device_command_config_to_json(&in->config));
+        cJSON *config = device_command_config_to_json(&in->config);
+        if (config == NULL || !cJSON_AddItemToObject(root, "config", config)) {
+            cJSON_Delete(config);
+            whole = false;
+        }
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -597,27 +616,32 @@ static inline cJSON *device_event_to_json(const device_event_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "deviceId", in->device_id);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "deviceId", in->device_id) != NULL;
     if (in->has_seq) {
-        cJSON_AddNumberToObject(root, "seq", (double) in->seq);
+        whole = whole && cJSON_AddNumberToObject(root, "seq", (double) in->seq) != NULL;
     }
-    cJSON_AddNumberToObject(root, "ts", (double) in->ts);
-    cJSON_AddStringToObject(root, "type", device_event_type_str(in->type));
+    whole = whole && cJSON_AddNumberToObject(root, "ts", (double) in->ts) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "type", device_event_type_str(in->type)) != NULL;
     if (in->has_cmd_id) {
-        cJSON_AddStringToObject(root, "cmdId", in->cmd_id);
+        whole = whole && cJSON_AddStringToObject(root, "cmdId", in->cmd_id) != NULL;
     }
-    cJSON_AddStringToObject(root, "severity", device_event_severity_str(in->severity));
+    whole = whole && cJSON_AddStringToObject(root, "severity", device_event_severity_str(in->severity)) != NULL;
     if (in->has_message) {
-        cJSON_AddStringToObject(root, "message", in->message);
+        whole = whole && cJSON_AddStringToObject(root, "message", in->message) != NULL;
     }
     if (in->has_employee_id) {
-        cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id);
+        whole = whole && cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id) != NULL;
     }
     if (in->has_liveness_score) {
-        cJSON_AddNumberToObject(root, "livenessScore", (double) in->liveness_score);
+        whole = whole && cJSON_AddNumberToObject(root, "livenessScore", (double) in->liveness_score) != NULL;
     }
     if (in->has_error_code) {
-        cJSON_AddNumberToObject(root, "errorCode", (double) in->error_code);
+        whole = whole && cJSON_AddNumberToObject(root, "errorCode", (double) in->error_code) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -767,33 +791,38 @@ static inline cJSON *enroll_payload_to_json(const enroll_payload_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "op", enroll_payload_op_str(in->op));
-    cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id);
-    cJSON_AddNumberToObject(root, "templateIdx", (double) in->template_idx);
-    cJSON_AddNumberToObject(root, "updatedAt", (double) in->updated_at);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "op", enroll_payload_op_str(in->op)) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "employeeId", (double) in->employee_id) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "templateIdx", (double) in->template_idx) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "updatedAt", (double) in->updated_at) != NULL;
     if (in->has_embedding) {
-        cJSON_AddStringToObject(root, "embedding", in->embedding);
+        whole = whole && cJSON_AddStringToObject(root, "embedding", in->embedding) != NULL;
     }
     if (in->has_scale) {
-        cJSON_AddNumberToObject(root, "scale", (double) in->scale);
+        whole = whole && cJSON_AddNumberToObject(root, "scale", (double) in->scale) != NULL;
     }
     if (in->has_quality) {
-        cJSON_AddNumberToObject(root, "quality", (double) in->quality);
+        whole = whole && cJSON_AddNumberToObject(root, "quality", (double) in->quality) != NULL;
     }
     if (in->has_embedding_version) {
-        cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version);
+        whole = whole && cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version) != NULL;
     }
     if (in->has_full_name) {
-        cJSON_AddStringToObject(root, "fullName", in->full_name);
+        whole = whole && cJSON_AddStringToObject(root, "fullName", in->full_name) != NULL;
     }
     if (in->has_employee_code) {
-        cJSON_AddStringToObject(root, "employeeCode", in->employee_code);
+        whole = whole && cJSON_AddStringToObject(root, "employeeCode", in->employee_code) != NULL;
     }
     if (in->has_roster_version) {
-        cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version);
+        whole = whole && cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version) != NULL;
     }
     if (in->has_device_id) {
-        cJSON_AddStringToObject(root, "deviceId", in->device_id);
+        whole = whole && cJSON_AddStringToObject(root, "deviceId", in->device_id) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -922,40 +951,45 @@ static inline cJSON *heartbeat_to_json(const heartbeat_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "deviceId", in->device_id);
-    cJSON_AddNumberToObject(root, "ts", (double) in->ts);
-    cJSON_AddNumberToObject(root, "uptimeSeconds", (double) in->uptime_seconds);
-    cJSON_AddStringToObject(root, "fwVersion", in->fw_version);
-    cJSON_AddStringToObject(root, "modelVersion", in->model_version);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "deviceId", in->device_id) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "ts", (double) in->ts) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "uptimeSeconds", (double) in->uptime_seconds) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "fwVersion", in->fw_version) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "modelVersion", in->model_version) != NULL;
     if (in->has_rssi_dbm) {
-        cJSON_AddNumberToObject(root, "rssiDbm", (double) in->rssi_dbm);
+        whole = whole && cJSON_AddNumberToObject(root, "rssiDbm", (double) in->rssi_dbm) != NULL;
     }
     if (in->has_heap_free_bytes) {
-        cJSON_AddNumberToObject(root, "heapFreeBytes", (double) in->heap_free_bytes);
+        whole = whole && cJSON_AddNumberToObject(root, "heapFreeBytes", (double) in->heap_free_bytes) != NULL;
     }
     if (in->has_heap_min_free_bytes) {
-        cJSON_AddNumberToObject(root, "heapMinFreeBytes", (double) in->heap_min_free_bytes);
+        whole = whole && cJSON_AddNumberToObject(root, "heapMinFreeBytes", (double) in->heap_min_free_bytes) != NULL;
     }
     if (in->has_psram_free_bytes) {
-        cJSON_AddNumberToObject(root, "psramFreeBytes", (double) in->psram_free_bytes);
+        whole = whole && cJSON_AddNumberToObject(root, "psramFreeBytes", (double) in->psram_free_bytes) != NULL;
     }
     if (in->has_pending_uplink_count) {
-        cJSON_AddNumberToObject(root, "pendingUplinkCount", (double) in->pending_uplink_count);
+        whole = whole && cJSON_AddNumberToObject(root, "pendingUplinkCount", (double) in->pending_uplink_count) != NULL;
     }
     if (in->has_active_slot) {
-        cJSON_AddNumberToObject(root, "activeSlot", (double) in->active_slot);
+        whole = whole && cJSON_AddNumberToObject(root, "activeSlot", (double) in->active_slot) != NULL;
     }
     if (in->has_boot_count) {
-        cJSON_AddNumberToObject(root, "bootCount", (double) in->boot_count);
+        whole = whole && cJSON_AddNumberToObject(root, "bootCount", (double) in->boot_count) != NULL;
     }
     if (in->has_roster_version) {
-        cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version);
+        whole = whole && cJSON_AddNumberToObject(root, "rosterVersion", (double) in->roster_version) != NULL;
     }
     if (in->has_embedding_version) {
-        cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version);
+        whole = whole && cJSON_AddStringToObject(root, "embeddingVersion", in->embedding_version) != NULL;
     }
     if (in->has_on_trial) {
-        cJSON_AddBoolToObject(root, "onTrial", in->on_trial);
+        whole = whole && cJSON_AddBoolToObject(root, "onTrial", in->on_trial) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
@@ -1072,23 +1106,28 @@ static inline cJSON *ota_manifest_to_json(const ota_manifest_t *in)
     if (in == NULL) { return NULL; }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) { return NULL; }
-    cJSON_AddStringToObject(root, "releaseId", in->release_id);
-    cJSON_AddStringToObject(root, "target", ota_manifest_target_str(in->target));
-    cJSON_AddStringToObject(root, "version", in->version);
-    cJSON_AddStringToObject(root, "url", in->url);
-    cJSON_AddStringToObject(root, "sha256", in->sha256);
-    cJSON_AddNumberToObject(root, "sizeBytes", (double) in->size_bytes);
+    bool whole = true;
+    whole = whole && cJSON_AddStringToObject(root, "releaseId", in->release_id) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "target", ota_manifest_target_str(in->target)) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "version", in->version) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "url", in->url) != NULL;
+    whole = whole && cJSON_AddStringToObject(root, "sha256", in->sha256) != NULL;
+    whole = whole && cJSON_AddNumberToObject(root, "sizeBytes", (double) in->size_bytes) != NULL;
     if (in->has_signature) {
-        cJSON_AddStringToObject(root, "signature", in->signature);
+        whole = whole && cJSON_AddStringToObject(root, "signature", in->signature) != NULL;
     }
     if (in->has_min_fw_version) {
-        cJSON_AddStringToObject(root, "minFwVersion", in->min_fw_version);
+        whole = whole && cJSON_AddStringToObject(root, "minFwVersion", in->min_fw_version) != NULL;
     }
     if (in->has_run_id) {
-        cJSON_AddStringToObject(root, "runId", in->run_id);
+        whole = whole && cJSON_AddStringToObject(root, "runId", in->run_id) != NULL;
     }
     if (in->has_forced) {
-        cJSON_AddBoolToObject(root, "forced", in->forced);
+        whole = whole && cJSON_AddBoolToObject(root, "forced", in->forced) != NULL;
+    }
+    if (!whole) {
+        cJSON_Delete(root);
+        return NULL;
     }
     return root;
 }
