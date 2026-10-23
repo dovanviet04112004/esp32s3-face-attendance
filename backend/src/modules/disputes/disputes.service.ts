@@ -260,9 +260,12 @@ export class DisputesService {
     return answered;
   }
 
-  /** Take one back. Only the person who raised it, and only while it is open. */
+  /** Take one back. Only the person who raised it, and only while it is open; one out of reach does not exist (KEHOACH 9.4). */
   async withdraw(viewer: Viewer, id: string): Promise<PayslipDispute> {
-    const held = await this.open(id);
+    const held = await this.db.payslipDispute.findUnique({ where: { id } });
+    if (!held || !(await this.reaches(viewer, held.employeeId))) {
+      throw new NotFoundException("DISPUTE_NOT_FOUND");
+    }
     if (held.employeeId !== viewer.employeeId) {
       throw new ForbiddenException("DISPUTE_NOT_YOURS");
     }

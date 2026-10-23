@@ -396,17 +396,18 @@ describe("disputing a payslip (e2e)", () => {
     assert.equal(asked.status, 201);
     const id = (asked.body as Dispute).id;
 
-    const notTheirs = await request(http)
-      .post(`/payslip-disputes/${id}/withdraw`)
-      .set("Authorization", `Bearer ${theirs}`);
-    assert.equal(notTheirs.status, 403);
-    assert.equal(notTheirs.body.message, "DISPUTE_NOT_YOURS");
+    const withdrawAs = (token: string) =>
+      request(http).post(`/payslip-disputes/${id}/withdraw`).set("Authorization", `Bearer ${token}`);
+    const stranger = await withdrawAs(theirs);
+    assert.deepEqual([stranger.status, stranger.body.message], [404, "DISPUTE_NOT_FOUND"], "a stranger learnt the dispute exists");
+    const byDesk = await withdrawAs(desk);
+    assert.deepEqual([byDesk.status, byDesk.body.message], [403, "DISPUTE_NOT_YOURS"], "the desk took back a dispute in its raiser's name");
 
-    const taken = await request(http)
-      .post(`/payslip-disputes/${id}/withdraw`)
-      .set("Authorization", `Bearer ${mine}`);
+    const taken = await withdrawAs(mine);
     assert.equal(taken.status, 201);
     assert.equal((taken.body as Dispute).state, "WITHDRAWN");
+    const late = await withdrawAs(theirs);
+    assert.deepEqual([late.status, late.body.message], [404, "DISPUTE_NOT_FOUND"], "a stranger learnt the dispute's state");
   });
 
   it("tells the person their dispute has an answer", async () => {
