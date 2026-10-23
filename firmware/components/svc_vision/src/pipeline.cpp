@@ -18,6 +18,8 @@ constexpr float kSameFaceIou = 0.5f;
 // track: 320 ms each, and six of them is a person standing still for 2.8 s.
 constexpr int kRetryDetects = 3;
 constexpr int kUnknownTries = 2;
+// A genuine face dips under live_min on a frame now and then (KEHOACH 4.5.5d).
+constexpr int kSpoofTries = 3;
 // Enrolling asks liveness on every frame, so the number of tries is bounded.
 constexpr int kEnrolSpoofTries = APP_ENROL_SPOOF_TRIES;
 // The detector drops a frame here and there on a face that never moved.
@@ -107,6 +109,7 @@ void VisionPipeline::reset() noexcept
     seen_ = Seen::Nothing;
     enrol_spoofs_ = 0;
     unknown_tries_ = 0;
+    spoof_tries_ = 0;
     tracking_ = false;
 }
 
@@ -167,6 +170,7 @@ void VisionPipeline::follow(const ai_engine_face_t &primary) noexcept
         // A new track can be a different person, so the tries start over.
         enrol_spoofs_ = 0;
         unknown_tries_ = 0;
+        spoof_tries_ = 0;
     }
     tracking_ = true;
     memcpy(tracked_, primary.box, sizeof(tracked_));
@@ -192,10 +196,18 @@ void VisionPipeline::verify(const ai_engine_frame_t &frame, const ai_engine_face
         }
         out.live_score = live;
         if (live < thresholds_.live_min_score) {
-            out.kind = SVC_VISION_SPOOF;
-            concluded_ = true;
             matched_ = false;
             since_verdict_ = 0;
+            if (enrol_id_ == 0 && ++spoof_tries_ < kSpoofTries) {
+                ESP_LOGI(TAG, "liveness %.3f under the floor, face %dx%d px at %d,%d, try %d of %d",
+                         live, static_cast<int>(primary.box[2] - primary.box[0]),
+                         static_cast<int>(primary.box[3] - primary.box[1]),
+                         static_cast<int>(primary.box[0]), static_cast<int>(primary.box[1]),
+                         spoof_tries_, kSpoofTries);
+                return;
+            }
+            out.kind = SVC_VISION_SPOOF;
+            concluded_ = true;
             ++enrol_spoofs_;
             return;
         }

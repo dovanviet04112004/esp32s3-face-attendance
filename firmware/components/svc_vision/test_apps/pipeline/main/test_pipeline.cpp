@@ -189,23 +189,66 @@ TEST_CASE("a face stable over two detects is verified in that step and reported 
     TEST_ASSERT_EQUAL(12, rig.detector.calls);
 }
 
-TEST_CASE("a spoof stops before recognition, and the same face is retried later", "[svc_vision]")
+TEST_CASE("a spoof is called on its third try, stops before recognition, and is retried", "[svc_vision]")
 {
     Rig rig;
     rig.liveness.live = kSpoofScore;
     rig.detector.one(100.0f, 80.0f, kBigFace);
     rig.step();
     const svc_vision_result_t result = rig.pipeline.step(kFrame);
-    TEST_ASSERT_EQUAL(SVC_VISION_SPOOF, result.kind);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, result.kind);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, kSpoofScore, result.live_score);
-    TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
     for (int i = 0; i < kRetryDetects - 1; ++i) {
         TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
         TEST_ASSERT_EQUAL(1, rig.liveness.scores);
     }
-    TEST_ASSERT_EQUAL(SVC_VISION_SPOOF, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
     TEST_ASSERT_EQUAL(2, rig.liveness.scores);
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_SPOOF, rig.step());
+    TEST_ASSERT_EQUAL(3, rig.liveness.scores);
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_SPOOF, rig.step());
+    TEST_ASSERT_EQUAL(4, rig.liveness.scores);
     TEST_ASSERT_EQUAL(0, rig.embedder.embeds);
+}
+
+TEST_CASE("a genuine face under the floor once is tried again, never called a spoof", "[svc_vision]")
+{
+    Rig rig;
+    rig.liveness.live = kSpoofScore;
+    rig.detector.one(100.0f, 80.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(1, rig.liveness.scores);
+    rig.liveness.live = kLiveScore;
+    for (int i = 0; i < kRetryDetects - 1; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(SVC_VISION_MATCH, rig.step());
+    TEST_ASSERT_EQUAL(2, rig.liveness.scores);
+    TEST_ASSERT_EQUAL(1, rig.embedder.embeds);
+}
+
+TEST_CASE("a new track starts the spoof tries over", "[svc_vision]")
+{
+    Rig rig;
+    rig.liveness.live = kSpoofScore;
+    rig.detector.one(20.0f, 20.0f, kBigFace);
+    rig.step();
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    for (int i = 0; i < kRetryDetects; ++i) {
+        TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    }
+    TEST_ASSERT_EQUAL(2, rig.liveness.scores);
+    rig.detector.one(300.0f, 150.0f, kBigFace);
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(SVC_VISION_NONE, rig.step());
+    TEST_ASSERT_EQUAL(3, rig.liveness.scores);
 }
 
 TEST_CASE("no face is reported once, and a returning face starts over", "[svc_vision]")

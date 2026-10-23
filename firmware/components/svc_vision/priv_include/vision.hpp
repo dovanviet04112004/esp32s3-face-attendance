@@ -96,6 +96,7 @@ private:
     int stable_ = 0;
     int since_verdict_ = -1;
     int unknown_tries_ = 0;               // verdicts withheld on this track
+    int spoof_tries_ = 0;                 // liveness refusals withheld on this track
     bool tracking_ = false;               // tracked_ holds the last detect's box
     bool matched_ = false;
     bool concluded_ = false;              // a verdict has gone out on this track
