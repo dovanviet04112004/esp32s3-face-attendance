@@ -7950,7 +7950,7 @@ phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng 
 | `EMPLOYEE` | hồ sơ của **chính mình**, chấm công của mình, phép của mình, phiếu lương của mình | đơn nghỉ phép của mình, vài ô liên lạc |
 | `MANAGER` | mọi thứ của `EMPLOYEE`, cộng **cây dưới quyền mình** ở những gì cần để quản việc: tên, mã, phòng ban, chức danh, liên lạc, ca, chấm công, nghỉ phép, đơn từ. **Không** thấy của cấp dưới: CCCD, mã số thuế, số BHXH, ngày sinh, tài khoản ngân hàng, lương, phiếu lương, quyết toán thuế, người phụ thuộc, tạm ứng, đơn đổi hồ sơ | duyệt hoặc từ chối đơn của cấp dưới, trừ tạm ứng lương |
 | `HR` | toàn bộ hồ sơ, chấm công, nghỉ phép — hoặc chỉ của **các pháp nhân được giao** | hồ sơ, hợp đồng, phép, phân ca |
-| `PAYROLL` | như `HR`, cộng **lương và phiếu lương**, cùng phạm vi pháp nhân | chạy kỳ lương, chốt kỳ |
+| `PAYROLL` | như `HR`, cộng **lương và phiếu lương**, cùng phạm vi pháp nhân. Riêng đơn từ (`Request`) đi theo bảng trang của §9.15, nơi vai này không có tab *Đơn từ*: nó chỉ đọc đơn của chính mình và đơn đang chờ chính nó quyết | chạy kỳ lương, chốt kỳ |
 | `ADMIN` | tất cả, cộng thiết bị và người dùng | tất cả |
 
 **Quản lý thấy người, không thấy giấy tờ và tiền của người.** Duyệt phép và xếp ca không cần số
