@@ -18,7 +18,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { skipOf, type BulkSkip, type Chosen } from "../employees/bulk.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
-import { asDay, localDay } from "../timesheet/local-day.js";
+import { asDay, dayAsDate, localDay } from "../timesheet/local-day.js";
 import type {
   AssignManyDto,
   AssignShiftDto,
@@ -302,6 +302,7 @@ export class ShiftsService {
     return made;
   }
 
+  /** Take somebody off a shift from today: one already begun ends yesterday, since built days read it; one not begun goes (KEHOACH 9.15). */
   async unassign(viewer: Viewer, id: string, assignmentId: string): Promise<void> {
     const visible = await this.scope.visibleEmployeeIds(viewer);
     const found = await this.db.shiftAssignment.findFirst({
@@ -310,7 +311,16 @@ export class ShiftsService {
     if (!found) {
       throw new NotFoundException("ASSIGNMENT_NOT_FOUND");
     }
-    await this.db.shiftAssignment.delete({ where: { id: assignmentId } });
+    const today = dayAsDate(this.today());
+    const yesterday = new Date(today);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    await this.db.$transaction([
+      this.db.shiftAssignment.updateMany({
+        where: { id: assignmentId, validFrom: { lt: today }, OR: [{ validTo: null }, { validTo: { gt: yesterday } }] },
+        data: { validTo: yesterday },
+      }),
+      this.db.shiftAssignment.deleteMany({ where: { id: assignmentId, validFrom: { gte: today } } }),
+    ]);
     await this.tellChanged([found]);
   }
 

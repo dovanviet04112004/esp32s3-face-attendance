@@ -201,8 +201,8 @@ export class ShiftsController {
   @Roles("ADMIN", "HR")
   @Reach("person")
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: "Take somebody off this shift" })
-  @ApiNoContentResponse({ description: "The assignment is gone" })
+  @ApiOperation({ summary: "Take somebody off this shift from today; the days it already covered keep it" })
+  @ApiNoContentResponse({ description: "An assignment already begun ends yesterday; one that had not begun is gone" })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
   @ApiParam({
     name: "assignmentId",

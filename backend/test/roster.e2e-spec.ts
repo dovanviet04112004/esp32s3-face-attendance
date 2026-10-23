@@ -10,6 +10,8 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { asDay, dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
+import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { seedEntityId } from "./fixtures.js";
 
 const CODE = "E2ERS01";
@@ -22,6 +24,7 @@ const HOLIDAY = "E2ERS Ngày nghỉ";
 // A month with a Saturday the 7th, chosen so weekends land on known dates.
 const YEAR = 2026;
 const MONTH = 11;
+const DAY_MS = 86_400_000;
 
 interface PlannedDay {
   date: string;
@@ -204,6 +207,33 @@ describe("my shift roster (e2e)", () => {
     const nobody = await request(http).get("/shifts/people/2147483600").set("Authorization", `Bearer ${admin}`);
     assert.equal(nobody.status, 404);
     assert.equal(nobody.body.message, "EMPLOYEE_NOT_FOUND");
+  });
+
+  it("ends a begun shift at yesterday and drops one not begun, so days already built keep theirs", async () => {
+    const today = dayAsDate(localDay(new Date(), validateEnv().APP_TIMEZONE));
+    const daysFrom = (offset: number) => new Date(today.getTime() + offset * DAY_MS);
+    const early = await db.shift.findUniqueOrThrow({ where: { name: EARLY } });
+    const assign = (validFrom: Date) =>
+      request(http)
+        .post(`/shifts/${early.id}/assignments`)
+        .set("Authorization", `Bearer ${admin}`)
+        .send({ employeeId: strangerId, validFrom: validFrom.toISOString() });
+    const unassign = (assignmentId: string) =>
+      request(http).delete(`/shifts/${early.id}/assignments/${assignmentId}`).set("Authorization", `Bearer ${admin}`);
+    const begun = await assign(daysFrom(-7));
+    assert.equal(begun.status, 201, JSON.stringify(begun.body));
+    const ahead = await assign(daysFrom(3));
+    assert.equal(ahead.status, 201, JSON.stringify(ahead.body));
+
+    assert.equal((await unassign(begun.body.id)).status, 204);
+    assert.equal((await unassign(ahead.body.id)).status, 204);
+    const kept = await db.shiftAssignment.findUnique({ where: { id: begun.body.id } });
+    assert.equal(kept?.validTo?.toISOString(), daysFrom(-1).toISOString(), "a shift already worked lost its past, or kept today");
+    assert.equal(await db.shiftAssignment.count({ where: { id: ahead.body.id } }), 0, "a shift not begun stayed on the roster");
+
+    await app.get(TimesheetService).build(asDay(daysFrom(-3)), strangerId);
+    const built = await db.attendanceDay.findFirstOrThrow({ where: { employeeId: strangerId, date: daysFrom(-3) } });
+    assert.equal(built.shiftId, early.id, "a rebuilt day lost the shift it was worked on");
   });
 
   it("refuses a month that is not a month", async () => {
