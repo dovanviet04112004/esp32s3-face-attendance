@@ -8463,9 +8463,12 @@ ngày cắt riêng nằm ngoài phạm vi.
 Lượt thưởng và lượt chốt cuối lấy phiếu thường làm nền thuế (§9.18 mục 8, 9); chạy song song với
 một lượt thường là tính trên một nền đang bị thay.
 
-**Lượt thường đổi thì lượt đứng trên nó cũ.** Một lượt thường xong thì mọi lượt thưởng và chốt
-cuối đã `DONE` của kỳ quay về `DRAFT`: phiếu bỏ, đầu vào giữ, `PayrollRun.failure` ghi
-`RUN_BASE_CHANGED`, và trang kỳ hiện câu ấy ngay dưới lượt.
+**Nền hay đầu vào đổi thì lượt đã xong cũ.** Một lượt thường xong thì mọi lượt thưởng và chốt
+cuối đã `DONE` của kỳ quay về `DRAFT`, và nạp lại số tiền của một lượt thưởng hay chốt cuối đã
+`DONE` đưa chính lượt ấy về `DRAFT`: phiếu bỏ, đầu vào là bản đang giữ, `PayrollRun.failure` ghi
+`RUN_BASE_CHANGED`, và trang kỳ hiện câu ấy ngay dưới lượt. Tạo lượt và nạp số tiền chỉ nhận ở kỳ
+còn mở, dưới cùng khoá dòng kỳ mà chạy, huỷ và chốt dùng: kỳ không còn mở trả `PERIOD_NOT_OPEN`,
+lượt đang chạy `RUN_ALREADY_RUNNING`, lượt đã huỷ `RUN_DISCARDED`.
 
 **Bỏ một lượt.** *Huỷ lượt* đưa một lượt `DRAFT`, `DONE` hay `FAILED` của kỳ còn mở sang
 `DISCARDED` và xoá phiếu của nó; lượt đang chạy hay kỳ đã chốt thì từ chối. `DISCARDED` là trạng
@@ -8593,10 +8596,16 @@ hàm.** Luật BHXH miễn đóng cho tháng người lao động **không làm 
 14 ngày làm việc trở lên**. Bỏ quy tắc này thì phiếu lương của người nghỉ không lương cả tháng
 ra **thực nhận âm**: thu nhập bằng 0 mà vẫn trừ 10,5% của lương đóng bảo hiểm. Con số 14 nằm ở
 `PayrollPolicy.noContributionUnpaidDays` vì nó do luật đặt, và ngày luật đổi thì thêm một dòng
-chính sách là xong.
+chính sách là xong. Ngày đếm vào ngưỡng là ngày vắng và ngày nghỉ không lương trong bảng công,
+cộng **mọi ngày làm việc của kỳ (§9.5) trước `hireDate` hay sau `leaveDate`**: người vào làm ngày 20
+hay có ngày làm cuối là mùng 3 không làm việc, không hưởng lương ở những ngày ấy, và bảng công
+không có dòng nào cho chúng (§9.8). Phiếu ghi đúng tổng ấy ở `unpaidDays`.
 
 Phép tính lương **luôn hỏi chính sách có hiệu lực tại ngày cuối kỳ**, không hỏi "chính sách hiện
-tại". Tính lại một kỳ cũ vì thế ra đúng con số cũ.
+tại". Tính lại một kỳ cũ vì thế ra đúng con số cũ. Bảng quyết toán năm hỏi dòng hiệu lực ngày
+31/12 và tính trên **biểu năm** của nó: mỗi mốc của biểu tháng nhân 12 — 120 / 360 / 720 / 1.200
+triệu —, thuế suất giữ nguyên (Luật Thuế TNCN). Áp biểu tháng lên tổng cả năm là đẩy thu nhập lên
+bậc trên: 5 triệu tính thuế mỗi tháng bị khấu trừ 3 triệu cả năm, mà bảng lại báo phải nộp 8,5 triệu.
 
 ### 9.8 Từ lượt chấm công thành ngày công
 
@@ -8689,6 +8698,23 @@ chưa chốt. Chỉ E13-T3 đóng được chỗ ấy.
 offline vài hôm, hay lượt về giữa lúc job đêm đang chạy — xếp ngày ấy của người ấy vào hàng dựng
 lại, nhiều lượt cho cùng người cùng ngày gộp thành một việc. Ngày HR đã sửa tay thì không bị dựng đè.
 Cả hai đi qua hàng đợi, và dựng lại một ngày không đổi gì thì không ghi dòng nào, như mọi job (§9.10).
+Ngày trước `hireDate` của một người không có dòng: người chưa vào làm thì không vắng. Lượt dựng lại
+mà một bàn giấy bị giới hạn bấm chỉ dựng người của các pháp nhân nó phụ trách (§9.4).
+
+**Nghỉ nửa ngày dời một đầu của ca, không đổi trạng thái ngày.** Một ngày không thể vừa `LEAVE`
+vừa `WORKED`, nên đơn nghỉ nửa ngày đã duyệt (`Request.dayPart`) để ngày ở trạng thái máy đo được,
+và dời một đầu của ca về **điểm giữa ca**: giờ vào cộng nửa quãng từ giờ vào tới giờ ra, làm tròn
+xuống phút — `Shift` không giữ giờ nghỉ trưa, nên đó là ranh giới duy nhất suy được từ ca. Nghỉ
+sáng thì giờ phải có mặt là điểm giữa, cộng thời gian ân hạn như mọi ngày; nghỉ chiều thì giờ được
+về là điểm giữa. Phút muộn và phút về sớm vì thế chỉ đếm trên nửa ngày phải làm; phút tăng ca vẫn
+đo từ giờ ra của ca. Ca 08:00–17:30 có điểm giữa 12:45: nghỉ sáng, quẹt vào 12:55 với 10 phút ân
+hạn là không muộn phút nào. Đơn duyệt sau khi ngày ấy đã dựng chỉ đổi ngày ấy ở lần dựng lại.
+
+**Ca qua nửa đêm chưa có thiết kế.** Ca có giờ ra không đứng sau giờ vào bị từ chối lúc tạo, và lúc
+sửa giờ, bằng `SHIFT_CROSSES_MIDNIGHT`: mọi phép tính ở trên đặt cả ca vào một ngày lịch, nên một ca
+22:00–06:00 có giờ ra rơi sang ngày hôm sau và phút muộn, về sớm, tăng ca đều sai. Ca đêm — ngày
+nào sở hữu ca, lượt quẹt sau nửa đêm thuộc ngày nào, phụ cấp làm đêm — là phần thiết kế còn mở; một
+ca như thế có sẵn trong dữ liệu vẫn đổi được tên, ân hạn và trạng thái dùng.
 
 ### 9.9 Truy vấn khi số nhân viên lên hàng chục nghìn
 
@@ -8854,7 +8880,8 @@ giây: *còn gì đang đợi tôi* — và vẫn trả lời được khi hộp
 **Mặc định gửi thông báo kèm đường dẫn, không đính kèm phiếu.** Một phiếu lương PDF trong hộp
 thư là một phiếu lương nằm trong bản sao lưu của nhà cung cấp mail, trong máy chủ trung chuyển,
 và trong mọi lần chuyển tiếp nhầm. Đường dẫn vào cổng nhân viên thì đòi đăng nhập và để lại
-nhật ký ai đã xem.
+nhật ký ai đã xem: ai không phải chủ phiếu mở một phiếu thì để một dòng `payslip.read` dưới chính
+người chủ (§9.24 luật 3), kèm id phiếu.
 
 Vẫn có đường đính kèm cho nơi bắt buộc phải làm vậy, nhưng nó là **một lựa chọn phải bật**, và
 khi bật thì PDF đặt mật khẩu. Không đặt nó làm mặc định.
@@ -8862,7 +8889,8 @@ khi bật thì PDF đặt mật khẩu. Không đặt nó làm mặc định.
 Gửi đi qua hàng đợi riêng `payroll`, một job một người, **idempotent theo `payslipId`** —
 hàng đợi giao ít nhất một lần, và không ai muốn nhận phiếu lương hai lần. Tính idempotent nằm
 ở **cột `sentAt` của `Payslip`**, không nằm ở bộ nhớ của worker: worker khởi động lại thì bộ
-nhớ mất, còn cột thì không.
+nhớ mất, còn cột thì không. `sentAt` ghi đúng một lần, và thư đi chỉ đưa phiếu `ISSUED` sang `SENT`:
+phiếu chủ đã mở giữ `VIEWED`, vì thư tới sau không làm người ta chưa đọc.
 
 Tách khỏi `notify` vì hai việc có hậu quả khác nhau khi hỏng: một webhook thiết bị gửi trượt
 là mất một dòng cảnh báo, một phiếu lương gửi trượt là một người không biết tháng này mình
@@ -9358,7 +9386,13 @@ không phải nhớ trang thứ hai, và người viết code không quên rằn
 **Ca làm của một người đứng ở cột phải hồ sơ, cùng chỗ với kiosk và tài khoản.** HR thấy người ấy
 đang áp dụng ca nào, ca nào sắp tới, xếp ca từ một ngày và bỏ một phân công ngay tại đó, qua
 `GET /shifts/people/:employeeId` và hai đường ghi sẵn có của `Ca làm`. Trang `Ca làm` vẫn là chỗ
-xếp nhiều người vào một ca.
+xếp nhiều người vào một ca. **Bỏ một phân công không xoá những ngày nó đã phủ**: phân công bắt đầu
+trước hôm nay của công ty (§9.8) được khép ở hôm qua (`validTo`), chỉ phân công bắt đầu từ hôm nay
+trở đi mới bị xoá, vì ngày đã dựng đọc ca từ chính dòng ấy và một lần dựng lại sau khi xoá làm mất
+phút muộn, về sớm và tăng ca của mọi ngày nó phủ. **Mỗi người mỗi ngày chỉ bắt đầu một ca**:
+`(employeeId, validFrom)` là khoá duy nhất, phân công thứ hai cùng ngày bắt đầu nhận
+`SHIFT_ALREADY_ASSIGNED`, và lượt xếp hàng loạt bỏ qua người ấy (`ALREADY_ON_SHIFT`) — hai dòng cùng
+ngày bắt đầu thì bảng công và lịch ca của tôi có thể mỗi bên chọn một dòng.
 
 **Sổ toàn công ty vẫn cần trang riêng, và nó không thay tab.** `Tài sản` trả lời *cái máy này
 đang ở đâu*, tab tài sản trả lời *người này đang cầm gì* — cùng một bảng, hai câu hỏi ngược
@@ -9659,7 +9693,11 @@ từng khoản**, và khoản nào đổi thì nói vì sao: nghỉ không lươ
 thuộc, chạm trần bảo hiểm. Không có phần này thì mỗi kỳ lương là một đợt tin nhắn cho HR.
 
 **5. Giấy xác nhận công tác và xác nhận thu nhập.** Vay ngân hàng, làm visa, đăng ký học. Tự
-xin trong cổng, HR duyệt, hệ sinh văn bản có số hiệu và lưu lại đã cấp cho ai.
+xin trong cổng, HR duyệt, hệ sinh văn bản có số hiệu và lưu lại đã cấp cho ai. **Giấy đã cấp nói
+đúng điều nó nói ngày cấp**: lúc cấp, phòng ban, chức danh và loại hợp đồng được chụp vào chính
+giấy (`Certificate.facts`), nên chuyển phòng hay ký hợp đồng mới về sau không đổi một tờ giấy đã nằm
+ở ngân hàng; giấy cấp khi chưa có bản chụp thì in theo hồ sơ hiện tại. Giấy thu nhập chỉ kể phiếu
+lương đã phát trước hoặc đúng lúc cấp, và ngày cấp in theo ngày nghiệp vụ của công ty (§9.8).
 
 **6. Đổi thông tin cá nhân phải qua duyệt — nhất là số tài khoản.** Cho sửa thẳng số tài khoản
 là mở đúng cánh cửa mà kẻ chiếm tài khoản cần. Đổi tài khoản ngân hàng là **đơn có duyệt**, có
@@ -9720,8 +9758,9 @@ một người phải ký tên vào việc bỏ qua.
 **Kết quả là tiền, không phải chữ.** Chấp nhận khiếu nại mà kèm số tiền thì sinh luôn
 `RetroAdjustment` trong cùng một giao dịch, và bản ghi khiếu nại giữ id của nó. §9.6 cấm mở lại
 kỳ đã chốt, nên khoản chênh đi vào kỳ sau như mọi khoản truy lĩnh khác. **Chấp nhận mà không
-đính gì vào là một lời hứa, không phải một hồ sơ** — và đây cũng là chỗ đầu tiên trong hệ có ai
-đó *tạo ra* một `RetroAdjustment`: trước đó bảng ấy chỉ có người đọc.
+đính gì vào là một lời hứa, không phải một hồ sơ.** Mã của khoản ấy chỉ gồm chữ in hoa, số và
+gạch dưới, mặc định `DISPUTE`, và không bao giờ là `CARRY`: mã ấy là của phần âm chuyển kỳ (§9.6),
+mà lượt thường trừ sau thuế chứ không trả.
 
 **Phiếu đã phát không bao giờ đổi số vì một khiếu nại.** Kể cả khi khiếu nại đúng. Con số cũ là
 thứ đã gửi cho người ta, và một bản ghi tự sửa sau lưng thì không chứng minh được gì (§9.6).
