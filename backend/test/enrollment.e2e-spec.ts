@@ -18,8 +18,13 @@ import { publishAsKiosk, seedEntityId } from "./fixtures.js";
 
 const DEVICE_ID = "kiosk-e2e-enroll";
 const OFF_FLEET = "kiosk-e2e-enroll-off";
+const PEER = "kiosk-e2e-enroll-peer";
+const GONE = "kiosk-e2e-enroll-gone";
+const DOORS = [DEVICE_ID, OFF_FLEET, PEER, GONE];
+const MODEL = "recog-f77969e342ab10b4";
 const CODE = "NV9100";
 const OUTSIDER = "NV9101";
+const SPREAD = "NV9102";
 const RACERS = ["NV9111", "NV9112", "NV9113", "NV9114", "NV9115", "NV9116"];
 const EMBEDDING_BYTES = 512;
 const SETTLE_MS = 15000;
@@ -43,10 +48,10 @@ describe("enrollment (e2e)", () => {
   const sample = embedding();
 
   async function sweep(): Promise<void> {
-    await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: [DEVICE_ID, OFF_FLEET] } } });
-    await db.faceTemplate.deleteMany({ where: { employee: { code: CODE } } });
-    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, ...RACERS] } } });
-    await db.device.deleteMany({ where: { id: { in: [DEVICE_ID, OFF_FLEET] } } });
+    await db.deviceEnrollment.deleteMany({ where: { deviceId: { in: DOORS } } });
+    await db.faceTemplate.deleteMany({ where: { employee: { code: { in: [CODE, SPREAD] } } } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, OUTSIDER, SPREAD, ...RACERS] } } });
+    await db.device.deleteMany({ where: { id: { in: DOORS } } });
   }
 
   before(async () => {
@@ -335,5 +340,52 @@ describe("enrollment (e2e)", () => {
     down.mock.restore();
     assert.equal(await db.faceTemplate.count({ where: { employeeId: racer.id } }), 0);
     assert.ok(sent.some((one) => one.op === "DELETE_EMPLOYEE"), "the kiosk was not told to drop the face");
+  });
+
+  it("hands a captured face to the other kiosks holding the person, never to one revoked since", async () => {
+    const person = await db.employee.create({
+      data: { code: SPREAD, fullName: "Lan mẫu", active: true, legalEntityId: entityId },
+    });
+    await db.biometricConsent.create({ data: { employeeId: person.id, noticeVersion: "e2e", method: "PAPER" } });
+    for (const id of [PEER, GONE]) {
+      await db.device.create({ data: { id, status: "APPROVED", embeddingVersion: MODEL } });
+    }
+    const enrollment = app.get(EnrollmentService);
+    const sent: string[] = [];
+    const down = mock.method(app.get(MqttService), "publishDown", async (_name: string, to: string) => {
+      sent.push(to);
+    });
+    const versionOf = async (id: string) => (await db.device.findUniqueOrThrow({ where: { id } })).rosterVersion;
+    const readFor = (deviceId: string) =>
+      db.auditLog.count({
+        where: { action: "biometric.read", subjectId: String(person.id), meta: { path: ["deviceId"], equals: deviceId } },
+      });
+    try {
+      for (const door of [DEVICE_ID, PEER, GONE]) {
+        await enrollment.assign(door, person.id);
+      }
+      const revoked = await request(http).post(`/devices/${GONE}/revoke`).set("Authorization", `Bearer ${admin}`);
+      assert.equal(revoked.status, 201, JSON.stringify(revoked.body));
+      const [peerAt, goneAt] = [await versionOf(PEER), await versionOf(GONE)];
+      sent.length = 0;
+      await enrollment.takeReport(DEVICE_ID, {
+        op: "UPSERT",
+        employeeId: person.id,
+        templateIdx: 0,
+        updatedAt: Date.now(),
+        embedding: sample,
+        scale: 0.0125,
+        embeddingVersion: MODEL,
+        rosterVersion: 1,
+        deviceId: DEVICE_ID,
+      });
+      assert.equal(await versionOf(PEER), peerAt + 1, "a kiosk holding the person was not handed the face");
+      assert.equal(await readFor(PEER), 1);
+      assert.equal(await versionOf(GONE), goneAt, "a revoked kiosk was sent the face");
+      assert.equal(await readFor(GONE), 0, "the face was opened for a revoked kiosk");
+      assert.ok(!sent.includes(GONE), "a message went down to a revoked kiosk");
+    } finally {
+      down.mock.restore();
+    }
   });
 });

@@ -810,7 +810,7 @@ export class EnrollmentService implements OnModuleInit {
   ): Promise<void> {
     const { employeeId, templateIdx } = at;
     const others = await this.db.deviceEnrollment.findMany({
-      where: { employeeId, deviceId: { not: fromDeviceId }, state: { not: "REVOKED" } },
+      where: { employeeId, deviceId: { not: fromDeviceId }, state: { not: "REVOKED" }, device: { status: "APPROVED" } },
       include: {
         employee: { select: { fullName: true, code: true, embeddingVersion: true } },
         device: { select: { embeddingVersion: true } },
