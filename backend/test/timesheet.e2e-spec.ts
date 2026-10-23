@@ -314,6 +314,19 @@ describe("timesheet leave (e2e)", () => {
       .set("Authorization", `Bearer ${adminToken}`);
     assert.deepEqual(missing.body, { state: "gone" });
   });
+
+  it("takes a business day, not an instant, for a range", async () => {
+    const instant = `${DAY}T10:00:00.000Z`;
+    const queued = await request(http)
+      .post("/timesheet/build")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ from: instant, to: DAY });
+    assert.deepEqual([queued.status, queued.body.message, queued.body.fields], [400, "VALIDATION_FAILED", ["from"]]);
+    const listed = await request(http)
+      .get(`/timesheet/summary?from=${DAY}&to=${encodeURIComponent(instant)}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    assert.deepEqual([listed.status, listed.body.message, listed.body.fields], [400, "VALIDATION_FAILED", ["to"]]);
+  });
 });
 
 const RANGE_DEPARTMENT = "E2ETR-D";

@@ -15,6 +15,8 @@ import {
 } from "class-validator";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+// A business day in APP_TIMEZONE, never an instant (KEHOACH 9.8).
+const BUSINESS_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 import { PaginationDto } from "../../../common/dto/pagination.dto.js";
 
@@ -24,23 +26,27 @@ export const MAX_DAY_ROWS = 5_000;
 export class BuildDaysDto {
   @ApiProperty({ example: "2026-08-01", description: "First business day to build, YYYY-MM-DD in APP_TIMEZONE" })
   @IsDateString()
+  @Matches(BUSINESS_DAY)
   from!: string;
 
   @ApiProperty({
     example: "2026-08-31",
-    description: "Last business day to build, included; a day that has not ended yet is skipped",
+    description: "Last business day to build, included, YYYY-MM-DD; a day that has not ended yet is skipped",
   })
   @IsDateString()
+  @Matches(BUSINESS_DAY)
   to!: string;
 }
 
 export class ListDaysDto {
   @ApiProperty({ example: "2026-08-01", description: "First business day, YYYY-MM-DD in APP_TIMEZONE, included" })
   @IsDateString()
+  @Matches(BUSINESS_DAY)
   from!: string;
 
   @ApiProperty({ example: "2026-08-31", description: "Last business day, YYYY-MM-DD in APP_TIMEZONE, included" })
   @IsDateString()
+  @Matches(BUSINESS_DAY)
   to!: string;
 
   @ApiPropertyOptional({
