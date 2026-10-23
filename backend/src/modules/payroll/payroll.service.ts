@@ -41,6 +41,7 @@ import {
   calculate,
   taxOn,
   yearBrackets,
+  CARRY_CODE,
   LINE_ASSET_OFFSET,
   LINE_CARRY_OUT,
   LINE_EXEMPT_OVERTIME,
@@ -69,8 +70,7 @@ const kChunk = 500;
 const kHundred = 100n;
 const kChunkTxMs = 60_000;
 const LINE_ADVANCE = "ADVANCE";
-// The retro code a shortfall is carried under, and the code that says why (KEHOACH 9.6).
-const CARRY_CODE = "CARRY";
+// The reason a carried shortfall's adjustment names (KEHOACH 9.6).
 const CARRY_REASON = "NEGATIVE_NET";
 
 interface Leaver {

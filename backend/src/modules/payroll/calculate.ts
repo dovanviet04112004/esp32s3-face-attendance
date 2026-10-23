@@ -109,6 +109,8 @@ export const LINE_LEAVE_PAYOUT = "LEAVE_PAYOUT";
 export const LINE_SEVERANCE = "SEVERANCE";
 export const LINE_ASSET_OFFSET = "ASSET_OFFSET";
 export const LINE_CARRY_OUT = "CARRY_OUT";
+/** The retro code a shortfall rides to the next period under, taken off after tax; nothing else may carry it (KEHOACH 9.6). */
+export const CARRY_CODE = "CARRY";
 
 interface OvertimeBand {
   code: string;

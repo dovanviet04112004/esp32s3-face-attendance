@@ -4,14 +4,17 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNotIn,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   MinLength,
 } from "class-validator";
 
 import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
+import { CARRY_CODE } from "../../payroll/calculate.js";
 
 const STATES = ["OPEN", "ANSWERED", "WITHDRAWN"] as const;
 const OUTCOMES = ["UPHELD", "REJECTED"] as const;
@@ -19,6 +22,7 @@ const CLAIM_MAX = 2000;
 const ANSWER_MAX = 2000;
 const CODE_MAX = 32;
 const LABEL_MAX = 64;
+const RETRO_CODE = /^[A-Z0-9_]+$/;
 
 export class RaiseDisputeDto {
   @ApiProperty({
@@ -75,12 +79,16 @@ export class AnswerDisputeDto {
 
   @ApiPropertyOptional({
     maxLength: CODE_MAX,
+    pattern: RETRO_CODE.source,
     example: "OT",
-    description: "Code of the adjustment, DISPUTE when left out; the next payslip shows RETRO_<code>",
+    description:
+      "Code of the adjustment, DISPUTE when left out; capitals, digits and underscores, never CARRY. The next payslip shows RETRO_<code>",
   })
   @IsOptional()
   @IsString()
   @MaxLength(CODE_MAX)
+  @Matches(RETRO_CODE)
+  @IsNotIn([CARRY_CODE])
   code?: string;
 
   @ApiPropertyOptional({

@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { DisputesService } from "../src/modules/disputes/disputes.service.js";
+import { CARRY_CODE } from "../src/modules/payroll/calculate.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
 import { seedEntityId, signIn } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
@@ -23,6 +24,7 @@ const EMAIL = "e2eds@kiosk.local";
 const OTHER_EMAIL = "e2eds-other@kiosk.local";
 const BOSS_EMAIL = "e2eds-boss@kiosk.local";
 const RACE_LINE = "RACE";
+const CARRY_LINE = "BHXH";
 const PASSWORD = "kiosk-e2e-password";
 const YEAR = 2026;
 const FIRST_MONTH = 5;
@@ -337,6 +339,29 @@ describe("disputing a payslip (e2e)", () => {
     assert.equal(res.status, 409);
     assert.equal(res.body.message, "DISPUTE_ALREADY_ANSWERED");
     assert.equal(await db.retroAdjustment.count({ where: { employeeId, code: LINE } }), 1, "a second answer minted money");
+  });
+
+  it("refuses the code the shortfall carry rides under, and any a payslip line cannot hold", async () => {
+    const asked = await request(http)
+      .post("/payslip-disputes")
+      .set("Authorization", `Bearer ${mine}`)
+      .send({ payslipId: issuedSlipId, lineCode: CARRY_LINE, claim: CLAIM });
+    assert.equal(asked.status, 201, JSON.stringify(asked.body));
+    const id = (asked.body as Dispute).id;
+    const carried = await db.retroAdjustment.count({ where: { employeeId, code: CARRY_CODE } });
+    for (const code of [CARRY_CODE, "ot"]) {
+      const res = await request(http)
+        .post(`/payslip-disputes/${id}/answer`)
+        .set("Authorization", `Bearer ${desk}`)
+        .send({ outcome: "UPHELD", answer: ANSWER, amount: OWED, code });
+      assert.deepEqual([res.status, res.body.message, res.body.fields], [400, "VALIDATION_FAILED", ["code"]], code);
+    }
+    const after = await db.retroAdjustment.count({ where: { employeeId, code: CARRY_CODE } });
+    assert.equal(after, carried, "an answer charged its money as a carried shortfall");
+    const held = await db.payslipDispute.findUniqueOrThrow({ where: { id } });
+    assert.deepEqual([held.state, held.retroId], ["OPEN", null]);
+    const withdrawn = await request(http).post(`/payslip-disputes/${id}/withdraw`).set("Authorization", `Bearer ${mine}`);
+    assert.equal(withdrawn.status, 201, JSON.stringify(withdrawn.body));
   });
 
   // The answer is a figure somebody receives, not a sentence somebody wrote (KEHOACH 9.17 item 11).
