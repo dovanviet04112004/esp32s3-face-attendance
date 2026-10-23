@@ -1751,7 +1751,7 @@
     "PERIOD_NOT_ENDED": "The month has not ended. The period locks from the first day of the next month; mid-month, run a draft to preview.",
     "LOCK_NOTE_REQUIRED": "Locking with open items needs a reason.",
     "PERIOD_RUNS_UNFINISHED": "A run of this period has not finished. Run it again or discard it, then lock.",
-    "RUN_BASE_CHANGED": "The regular run ran again after this one. Run this one again so its tax uses the new payslips.",
+    "RUN_BASE_CHANGED": "This run finished before its base or its amounts changed: the regular run ran again, or new amounts were loaded. Run it again before locking.",
     "RUN_DISCARDED": "This run is discarded and cannot run again.",
     "LEGAL_ENTITY_REQUIRED": "No legal entity picked. With two or more in use, pick one; with none, create one first.",
     "UNAUTHENTICATED": "You are signed out. Sign in again.",

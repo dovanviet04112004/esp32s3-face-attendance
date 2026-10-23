@@ -24,6 +24,8 @@ const CODES = [MOVER, STAYER, NEWCOMER, STRAY];
 const YEAR = 2026;
 const BASE = 20_000_000;
 const ADVANCE = 1_000_000;
+const BONUS = 5_000_000;
+const RELOADED_BONUS = 7_000_000;
 const SETTLE_MS = 30_000;
 const POLL_MS = 200;
 
@@ -215,7 +217,7 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     const bonus = await db.payrollRun.create({ data: { periodId: aprilHome, kind: "BONUS" } });
     bonusId = bonus.id;
     const loaded = await as("payroll").post(`/payroll-runs/${bonusId}/bonus`, {
-      items: [{ employeeId: idOf.get(STAYER), code: "TET", amount: 5_000_000 }],
+      items: [{ employeeId: idOf.get(STAYER), code: "TET", amount: BONUS }],
     });
     assert.equal(loaded.status, 201, JSON.stringify(loaded.body));
     assert.equal((await payroll.runNow(bonusId)).state, "DONE");
@@ -231,6 +233,23 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     assert.equal(refused.status, 409, JSON.stringify(refused.body));
     assert.equal(refused.body.message, "RUN_BASE_CHANGED");
     assert.equal((await payroll.runNow(bonusId)).state, "DONE");
+  });
+
+  it("sends a finished bonus back to draft when its amounts are loaded again", async () => {
+    const reloaded = await as("payroll").post(`/payroll-runs/${bonusId}/bonus`, {
+      items: [{ employeeId: idOf.get(STAYER), code: "TET", amount: RELOADED_BONUS }],
+    });
+    assert.equal(reloaded.status, 201, JSON.stringify(reloaded.body));
+    const stale = await db.payrollRun.findUniqueOrThrow({ where: { id: bonusId } });
+    assert.deepEqual([stale.state, stale.failure], ["DRAFT", "RUN_BASE_CHANGED"], "a finished bonus kept the amounts it was given before");
+    assert.equal(await db.payslip.count({ where: { runId: bonusId } }), 0, "a reloaded bonus kept its payslips");
+
+    const refused = await as("payroll").post(`/payroll-periods/${aprilHome}/lock`, { acceptOpenItems: true, note: "e2e" });
+    assert.deepEqual([refused.status, refused.body.message], [409, "RUN_BASE_CHANGED"], "a lock issued a bonus nobody ran on its amounts");
+
+    assert.equal((await payroll.runNow(bonusId)).state, "DONE");
+    const slip = await db.payslip.findFirstOrThrow({ where: { runId: bonusId } });
+    assert.equal(slip.grossPay.toFixed(0), String(RELOADED_BONUS), "the rerun paid the old amount");
   });
 
   it("locks only when every run is finished or discarded, and keeps a discarded run down", async () => {
@@ -275,6 +294,29 @@ describe("the payroll run flow, guarded on its rows (e2e)", () => {
     const closed = await as("payroll").post(`/payroll-runs/${regularId}/discard`);
     assert.equal(closed.status, 400);
     assert.equal(closed.body.message, "PERIOD_NOT_OPEN");
+  });
+
+  it("takes no new run and no new amounts once the period is locked", async () => {
+    const settlement = await db.payrollRun.create({ data: { periodId: aprilHome, kind: "FINAL_SETTLEMENT" } });
+    const runsBefore = await db.payrollRun.count({ where: { periodId: aprilHome } });
+    const writes = [
+      await as("payroll").post("/payroll-runs", { periodId: aprilHome, kind: "BONUS" }),
+      await as("payroll").post(`/payroll-runs/${bonusId}/bonus`, {
+        items: [{ employeeId: idOf.get(STAYER), code: "TET", amount: BONUS }],
+      }),
+      await as("payroll").post(`/payroll-runs/${settlement.id}/settlement`, { items: [] }),
+    ];
+    assert.deepEqual(
+      writes.map((one) => [one.status, one.body.message]),
+      [
+        [400, "PERIOD_NOT_OPEN"],
+        [400, "PERIOD_NOT_OPEN"],
+        [400, "PERIOD_NOT_OPEN"],
+      ],
+    );
+    const kept = await db.bonusItem.findFirstOrThrow({ where: { runId: bonusId } });
+    assert.equal(kept.amount.toFixed(0), String(RELOADED_BONUS), "a locked period's bonus took new amounts");
+    assert.equal(await db.payrollRun.count({ where: { periodId: aprilHome } }), runsBefore, "a locked period took a new run");
   });
 
   it("moves months only forward once a period is locked", async () => {

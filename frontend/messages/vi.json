@@ -1751,7 +1751,7 @@
     "PERIOD_NOT_ENDED": "Kỳ chưa hết tháng. Chốt được từ ngày đầu tháng sau; giữa tháng chỉ chạy lượt nháp để xem trước.",
     "LOCK_NOTE_REQUIRED": "Chốt khi còn mục treo phải ghi lý do.",
     "PERIOD_RUNS_UNFINISHED": "Kỳ còn lượt chưa chạy xong. Chạy lại hoặc huỷ lượt ấy rồi chốt.",
-    "RUN_BASE_CHANGED": "Lượt lương tháng đã chạy lại sau lượt này. Chạy lại lượt này để thuế tính trên phiếu mới.",
+    "RUN_BASE_CHANGED": "Lượt này chạy xong trước khi nền hay số tiền của nó đổi: lượt lương tháng đã chạy lại, hoặc số tiền vừa được nạp lại. Chạy lại lượt này trước khi chốt.",
     "RUN_DISCARDED": "Lượt này đã huỷ, không chạy lại được.",
     "LEGAL_ENTITY_REQUIRED": "Chưa chọn pháp nhân. Công ty có từ hai pháp nhân thì phải chọn; chưa có pháp nhân nào thì tạo trước.",
     "UNAUTHENTICATED": "Phiên đăng nhập đã hết, đăng nhập lại.",

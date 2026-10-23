@@ -237,6 +237,17 @@ export interface TaxYearStatement {
 
 // A draft is a number nobody has stood behind, so it is not income yet.
 const ISSUED_STATES: PayslipState[] = ["ISSUED", "SENT", "VIEWED"];
+// A finished run whose base or inputs moved: its payslips go, the page says why (KEHOACH 9.6).
+const BACK_TO_DRAFT = {
+  state: "DRAFT",
+  failure: "RUN_BASE_CHANGED",
+  finishedAt: null,
+  employeeCount: 0,
+  doneCount: 0,
+  failedCount: 0,
+  grossTotal: 0,
+  netTotal: 0,
+} satisfies Prisma.PayrollRunUpdateManyMutationInput;
 const READ_BACK = [LINE_RELIEF_SELF, LINE_RELIEF_DEPENDENT, LINE_EXEMPT_OVERTIME, LINE_TAX];
 
 function monthIndex(month: { year: number; month: number }): number {
@@ -696,15 +707,18 @@ export class PayrollService {
   async createRun(viewer: Viewer, body: CreateRunDto): Promise<PayrollRun> {
     this.mayWrite(viewer);
     await this.periodOf(viewer, body.periodId);
-    return this.db.payrollRun.create({
-      data: {
-        periodId: body.periodId,
-        kind: body.kind,
-        label: body.label ?? null,
-        departmentId: body.departmentId ?? null,
-        createdById: viewer.userId,
-        note: body.note ?? null,
-      },
+    return this.db.$transaction(async (tx) => {
+      await this.requireOpen(tx, body.periodId);
+      return tx.payrollRun.create({
+        data: {
+          periodId: body.periodId,
+          kind: body.kind,
+          label: body.label ?? null,
+          departmentId: body.departmentId ?? null,
+          createdById: viewer.userId,
+          note: body.note ?? null,
+        },
+      });
     });
   }
 
@@ -840,18 +854,43 @@ export class PayrollService {
     }
     const ids = stale.map((one) => one.id);
     await this.dropSlips(tx, ids);
-    await tx.payrollRun.updateMany({
-      where: { id: { in: ids } },
-      data: {
-        state: "DRAFT",
-        failure: "RUN_BASE_CHANGED",
-        finishedAt: null,
-        employeeCount: 0,
-        doneCount: 0,
-        failedCount: 0,
-        grossTotal: 0,
-        netTotal: 0,
-      },
+    await tx.payrollRun.updateMany({ where: { id: { in: ids } }, data: BACK_TO_DRAFT });
+  }
+
+  /** Hold the period's row for the rest of the transaction, as execute, discard and lock do, and refuse a closed one. */
+  private async requireOpen(tx: Prisma.TransactionClient, periodId: string): Promise<void> {
+    const [period] = await tx.$queryRaw<{ state: PeriodState }[]>`
+      SELECT "state" FROM "PayrollPeriod" WHERE "id" = ${periodId} FOR NO KEY UPDATE
+    `;
+    if (period?.state !== "OPEN") {
+      throw new BadRequestException("PERIOD_NOT_OPEN");
+    }
+  }
+
+  /** Swap what a bonus or settlement run pays while its period is open; a finished run goes back to draft (KEHOACH 9.6). */
+  private async reload(
+    runId: string,
+    periodId: string,
+    swap: (tx: Prisma.TransactionClient) => Promise<unknown>,
+  ): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      await this.requireOpen(tx, periodId);
+      const { state } = await tx.payrollRun.findUniqueOrThrow({ where: { id: runId }, select: { state: true } });
+      if (state === "RUNNING") {
+        throw new BadRequestException("RUN_ALREADY_RUNNING");
+      }
+      if (state === "DISCARDED") {
+        throw new ConflictException("RUN_DISCARDED");
+      }
+      await swap(tx);
+      if (state !== "DONE") {
+        return;
+      }
+      await this.dropSlips(tx, [runId]);
+      const stale = await tx.payrollRun.updateMany({ where: { id: runId, state: "DONE" }, data: BACK_TO_DRAFT });
+      if (stale.count === 0) {
+        throw new ConflictException("RUN_BASE_CHANGED");
+      }
     });
   }
 
@@ -1252,7 +1291,7 @@ export class PayrollService {
     }
   }
 
-  /** Load the amounts a bonus run will pay. Rerunning replaces them. */
+  /** Load the amounts a bonus run will pay; loading again replaces them and sends a finished run back to draft. */
   async setBonus(viewer: Viewer, runId: string, items: BonusItemDto[]): Promise<{ items: number }> {
     this.mayWrite(viewer);
     // Nobody sets their own pay (KEHOACH 9.4).
@@ -1266,9 +1305,9 @@ export class PayrollService {
     if (reached !== named.length) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
     }
-    await this.db.$transaction([
-      this.db.bonusItem.deleteMany({ where: { runId } }),
-      this.db.bonusItem.createMany({
+    await this.reload(runId, run.periodId, async (tx) => {
+      await tx.bonusItem.deleteMany({ where: { runId } });
+      await tx.bonusItem.createMany({
         data: items.map((item) => ({
           runId,
           employeeId: item.employeeId,
@@ -1277,8 +1316,8 @@ export class PayrollService {
           amount: item.amount,
           taxable: item.taxable ?? true,
         })),
-      }),
-    ]);
+      });
+    });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAYROLL_BONUS,
@@ -1886,7 +1925,7 @@ export class PayrollService {
     };
   }
 
-  /** Load the typed halves of a settlement. Rerunning replaces them. */
+  /** Load the typed halves of a settlement; loading again replaces them and sends a finished run back to draft. */
   async setSettlement(
     viewer: Viewer,
     runId: string,
@@ -1904,9 +1943,9 @@ export class PayrollService {
     if (stray) {
       throw new BadRequestException("EMPLOYEE_DID_NOT_LEAVE_THIS_PERIOD");
     }
-    await this.db.$transaction([
-      this.db.settlementItem.deleteMany({ where: { runId } }),
-      this.db.settlementItem.createMany({
+    await this.reload(runId, run.periodId, async (tx) => {
+      await tx.settlementItem.deleteMany({ where: { runId } });
+      await tx.settlementItem.createMany({
         data: items.map((item) => ({
           runId,
           employeeId: item.employeeId,
@@ -1917,8 +1956,8 @@ export class PayrollService {
           note: item.note ?? null,
           createdById: viewer.userId,
         })),
-      }),
-    ]);
+      });
+    });
     const totalOf = (kind: SettlementKind) =>
       items.filter((item) => item.kind === kind).reduce((sum, item) => sum + BigInt(item.amount), 0n).toString();
     await this.audit.record({

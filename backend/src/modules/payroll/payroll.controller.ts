@@ -218,7 +218,7 @@ export class PayrollController {
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "PAYROLL")
   @Reach("entity")
-  @ApiOperation({ summary: "Start a run: regular, bonus or final settlement" })
+  @ApiOperation({ summary: "Start a run on an open period: regular, bonus or final settlement" })
   @ApiCreatedResponse({ type: RunView })
   createRun(@CurrentViewer() viewer: Viewer, @Body() body: CreateRunDto): Promise<PayrollRun> {
     return this.payroll.createRun(viewer, body);
@@ -238,9 +238,12 @@ export class PayrollController {
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
   @Reach("entity")
-  @ApiOperation({ summary: "Load the amounts a bonus run pays; nobody loads their own (SELF_DECISION)" })
+  @ApiOperation({
+    summary: "Load the amounts a bonus run pays, on an open period; a finished run goes back to draft, nobody loads their own",
+  })
   @ApiCreatedResponse({ type: ItemCount })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
+  @ApiErrors(HttpStatus.CONFLICT)
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setBonus(
     @CurrentViewer() viewer: Viewer,
@@ -267,9 +270,12 @@ export class PayrollController {
   @AuditedInService()
   @Roles("ADMIN", "PAYROLL")
   @Reach("entity")
-  @ApiOperation({ summary: "Load the severance and offsets somebody signed for; nobody loads their own (SELF_DECISION)" })
+  @ApiOperation({
+    summary: "Load the severance and offsets somebody signed for, on an open period; a finished run goes back to draft",
+  })
   @ApiCreatedResponse({ type: ItemCount })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAYROLL_WRITE_DENIED, SELF_DECISION, DESK_NEEDS_EMPLOYEE" })
+  @ApiErrors(HttpStatus.CONFLICT)
   @ApiParam({ name: "id", description: "Payroll run id (UUID)", example: "cd6700aa-77c5-4572-b0cd-43c68ff59159" })
   setSettlement(
     @CurrentViewer() viewer: Viewer,
