@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -18,6 +19,10 @@ const OTHER_ENTITY = "E2ECAT-PN2";
 const TOP = "E2ECAT-TOP";
 const CHILD = "E2ECAT-CHILD";
 const ELSEWHERE = "E2ECAT-ELSE";
+const LEFT_UNIT = "E2ECAT-LEFT";
+const RIGHT_UNIT = "E2ECAT-RIGHT";
+// Short of the five seconds each move's own transaction may run.
+const HOLD_MS = 1000;
 const LUNCH = "E2ECAT-LUNCH";
 const PHONE = "E2ECAT-PHONE";
 const DUTY = "E2ECAT-DUTY";
@@ -50,6 +55,8 @@ describe("user-maintained catalogues (e2e)", () => {
     await db.employee.deleteMany({ where: { code: WORKER } });
     await db.department.deleteMany({ where: { code: CHILD } });
     await db.department.deleteMany({ where: { code: { in: [TOP, ELSEWHERE] } } });
+    await db.department.updateMany({ where: { code: { in: [LEFT_UNIT, RIGHT_UNIT] } }, data: { parentId: null } });
+    await db.department.deleteMany({ where: { code: { in: [LEFT_UNIT, RIGHT_UNIT] } } });
     await db.legalEntity.deleteMany({ where: { code: { in: [ENTITY, OTHER_ENTITY] } } });
     await db.jobTitle.deleteMany({ where: { code: TITLE } });
     await db.allowanceType.deleteMany({ where: { code: { in: [LUNCH, PHONE, DUTY] } } });
@@ -183,6 +190,35 @@ describe("user-maintained catalogues (e2e)", () => {
     const res = await by("hr").patch(`/departments/${topId}`, { parentId: childId });
     assert.equal(res.status, 409);
     assert.equal(res.body.message, "DEPARTMENT_CYCLE");
+  });
+
+  it("lets only one of two departments moving under each other land, so the tree keeps no loop", async () => {
+    const [left, right] = await Promise.all(
+      [LEFT_UNIT, RIGHT_UNIT].map((code) => db.department.create({ data: { legalEntityId: entityId, code, name: `Nhánh ${code}` } })),
+    );
+    let taken = (): void => undefined;
+    const held = new Promise<void>((done) => {
+      taken = done;
+    });
+    // Both rows stay locked meanwhile, so neither move can commit until both are under way.
+    const hold = db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Department" WHERE "id" IN (${left.id}, ${right.id}) FOR UPDATE`;
+        taken();
+        await sleep(HOLD_MS);
+      },
+      { timeout: HOLD_MS * 4 },
+    );
+    await held;
+    const answers = await Promise.all([
+      by("hr").patch(`/departments/${left.id}`, { parentId: right.id }),
+      by("hr").patch(`/departments/${right.id}`, { parentId: left.id }),
+    ]);
+    await hold;
+    assert.deepEqual(answers.map((one) => one.status).sort(), [200, 409], JSON.stringify(answers.map((one) => one.body)));
+    assert.equal(answers.find((one) => one.status === 409)?.body.message, "DEPARTMENT_CYCLE");
+    const stored = await db.department.findMany({ where: { id: { in: [left.id, right.id] } }, select: { parentId: true } });
+    assert.equal(stored.filter((one) => one.parentId !== null).length, 1, "both moves landed and each department sits under the other");
   });
 
   it("refuses a parent from another legal entity", async () => {

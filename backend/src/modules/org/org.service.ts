@@ -40,6 +40,8 @@ import type {
   UpdateLegalEntityDto,
 } from "./dto/org.dto.js";
 
+const DEPARTMENT_TREE_LOCK_KEY = 77;
+
 function byManager(
   rows: ReorgRow[],
   pick: (row: ReorgRow) => string | null,
@@ -605,9 +607,9 @@ export class OrgService {
     if (!held || !ScopeService.reachesEntity(viewer, held.legalEntityId)) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
     }
-    if (body.parentId !== undefined && body.parentId !== held.parentId) {
+    const moves = body.parentId !== undefined && body.parentId !== held.parentId;
+    if (moves) {
       await this.mustBeParent(viewer, body.parentId, held.legalEntityId);
-      await this.mustNotLoop(id, body.parentId);
     }
     await this.mustBeHead(viewer, body.headId);
     if (body.active === false && held.active) {
@@ -619,12 +621,20 @@ export class OrgService {
         throw new ConflictException("DEPARTMENT_IN_USE");
       }
     }
-    const saved = await this.db.department.update({ where: { id }, data: body }).catch((error: unknown) => {
-      if (isPrismaCode(error, UNIQUE_VIOLATION)) {
-        throw new ConflictException("DEPARTMENT_CODE_TAKEN");
-      }
-      throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
-    });
+    const saved = await this.db
+      .$transaction(async (tx) => {
+        if (moves) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${DEPARTMENT_TREE_LOCK_KEY}::int, 0)`;
+          await this.mustNotLoop(tx, id, body.parentId ?? null);
+        }
+        return tx.department.update({ where: { id }, data: body });
+      })
+      .catch((error: unknown) => {
+        if (isPrismaCode(error, UNIQUE_VIOLATION)) {
+          throw new ConflictException("DEPARTMENT_CODE_TAKEN");
+        }
+        throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("DEPARTMENT_NOT_FOUND") : error;
+      });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.DEPARTMENT_UPDATE,
@@ -663,14 +673,16 @@ export class OrgService {
     return ScopeService.peopleWhere(viewer, await this.scope.visibleEmployeeIds(viewer));
   }
 
-  // A cycle is not caught by any constraint, and it hangs every walk of the tree.
-  private async mustNotLoop(id: string, parentId: string | null): Promise<void> {
+  // A cycle is not caught by any constraint, and it hangs every walk of the tree; one already stored is refused, not walked.
+  private async mustNotLoop(tx: Prisma.TransactionClient, id: string, parentId: string | null): Promise<void> {
+    const passed = new Set<string>();
     let at: string | null = parentId;
     while (at) {
-      if (at === id) {
+      if (at === id || passed.has(at)) {
         throw new ConflictException("DEPARTMENT_CYCLE");
       }
-      const up: { parentId: string | null } | null = await this.db.department.findUnique({
+      passed.add(at);
+      const up: { parentId: string | null } | null = await tx.department.findUnique({
         where: { id: at },
         select: { parentId: true },
       });
