@@ -10,8 +10,7 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
-import { taxOn } from "../src/modules/payroll/calculate.js";
-import { PolicyService, asCalcPolicy } from "../src/modules/policy/policy.service.js";
+import { PolicyService } from "../src/modules/policy/policy.service.js";
 
 const YEAR = 2026;
 const CODE = "NV9401";
@@ -29,6 +28,10 @@ const RELIEF_SELF = 15_500_000n;
 const RELIEF_DEPENDENT = 6_200_000n;
 const WITHHELD = 1_100_000n;
 const NET = 32_700_000n;
+// 24,200,000 for the year sits in the year table's first band, 120,000,000 at 5%.
+const YEAR_TAX_DUE = 1_210_000n;
+// The same total on the monthly table: 10,000,000 at 5% plus 14,200,000 at 10%.
+const MONTHLY_TABLE_DUE = 1_920_000n;
 
 interface Statement {
   employeeId: number;
@@ -179,15 +182,12 @@ describe("tax year statement (e2e)", () => {
     assert.equal(held.reliefDependentTotal, (RELIEF_DEPENDENT * 2n).toString());
   });
 
-  it("settles the year on one band table and names the gap", async () => {
+  it("settles the year on the year table and names the gap", async () => {
     const held = (await statement(employeeId, adminToken)).body as Statement;
-    const assessable = (TAXABLE - INSURANCE - RELIEF_SELF - RELIEF_DEPENDENT) * 2n;
-    assert.equal(held.assessableTotal, assessable.toString());
-
-    const inForce = await policy.effectiveAt(new Date(Date.UTC(YEAR, 11, 31)), entityId);
-    const due = taxOn(assessable, asCalcPolicy(inForce).brackets);
-    assert.equal(held.taxDue, due.toString());
-    assert.equal(held.difference, (due - WITHHELD * 2n).toString());
+    assert.equal(held.assessableTotal, "24200000");
+    assert.notEqual(held.taxDue, MONTHLY_TABLE_DUE.toString(), "the year was settled on the monthly table");
+    assert.equal(held.taxDue, YEAR_TAX_DUE.toString());
+    assert.equal(held.difference, (YEAR_TAX_DUE - WITHHELD * 2n).toString());
     assert.notEqual(held.difference, "0", "a year settled on one table rarely matches the monthly sum");
   });
 

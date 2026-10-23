@@ -4,6 +4,7 @@ const kMinutesPerHour = 60n;
 const kHoursPerDay = 8n;
 const kHundred = 100n;
 const kNormalRateBp = 10_000;
+const kMonthsPerYear = 12n;
 
 export type LineKind = "EARNING" | "DEDUCTION" | "EMPLOYER_COST" | "INFO";
 
@@ -148,6 +149,14 @@ export function taxOn(assessable: Dong, brackets: CalcBracket[]): Dong {
     floor = ceiling;
   }
   return owed;
+}
+
+/** The year table a tax year settles on: every monthly ceiling twelve times over, rates kept (KEHOACH 9.7). */
+export function yearBrackets(brackets: CalcBracket[]): CalcBracket[] {
+  return brackets.map((bracket) => ({
+    ...bracket,
+    upToAmount: bracket.upToAmount === null ? null : bracket.upToAmount * kMonthsPerYear,
+  }));
 }
 
 export function calculate(input: CalcInput): CalcResult {

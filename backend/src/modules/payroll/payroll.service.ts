@@ -40,6 +40,7 @@ import { asDay, dayWindow, localDay } from "../timesheet/local-day.js";
 import {
   calculate,
   taxOn,
+  yearBrackets,
   LINE_ASSET_OFFSET,
   LINE_CARRY_OUT,
   LINE_EXEMPT_OVERTIME,
@@ -1516,10 +1517,10 @@ export class PayrollService {
     const reliefDependent = total((one) => one.reliefDependent);
     const withheld = total((one) => one.taxWithheld);
 
-    // The band table in force at the close of the year settles the whole year.
+    // The year table of the policy in force at the close of the year settles the whole year.
     const policy = await this.policy.effectiveAt(new Date(Date.UTC(year, 11, 31)), who.legalEntityId);
     const assessable = atLeastZero(taxable - insurance - reliefSelf - reliefDependent);
-    const due = taxOn(assessable, asCalcPolicy(policy).brackets);
+    const due = taxOn(assessable, yearBrackets(asCalcPolicy(policy).brackets));
 
     return {
       employeeId: who.id,
