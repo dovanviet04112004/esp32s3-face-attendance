@@ -30,6 +30,7 @@ export const JOB = {
   attendanceDue: "attendance-due",
   teamAttendance: "team-attendance",
   passwordSetup: "password-setup",
+  passwordForgot: "password-forgot",
   passwordChanged: "password-changed",
   mfaChanged: "mfa-changed",
   profileNotice: "profile-notice",
@@ -138,6 +139,12 @@ export interface PasswordSetupJob {
   reason: SetupReason;
 }
 
+/** An address typed at the sign-in page; only the worker learns whether it names an account (KEHOACH 9.4). */
+export interface PasswordForgotJob {
+  type: typeof JOB.passwordForgot;
+  email: string;
+}
+
 export interface PasswordChangedJob {
   type: typeof JOB.passwordChanged;
   userId: string;
@@ -179,6 +186,7 @@ export type NotifyJob =
   | AttendanceDueJob
   | TeamAttendanceJob
   | PasswordSetupJob
+  | PasswordForgotJob
   | PasswordChangedJob
   | MfaChangedJob
   | ProfileNoticeJob;

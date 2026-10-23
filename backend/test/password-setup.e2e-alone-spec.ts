@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes, scryptSync } from "node:crypto";
-import { after, before, describe, it } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -13,11 +13,15 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
 import { UNUSABLE_PASSWORD, verifyPassword } from "../src/modules/auth/password.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
-import { QUEUE, type PasswordSetupJob } from "../src/queue/queues.js";
+import { JOB, QUEUE, type PasswordForgotJob, type PasswordSetupJob } from "../src/queue/queues.js";
 import { postLogin, seedEntityId, tokensOf } from "./fixtures.js";
 
+// The worker mails behind whatever the notify queue already holds, such as the batch of invitations below.
+const WORKER_WAIT_MS = 30_000;
+const POLL_MS = 50;
 const CODE = "E2EPS01";
 const EMAIL = "e2eps@kiosk.local";
+const NOBODY = "nobody-e2eps@kiosk.local";
 const CHOSEN = "a-password-they-picked";
 const NEXT_ONE = "the-one-after-forgetting";
 const CHANGED = "the-one-they-changed-to";
@@ -50,6 +54,16 @@ describe("first password (e2e)", () => {
   async function opensWith(password: string): Promise<boolean> {
     const held = await db.user.findUniqueOrThrow({ where: { id: userId } });
     return verifyPassword(password, held.passwordHash);
+  }
+
+  async function linksOf(owner: string, reached: number): Promise<void> {
+    for (let waited = 0; waited < WORKER_WAIT_MS; waited += POLL_MS) {
+      if ((await db.passwordSetup.count({ where: { userId: owner } })) >= reached) {
+        return;
+      }
+      await new Promise((done) => setTimeout(done, POLL_MS));
+    }
+    assert.fail(`the worker minted no link number ${reached} in ${WORKER_WAIT_MS} ms`);
   }
 
   before(async () => {
@@ -160,11 +174,14 @@ describe("first password (e2e)", () => {
     assert.equal((await postLogin(http, EMAIL, CHOSEN)).status, 200, "a refused second use changed the password");
   });
 
-  it("answers a forgotten password the same whether the address exists or not", async () => {
+  it("answers a forgotten password the same whether the address exists or not, and does the same work for both", async () => {
+    const minted = await db.passwordSetup.count({ where: { userId } });
+    // Held at the door, so the worker cannot answer either job while the two are compared.
+    const queued = mock.method(queues[QUEUE.notify], "add", async () => ({}));
     const known = await request(http).post("/auth/forgot-password").send({ email: EMAIL });
-    const unknown = await request(http)
-      .post("/auth/forgot-password")
-      .send({ email: "nobody-e2eps@kiosk.local" });
+    const unknown = await request(http).post("/auth/forgot-password").send({ email: NOBODY });
+    const jobs = queued.mock.calls.map((call) => [call.arguments[0], call.arguments[1]] as [string, PasswordForgotJob]);
+    queued.mock.restore();
     assert.equal(known.status, 204);
     assert.equal(
       unknown.status,
@@ -172,27 +189,16 @@ describe("first password (e2e)", () => {
       "the door answers differently for an address with an account",
     );
     assert.deepEqual(unknown.body, known.body, "the two answers differ in their body");
-
-    const minted = await db.passwordSetup.count({ where: { userId } });
-    assert.ok(minted >= 1, "asking for a link minted none");
-
-    // The link is the same one; the letter around it is not (KEHOACH 9.4).
-    const queued = await queues[QUEUE.notify].getJobs([
-      "waiting",
-      "delayed",
-      "completed",
-      "active",
-    ]);
-    const asked = queued
-      .map((job) => job.data as PasswordSetupJob)
-      .filter((data) => data.type === "password-setup" && data.userId === userId)
-      .some((data) => data.reason === "forgot");
-    assert.ok(asked, "a forgotten password was mailed the welcome letter");
-    assert.equal(
-      await db.user.count({ where: { email: "nobody-e2eps@kiosk.local" } }),
-      0,
-      "an address nobody owns left a row behind",
+    assert.deepEqual(
+      jobs,
+      [
+        [JOB.passwordForgot, { type: JOB.passwordForgot, email: EMAIL }],
+        [JOB.passwordForgot, { type: JOB.passwordForgot, email: NOBODY }],
+      ],
+      "the door queued other than one job per address, or a different one for an address with an account",
     );
+    assert.equal(await db.passwordSetup.count({ where: { userId } }), minted, "the door minted a link before the worker looked");
+    assert.equal(await db.user.count({ where: { email: NOBODY } }), 0, "an address nobody owns left a row behind");
   });
 
   it("lets a forgotten password be set again through the link it mailed", async () => {
@@ -324,26 +330,44 @@ describe("first password (e2e)", () => {
     assert.equal(alarm?.userId, userId, "the not-me link opens no alarm of this account");
   });
 
-  it("gives a link asked for at the sign-in page an hour, and keeps one link alive per account", async () => {
+  it("mails a link asked for at the sign-in page as a recovery, gives it an hour, and keeps one link alive per account", async () => {
     const lifetime = validateEnv().PASSWORD_RESET_TTL_MINUTES;
+    const held = await db.passwordSetup.count({ where: { userId } });
+    const sent = mock.method(queues[QUEUE.notify], "add");
     await request(http).post("/auth/forgot-password").send({ email: EMAIL });
+    await linksOf(userId, held + 1);
     const first = await db.passwordSetup.findFirstOrThrow({ where: { userId }, orderBy: { createdAt: "desc" } });
     const minutes = (first.expiresAt.getTime() - first.createdAt.getTime()) / 60_000;
     assert.ok(Math.abs(minutes - lifetime) < 1, `a reset link lives ${minutes} minutes, not ${lifetime}`);
     await request(http).post("/auth/forgot-password").send({ email: EMAIL });
+    await linksOf(userId, held + 2);
+    sent.mock.restore();
     const alive = await db.passwordSetup.count({ where: { userId, usedAt: null, expiresAt: { gt: new Date() } } });
     assert.equal(alive, 1, "two links to one account were alive at once");
+    // The link is the same one; the letter around it is not (KEHOACH 9.4).
+    const letters = sent.mock.calls
+      .map((call) => call.arguments[1] as PasswordSetupJob)
+      .filter((data) => data.type === JOB.passwordSetup && data.userId === userId);
+    assert.ok(letters.length >= 2, "the worker mailed no letter for a link it minted");
+    assert.ok(letters.every((data) => data.reason === "forgot"), "a forgotten password was mailed the welcome letter");
   });
 
   it("mails one address no more than its hourly share, whether or not it has an account", async () => {
     const share = validateEnv().FORGOT_PER_EMAIL_PER_HOUR;
     const capped = await db.user.create({ data: { email: CAPPED, passwordHash: UNUSABLE_PASSWORD, role: "VIEWER" } });
+    const queued = mock.method(queues[QUEUE.notify], "add");
     for (let ask = 0; ask <= share; ask += 1) {
       const known = await request(http).post("/auth/forgot-password").send({ email: CAPPED });
       const unknown = await request(http).post("/auth/forgot-password").send({ email: `nobody-capped-${ask}@kiosk.local` });
       assert.equal(known.status, 204);
       assert.equal(unknown.status, known.status, "an address over its share answered differently");
     }
+    const asked = queued.mock.calls.filter(
+      (call) => call.arguments[0] === JOB.passwordForgot && (call.arguments[1] as PasswordForgotJob).email === CAPPED,
+    );
+    assert.equal(asked.length, share, "one address was queued more letters than its share");
+    await linksOf(capped.id, share);
+    queued.mock.restore();
     assert.equal(await db.passwordSetup.count({ where: { userId: capped.id } }), share, "one address got more letters than its share");
   });
 

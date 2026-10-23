@@ -4,6 +4,7 @@ import { Worker } from "bullmq";
 
 import type { Env } from "../../config/env.schema.js";
 import { RedisService } from "../../database/redis.service.js";
+import { AuthService } from "../../modules/auth/auth.service.js";
 import { MailerService } from "../../modules/notifications/mailer.service.js";
 import { NoticeItemsService } from "../../modules/notifications/notice-items.service.js";
 import { NotificationsService } from "../../modules/notifications/notifications.service.js";
@@ -59,6 +60,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly items: NoticeItemsService,
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
+    private readonly auth: AuthService,
   ) {}
 
   onModuleInit(): void {
@@ -130,6 +132,10 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
         }
         if (body.type === JOB.passwordSetup) {
           await this.mailSetup(body);
+          return;
+        }
+        if (body.type === JOB.passwordForgot) {
+          await this.auth.mailForgotten(body.email);
           return;
         }
         if (body.type === JOB.passwordChanged) {

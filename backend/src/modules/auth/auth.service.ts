@@ -21,7 +21,14 @@ import {
   type SessionsCut,
 } from "./auth.types.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type PasswordChangedJob, type PasswordSetupJob, type SetupReason } from "../../queue/queues.js";
+import {
+  JOB,
+  QUEUE,
+  type PasswordChangedJob,
+  type PasswordForgotJob,
+  type PasswordSetupJob,
+  type SetupReason,
+} from "../../queue/queues.js";
 import { DEFAULT_MAIL_LOCALE } from "../payroll/mail-text.js";
 import { LoginLockout, normalEmail } from "./login-lockout.service.js";
 import { MfaService, type PendingCode } from "./mfa.service.js";
@@ -236,14 +243,24 @@ export class AuthService {
     this.log.log(`account ${userId} changed its own password`);
   }
 
-  /** Answers the same for an address with an account and one without, so the
-   *  door cannot be read as a list of who works here (KEHOACH 9.4).
+  /** Answers the same, in body and in time, for an address with an account and one without: one job
+   *  either way, and the worker looks the account up (KEHOACH 9.4).
    */
   async forgot(email: string): Promise<void> {
     if (!(await this.lockout.mayMail(email))) {
       this.log.log("a setup link was held back: its address had its hour's share");
       return;
     }
+    await this.queues[QUEUE.notify].add(JOB.passwordForgot, {
+      type: JOB.passwordForgot,
+      email,
+    } satisfies PasswordForgotJob);
+  }
+
+  /** Mail a reset link to the account an address typed at the sign-in page names, or do nothing.
+   *  @ctx notify job | a second delivery mails a new link, which closes the first
+   */
+  async mailForgotten(email: string): Promise<void> {
     const id = await this.accountIdOf(email);
     const user =
       id === null
