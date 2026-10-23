@@ -30,6 +30,10 @@ const PASSWORD = "kiosk-e2e-scope-password";
 const YEAR = 2026;
 // A token from the cutoff's own second is judged by its open session (KEHOACH 9.23), so a sign-in after one waits.
 const SECOND_MS = 1_100;
+// A finished Tuesday no other suite builds.
+const BUILD_DAY = "2026-04-21";
+const BUILD_WAIT_MS = 30_000;
+const POLL_MS = 200;
 
 describe("a desk held to some legal entities reads and writes only theirs (e2e)", () => {
   let app: INestApplication;
@@ -235,6 +239,30 @@ describe("a desk held to some legal entities reads and writes only theirs (e2e)"
     assert.equal(filed.status, 404);
     // The route sets its CSV type ahead of the handler, so its error body arrives labelled as CSV.
     assert.equal(JSON.parse(filed.text).message, "LEGAL_ENTITY_NOT_FOUND");
+  });
+
+  it("rebuilds the days of its own entities only", async () => {
+    const date = new Date(`${BUILD_DAY}T00:00:00.000Z`);
+    const own = idOf.get(SPARE) as number;
+    // Worked with no punch behind it: any build that reached B would rewrite it as absent.
+    const nextDoor = await db.attendanceDay.create({
+      data: { employeeId: idOf.get(BRAVO) as number, date, state: "WORKED", workedMinutes: 480, punchCount: 2 },
+    });
+    const queued = await as("purser").post("/timesheet/build", { from: BUILD_DAY, to: BUILD_DAY });
+    assert.equal(queued.status, 201, JSON.stringify(queued.body));
+    let state = "waiting";
+    for (let waited = 0; waited < BUILD_WAIT_MS && ["waiting", "active"].includes(state); waited += POLL_MS) {
+      await sleep(POLL_MS);
+      state = (await as("purser").get(`/timesheet/build/${queued.body.jobId}`)).body.state as string;
+    }
+    assert.equal(state, "completed");
+    assert.ok(await db.attendanceDay.findFirst({ where: { employeeId: own, date } }), "the build left out the desk's own entity");
+    const kept = await db.attendanceDay.findFirstOrThrow({ where: { id: nextDoor.id } });
+    assert.deepEqual(
+      [kept.state, kept.updatedAt.getTime()],
+      ["WORKED", nextDoor.updatedAt.getTime()],
+      "a desk of A rebuilt a day of the company next door",
+    );
   });
 
   it("seats its desk on the work of its entities only, while a whole-group desk sees both", async () => {

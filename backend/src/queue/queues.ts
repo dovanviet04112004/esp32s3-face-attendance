@@ -209,6 +209,7 @@ export interface BuildJob {
   type: typeof JOB.build;
   from: string;
   to: string;
+  entityIds?: string[] | null; // a limited desk's entities; absent or null is all
 }
 
 /** Yesterday for everybody, yesterday read when the job runs (KEHOACH 9.8). */

@@ -131,9 +131,11 @@ export class TimesheetController {
   @RateBucket(THROTTLE.heavy)
   @Roles("ADMIN", "HR", "PAYROLL")
   @Reach("entity")
-  @ApiOperation({ summary: "Queue the fold from punches into days; asking twice queues twice" })
+  @ApiOperation({
+    summary: "Queue the fold from punches into days, for the caller's legal entities; asking twice queues twice",
+  })
   @ApiCreatedResponse({ type: BuildQueued })
-  build(@Body() body: BuildDaysDto): Promise<{ jobId: string }> {
-    return this.timesheet.scheduleBuild(body.from, body.to);
+  build(@CurrentViewer() viewer: Viewer, @Body() body: BuildDaysDto): Promise<{ jobId: string }> {
+    return this.timesheet.scheduleBuild(body.from, body.to, viewer.entityIds);
   }
 }

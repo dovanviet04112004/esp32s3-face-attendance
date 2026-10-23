@@ -448,8 +448,8 @@ export class TimesheetService implements OnModuleInit {
    * roster, which is minutes, and a request that long is a request that dies
    * behind the proxy rather than one that finishes.
    */
-  async scheduleBuild(from: string, to: string): Promise<{ jobId: string }> {
-    const job: TimesheetJob = { type: JOB.build, from, to };
+  async scheduleBuild(from: string, to: string, entityIds: string[] | null): Promise<{ jobId: string }> {
+    const job: TimesheetJob = { type: JOB.build, from, to, entityIds };
     const queued = await this.queues[QUEUE.timesheet].add(JOB.build, job);
     return { jobId: String(queued.id) };
   }
@@ -475,7 +475,7 @@ export class TimesheetService implements OnModuleInit {
       const rows = await this.build(body.day, body.employeeId);
       return { days: rows > 0 ? 1 : 0, rows };
     }
-    return this.buildRange(body.from, body.to);
+    return this.buildRange(body.from, body.to, body.entityIds ?? null);
   }
 
   async buildState(jobId: string): Promise<{ state: BuildState }> {
@@ -491,13 +491,13 @@ export class TimesheetService implements OnModuleInit {
     return { state: state === "unknown" ? "gone" : "waiting" };
   }
 
-  /** Build every finished day in a range, oldest first. */
-  async buildRange(from: string, to: string): Promise<BuildReport> {
+  /** Build every finished day in a range, oldest first, for the people of these entities; null is everyone (KEHOACH 9.4). */
+  async buildRange(from: string, to: string, entityIds: string[] | null = null): Promise<BuildReport> {
     let days = 0;
     let rows = 0;
     for (let at = dayAsDate(from); at <= dayAsDate(to); at.setUTCDate(at.getUTCDate() + 1)) {
       const day = asDay(at);
-      const built = await this.build(day);
+      const built = await this.build(day, undefined, entityIds);
       if (built > 0) {
         days += 1;
         rows += built;
@@ -536,10 +536,10 @@ export class TimesheetService implements OnModuleInit {
     return working;
   }
 
-  /** Fold one local day's punches into one row per person, or for `only` alone.
+  /** Fold one local day's punches into one row per person, for `only` alone, or for the people of `entityIds`.
    *  @ctx queue | blocking | safe to run again: it upserts on (employee, date)
    */
-  async build(day: string, only?: number): Promise<number> {
+  async build(day: string, only?: number, entityIds: string[] | null = null): Promise<number> {
     if (day >= this.today()) {
       // A day still in progress summarises to a wrong number (KEHOACH 9.8).
       this.log.warn(`refusing to build ${day}: it has not finished`);
@@ -556,7 +556,11 @@ export class TimesheetService implements OnModuleInit {
       }),
       this.db.employee.findMany({
         // A last day is built after its record closes (KEHOACH 9.14), so `active` alone drops it.
-        where: { OR: [{ active: true }, { leaveDate: { gte: date } }], ...(only === undefined ? {} : { id: only }) },
+        where: {
+          OR: [{ active: true }, { leaveDate: { gte: date } }],
+          ...(only === undefined ? {} : { id: only }),
+          ...(entityIds === null ? {} : { legalEntityId: { in: entityIds } }),
+        },
         select: { id: true, legalEntityId: true },
       }),
       this.db.holiday.findMany({ where: { date }, select: { legalEntityId: true, paid: true } }),
