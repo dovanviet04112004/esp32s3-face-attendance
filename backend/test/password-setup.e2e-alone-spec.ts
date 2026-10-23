@@ -23,6 +23,7 @@ const NEXT_ONE = "the-one-after-forgetting";
 const CHANGED = "the-one-they-changed-to";
 const OLD_COST = "made-at-the-old-cost";
 const LAST_ONE = "the-one-after-the-old-cost";
+const RACERS = ["first-of-two-racing-calls", "second-of-two-racing-calls"];
 const CAPPED = "e2eps-capped@kiosk.local";
 
 describe("first password (e2e)", () => {
@@ -344,5 +345,20 @@ describe("first password (e2e)", () => {
       assert.equal(unknown.status, known.status, "an address over its share answered differently");
     }
     assert.equal(await db.passwordSetup.count({ where: { userId: capped.id } }), share, "one address got more letters than its share");
+  });
+
+  it("sets one password when two calls race on the same link", async () => {
+    const shared = randomBytes(32).toString("base64url");
+    await db.passwordSetup.create({
+      data: { userId, tokenHash: createHash("sha256").update(shared).digest("hex"), expiresAt: new Date(Date.now() + 3_600_000) },
+    });
+    const answers = await Promise.all(
+      RACERS.map((password) => request(http).post("/auth/set-password").send({ token: shared, password })),
+    );
+    assert.deepEqual(answers.map((one) => one.status).sort(), [204, 401], "one link set two passwords");
+    const lost = answers.findIndex((one) => one.status === 401);
+    assert.equal(answers[lost]?.body.message, "SETUP_LINK_SPENT");
+    assert.ok(await opensWith(RACERS[1 - lost] ?? ""), "the call that won did not set its password");
+    assert.ok(!(await opensWith(RACERS[lost] ?? "")), "the call that lost set its password too");
   });
 });

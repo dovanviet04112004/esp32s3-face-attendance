@@ -5,7 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import { ThrottlerException } from "@nestjs/throttler";
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 
 import { DOCS, GUARD } from "../../common/cache/cache-keys.js";
 import { LINKED_DESKS } from "../../common/scope/viewer.js";
@@ -177,15 +177,19 @@ export class AuthService {
     }
     await this.refuseWeak(setup.user.id, password);
     const passwordHash = await hashPassword(password);
-    await this.db.$transaction([
-      this.db.passwordSetup.update({ where: { id: setup.id }, data: { usedAt: now } }),
-      this.closeLinks(setup.user.id, now),
-      this.db.user.update({ where: { id: setup.user.id }, data: { passwordHash } }),
-      this.db.session.updateMany({
-        where: { userId: setup.user.id, revokedAt: null },
-        data: { revokedAt: now },
-      }),
-    ]);
+    // The claim is the first write, so of two calls racing on one link only one sets its password.
+    await this.db.$transaction(async (tx) => {
+      const claimed = await tx.passwordSetup.updateMany({
+        where: { id: setup.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) {
+        throw new UnauthorizedException("SETUP_LINK_SPENT");
+      }
+      await this.closeLinks(tx, setup.user.id, now);
+      await tx.user.update({ where: { id: setup.user.id }, data: { passwordHash } });
+      await tx.session.updateMany({ where: { userId: setup.user.id, revokedAt: null }, data: { revokedAt: now } });
+    });
     await this.lockout.clear(setup.user.email);
     await this.cutAccess([setup.user.id]);
     await this.tellOwner(setup.user.id);
@@ -221,7 +225,7 @@ export class AuthService {
     const now = new Date();
     await this.db.$transaction([
       this.db.user.update({ where: { id: userId }, data: { passwordHash } }),
-      this.closeLinks(userId, now),
+      this.closeLinks(this.db, userId, now),
       this.db.session.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now },
@@ -293,7 +297,7 @@ export class AuthService {
     const lifetimeMs = this.config.get("PASSWORD_RESET_TTL_MINUTES", { infer: true }) * UNIT_MS.m;
     const expiresAt = new Date(now.getTime() + lifetimeMs);
     await this.db.$transaction([
-      this.closeLinks(userId, now),
+      this.closeLinks(this.db, userId, now),
       this.db.passwordSetup.create({ data: { userId, tokenHash: fingerprint(link), expiresAt } }),
     ]);
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
@@ -324,8 +328,8 @@ export class AuthService {
   }
 
   // An account keeps one live link; the others close by running out (KEHOACH 9.4).
-  private closeLinks(userId: string, now: Date) {
-    return this.db.passwordSetup.updateMany({
+  private closeLinks(db: Prisma.TransactionClient, userId: string, now: Date) {
+    return db.passwordSetup.updateMany({
       where: { userId, usedAt: null, expiresAt: { gt: now } },
       data: { expiresAt: now },
     });
