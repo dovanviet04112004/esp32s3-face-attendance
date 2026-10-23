@@ -1685,7 +1685,7 @@ export class PayrollService {
     return { ...row, employerCost: (toDong(row.gross) + toDong(row.insuranceEmployer)).toString() };
   }
 
-  /** What one person may read about themselves, with every component. */
+  /** One payslip with every component; anyone but its owner reading it leaves a payslip.read line (KEHOACH 9.11). */
   async payslip(viewer: Viewer, id: string): Promise<PayslipDetail> {
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const where: Prisma.PayslipWhereInput =
@@ -1693,6 +1693,15 @@ export class PayrollService {
     const found = await this.db.payslip.findFirst({ where, include: { lines: { orderBy: { ordinal: "asc" } } } });
     if (!found) {
       throw new NotFoundException("PAYSLIP_NOT_FOUND");
+    }
+    if (found.employeeId !== viewer.employeeId) {
+      await this.audit.record({
+        actorId: viewer.userId,
+        action: AUDIT_ACTIONS.PAYSLIP_READ,
+        subject: AUDIT_SUBJECTS.EMPLOYEE,
+        subjectId: String(found.employeeId),
+        meta: { payslipId: found.id },
+      });
     }
     if (found.employeeId === viewer.employeeId && found.viewedAt === null && found.state !== "DRAFT") {
       const viewed = await this.db.payslip.update({ where: { id }, data: { state: "VIEWED", viewedAt: new Date() } });

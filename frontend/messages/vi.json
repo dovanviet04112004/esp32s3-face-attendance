@@ -2848,6 +2848,7 @@
     "release_offer": "Đưa bản cập nhật cho kiosk",
     "route_write": "Ghi qua API",
     "payroll_bonus": "Nạp khoản thưởng",
+    "payslip_read": "Xem phiếu lương",
     "timesheet_correct": "Sửa ngày công",
     "device_approve": "Duyệt kiosk",
     "device_revoke": "Thu hồi kiosk",

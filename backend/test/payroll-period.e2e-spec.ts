@@ -441,6 +441,23 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     assert.equal((await db.payslip.findUniqueOrThrow({ where: { id: unread.id } })).state, "SENT");
   });
 
+  it("writes down who else read a payslip, and nothing when its owner reads it", async () => {
+    const steadyId = idOf.get(STEADY) as number;
+    const slip = await db.payslip.findFirstOrThrow({ where: { periodId, employeeId: steadyId, state: { not: "DRAFT" } } });
+    const readsOf = () =>
+      db.auditLog.findMany({ where: { action: "payslip.read", subjectType: "employee", subjectId: String(steadyId) } });
+    assert.equal((await as("steady").get(`/payslips/${slip.id}`)).status, 200);
+    assert.deepEqual(await readsOf(), [], "the owner's own reading was filed as somebody else's");
+    assert.equal((await as("hr").get(`/payslips/${slip.id}`)).status, 200);
+    const hr = await db.user.findUniqueOrThrow({ where: { email: "hr@kiosk.local" }, select: { id: true } });
+    const reads = await readsOf();
+    assert.deepEqual(
+      reads.map((one) => [one.actorId, (one.meta as { payslipId?: string } | null)?.payslipId]),
+      [[hr.id, slip.id]],
+      "the desk read a payslip and left no trace",
+    );
+  });
+
   it("sums the period over what it issued, and finds one payslip with its advance", async () => {
     const totals = await as("hr").get(`/payroll-periods/${periodId}/totals`);
     assert.equal(totals.status, 200);

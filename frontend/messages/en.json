@@ -2848,6 +2848,7 @@
     "release_offer": "Release offered",
     "route_write": "API write",
     "payroll_bonus": "Bonus amounts loaded",
+    "payslip_read": "Payslip read",
     "timesheet_correct": "Day corrected",
     "device_approve": "Kiosk approved",
     "device_revoke": "Kiosk revoked",
