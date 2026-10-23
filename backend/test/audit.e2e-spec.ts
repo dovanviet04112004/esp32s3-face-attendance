@@ -16,6 +16,7 @@ import { seedEntityId } from "./fixtures.js";
 
 const DAY_MS = 86_400_000;
 const CODE = "E2EAU01";
+const BOSS_CODE = "E2EAU02";
 const ACCOUNT = "e2eaudit@kiosk.local";
 const CARRIER = "e2eaudit-carrier@kiosk.local";
 const CARRIER_PASSWORD = "kiosk-e2e-password";
@@ -43,7 +44,7 @@ describe("audit trail (e2e)", () => {
 
   async function sweep(): Promise<void> {
     await db.user.deleteMany({ where: { email: { in: [ACCOUNT, CARRIER] } } });
-    await db.employee.deleteMany({ where: { code: CODE } });
+    await db.employee.deleteMany({ where: { code: { in: [CODE, BOSS_CODE] } } });
     await db.device.deleteMany({ where: { id: DOOR } });
   }
 
@@ -183,6 +184,24 @@ describe("audit trail (e2e)", () => {
     const written = JSON.stringify(rows[0].meta);
     assert.ok(!written.includes("0900000000"), "the trail kept a second copy of personal data");
     assert.ok(!written.includes("đã đổi tên"), "the trail kept a second copy of personal data");
+  });
+
+  it("says who a person reported to and who they report to now", async () => {
+    const boss = await db.employee.create({
+      data: { code: BOSS_CODE, fullName: "Cấp trên mới", active: true, legalEntityId: await seedEntityId(db) },
+    });
+    const moved = await request(http)
+      .patch(`/employees/${employeeId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ managerId: boss.id });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+
+    const rows = await trail(`subjectType=employee&subjectId=${employeeId}&action=employee.update`);
+    assert.deepEqual(
+      rows.filter((row) => String(row.meta?.fields) === "managerId").map((row) => row.meta),
+      [{ fields: ["managerId"], managerId: { from: null, to: boss.id } }],
+      "a new approver written as a field name alone is half an answer",
+    );
   });
 
   it("leaves nothing behind when a session merely carries on", async () => {

@@ -297,6 +297,8 @@ function chunks<T>(items: readonly T[]): T[][] {
 // A held face first, then a pair still waiting for one.
 const STANDING_ORDER: Readonly<Record<string, number>> = { ENROLLED: 0, RETAKE: 1, ASSIGNED: 2 };
 
+type ManagerMove = { from: number | null; to: number | null };
+
 async function managersOf(tx: Prisma.TransactionClient, codes: string[]): Promise<Map<number, number | null>> {
   const rows = await tx.$queryRaw<{ id: number; managerId: number | null }[]>`
     SELECT "id", "managerId" FROM "Employee" WHERE "code" = ANY(${codes}::text[])
@@ -563,7 +565,10 @@ export class EmployeesService implements OnModuleInit {
         for (const slice of chunks(plans.filter((one) => one.held && one.writesRecord))) {
           await updateHeld(tx, slice);
         }
-        const flips = bossed.length > 0 ? await this.linkManagers(tx, bossed, bossed.map((one) => one.code as string), before) : [];
+        const linked =
+          bossed.length > 0
+            ? await this.linkManagers(tx, bossed, bossed.map((one) => one.code as string), before)
+            : { flips: [], moves: new Map<number, ManagerMove>() };
         const paid: AuditEntry[] = [];
         for (const slice of chunks(rows.filter((row) => row.baseSalary && row.insuranceSalary))) {
           paid.push(...(await this.compensation.seedFirst(tx, viewer.userId, slice.map(firstPayOf), this.today())));
@@ -576,7 +581,7 @@ export class EmployeesService implements OnModuleInit {
           plans.flatMap((one) => (one.consent ? [ids.get(one.row.code as string) ?? 0] : [])),
           "PAPER",
         );
-        return { flips, ids, paid, consented: new Set(consented), ...(await this.stageLogins(tx, plans, ids)) };
+        return { ...linked, ids, paid, consented: new Set(consented), ...(await this.stageLogins(tx, plans, ids)) };
       },
       { timeout: kTransactionMs, maxWait: kTransactionMs },
     );
@@ -599,13 +604,14 @@ export class EmployeesService implements OnModuleInit {
       if (id === undefined || (one.held && fields.length + one.cleared.length === 0)) {
         return [];
       }
+      const move = one.held ? written.moves.get(id) : undefined;
       return [
         {
           actorId: viewer.userId,
           action: one.held ? AUDIT_ACTIONS.EMPLOYEE_UPDATE : AUDIT_ACTIONS.EMPLOYEE_CREATE,
           subject: AUDIT_SUBJECTS.EMPLOYEE,
           subjectId: String(id),
-          meta: { code, fields, cleared: one.cleared, source: "import" },
+          meta: { code, fields, cleared: one.cleared, source: "import", ...(move ? { managerId: move } : {}) },
         },
       ];
     });
@@ -755,7 +761,7 @@ export class EmployeesService implements OnModuleInit {
     rows: ImportRow[],
     codes: string[],
     before: Map<number, number | null>,
-  ): Promise<RoleFlip[]> {
+  ): Promise<{ flips: RoleFlip[]; moves: Map<number, ManagerMove> }> {
     for (let at = 0; at < rows.length; at += kWriteChunk) {
       const slice = rows.slice(at, at + kWriteChunk);
       await tx.$executeRaw`
@@ -771,12 +777,13 @@ export class EmployeesService implements OnModuleInit {
     const after = await managersOf(tx, codes);
     const moved = [...after].filter(([id, boss]) => (before.has(id) ? before.get(id) !== boss : boss !== null));
     if (moved.length === 0) {
-      return [];
+      return { flips: [], moves: new Map() };
     }
     const movedIds = moved.map(([id]) => id);
     await this.scope.assertNoManagerCycle(tx, movedIds);
     await repointPending(tx, movedIds);
-    return this.users.syncManagerRoles([...moved.map(([id]) => before.get(id)), ...moved.map(([, boss]) => boss)], tx);
+    const flips = await this.users.syncManagerRoles([...moved.map(([id]) => before.get(id)), ...moved.map(([, boss]) => boss)], tx);
+    return { flips, moves: new Map(moved.map(([id, boss]) => [id, { from: before.get(id) ?? null, to: boss }])) };
   }
 
   /**
@@ -1612,17 +1619,18 @@ export class EmployeesService implements OnModuleInit {
   async update(id: number, body: UpdateEmployeeDto, viewer: Viewer): Promise<Employee> {
     const held = await this.get(id, viewer);
     const placed = await this.placement(body, held, viewer);
-    let written: { saved: Employee; flips: RoleFlip[] };
+    let written: { saved: Employee; flips: RoleFlip[]; managedBy: number | null };
     try {
       written = await this.db.$transaction(async (tx) => {
         const before = await tx.employee.findUniqueOrThrow({ where: { id }, select: { managerId: true } });
         const saved = await tx.employee.update({ where: { id }, data: { ...dated(body), ...placed } });
         if (saved.managerId === before.managerId) {
-          return { saved, flips: [] };
+          return { saved, flips: [], managedBy: before.managerId };
         }
         await this.scope.assertNoManagerCycle(tx, [id]);
         await repointPending(tx, [id]);
-        return { saved, flips: await this.users.syncManagerRoles([before.managerId, saved.managerId], tx) };
+        const flips = await this.users.syncManagerRoles([before.managerId, saved.managerId], tx);
+        return { saved, flips, managedBy: before.managerId };
       });
     } catch (error) {
       if (isPrismaCode(error, UNIQUE_VIOLATION)) {
@@ -1637,7 +1645,8 @@ export class EmployeesService implements OnModuleInit {
     if (written.saved.managerId !== held.managerId) {
       await this.items.regroupPeople("REQUESTS", [id]);
     }
-    // Field names only, never values (KEHOACH 9.24 rule 4).
+    // Field names only, never values, but who approves them is a power and keeps both ends (KEHOACH 9.24 rule 4).
+    const moved = written.saved.managerId !== written.managedBy;
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.EMPLOYEE_UPDATE,
@@ -1648,6 +1657,7 @@ export class EmployeesService implements OnModuleInit {
           .filter(([, value]) => value !== undefined)
           .map(([field]) => field)
           .sort(),
+        ...(moved ? { managerId: { from: written.managedBy, to: written.saved.managerId } } : {}),
       },
     });
     return written.saved;

@@ -151,5 +151,17 @@ describe("reorganisation (e2e)", () => {
       idOf.get(NEW_BOSS),
       "a request left with the old manager is one nobody can answer",
     );
+    const lines = await db.auditLog.findMany({
+      where: { action: "employee.update", subjectId: { in: [MOVED, STAYS].map((code) => String(idOf.get(code))) } },
+    });
+    assert.deepEqual(
+      lines.map((one) => one.meta),
+      [MOVED, STAYS].map(() => ({
+        fields: ["managerId"],
+        reorg: true,
+        managerId: { from: idOf.get(OLD_BOSS), to: idOf.get(NEW_BOSS) },
+      })),
+      "a move of approver was not written under each person with both ends",
+    );
   });
 });

@@ -131,6 +131,7 @@ export class OrgService {
         id: true,
         code: true,
         fullName: true,
+        departmentId: true,
         department: { select: { code: true } },
         managerId: true,
         manager: { select: { code: true } },
@@ -225,6 +226,24 @@ export class OrgService {
       subjectId: toDepartment?.code ?? "selection",
       meta: { moved: ids.length, toDepartment: toDepartment?.code, toManager: toManager?.code },
     });
+    if (toManager) {
+      // Who approves them is a power, so each person moved keeps both ends (KEHOACH 9.24 rule 4).
+      await this.audit.recordMany(
+        people
+          .filter((one) => one.managerId !== toManager.id)
+          .map((one) => ({
+            actorId: viewer.userId,
+            action: AUDIT_ACTIONS.EMPLOYEE_UPDATE,
+            subject: AUDIT_SUBJECTS.EMPLOYEE,
+            subjectId: String(one.id),
+            meta: {
+              fields: toDepartment && one.departmentId !== toDepartment.id ? ["departmentId", "managerId"] : ["managerId"],
+              reorg: true,
+              managerId: { from: one.managerId, to: toManager.id },
+            },
+          })),
+      );
+    }
     return { ...plan, applied: true };
   }
 

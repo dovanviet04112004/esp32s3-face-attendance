@@ -639,7 +639,14 @@ describe("employee import (e2e)", () => {
       where: { subjectType: "employee", subjectId: String(held.id), action: "employee.update" },
       orderBy: { id: "desc" },
     });
-    assert.deepEqual(line.meta, { code, fields: ["nationalId"], cleared: ["dateOfBirth", "departmentCode", "managerCode"], source: "import" });
+    const boss = await db.employee.findUniqueOrThrow({ where: { code: `${PREFIX}21` } });
+    assert.deepEqual(line.meta, {
+      code,
+      fields: ["nationalId"],
+      cleared: ["dateOfBirth", "departmentCode", "managerCode"],
+      source: "import",
+      managerId: { from: boss.id, to: null },
+    });
 
     const refused = (await upload(csvOf(["code", "fullName", "legalEntityCode", "baseSalary"], [[code, "-", "-", "-"]]), "text/csv")).body as Report;
     assert.deepEqual(
