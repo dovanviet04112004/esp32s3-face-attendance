@@ -296,7 +296,7 @@ export class OrgService {
         subject: AUDIT_SUBJECTS.ORG,
         subjectId: made.id,
       });
-      await this.rebuildIfPast(made.date);
+      await this.rebuildIfPast(made);
       return made;
     } catch (error) {
       if (isPrismaCode(error, UNIQUE_VIOLATION)) {
@@ -319,7 +319,7 @@ export class OrgService {
       meta: trail(held, body),
     });
     if (body.paid !== undefined && body.paid !== held.paid) {
-      await this.rebuildIfPast(saved.date);
+      await this.rebuildIfPast(saved);
     }
     return saved;
   }
@@ -329,7 +329,7 @@ export class OrgService {
     await this.db.holiday.delete({ where: { id } }).catch((error: unknown) => {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
-    await this.rebuildIfPast(held.date);
+    await this.rebuildIfPast(held);
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_HOLIDAY_DELETE,
@@ -340,10 +340,10 @@ export class OrgService {
   }
 
   // A finished day's rows carry its calendar, and the pay run reads those rows rather than the holidays (KEHOACH 9.8).
-  private async rebuildIfPast(date: Date): Promise<void> {
-    const day = asDay(date);
+  private async rebuildIfPast(holiday: Pick<Holiday, "date" | "legalEntityId">): Promise<void> {
+    const day = asDay(holiday.date);
     if (day < this.timesheet.today()) {
-      await this.timesheet.scheduleBuild(day, day);
+      await this.timesheet.scheduleBuild(day, day, holiday.legalEntityId === null ? null : [holiday.legalEntityId]);
     }
   }
 
