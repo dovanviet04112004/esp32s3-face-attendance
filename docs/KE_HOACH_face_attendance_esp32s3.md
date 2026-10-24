@@ -8388,11 +8388,14 @@ Năm đã đóng vẫn nhận đơn cho ngày của chính nó — người quê
 tháng Giêng — nhưng `carriedOut` đứng trong phép kiểm, nên một ngày đã chuyển sang năm mới không
 tiêu được lần nữa ở năm cũ.
 
-**Đơn chồng ngày bị chặn ở tầng dữ liệu**, bằng ràng buộc loại trừ trên khoảng ngày, chứ không
-chỉ kiểm trong code — hai request song song thì phép kiểm trong code cho qua cả hai.
+**Đơn chồng ngày bị chặn ở tầng dữ liệu**, bằng ràng buộc loại trừ trên các nửa ngày, chứ không
+chỉ kiểm trong code — hai request song song thì phép kiểm trong code cho qua cả hai. Mỗi ngày là
+hai ô, sáng và chiều: đơn cả ngày, hay đơn nửa ngày không nói buổi nào, giữ cả hai ô, nên buổi sáng
+và buổi chiều của một ngày là hai đơn đứng cạnh nhau được, còn hai đơn cùng buổi nhận `LEAVE_OVERLAP`.
 
 Một ngày nghỉ đã duyệt **ghi vào `AttendanceDay`** của ngày đó với trạng thái tương ứng, nên
-bảng công và bảng lương không phải hỏi hai nguồn rồi tự hoà giải.
+bảng công và bảng lương không phải hỏi hai nguồn rồi tự hoà giải. Hai nửa của một ngày cùng đã
+duyệt là một ngày `LEAVE`, và bảng lương tính mỗi nửa là 0,5 ngày của loại phép của nó.
 
 **Người gửi thấy đúng con số server sẽ trừ.** Biểu mẫu hỏi `GET /leave-days` cho khoảng đang
 chọn và hiện số ngày làm bị trừ, tách theo năm khi đơn vắt năm, kèm số còn lại của từng năm sau
@@ -8708,7 +8711,9 @@ xuống phút — `Shift` không giữ giờ nghỉ trưa, nên đó là ranh gi
 sáng thì giờ phải có mặt là điểm giữa, cộng thời gian ân hạn như mọi ngày; nghỉ chiều thì giờ được
 về là điểm giữa. Phút muộn và phút về sớm vì thế chỉ đếm trên nửa ngày phải làm; phút tăng ca vẫn
 đo từ giờ ra của ca. Ca 08:00–17:30 có điểm giữa 12:45: nghỉ sáng, quẹt vào 12:55 với 10 phút ân
-hạn là không muộn phút nào. Đơn duyệt sau khi ngày ấy đã dựng chỉ đổi ngày ấy ở lần dựng lại.
+hạn là không muộn phút nào. Đơn duyệt sau khi ngày ấy đã dựng chỉ dời mốc ca ở lần dựng lại. Cả
+hai nửa của một ngày đều là phép đã duyệt thì ngày ấy là `LEAVE` (§9.5), như một đơn cả ngày: ngày
+đã dựng thành vắng, không lượt quẹt, thì lần duyệt nửa thứ hai đổi nó ngay.
 
 **Ca qua nửa đêm chưa có thiết kế.** Ca có giờ ra không đứng sau giờ vào bị từ chối lúc tạo, và lúc
 sửa giờ, bằng `SHIFT_CROSSES_MIDNIGHT`: mọi phép tính ở trên đặt cả ca vào một ngày lịch, nên một ca
@@ -9951,8 +9956,13 @@ Ba nhóm, và nhóm thứ ba là nhóm hệ này **bắt buộc** phải làm v�
 sách tham gia BHXH, BHYT, BHTN — nộp **hai lần một năm**, trước ngày 5 tháng 6 và trước ngày 5
 tháng 12, theo Quyết định 1040/QĐ-BHXH sửa bởi 948/QĐ-BHXH. Nó cần đúng những trường hệ này đã
 giữ: họ tên, mã BHXH, ngày sinh, giới tính, số giấy tờ tuỳ thân, chức danh, loại hợp đồng và
-thời hạn, mức lương cùng phụ cấp. **Nên nó phải xuất được, không phải chép tay.** Ngoài ra là
-báo tăng, báo giảm, báo điều chỉnh khi có người vào, ra hoặc đổi lương.
+thời hạn, mức lương cùng phụ cấp. **Nên nó phải xuất được, không phải chép tay.** Hợp đồng in vào
+D02-LT là hợp đồng hiệu lực ngày chốt; một hợp đồng đã chấm dứt (`TERMINATED`) không mang ngày chấm
+dứt, nên với người có `leaveDate` nó được tính còn hiệu lực tới đúng ngày ấy, còn với người chưa có
+`leaveDate` thì không tính. Ngoài ra là báo tăng, báo giảm, báo điều chỉnh khi có người vào, ra hoặc
+đổi lương. Báo giảm vì không làm việc (`UNPAID_14`) đếm từng tháng theo đúng luật 14 ngày mà phiếu
+lương dùng (§9.7), kể cả ngày làm việc trước `hireDate` hay sau `leaveDate`, và mang ngày cuối của
+tháng ấy: 8 ngày tháng Tám cộng 7 ngày tháng Chín là hai tháng vẫn đóng, không phải một lần báo giảm.
 
 **Thuế thu nhập cá nhân.** Khấu trừ và kê khai theo kỳ, và **quyết toán năm** cho từng người.
 Dữ liệu đã nằm ở `PayslipLine` (§9.6) nếu từng khoản là một dòng — đây là lý do thứ hai để
