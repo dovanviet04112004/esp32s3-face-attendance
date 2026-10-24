@@ -181,6 +181,8 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     assert.equal(waiting.body.kind, "REQUEST_WAITING");
     assert.equal(waiting.body.tag, itemKey("REQUESTS", id), "a piece of work is not tagged by its key");
     assert.equal(waiting.body.renotify, false);
+    assert.throws(() => pushBody.parse({ ...waiting.body, tag: `requests:Đẩy boss ${RUN}` }), "a tag could carry a name");
+    assert.throws(() => pushBody.parse({ ...waiting.body, tag: `requests:${"0".repeat(120)}` }), "a tag could run past a key's length");
 
     assert.equal((await post("boss", `/requests/${id}/decide`, { approve: true })).status, 201);
     const [decided] = await pushesTo("asker", 1);
