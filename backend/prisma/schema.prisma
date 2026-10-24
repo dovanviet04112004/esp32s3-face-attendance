@@ -90,6 +90,7 @@ model User {
   certificates   Certificate[]
   profileAsks    ProfileChange[] @relation("AsksProfileChanges")
   profileCalls   ProfileChange[] @relation("DecidesProfileChanges")
+  dependentAsks  Dependent[]
   disputesAnswered PayslipDispute[]
   notifications  Notification[]
   noticePrefs    NotificationPreference[]
@@ -1017,12 +1018,14 @@ model Dependent {
   fromMonth    DateTime          @db.Date
   toMonth      DateTime?         @db.Date
   state        DependentState    @default(PENDING)
+  askedById    String?
   decidedById  String?
   decidedAt    DateTime?
   decisionNote String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  askedBy      User?             @relation(fields: [askedById], references: [id], onDelete: SetNull)
 
   @@index([employeeId, state])
   @@index([state, fromMonth])

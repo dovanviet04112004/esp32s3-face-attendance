@@ -579,6 +579,7 @@ export class CompensationService {
           nationalId: body.nationalId ?? null,
           fromMonth: new Date(body.fromMonth),
           toMonth: body.toMonth ? new Date(body.toMonth) : null,
+          askedById: viewer.userId,
         },
       })
       .catch((error: unknown) => {
@@ -595,12 +596,15 @@ export class CompensationService {
     if (!QUEUE_DESKS.dependents.includes(viewer.role)) {
       throw new ForbiddenException("PAY_WRITE_DENIED");
     }
-    const held = await this.db.dependent.findUnique({ where: { id }, select: { employeeId: true } });
+    const held = await this.db.dependent.findUnique({ where: { id }, select: { employeeId: true, askedById: true } });
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     if (!held || !(await this.scope.reaches(viewer, visible, held.employeeId))) {
       throw new NotFoundException("DEPENDENT_NOT_FOUND");
     }
-    // A dependent lowers the claimant's own tax, so the claimant never approves it (KEHOACH 9.4).
+    // Neither the claimant, whose tax it lowers, nor whoever registered it decides it (KEHOACH 9.4).
+    if (held.askedById !== null && held.askedById === viewer.userId) {
+      throw new ForbiddenException("SELF_DECISION");
+    }
     refuseOwn(viewer, held.employeeId);
     const claimed = await this.db.dependent.updateMany({
       where: { id, state: "PENDING" },

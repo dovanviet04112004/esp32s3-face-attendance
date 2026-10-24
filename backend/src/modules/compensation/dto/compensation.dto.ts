@@ -520,6 +520,13 @@ export class DependentView {
   @ApiProperty({
     nullable: true,
     type: String,
+    example: "5f0c6a3e-8c1d-4b8e-9f43-2a7d1c9e0b11",
+    description: "Account that registered it, which may not decide it; null once that account is gone or when unknown",
+  })
+  askedById!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
     example: "ab35f74f-dd47-4ad6-8e4c-fb243e7ac176",
     description: "Account that decided it; null while pending",
   })

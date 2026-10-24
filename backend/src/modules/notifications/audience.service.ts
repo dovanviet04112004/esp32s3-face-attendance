@@ -112,7 +112,12 @@ export class AudienceService {
         OR: [{ askedById: null }, { askedById: { not: viewer.userId } }],
       },
       DISPUTES: { state: WAITING_STATE.DISPUTES, ...notOwn },
-      DEPENDENTS: { state: WAITING_STATE.DEPENDENTS, ...notOwn },
+      // A desk that registered a dependant on someone's behalf neither sees nor decides it (KEHOACH 9.21.4).
+      DEPENDENTS: {
+        state: WAITING_STATE.DEPENDENTS,
+        ...notOwn,
+        OR: [{ askedById: null }, { askedById: { not: viewer.userId } }],
+      },
     };
     return waiting[queue as Exclude<InboxQueue, "REQUESTS">] as QueueWhere[Q];
   }

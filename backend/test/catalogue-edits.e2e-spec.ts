@@ -343,4 +343,32 @@ describe("catalogue edits and the lists around them (e2e)", () => {
     assert.equal(self.status, 403);
     assert.equal(self.body.message, "SELF_DECISION");
   });
+
+  it("never lets the desk that registered a dependant for someone decide it", async () => {
+    const asked = await by("payroll").post("/dependents", {
+      employeeId: idOf.get(FIRST),
+      fullName: DEPENDANT,
+      relation: "SPOUSE",
+      fromMonth: "2026-02-01",
+    });
+    assert.equal(asked.status, 201, JSON.stringify(asked.body));
+    const id = asked.body.id as string;
+
+    const self = await by("payroll").post(`/dependents/${id}/decide`, { approve: true });
+    assert.equal(self.status, 403);
+    assert.equal(self.body.message, "SELF_DECISION");
+    const held = await db.dependent.findUniqueOrThrow({ where: { id } });
+    assert.equal(held.state, "PENDING", "a refused decision moved the registration");
+
+    const waiting = await by("payroll").get(`/dependents?state=PENDING&search=${FIRST}&take=200`);
+    assert.equal(waiting.status, 200);
+    assert.ok(
+      !(waiting.body as Page<{ id: string }>).rows.some((one) => one.id === id),
+      "the desk is asked to decide what it registered itself",
+    );
+
+    const decided = await by("admin").post(`/dependents/${id}/decide`, { approve: true });
+    assert.equal(decided.status, 201, JSON.stringify(decided.body));
+    assert.equal(decided.body.state, "ACTIVE");
+  });
 });
