@@ -26,7 +26,7 @@ import {
 
 import type { RequestKind } from "@/components/requests/request-card";
 import { useSession, type Role } from "@/lib/auth";
-import { todayIso } from "@/lib/format";
+import { dayOnly, todayIso } from "@/lib/format";
 import { homeFor } from "@/lib/nav";
 
 export type NoticeKind =
@@ -308,6 +308,14 @@ function dueSentence(key: DueKey, daysLeft: number): Said {
   return daysLeft === 0 ? { key: `${key}_today` } : { key, count: daysLeft };
 }
 
+const kDayMs = 86_400_000;
+
+/** Days from the company's today to the due date the facts carry, else the count stored on the row. */
+function daysLeftOf(notice: Notice): number | null {
+  const due = factText(notice, "dueDate");
+  return due ? Math.round((dayOnly(due).getTime() - dayOnly(todayIso()).getTime()) / kDayMs) : notice.daysLeft;
+}
+
 const kContractDays = 30;
 const kProbationDays = 7;
 const kStalledDays = 7;
@@ -374,14 +382,14 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     icon: FileTextIcon,
     category: "PEOPLE",
     label: { key: "kindCONTRACT_DUE", count: kContractDays },
-    sentence: (notice) => dueSentence("kindCONTRACT_DUE", notice.daysLeft ?? kContractDays),
+    sentence: (notice) => dueSentence("kindCONTRACT_DUE", daysLeftOf(notice) ?? kContractDays),
     path: (notice) => personAt(notice, "?tab=contracts"),
   },
   PROBATION_DUE: {
     icon: HourglassMediumIcon,
     category: "PEOPLE",
     label: { key: "kindPROBATION_DUE", count: kProbationDays },
-    sentence: (notice) => dueSentence("kindPROBATION_DUE", notice.daysLeft ?? kProbationDays),
+    sentence: (notice) => dueSentence("kindPROBATION_DUE", daysLeftOf(notice) ?? kProbationDays),
     // The manager's copy opens the person, not the contract (KEHOACH 9.21.4).
     path: (notice, reader) => personAt(notice, reader.role === "MANAGER" ? "" : "?tab=contracts"),
   },
@@ -441,7 +449,7 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     icon: CalendarDotsIcon,
     category: "PEOPLE",
     label: { key: "kindCONTRACT_ENDING", count: kContractDays },
-    sentence: (notice) => dueSentence("kindCONTRACT_ENDING", notice.daysLeft ?? 0),
+    sentence: (notice) => dueSentence("kindCONTRACT_ENDING", daysLeftOf(notice) ?? 0),
     path: () => null,
   },
   ATTENDANCE_EXCEPTION: {
