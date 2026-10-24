@@ -67,10 +67,11 @@ jobs:
           bool cJSON_IsTrue(const cJSON *i);
           bool cJSON_IsObject(const cJSON *i);
           cJSON *cJSON_CreateObject(void);
-          void cJSON_AddStringToObject(cJSON *o, const char *k, const char *v);
-          void cJSON_AddNumberToObject(cJSON *o, const char *k, double v);
-          void cJSON_AddBoolToObject(cJSON *o, const char *k, bool v);
-          void cJSON_AddItemToObject(cJSON *o, const char *k, cJSON *v);
+          cJSON *cJSON_AddStringToObject(cJSON *o, const char *k, const char *v);
+          cJSON *cJSON_AddNumberToObject(cJSON *o, const char *k, double v);
+          cJSON *cJSON_AddBoolToObject(cJSON *o, const char *k, bool v);
+          bool cJSON_AddItemToObject(cJSON *o, const char *k, cJSON *v);
+          void cJSON_Delete(cJSON *c);
           EOF
           printf '#include "gen_payload.h"\n#include "gen_topics.h"\n' > /tmp/cjson/probe.c
           cp /tmp/cjson/probe.c /tmp/cjson/probe.cpp
