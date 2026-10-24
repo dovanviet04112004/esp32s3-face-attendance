@@ -272,7 +272,8 @@ export class AudienceService {
   private async requestsWaitingOn(viewer: Viewer, notOwn: object): Promise<Prisma.RequestWhereInput | null> {
     const mine: Prisma.RequestWhereInput[] = [];
     if (viewer.employeeId !== null) {
-      mine.push({ approverId: { in: [viewer.employeeId, ...(await this.standingInFor(viewer.employeeId))] } });
+      const approvers = [viewer.employeeId, ...(await this.standingInFor(viewer.employeeId))];
+      mine.push({ approverId: { in: approvers }, employeeId: { not: viewer.employeeId } });
     }
     if (THE_DESK.includes(viewer.role)) {
       mine.push(

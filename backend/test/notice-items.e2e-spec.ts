@@ -9,16 +9,18 @@ import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
 import { configure } from "../src/bootstrap.js";
+import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import type { InboxQueue } from "../src/modules/notifications/audience.service.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-items-password";
 const PAY_YEAR = 1994;
-const PEOPLE = ["asker", "orphan", "mover", "boss", "next", "deskA", "deskB", "pay"] as const;
+const PEOPLE = ["asker", "orphan", "mover", "boss", "next", "deskA", "deskB", "pay", "deputy"] as const;
 type Who = (typeof PEOPLE)[number];
 const ROLE: Record<Who, Role> = {
   asker: "EMPLOYEE",
@@ -29,10 +31,12 @@ const ROLE: Record<Who, Role> = {
   deskA: "HR",
   deskB: "HR",
   pay: "PAYROLL",
+  deputy: "MANAGER",
 };
 const codeOf = (who: Who) => `E2EIT${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-items-${who.toLowerCase()}-${RUN}@kiosk.local`;
 const nameOf = (who: Who) => `Việc ${who} ${RUN}`;
+const DAY_MS = 86_400_000;
 
 interface Bell {
   id: string;
@@ -73,6 +77,19 @@ describe("work a group shares, closed once for all (e2e)", () => {
     return db.notification.findUnique({ where: { userId_dedupKey: { userId: loginOf.get(who) as string, dedupKey: item.key } } });
   }
 
+  // The deputy stands in for their own manager over the company's today (KEHOACH 9.8).
+  async function standIn(): Promise<void> {
+    const today = dayAsDate(localDay(new Date(), validateEnv().APP_TIMEZONE)).getTime();
+    await db.approvalDelegation.create({
+      data: {
+        fromId: idOf.get("boss") as number,
+        toId: idOf.get("deputy") as number,
+        fromDate: new Date(today - DAY_MS),
+        toDate: new Date(today + DAY_MS),
+      },
+    });
+  }
+
   async function closedFor(item: NoticeItem, by: Who, state: string, outcome: string | null): Promise<void> {
     const shut = await db.noticeItem.findUniqueOrThrow({ where: { id: item.id } });
     assert.equal(shut.state, state);
@@ -110,7 +127,7 @@ describe("work a group shares, closed once for all (e2e)", () => {
       });
       loginOf.set(who, login.id);
     }
-    for (const who of ["asker", "mover"] as const) {
+    for (const who of ["asker", "mover", "deputy"] as const) {
       await db.employee.update({ where: { id: idOf.get(who) }, data: { managerId: idOf.get("boss") } });
     }
     for (const who of PEOPLE) {
@@ -377,5 +394,19 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.equal((await post("boss", `/notifications/items/${key}/resolve`, {})).status, 400, "a close with no note was taken");
     assert.equal((await post("orphan", `/notifications/items/${key}/resolve`, { note: "e2e" })).status, 404);
     await post("asker", `/requests/${id}/cancel`);
+  });
+
+  it("keeps a stand-in out of the group of their own request and out of their own inbox", async () => {
+    await standIn();
+    const own = await fileRequest("deputy");
+    const item = await itemOf("REQUESTS", own);
+    assert.ok(await seatOf(item, "boss"), "the manager was not told of a request from their stand-in");
+    assert.equal(await seatOf(item, "deputy"), null, "a stand-in sits in the group of their own request");
+    const inbox = await request(http).get("/requests/inbox?take=50").set("Authorization", `Bearer ${tokenOf.get("deputy")}`);
+    assert.equal(inbox.status, 200, JSON.stringify(inbox.body));
+    assert.ok(!(inbox.body.rows as { id: string }[]).some((row) => row.id === own), "a stand-in's own request sits in their inbox");
+    const counts = await request(http).get("/requests/inbox/counts").set("Authorization", `Bearer ${tokenOf.get("deputy")}`);
+    assert.equal(counts.body.requests, inbox.body.total, "the stand-in's inbox count is not their inbox");
+    await post("deputy", `/requests/${own}/cancel`);
   });
 });
