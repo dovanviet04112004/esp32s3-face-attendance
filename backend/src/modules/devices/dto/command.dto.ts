@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsIn, IsInt, IsObject, IsOptional } from "class-validator";
 
 import { deviceCmdSchema } from "../../../common/generated/device_cmd.js";
+import { PageMeta } from "../../leave/dto/queue.dto.js";
 import type { CommandAsk } from "../commands.service.js";
 
 const COMMAND_ACTIONS = deviceCmdSchema.shape.action.options;
@@ -50,4 +51,8 @@ export class CommandView {
   @ApiProperty({ type: Date, nullable: true, description: "When the kiosk stops taking it" }) expiresAt!: Date | null;
   @ApiProperty({ description: "When it was sent" }) createdAt!: Date;
   @ApiProperty({ description: "When it last changed" }) updatedAt!: Date;
+}
+
+export class CommandPageView extends PageMeta {
+  @ApiProperty({ type: [CommandView], description: "Newest first" }) rows!: CommandView[];
 }

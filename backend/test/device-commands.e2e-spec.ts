@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
@@ -63,7 +64,7 @@ describe("commands to one kiosk (e2e)", () => {
   async function stateOf(cmdId: string): Promise<{ state: string; resultNote: string | null }> {
     const listed = await request(http).get(`/devices/${DOOR}/commands`).set("Authorization", `Bearer ${admin}`);
     assert.equal(listed.status, 200, JSON.stringify(listed.body));
-    const row = (listed.body as { cmdId: string; state: string; resultNote: string | null }[]).find((one) => one.cmdId === cmdId);
+    const row = (listed.body.rows as { cmdId: string; state: string; resultNote: string | null }[]).find((one) => one.cmdId === cmdId);
     assert.ok(row, `${cmdId} is not in the kiosk's commands`);
     return { state: row.state, resultNote: row.resultNote };
   }
@@ -149,6 +150,37 @@ describe("commands to one kiosk (e2e)", () => {
     const noSlot = await send(DOOR, { action: "SET_ACTIVE_SLOT" });
     assert.equal(noSlot.body.message, "COMMAND_INVALID");
     assert.equal(sent.length, 1, "a refused command reached the kiosk");
+  });
+
+  it("pages every command of a kiosk newest first, with the total, so none drops off the end", async () => {
+    const base = Date.parse("2026-10-01T08:00:00.000Z");
+    const [tieLow, tieHigh] = [randomUUID(), randomUUID()].sort();
+    const made = [
+      { cmdId: randomUUID(), at: base },
+      { cmdId: randomUUID(), at: base + 60_000 },
+      { cmdId: tieLow, at: base + 120_000 },
+      { cmdId: tieHigh, at: base + 120_000 },
+      { cmdId: randomUUID(), at: base + 180_000 },
+    ];
+    await db.deviceCommand.createMany({
+      data: made.map((one) => ({ cmdId: one.cmdId, deviceId: NEIGHBOUR, action: "SYNC_TIME", state: "DONE" as const, createdAt: new Date(one.at) })),
+    });
+    const seen: string[] = [];
+    let cursor = "";
+    for (let page = 0; page < 4; page += 1) {
+      const res = await request(http)
+        .get(`/devices/${NEIGHBOUR}/commands`)
+        .query({ take: 2, ...(cursor ? { cursor } : {}) })
+        .set("Authorization", `Bearer ${admin}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.total, made.length);
+      seen.push(...(res.body.rows as { cmdId: string }[]).map((one) => one.cmdId));
+      cursor = res.body.next ?? "";
+      if (!cursor) {
+        break;
+      }
+    }
+    assert.deepEqual(seen, [made[4].cmdId, tieHigh, tieLow, made[1].cmdId, made[0].cmdId]);
   });
 
   it("refuses a kiosk that is offline or out of the fleet", async () => {

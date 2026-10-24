@@ -4,13 +4,13 @@ import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiPara
 import { ApiErrors } from "../../common/decorators/api-docs.decorator.js";
 import { AuditedInService } from "../../common/decorators/audited.decorator.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
-import type { Page } from "../../common/dto/pagination.dto.js";
+import { CursorPageDto, type Page } from "../../common/dto/pagination.dto.js";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard.js";
 import { RolesGuard } from "../../common/guards/roles.guard.js";
 import { CurrentViewer, type Viewer } from "../../common/scope/viewer.js";
 import { CommandsService, type CommandView } from "./commands.service.js";
 import { DevicesService, type DeviceCounts, type PublicDevice } from "./devices.service.js";
-import { CommandView as CommandViewDto, SendCommandDto } from "./dto/command.dto.js";
+import { CommandPageView, CommandView as CommandViewDto, SendCommandDto } from "./dto/command.dto.js";
 import {
   ApproveDeviceDto,
   DeviceCountsView,
@@ -82,11 +82,11 @@ export class DevicesController {
 
   @Get(":id/commands")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "The newest commands sent to one kiosk and how each ended" })
-  @ApiOkResponse({ type: [CommandViewDto] })
+  @ApiOperation({ summary: "The commands sent to one kiosk and how each ended, newest first; paged" })
+  @ApiOkResponse({ type: CommandPageView })
   @ApiParam({ name: "id", description: "Kiosk id", example: "kiosk-2884859fd3c8" })
-  recentCommands(@Param("id") id: string): Promise<CommandView[]> {
-    return this.commands.recent(id);
+  listCommands(@Param("id") id: string, @Query() query: CursorPageDto): Promise<Page<CommandView>> {
+    return this.commands.list(id, query);
   }
 
   @Post(":id/commands")

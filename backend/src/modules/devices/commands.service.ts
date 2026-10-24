@@ -5,6 +5,8 @@ import { ConfigService } from "@nestjs/config";
 import { OnEvent } from "@nestjs/event-emitter";
 import type { CommandState, Prisma } from "@prisma/client";
 
+import { COUNT_CEILING, countedTo, encodeCursor, resumeAfter } from "../../common/dto/cursor.dto.js";
+import type { Page } from "../../common/dto/pagination.dto.js";
 import { deviceCmdSchema, type DeviceCommand } from "../../common/generated/device_cmd.js";
 import type { DeviceEvent } from "../../common/generated/device_event.js";
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -35,7 +37,6 @@ const ANSWERED: Partial<Record<DeviceEvent["type"], CommandState>> = { COMMAND_D
 const OPEN: CommandState[] = ["QUEUED", "SENT"];
 // The generated config object drops a key it does not know, where a command has to refuse it.
 const CONFIG_FIELDS: ReadonlySet<string> = new Set(Object.keys(deviceCmdSchema.shape.config.unwrap().shape));
-const kRecentShown = 20;
 
 function complete(ask: CommandAsk): boolean {
   if (ask.config && Object.keys(ask.config).some((key) => !CONFIG_FIELDS.has(key))) {
@@ -123,17 +124,32 @@ export class CommandsService {
       meta: { cmdId, action, ...fields },
     });
     this.log.log(`${deviceId} sent ${action} ${cmdId}`);
-    const [view] = await this.read({ cmdId });
+    const [view] = await this.read({ cmdId }, 1);
     return view;
   }
 
-  /** The kiosk's newest commands, newest first. */
-  async recent(deviceId: string): Promise<CommandView[]> {
+  /** The kiosk's commands, newest first, a page at a time.
+   *  @ctx request | ADMIN | resumes after a cursor; counts up to the ceiling
+   */
+  async list(deviceId: string, query: { cursor?: string; take: number }): Promise<Page<CommandView>> {
     const device = await this.db.device.findUnique({ where: { id: deviceId }, select: { id: true } });
     if (!device) {
       throw new NotFoundException("DEVICE_NOT_FOUND");
     }
-    return this.read({ deviceId });
+    const where: Prisma.DeviceCommandWhereInput = { deviceId };
+    const resumed = query.cursor
+      ? { AND: [where, resumeAfter("createdAt", "desc", query.cursor, { key: "cmdId" }) as Prisma.DeviceCommandWhereInput] }
+      : where;
+    const [rows, found] = await Promise.all([
+      this.read(resumed, query.take),
+      this.db.deviceCommand.count({ where, take: COUNT_CEILING + 1 }),
+    ]);
+    const last = rows.at(-1);
+    return {
+      rows,
+      ...countedTo(found),
+      next: rows.length === query.take && last ? encodeCursor(last.createdAt, last.cmdId) : null,
+    };
   }
 
   /** Close a command on its kiosk's answer; a closed one stays as it is, so a redelivered answer writes nothing. */
@@ -152,12 +168,12 @@ export class CommandsService {
       .catch((error: Error) => this.log.error(`${message.deviceId} answer to ${cmdId} not kept: ${error.message}`));
   }
 
-  private async read(where: Prisma.DeviceCommandWhereInput): Promise<CommandView[]> {
+  private async read(where: Prisma.DeviceCommandWhereInput, take: number): Promise<CommandView[]> {
     const rows = await this.db.deviceCommand.findMany({
       where,
       include: { issuedBy: { select: { email: true, employee: { select: { fullName: true } } } } },
-      orderBy: { createdAt: "desc" },
-      take: kRecentShown,
+      orderBy: [{ createdAt: "desc" }, { cmdId: "desc" }],
+      take,
     });
     const now = Date.now();
     return rows.map((row) => ({

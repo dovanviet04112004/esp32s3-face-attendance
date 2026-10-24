@@ -457,6 +457,7 @@ model DeviceCommand {
   issuedBy   User?        @relation(fields: [issuedById], references: [id], onDelete: SetNull)
 
   @@index([deviceId, state])
+  @@index([deviceId, createdAt, cmdId])
 }
 
 model DeviceEvent {

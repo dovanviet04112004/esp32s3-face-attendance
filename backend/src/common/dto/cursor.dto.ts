@@ -53,12 +53,12 @@ export function decodeCursor(raw: string, id: IdColumn = "text"): CursorKey<stri
   return { sortValue: key.sortValue, id: id === "int" ? Number(key.id) : BigInt(key.id) };
 }
 
-/** Rows past the cursor in `(field, id)` order; `field` holds a time unless `sort` says it holds text. */
+/** Rows past the cursor in `(field, key)` order; `field` holds a time unless `sort` says it holds text. */
 export function resumeAfter(
   field: string,
   order: "asc" | "desc",
   cursor: string | undefined,
-  { sort = "time", id = "text" }: { sort?: "time" | "text"; id?: IdColumn } = {},
+  { sort = "time", id = "text", key: idField = "id" }: { sort?: "time" | "text"; id?: IdColumn; key?: string } = {},
 ): Record<string, unknown> {
   if (!cursor) {
     return {};
@@ -73,7 +73,7 @@ export function resumeAfter(
     AND: [
       // Looks redundant; it is the bound Postgres turns into an index condition (KEHOACH 9.9 rule 3).
       { [field]: { [order === "asc" ? "gte" : "lte"]: at } },
-      { OR: [{ [field]: { [past]: at } }, { [field]: at, id: { [past]: key.id } }] },
+      { OR: [{ [field]: { [past]: at } }, { [field]: at, [idField]: { [past]: key.id } }] },
     ],
   };
 }
