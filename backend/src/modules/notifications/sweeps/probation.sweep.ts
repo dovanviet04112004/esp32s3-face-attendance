@@ -48,7 +48,7 @@ export class ProbationSweep implements OnModuleInit {
       SELECT c."id" AS "contractId", c."employeeId", (c."probationEnd" - ${today}::date)::int AS "daysLeft"
         FROM "EmploymentContract" c
         JOIN "Employee" e ON e."id" = c."employeeId"
-       WHERE c."state" = 'ACTIVE' AND c."probationEnd" IS NOT NULL AND e."active" AND e."leaveDate" IS NULL
+       WHERE c."state" = 'ACTIVE' AND c."probationEnd" IS NOT NULL AND e."active"
          AND (c."probationEnd" - ${today}::date) <= ${(DUE_MARKS.PROBATION_DUE ?? [0])[0]}::int
     `;
     let told = 0;
@@ -61,7 +61,7 @@ export class ProbationSweep implements OnModuleInit {
     return { told, closed };
   }
 
-  /** Close probation work once another contract stands, the contract is gone or ended, or the person is leaving.
+  /** Close probation work once another contract stands, the contract is gone or ended, or the person has left (KEHOACH 9.18 item 2).
    *  @ctx any | the hourly reconcile and a contract decision call it too; one UPDATE, then the rows read
    */
   async closeVanished(employeeId: number | null = null, actorId: string | null = null): Promise<number> {
@@ -83,7 +83,7 @@ export class ProbationSweep implements OnModuleInit {
            WHERE n."queue" = 'PROBATION_DUE' AND n."state" = 'OPEN'
              AND (${employeeId}::int IS NULL OR c."employeeId" = ${employeeId}::int)
              AND (c."id" IS NULL OR c."state" <> 'ACTIVE' OR c."probationEnd" IS NULL OR r."renewed"
-                  OR NOT e."active" OR e."leaveDate" IS NOT NULL)
+                  OR NOT e."active")
         ) x
        WHERE i."id" = x."id" AND i."state" = 'OPEN'
       RETURNING i."id"

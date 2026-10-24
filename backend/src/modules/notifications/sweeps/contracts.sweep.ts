@@ -51,7 +51,7 @@ export class ContractsSweep implements OnModuleInit {
       SELECT c."id" AS "contractId", c."employeeId", (c."endDate" - ${today}::date)::int AS "daysLeft"
         FROM "EmploymentContract" c
         JOIN "Employee" e ON e."id" = c."employeeId"
-       WHERE c."state" = 'ACTIVE' AND c."endDate" IS NOT NULL AND e."active" AND e."leaveDate" IS NULL
+       WHERE c."state" = 'ACTIVE' AND c."endDate" IS NOT NULL AND e."active"
          AND (c."endDate" - ${today}::date) <= ${(DUE_MARKS.CONTRACTS_DUE ?? [0])[0]}::int
     `;
     let told = 0;
@@ -65,7 +65,7 @@ export class ContractsSweep implements OnModuleInit {
     return { told, closed };
   }
 
-  /** Close contract work whose contract is renewed, ended or gone, or whose signer is leaving.
+  /** Close contract work whose contract is renewed, ended or gone, or whose signer has left; a leaving still ahead keeps it (KEHOACH 9.18 item 1).
    *  @ctx any | the hourly reconcile and a contract decision call it too; one UPDATE, then the rows read
    */
   async closeVanished(employeeId: number | null = null, actorId: string | null = null): Promise<number> {
@@ -87,7 +87,7 @@ export class ContractsSweep implements OnModuleInit {
            WHERE n."queue" = 'CONTRACTS_DUE' AND n."state" = 'OPEN'
              AND (${employeeId}::int IS NULL OR c."employeeId" = ${employeeId}::int)
              AND (c."id" IS NULL OR c."state" <> 'ACTIVE' OR c."endDate" IS NULL OR r."renewed"
-                  OR NOT e."active" OR e."leaveDate" IS NOT NULL)
+                  OR NOT e."active")
         ) x
        WHERE i."id" = x."id" AND i."state" = 'OPEN'
       RETURNING i."id"

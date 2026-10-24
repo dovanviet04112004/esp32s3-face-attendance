@@ -18,13 +18,13 @@ import { CleanupSweep } from "../src/modules/notifications/sweeps/cleanup.sweep.
 import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sweep.js";
 import { ProbationSweep } from "../src/modules/notifications/sweeps/probation.sweep.js";
 import { StalledSweep } from "../src/modules/notifications/sweeps/stalled.sweep.js";
-import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
+import { asDay, dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
 import { seedEntityId } from "./fixtures.js";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-sweeps-password";
 const PAY_YEAR = 1992;
-const PEOPLE = ["asker", "desk", "pay", "boss", "renewed", "ended", "late", "newbie"] as const;
+const PEOPLE = ["asker", "desk", "pay", "boss", "renewed", "ended", "late", "newbie", "leaver"] as const;
 type Who = (typeof PEOPLE)[number];
 const ROLE: Record<Who, Role> = {
   asker: "EMPLOYEE",
@@ -35,6 +35,7 @@ const ROLE: Record<Who, Role> = {
   ended: "EMPLOYEE",
   late: "EMPLOYEE",
   newbie: "EMPLOYEE",
+  leaver: "EMPLOYEE",
 };
 const codeOf = (who: Who) => `E2ESW${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-notice-sweeps-${who}-${RUN}@kiosk.local`;
@@ -110,7 +111,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
       tokenOf.set(who, res.body.accessToken as string);
     }
     await db.employee.updateMany({
-      where: { id: { in: (["renewed", "ended", "late", "newbie"] as const).map((who) => idOf.get(who) as number) } },
+      where: { id: { in: (["renewed", "ended", "late", "newbie", "leaver"] as const).map((who) => idOf.get(who) as number) } },
       data: { managerId: idOf.get("boss") },
     });
   });
@@ -298,6 +299,43 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     const trail = await db.auditLog.findFirst({ where: { action: "notice.resolve", subjectId: String(idOf.get("newbie")) } });
     assert.equal((trail?.meta as { note?: string } | null)?.note, "Đã ký hợp đồng chính thức", "closing by hand left no audit");
     assert.equal((await post("desk", path, { note: "again" })).status, 409, "closed work closed twice");
+  });
+
+  it("keeps contract and probation work through a leaving still ahead, and closes it once the person has left", async () => {
+    const leaver = idOf.get("leaver") as number;
+    const held = await contractFor("leaver", { kind: "FIXED_TERM", endDate: day(20), probationEnd: day(5) });
+    const sweepBoth = async () => {
+      await app.get(ContractsSweep).sweep();
+      await app.get(ProbationSweep).sweep();
+    };
+    const both = () => Promise.all([itemOf("CONTRACTS_DUE", held.id), itemOf("PROBATION_DUE", held.id)]);
+    await sweepBoth();
+    const scheduled = await post("desk", `/employees/${leaver}/offboard`, { leaveDate: asDay(day(40)) });
+    assert.equal(scheduled.status, 201, JSON.stringify(scheduled.body));
+    await db.employmentContract.update({ where: { id: held.id }, data: { endDate: day(15), probationEnd: day(3) } });
+    await sweepBoth();
+    for (const item of await both()) {
+      assert.equal(item.state, "OPEN", `${item.queue}: a leaving still ahead closed the work`);
+      assert.equal(item.lastMark, 2, `${item.queue}: a leaving still ahead kept the next mark from being said`);
+      assert.equal((await seatOf(item.key, "desk"))?.remindCount, 1, `${item.queue}: the desk was not reminded`);
+    }
+
+    const cancelled = await request(app.getHttpServer())
+      .delete(`/employees/${leaver}/offboard`)
+      .set("Authorization", `Bearer ${tokenOf.get("desk")}`);
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+    await sweepBoth();
+    for (const item of await both()) {
+      assert.deepEqual([item.state, item.lastMark], ["OPEN", 2], `${item.queue}: calling the leaving off lost the work`);
+    }
+
+    const left = await post("desk", `/employees/${leaver}/offboard`, { leaveDate: asDay(day(0)) });
+    assert.equal(left.status, 201, JSON.stringify(left.body));
+    assert.equal(left.body.closed, true, "a last day of today left the record open");
+    await sweepBoth();
+    for (const item of await both()) {
+      assert.equal(item.state, "CLEARED", `${item.queue}: work about a person who has left stayed open`);
+    }
   });
 
   it("cleans news read and work closed past the keep, and never touches open work", async () => {
