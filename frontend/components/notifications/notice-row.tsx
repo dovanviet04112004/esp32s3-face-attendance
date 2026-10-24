@@ -209,6 +209,11 @@ export function useNoticeWords() {
   };
 }
 
+/** The fields of a filter that narrow; an empty one is no filter, and the api refuses it as a value. */
+function narrowing(filter: NoticeFilter = {}): NoticeFilter {
+  return Object.fromEntries(Object.entries(filter).filter(([, value]) => value !== undefined && value !== ""));
+}
+
 /** Read, unread, archive or unarchive by ids, or every row of a filter; one toast either way. */
 export function useNoticeMarks() {
   const t = useTranslations("notices");
@@ -216,7 +221,7 @@ export function useNoticeMarks() {
   const notify = useNotify();
   return useMutation({
     mutationFn: async ({ action, ids, filter }: { action: MarkAction; ids?: string[]; filter?: NoticeFilter; quiet?: boolean }) =>
-      (await api.post<{ changed: number }>(`/notifications/${action}`, ids ? { ids } : { all: true, ...filter })).data,
+      (await api.post<{ changed: number }>(`/notifications/${action}`, ids ? { ids } : { all: true, ...narrowing(filter) })).data,
     onSuccess: (marked, { action, quiet }) => {
       if (!quiet) {
         notify.done(t(`marked_${action}`, { count: marked.changed }));
