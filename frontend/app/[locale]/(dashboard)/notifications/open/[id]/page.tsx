@@ -56,7 +56,8 @@ function OpenNotice() {
     void (async () => {
       try {
         const notice = (await api.get<Notice>(`/notifications/${id}`)).data;
-        await api.post("/notifications/read", { ids: [notice.id] });
+        // A read mark that fails must not keep the reader from the record.
+        await api.post("/notifications/read", { ids: [notice.id] }).catch(() => undefined);
         void cache.invalidateQueries({ queryKey: ["notifications"] });
         if (!left) {
           router.replace(NOTICE_LOOK[notice.kind].path(notice, reader) ?? "/notifications", { transitionTypes: [NOTICE_TRANSITION] });
