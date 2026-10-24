@@ -20,6 +20,7 @@ import {
   ValidateNested,
 } from "class-validator";
 
+import { BulkSkipView } from "../../employees/dto/employee.dto.js";
 import { PageMeta, PersonView, QueueQueryDto } from "../../leave/dto/queue.dto.js";
 
 const CODE = /^[A-Z0-9][A-Z0-9_.-]*$/;
@@ -424,12 +425,26 @@ export class RaisePreviewView {
   nextInsurance!: string;
 }
 
+export class RaisePlanView {
+  @ApiProperty({ type: [RaisePreviewView], description: "People the raise would write a record for, by code" })
+  rows!: RaisePreviewView[];
+
+  @ApiProperty({
+    type: [BulkSkipView],
+    description: "People it passes over: PAY_DATE_TAKEN for one who already has a record from that date",
+  })
+  skipped!: BulkSkipView[];
+}
+
 export class RaiseWrittenView {
   @ApiProperty({
     example: 37,
-    description: "Pay records written; a person already holding one on that date is skipped",
+    description: "Pay records written: the preview's rows less anyone given a record on that date meanwhile",
   })
   written!: number;
+
+  @ApiProperty({ type: [BulkSkipView], description: "People passed over, each with PAY_DATE_TAKEN" })
+  skipped!: BulkSkipView[];
 }
 
 export class DependentView {

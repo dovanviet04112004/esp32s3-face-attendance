@@ -42,7 +42,8 @@ import {
   CompensationService,
   type PayRecord,
   type QueuedDependent,
-  type RaisePreview,
+  type RaisePlan,
+  type RaiseWritten,
 } from "./compensation.service.js";
 import {
   AllowanceTypeView,
@@ -57,7 +58,7 @@ import {
   ListDependentsDto,
   PayRecordView,
   QueuedDependentView,
-  RaisePreviewView,
+  RaisePlanView,
   RaiseWrittenView,
   UpdateAllowanceTypeDto,
 } from "./dto/compensation.dto.js";
@@ -141,10 +142,10 @@ export class CompensationController {
   @NotAudited()
   @Roles("ADMIN", "HR")
   @Reach("person")
-  @ApiOperation({ summary: "What a bulk raise would write; the writer's own record is left out" })
-  @ApiCreatedResponse({ type: [RaisePreviewView] })
+  @ApiOperation({ summary: "What a bulk raise would write and whom it passes over; the writer's own record is left out" })
+  @ApiCreatedResponse({ type: RaisePlanView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
-  preview(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<RaisePreview[]> {
+  preview(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<RaisePlan> {
     return this.pay.previewRaise(viewer, body);
   }
 
@@ -156,7 +157,7 @@ export class CompensationController {
   @ApiOperation({ summary: "Write the raise the preview showed; allowances carry forward" })
   @ApiCreatedResponse({ type: RaiseWrittenView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "PAY_WRITE_DENIED, DESK_NEEDS_EMPLOYEE" })
-  bulk(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<{ written: number }> {
+  bulk(@CurrentViewer() viewer: Viewer, @Body() body: BulkRaiseDto): Promise<RaiseWritten> {
     return this.pay.applyRaise(viewer, body);
   }
 

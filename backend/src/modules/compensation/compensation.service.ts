@@ -30,6 +30,7 @@ import {
 } from "../../database/prisma.service.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, trail, type AuditEntry } from "../audit/audit.service.js";
+import type { BulkSkip } from "../employees/bulk.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
@@ -82,6 +83,20 @@ export interface RaisePreview {
   nextBase: string;
   currentInsurance: string;
   nextInsurance: string;
+}
+
+export interface RaisePlan {
+  rows: RaisePreview[];
+  skipped: BulkSkip[];
+}
+
+export interface RaiseWritten {
+  written: number;
+  skipped: BulkSkip[];
+}
+
+function dateTaken(person: { employeeId: number; code: string; fullName: string }): BulkSkip {
+  return { employeeId: person.employeeId, code: person.code, fullName: person.fullName, reason: "PAY_DATE_TAKEN" };
 }
 
 // A first record has no earlier one, so its from is null (KEHOACH 9.24 rule 4).
@@ -332,7 +347,7 @@ export class CompensationService {
   /** What a bulk raise would write, while it is still only a proposal. The
    *  writer's own record is left out, as it would be refused one at a time.
    */
-  async previewRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaisePreview[]> {
+  async previewRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaisePlan> {
     this.mayWrite(viewer);
     refuseOwn(viewer);
     const on = new Date(body.effectiveFrom);
@@ -342,11 +357,13 @@ export class CompensationService {
     const self = viewer.employeeId ?? 0;
     // DISTINCT ON takes each latest record in one pass; a query per employee breaks at a few thousand (KEHOACH 9.9).
     const rows = await this.db.$queryRaw<
-      { employeeId: number; code: string; fullName: string; baseSalary: string; insuranceSalary: string }[]
+      { employeeId: number; code: string; fullName: string; baseSalary: string; insuranceSalary: string; taken: boolean }[]
     >`
       SELECT DISTINCT ON (e."id")
              e."id" AS "employeeId", e."code", e."fullName",
-             c."baseSalary"::text, c."insuranceSalary"::text
+             c."baseSalary"::text, c."insuranceSalary"::text,
+             EXISTS (SELECT 1 FROM "CompensationRecord" t
+                      WHERE t."employeeId" = e."id" AND t."effectiveFrom" = ${on}) AS "taken"
         FROM "Employee" e
         JOIN "CompensationRecord" c ON c."employeeId" = e."id"
        WHERE e."active" = true
@@ -360,27 +377,31 @@ export class CompensationService {
     const step = body.percentBp;
     const raised = (from: bigint): bigint =>
       step === undefined ? from + BigInt(body.amount ?? 0) : from + (from * BigInt(step)) / 10_000n;
-    return rows
-      .map((row) => {
-        const base = BigInt(row.baseSalary.split(".")[0]);
-        const insurance = BigInt(row.insuranceSalary.split(".")[0]);
-        return {
-          employeeId: row.employeeId,
-          code: row.code,
-          fullName: row.fullName,
-          currentBase: base.toString(),
-          nextBase: raised(base).toString(),
-          currentInsurance: insurance.toString(),
-          nextInsurance: (body.raiseInsuranceSalary ? raised(insurance) : insurance).toString(),
-        };
-      })
-      .sort((left, right) => left.code.localeCompare(right.code));
+    rows.sort((left, right) => left.code.localeCompare(right.code));
+    return {
+      rows: rows
+        .filter((row) => !row.taken)
+        .map((row) => {
+          const base = BigInt(row.baseSalary.split(".")[0]);
+          const insurance = BigInt(row.insuranceSalary.split(".")[0]);
+          return {
+            employeeId: row.employeeId,
+            code: row.code,
+            fullName: row.fullName,
+            currentBase: base.toString(),
+            nextBase: raised(base).toString(),
+            currentInsurance: insurance.toString(),
+            nextInsurance: (body.raiseInsuranceSalary ? raised(insurance) : insurance).toString(),
+          };
+        }),
+      skipped: rows.filter((row) => row.taken).map(dateTaken),
+    };
   }
 
-  async applyRaise(viewer: Viewer, body: BulkRaiseDto): Promise<{ written: number }> {
-    const preview = await this.previewRaise(viewer, body);
+  async applyRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaiseWritten> {
+    const plan = await this.previewRaise(viewer, body);
     const on = new Date(body.effectiveFrom);
-    const rows: Prisma.CompensationRecordCreateManyInput[] = preview.map((one) => ({
+    const rows: Prisma.CompensationRecordCreateManyInput[] = plan.rows.map((one) => ({
       employeeId: one.employeeId,
       effectiveFrom: on,
       baseSalary: one.nextBase,
@@ -389,14 +410,13 @@ export class CompensationService {
       note: body.note ?? null,
       createdById: viewer.userId,
     }));
-    const written = await this.db.$transaction(async (tx) => {
-      const taken = await tx.compensationRecord.findMany({
-        where: { employeeId: { in: preview.map((one) => one.employeeId) }, effectiveFrom: on },
+    const landed = await this.db.$transaction(async (tx) => {
+      const made = await tx.compensationRecord.createManyAndReturn({
+        data: rows,
+        skipDuplicates: true,
         select: { employeeId: true },
       });
-      const already = new Set(taken.map((one) => one.employeeId));
-      const fresh = rows.filter((row) => !already.has(row.employeeId));
-      const made = await tx.compensationRecord.createMany({ data: fresh, skipDuplicates: true });
+      const fresh = made.map((one) => one.employeeId);
       // A raise changes base pay only; without this the allowances drop out of the next payslip.
       await tx.$executeRaw`
         INSERT INTO "CompensationAllowance"
@@ -411,19 +431,20 @@ export class CompensationService {
           ) prev ON true
           JOIN "CompensationAllowance" a ON a."recordId" = prev."id"
          WHERE n."effectiveFrom" = ${on}
-           AND n."employeeId" = ANY(${fresh.map((row) => row.employeeId)}::int[])
+           AND n."employeeId" = ANY(${fresh}::int[])
         ON CONFLICT ("recordId", "code") DO NOTHING
       `;
-      return made;
+      return new Set(fresh);
     });
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.PAY_BULK_RAISE,
       subject: AUDIT_SUBJECTS.ORG,
       subjectId: body.departmentId ?? "selection",
-      meta: { effectiveFrom: body.effectiveFrom, written: written.count },
+      meta: { effectiveFrom: body.effectiveFrom, written: landed.size },
     });
-    return { written: written.count };
+    const raced = plan.rows.filter((one) => !landed.has(one.employeeId)).map(dateTaken);
+    return { written: landed.size, skipped: [...plan.skipped, ...raced] };
   }
 
   async dependents(viewer: Viewer, employeeId: number): Promise<Dependent[]> {

@@ -2996,6 +2996,7 @@
     "CONSENT_MISSING": "Chưa đồng ý dữ liệu khuôn mặt",
     "ALREADY_ON_KIOSK": "Đã có hoặc đang chờ chụp trên kiosk này",
     "ALREADY_ON_SHIFT": "Đã có một ca bắt đầu từ ngày ấy",
+    "PAY_DATE_TAKEN": "Đã có một mốc lương từ ngày ấy",
     "SELF": "Là chính bạn",
     "ADMIN_ACCOUNT": "Giữ tài khoản quản trị, cho nghỉ riêng từng người"
   },

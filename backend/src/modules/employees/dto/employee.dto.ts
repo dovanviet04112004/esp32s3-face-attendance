@@ -896,6 +896,7 @@ export const SKIP_REASONS = [
   "CONSENT_MISSING",
   "ALREADY_ON_KIOSK",
   "ALREADY_ON_SHIFT",
+  "PAY_DATE_TAKEN",
   "SELF",
   "ADMIN_ACCOUNT",
 ] as const;

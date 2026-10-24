@@ -55,6 +55,23 @@ interface RaisePreview {
   nextBase: string;
 }
 
+interface RaiseSkip {
+  employeeId: number;
+  code: string;
+  fullName: string;
+  reason: "PAY_DATE_TAKEN";
+}
+
+interface RaisePlan {
+  rows: RaisePreview[];
+  skipped: RaiseSkip[];
+}
+
+interface RaiseWritten {
+  written: number;
+  skipped: RaiseSkip[];
+}
+
 interface Expiring {
   contractId: string;
   employeeId: number;
@@ -127,6 +144,8 @@ function Directory() {
   const t = useTranslations("employees");
   const common = useTranslations("common");
   const due = useTranslations("overview");
+  const bulk = useTranslations("bulk");
+  const skips = useTranslations("bulkSkips");
   const format = useFormatter();
   const locale = useLocale();
   const role = useSession((s) => s.role);
@@ -209,14 +228,17 @@ function Directory() {
         reason: "ANNUAL_REVIEW",
       };
       if (!write) {
-        return { preview: (await api.post<RaisePreview[]>("/compensation/bulk/preview", body)).data, written: null };
+        return { preview: (await api.post<RaisePlan>("/compensation/bulk/preview", body)).data, written: null };
       }
-      return { preview: [] as RaisePreview[], written: (await api.post<{ written: number }>("/compensation/bulk", body)).data.written };
+      return { preview: null, written: (await api.post<RaiseWritten>("/compensation/bulk", body)).data };
     },
-    onSuccess: (done) => {
-      if (done.written !== null) {
+    onSuccess: ({ written }) => {
+      if (written !== null) {
         setRaising(false);
-        notify.done(t("raiseWritten", { count: done.written }));
+        notify.done(
+          t("raiseWritten", { count: written.written }),
+          written.skipped.length > 0 ? bulk("doneSkipped", { count: written.skipped.length }) : undefined,
+        );
         void cache.invalidateQueries({ queryKey: ["compensation"] });
         void cache.invalidateQueries({ queryKey: ["reports"] });
         void cache.invalidateQueries({ queryKey: ["employees"] });
@@ -224,6 +246,7 @@ function Directory() {
     },
     onError: notify.failed,
   });
+  const plan = raise.data?.preview ?? null;
 
   const loaded = employees.data?.pages.flatMap((one) => one.rows);
   const first = employees.data?.pages[0];
@@ -547,11 +570,11 @@ function Directory() {
             >
               {t("raisePreview")}
             </Button>
-            {raise.data && raise.data.preview.length > 0 ? (
+            {plan && plan.rows.length > 0 ? (
               <div className="mt-4">
-                <p className="font-medium">{t("raiseWouldWrite", { count: raise.data.preview.length })}</p>
+                <p className="font-medium">{t("raiseWouldWrite", { count: plan.rows.length })}</p>
                 <ul className="mt-2 flex max-h-64 flex-col overflow-y-auto">
-                  {raise.data.preview.slice(0, 50).map((one) => (
+                  {plan.rows.slice(0, 50).map((one) => (
                     <li key={one.employeeId} className="flex flex-wrap gap-x-3 border-b border-kumo-hairline py-1.5 last:border-0">
                       <span className="font-mono">{one.code}</span>
                       <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
@@ -563,14 +586,28 @@ function Directory() {
                 </ul>
               </div>
             ) : null}
+            {plan && plan.skipped.length > 0 ? (
+              <div className="mt-4">
+                <p className="font-medium">{bulk("skippedTitle", { count: plan.skipped.length })}</p>
+                <ul className="mt-2 flex max-h-64 flex-col overflow-y-auto">
+                  {plan.skipped.slice(0, 50).map((one) => (
+                    <li key={one.employeeId} className="flex flex-wrap gap-x-3 border-b border-kumo-hairline py-1.5 last:border-0">
+                      <span className="font-mono">{one.code}</span>
+                      <span className="min-w-0 flex-1 truncate">{one.fullName}</span>
+                      <span className="text-kumo-subtle">{skips(one.reason)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </LayerDialog.Body>
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary
               loading={raise.isPending && raise.variables === true}
-              disabled={!raise.data || raise.data.preview.length === 0}
+              disabled={!plan || plan.rows.length === 0}
               onClick={() => raise.mutate(true)}
             >
-              {raise.data && raise.data.preview.length > 0 ? t("raiseApplyN", { count: raise.data.preview.length }) : t("raiseApply")}
+              {plan && plan.rows.length > 0 ? t("raiseApplyN", { count: plan.rows.length }) : t("raiseApply")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>

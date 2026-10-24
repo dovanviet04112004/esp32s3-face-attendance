@@ -24,6 +24,7 @@ const INSURANCE_SALARY = "12000000";
 const EFFECTIVE_FROM = "2029-01-01";
 const RATE_FROM = "2029-07-01";
 const AMOUNT_FROM = "2030-01-01";
+const TAKEN_FROM = "2030-07-01";
 const HIRED_FROM = "2028-01-01";
 const REASON = "ANNUAL_REVIEW" as const;
 // Its own people rather than the whole company: the company-wide figure is a
@@ -36,6 +37,11 @@ interface RaiseRow {
   nextBase: string;
   currentInsurance: string;
   nextInsurance: string;
+}
+
+interface RaiseSkip {
+  employeeId: number;
+  reason: string;
 }
 
 describe("bulk raise (e2e)", () => {
@@ -65,7 +71,7 @@ describe("bulk raise (e2e)", () => {
   async function preview(change: object): Promise<RaiseRow[]> {
     const res = await bulk("/compensation/bulk/preview", change);
     assert.equal(res.status, 201, JSON.stringify(res.body));
-    return res.body as RaiseRow[];
+    return (res.body as { rows: RaiseRow[] }).rows;
   }
 
   function recordsOn(day: string) {
@@ -200,6 +206,35 @@ describe("bulk raise (e2e)", () => {
         [base + BigInt(RAISE_AMOUNT), held + BigInt(RAISE_AMOUNT)].map(String),
       );
     }
+  });
+
+  it("passes over whoever already has a record from that day, in the preview and in the write alike", async () => {
+    const [taken, ...rest] = employeeIds;
+    const own = await request(http)
+      .post("/compensation")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        employeeId: taken,
+        effectiveFrom: TAKEN_FROM,
+        baseSalary: Number(BASE_SALARY),
+        insuranceSalary: Number(INSURANCE_SALARY),
+        reason: REASON,
+      });
+    assert.equal(own.status, 201, JSON.stringify(own.body));
+    const passedOver = (skipped: RaiseSkip[]): [number, string][] => skipped.map((one) => [one.employeeId, one.reason]);
+
+    const seen = await bulk("/compensation/bulk/preview", { effectiveFrom: TAKEN_FROM });
+    assert.equal(seen.status, 201, JSON.stringify(seen.body));
+    const plan = seen.body as { rows: RaiseRow[]; skipped: RaiseSkip[] };
+    assert.deepEqual(plan.rows.map((one) => one.employeeId).sort((a, b) => a - b), [...rest].sort((a, b) => a - b));
+    assert.deepEqual(passedOver(plan.skipped), [[taken, "PAY_DATE_TAKEN"]], "the preview offered a raise the write would drop");
+
+    const res = await raise({ effectiveFrom: TAKEN_FROM });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.written, plan.rows.length, "the write did not do what the preview showed");
+    assert.deepEqual(passedOver(res.body.skipped as RaiseSkip[]), [[taken, "PAY_DATE_TAKEN"]]);
+    const kept = await db.compensationRecord.findFirstOrThrow({ where: { employeeId: taken, effectiveFrom: new Date(TAKEN_FROM) } });
+    assert.equal(kept.baseSalary.toFixed(0), BASE_SALARY, "the raise wrote over a record it passed over");
   });
 });
 
@@ -550,7 +585,7 @@ describe("bulk actions on the directory (e2e)", () => {
       reason: REASON,
     });
     assert.equal(res.status, 201, JSON.stringify(res.body));
-    const reached = (res.body as { employeeId: number }[]).map((one) => one.employeeId);
+    const reached = (res.body as { rows: { employeeId: number }[] }).rows.map((one) => one.employeeId);
     assert.ok(reached.includes(id(CHI)), "a department raise left out the department below it");
     assert.ok(reached.includes(id(BOSS_OLD)));
   });

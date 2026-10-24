@@ -2996,6 +2996,7 @@
     "CONSENT_MISSING": "Has not agreed to face data",
     "ALREADY_ON_KIOSK": "Already on this kiosk, or waiting on it",
     "ALREADY_ON_SHIFT": "Already starts a shift on that day",
+    "PAY_DATE_TAKEN": "Already has a pay record from that day",
     "SELF": "Your own record",
     "ADMIN_ACCOUNT": "Holds an administrator account; offboard them on their own"
   },
