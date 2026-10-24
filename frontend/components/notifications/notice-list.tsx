@@ -50,6 +50,15 @@ function Opener({ notice, onRead, onGo, children }: { notice: Notice; onRead: ()
   );
 }
 
+/** The bell's rows of one tab, newest first, one query for the list and its footer. */
+export function useBellNotices(status: NoticeStatus, enabled = true) {
+  return useQuery({
+    queryKey: [...NOTICES_KEY, "bell", status],
+    enabled,
+    queryFn: async () => (await api.get<{ rows: Notice[] }>(`/notifications?status=${status}&take=${kBellTake}`)).data.rows,
+  });
+}
+
 /** The bell's rows for one tab, newest first. */
 export function NoticeList({
   status,
@@ -62,11 +71,7 @@ export function NoticeList({
 }) {
   const t = useTranslations("notices");
   const marks = useNoticeMarks();
-
-  const notices = useQuery({
-    queryKey: [...NOTICES_KEY, "bell", status],
-    queryFn: async () => (await api.get<{ rows: Notice[] }>(`/notifications?status=${status}&take=${kBellTake}`)).data.rows,
-  });
+  const notices = useBellNotices(status);
 
   if (notices.isPending) {
     return (

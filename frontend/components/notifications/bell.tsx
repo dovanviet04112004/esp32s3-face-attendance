@@ -9,7 +9,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { NoticeList } from "./notice-list";
+import { NoticeList, useBellNotices } from "./notice-list";
 import { NOTICES_KEY, useNoticeActions, useNoticeMarks, type NoticeCounts, type NoticeStatus } from "./notice-row";
 
 const kPollMs = 60_000;
@@ -66,6 +66,9 @@ export function NoticeBell() {
   const [picked, setPicked] = useState<NoticeStatus | null>(null);
   const first: NoticeStatus = (counts.data?.action ?? 0) > 0 ? "action" : (counts.data?.unread ?? 0) > 0 ? "unread" : "all";
   const tab = picked ?? first;
+  const listed = useBellNotices(tab, open);
+  const unreadHere =
+    tab === "action" ? (listed.data ?? []).some((one) => one.readAt === null && one.leftAt === null) : (counts.data?.unread ?? 0) > 0;
 
   // The first tab with something in it once the counts are in; it then stays while they move under the reader.
   useEffect(() => {
@@ -116,7 +119,7 @@ export function NoticeBell() {
             </div>
             <NoticeList status={tab} onGo={() => setOpen(false)} actionsOf={actionsOf} />
             <div className="flex items-center justify-between gap-2 border-t border-kumo-hairline px-2 py-2">
-              {(counts.data?.unread ?? 0) > 0 ? (
+              {unreadHere ? (
                 <Button
                   variant="ghost"
                   size="sm"
