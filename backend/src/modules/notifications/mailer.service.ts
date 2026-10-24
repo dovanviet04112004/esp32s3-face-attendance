@@ -30,10 +30,11 @@ export class MailerService {
 
   /** Whether a message left the machine, so a caller can decide what to
    *  record. Without a host configured it only reaches the log.
+   *  @param userId the account it is for, which the log names in place of the address
    */
-  async send(to: string, body: MailBody): Promise<boolean> {
+  async send(to: string, body: MailBody, userId?: string): Promise<boolean> {
     if (!this.transport) {
-      this.log.log(`would send "${body.subject}" to ${to}`);
+      this.log.log(`would send "${body.subject}"${userId ? ` to user ${userId}` : ""}`);
       return false;
     }
     await this.transport.sendMail({

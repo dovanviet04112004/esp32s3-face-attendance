@@ -285,14 +285,14 @@ export class KioskSweep implements OnModuleInit {
       lastSeen: device.lastSeenAt ? localStamp(device.lastSeenAt, zone) : "—",
       url: `${root}/${DEFAULT_MAIL_LOCALE}/devices/${device.id}`,
     });
-    const admins = await this.db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });
+    const admins = await this.db.user.findMany({ where: { role: "ADMIN", active: true }, select: { id: true, email: true } });
     let reached = 0;
     for (const admin of admins) {
       try {
-        await this.mailer.send(admin.email, body);
+        await this.mailer.send(admin.email, body, admin.id);
         reached += 1;
       } catch (error) {
-        this.log.error(`kiosk ${device.id} silent: ${admin.email} refused: ${(error as Error).message}`);
+        this.log.error(`kiosk ${device.id} silent: the address of user ${admin.id} refused: ${(error as Error).message}`);
       }
     }
     if (admins.length > 0 && reached === 0) {

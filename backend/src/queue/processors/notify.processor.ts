@@ -189,7 +189,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       minutes: this.config.get("PASSWORD_RESET_TTL_MINUTES", { infer: true }),
       reason: job.reason,
     });
-    await this.mailer.send(account.email, body);
+    await this.mailer.send(account.email, body, job.userId);
   }
 
   private async mailChanged(job: PasswordChangedJob): Promise<void> {
@@ -202,7 +202,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
     }
     const locale = account.employee?.locale ?? DEFAULT_MAIL_LOCALE;
     const fullName = account.employee?.fullName ?? account.email;
-    await this.mailer.send(account.email, passwordChangedMail(locale, { fullName, url: job.link, hours: job.hours }));
+    await this.mailer.send(account.email, passwordChangedMail(locale, { fullName, url: job.link, hours: job.hours }), job.userId);
   }
 
   private async mailMfa(job: MfaChangedJob): Promise<void> {
@@ -219,7 +219,7 @@ export class NotifyProcessor implements OnModuleInit, OnModuleDestroy {
       backupCodesLeft: job.backupCodesLeft ?? 0,
       lockMinutes: this.config.get("MFA_LOCK_MINUTES", { infer: true }),
     });
-    await this.mailer.send(account.email, body);
+    await this.mailer.send(account.email, body, job.userId);
   }
 
   async onModuleDestroy(): Promise<void> {

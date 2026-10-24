@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { Logger } from "@nestjs/common";
 import type { LeaveType } from "@prisma/client";
 import request from "supertest";
 
@@ -70,6 +71,22 @@ export async function signIn(http: Server, email: string, password: string): Pro
   const res = await postLogin(http, email, password);
   assert.equal(res.status, 200, `${email} could not sign in`);
   return res.body.accessToken as string;
+}
+
+/** The messages the app logs as errors while some work runs, for a case that checks what a log gives away. */
+export async function errorsDuring(work: () => Promise<unknown>): Promise<string[]> {
+  const logged: string[] = [];
+  const error = Logger.prototype.error;
+  Logger.prototype.error = function (this: Logger, ...args: unknown[]): void {
+    logged.push(String(args[0]));
+    (error as (...rest: unknown[]) => void).apply(this, args);
+  };
+  try {
+    await work();
+  } finally {
+    Logger.prototype.error = error;
+  }
+  return logged;
 }
 
 export function cellsOf(line: string): string[] {

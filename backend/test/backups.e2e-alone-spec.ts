@@ -18,6 +18,7 @@ const { hashPassword } = await import("../src/modules/auth/password.js");
 const { EnrollmentService } = await import("../src/modules/enrollment/enrollment.service.js");
 const { MailerService } = await import("../src/modules/notifications/mailer.service.js");
 const { BackupSweep, judgeBackups } = await import("../src/modules/notifications/sweeps/backup.sweep.js");
+const { errorsDuring } = await import("./fixtures.js");
 
 const PROBLEMS: BackupProblem[] = [
   "WAL_FAILING",
@@ -160,7 +161,13 @@ describe("backups (e2e)", () => {
     };
     try {
       await redis.client.del(ALARM.backup("BASE_STALE"));
-      assert.deepEqual(await sweep(), ["BASE_STALE"]);
+      let found: BackupProblem[] = [];
+      const logged = await errorsDuring(async () => {
+        found = await sweep();
+      });
+      assert.deepEqual(found, ["BASE_STALE"]);
+      assert.ok(logged.some((line) => line.includes("BASE_STALE")), "the refusal went unlogged");
+      assert.ok(!logged.some((line) => line.includes("@")), "a refusal logged the address it refused");
       assert.equal(toOperator().length, 1, "a refusing address silenced the next one");
       assert.equal(await redis.client.exists(ALARM.backup("BASE_STALE")), 1, "one letter out still counts as told");
     } finally {

@@ -151,7 +151,7 @@ export class BackupSweep implements OnModuleInit {
     }
     const admins = await this.db.user.findMany({
       where: { role: "ADMIN", active: true },
-      select: { email: true },
+      select: { id: true, email: true },
       orderBy: { email: "asc" },
     });
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
@@ -166,10 +166,10 @@ export class BackupSweep implements OnModuleInit {
     let delivered = 0;
     for (const admin of admins) {
       try {
-        delivered += (await this.mailer.send(admin.email, body)) ? 1 : 0;
+        delivered += (await this.mailer.send(admin.email, body, admin.id)) ? 1 : 0;
         reached += 1;
       } catch (error) {
-        this.log.error(`backup ${finding.problem}: ${admin.email} refused: ${(error as Error).message}`);
+        this.log.error(`backup ${finding.problem}: the address of user ${admin.id} refused: ${(error as Error).message}`);
       }
     }
     this.log.warn(
