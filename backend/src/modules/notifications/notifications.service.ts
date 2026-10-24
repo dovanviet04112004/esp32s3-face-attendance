@@ -753,10 +753,13 @@ export class NotificationsService {
     kind: NoticeKind,
     userIds: string[],
   ): Promise<(userId: string, channel: OfferedChannel) => boolean> {
-    const held = await this.db.notificationPreference.findMany({
-      where: { userId: { in: userIds }, kind, channel: { in: [...OFFERED] } },
-      select: { userId: true, channel: true, on: true },
-    });
+    // Settings offers no way back to a dead end's switch, so whatever one stored is set aside.
+    const held = NOTICE_KINDS[kind].deadEnd
+      ? []
+      : await this.db.notificationPreference.findMany({
+          where: { userId: { in: userIds }, kind, channel: { in: [...OFFERED] } },
+          select: { userId: true, channel: true, on: true },
+        });
     const set = new Map(held.map((row) => [`${row.userId}:${row.channel}`, row.on]));
     return (userId, channel) =>
       !mutable(kind, channel) || (set.get(`${userId}:${channel}`) ?? NOTICE_KINDS[kind].defaults[channel]);

@@ -19,7 +19,7 @@ const IN_APP_OFF = "E2ENC02";
 const PUSH_OFF = "E2ENC03";
 const CODES = [BOTH_ON, IN_APP_OFF, PUSH_OFF];
 const KIND = "PAYSLIP_ISSUED";
-const OTHER_KIND = "CONTRACT_ENDING";
+const OTHER_KIND = "DAY_CORRECTED";
 // Unclaimed work lands on an administrator, so that is the kind such a login receives.
 const DESK_KIND = "REQUEST_WAITING";
 const MAIL = "e2enc@kiosk.local";

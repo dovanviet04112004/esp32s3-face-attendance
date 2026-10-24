@@ -227,6 +227,7 @@ describe("who a piece of work waits on (e2e)", () => {
     const employee = await read("employee");
     assert.ok(!employee.some((row) => row.kind === "REQUEST_WAITING"), "an employee was offered work they never get");
     assert.ok(employee.some((row) => row.kind === "PAYSLIP_ISSUED"));
+    assert.ok(!employee.some((row) => row.kind === "CONTRACT_ENDING"), "a notice that opens nothing was offered as a switch");
     const viewer = await read("viewer");
     assert.ok(!viewer.some((row) => row.kind === "PAYSLIP_ISSUED"), "an account with no record was offered a payslip");
     const hr = await read("hr");
@@ -237,6 +238,8 @@ describe("who a piece of work waits on (e2e)", () => {
     const notMine = await set("employee", "REQUEST_WAITING", "PUSH");
     assert.equal(notMine.status, 404);
     assert.equal(notMine.body.message, "NOTICE_NOT_FOUND");
+    const deadEnd = await set("employee", "CONTRACT_ENDING", "IN_APP");
+    assert.deepEqual([deadEnd.status, deadEnd.body.message], [404, "NOTICE_NOT_FOUND"], "a switch Settings does not offer was set");
     const locked = await set("hr", "REQUEST_WAITING", "IN_APP");
     assert.equal(locked.status, 409);
     assert.equal(locked.body.message, "NOTICE_CHANNEL_LOCKED");

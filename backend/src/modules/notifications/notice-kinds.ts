@@ -112,6 +112,8 @@ export interface KindRule {
   facts: Readonly<Record<string, FactType>>;
   /** Told to open screens and phones but never written: the record it speaks of is the row. */
   rowless?: true;
+  /** Opens no page yet: written put away, never offered as a switch (KEHOACH 9.15 rule 1). */
+  deadEnd?: true;
 }
 
 /** One row per kind; a kind missing here does not compile (KEHOACH 9.21.4, 4.9). */
@@ -316,13 +318,17 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     item: false,
     defaults: { IN_APP: false, PUSH: false },
     facts: { daysLeft: "number" },
+    deadEnd: true,
   },
 };
 
-/** Whether this account can ever receive the kind, so Settings offers only those (KEHOACH 9.21.4). */
+/** Whether Settings offers this account the kind: one it can receive, and one that opens something (KEHOACH 9.21.4). */
 export function receives(kind: NoticeKind, role: Role, hasRecord: boolean): boolean {
-  const rule = NOTICE_KINDS[kind].receivers;
-  return rule === "self" ? hasRecord : rule.includes(role);
+  const rule = NOTICE_KINDS[kind];
+  if (rule.deadEnd) {
+    return false;
+  }
+  return rule.receivers === "self" ? hasRecord : rule.receivers.includes(role);
 }
 
 /** A switch the person may turn: an item's in-app row is locked on, since the work stays theirs. */
