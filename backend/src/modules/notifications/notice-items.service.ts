@@ -8,7 +8,6 @@ import {
   type NoticeOutcome,
   type NoticeQueue,
   type NoticeSubject,
-  type Role,
 } from "@prisma/client";
 
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -18,7 +17,7 @@ import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { AudienceService } from "./audience.service.js";
-import { DUE_MARKS, DUE_WARNING, kebab, NOTICE_KINDS, type ItemKind } from "./notice-kinds.js";
+import { CLAIMABLE, DUE_MARKS, DUE_WARNING, kebab, mayResolve, NOTICE_KINDS, type ItemKind } from "./notice-kinds.js";
 import { NAMED, nameOf, NotificationsService } from "./notifications.service.js";
 import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
@@ -62,22 +61,6 @@ export const QUEUE_KIND: Record<NoticeQueue, ItemKind> = {
   RELEASES: "RELEASE_AVAILABLE",
   RECAPTURE: "FACE_RECAPTURE",
 };
-
-// Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
-const RESOLVERS: Partial<Record<NoticeQueue, readonly Role[]>> = {
-  CONTRACTS_DUE: ["ADMIN", "HR"],
-  PROBATION_DUE: ["ADMIN", "HR"],
-  KIOSK: ["ADMIN"],
-};
-
-// The one queue its own person closes by hand: a day they need not explain (KEHOACH 9.21.4).
-const SELF_RESOLVED: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["ATTENDANCE"]);
-
-function mayResolve(viewer: Viewer, item: { queue: NoticeQueue; employeeId: number | null }): boolean {
-  return SELF_RESOLVED.has(item.queue)
-    ? viewer.employeeId !== null && item.employeeId === viewer.employeeId
-    : (RESOLVERS[item.queue]?.includes(viewer.role) ?? false);
-}
 
 /** What a hand close is traced from: the kiosk for kiosk work, otherwise the person it is about (KEHOACH 9.24 rule 3). */
 function tracedFrom(item: { queue: NoticeQueue; subjectId: string; employeeId: number | null }): Pick<AuditEntry, "subject" | "subjectId"> {
@@ -134,9 +117,6 @@ const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIO
 export const CLOSED_STAMP = Prisma.sql`(extract(epoch FROM "closedAt") * 1000)::bigint`;
 
 const CLOSED_STATES: readonly NoticeItemState[] = ["DONE", "WITHDRAWN", "EXPIRED", "CLEARED"];
-
-// Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
-export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
 
 /** An item as its group reads it: its state and result, who is on it, whom it reached and who has read it. */
 export interface ItemDetail {

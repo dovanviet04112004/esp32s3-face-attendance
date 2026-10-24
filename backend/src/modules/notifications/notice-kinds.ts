@@ -78,6 +78,29 @@ export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHI
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
 
+// Only work no business path decides closes by hand: by the desk that signs, or for a kiosk an ADMIN (KEHOACH 9.21.4).
+const RESOLVERS: Partial<Record<NoticeQueue, readonly Role[]>> = {
+  CONTRACTS_DUE: ["ADMIN", "HR"],
+  PROBATION_DUE: ["ADMIN", "HR"],
+  KIOSK: ["ADMIN"],
+};
+
+// The one queue its own person closes by hand: a day they need not explain (KEHOACH 9.21.4).
+const SELF_RESOLVED: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["ATTENDANCE"]);
+
+/** Whether this reader may close the work by hand, with a note. */
+export function mayResolve(
+  viewer: { role: Role; employeeId: number | null },
+  item: { queue: NoticeQueue; employeeId: number | null },
+): boolean {
+  return SELF_RESOLVED.has(item.queue)
+    ? viewer.employeeId !== null && item.employeeId === viewer.employeeId
+    : (RESOLVERS[item.queue]?.includes(viewer.role) ?? false);
+}
+
+// Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
+export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
+
 export interface KindRule {
   category: NoticeCategory;
   level: NoticeLevel;

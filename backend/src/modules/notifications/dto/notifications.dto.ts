@@ -205,6 +205,14 @@ export class NoticeItemView {
   @ApiProperty({
     type: String,
     nullable: true,
+    example: "0a113bd1-4a7b-4a3f-972b-bd493d497c2e",
+    description: "The login on it, so a row can offer its reader to let go; null when nobody is, or the claim has lapsed",
+  })
+  claimedById!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
     example: "Lê Thị C",
     description: "Who said they are on it; null when nobody is, or the claim has lapsed",
   })
@@ -218,6 +226,12 @@ export class NoticeItemView {
     description: "When the work is due; null when it has no deadline",
   })
   dueAt!: Date | null;
+
+  @ApiProperty({ example: true, description: "Whether the group may say who is on it" })
+  claimable!: boolean;
+
+  @ApiProperty({ example: false, description: "Whether this reader may close it by hand, with a note" })
+  resolvable!: boolean;
 }
 
 export class SubjectRequestView {

@@ -32,7 +32,7 @@ interface Row {
   readAt: string | null;
   archivedAt: string | null;
   subject: { type: string; id: string | null; hidden: boolean; person: { code: string } | null } | null;
-  item: { key: string; state: string } | null;
+  item: { key: string; state: string; claimable: boolean; resolvable: boolean; claimedById: string | null } | null;
 }
 
 interface PageBody {
@@ -179,6 +179,8 @@ describe("the bell's list, counts and marks (e2e)", () => {
     assert.equal(counts.critical, 0);
     const action = (await get("reader", "/notifications?status=action")).body as PageBody;
     assert.deepEqual(action.rows.map((row) => row.item?.key), [itemKey]);
+    const work = action.rows[0].item;
+    assert.deepEqual([work?.claimable, work?.resolvable], [false, false], "a request offered a claim or a close by hand");
 
     await db.noticeItem.update({ where: { id: item.id }, data: { level: "CRITICAL" } });
     assert.equal(((await get("reader", "/notifications/counts")).body as { critical: number }).critical, 1);
@@ -190,6 +192,34 @@ describe("the bell's list, counts and marks (e2e)", () => {
     const back = await post("reader", "/notifications/unarchive", { ids: [held] });
     assert.deepEqual([back.body.action, back.body.critical], [1, 1], "a row brought back did not count as work again");
     await db.noticeItem.update({ where: { id: item.id }, data: { level: "ACTION" } });
+  });
+
+  it("tells each row whether its reader may say they are on the work or close it by hand", async () => {
+    const subjectId = randomUUID();
+    const key = `contracts-due:${subjectId}`;
+    const item = await db.noticeItem.create({
+      data: { key, queue: "CONTRACTS_DUE", subjectType: "CONTRACT", subjectId, employeeId: idOf.get("plain") },
+    });
+    await db.notification.create({
+      data: {
+        userId: loginOf.get("other") as string,
+        kind: "CONTRACT_DUE",
+        itemId: item.id,
+        subjectType: "CONTRACT",
+        subjectId,
+        subjectEmployeeId: idOf.get("plain"),
+        dedupKey: key,
+      },
+    });
+    const rowOf = async () =>
+      ((await get("other", `/notifications?status=action&search=${codeOf("plain")}`)).body as PageBody).rows.find(
+        (row) => row.item?.key === key,
+      )?.item;
+    const held = await rowOf();
+    assert.deepEqual([held?.claimable, held?.resolvable, held?.claimedById], [true, true, null], "the desk's contract row hid its two hand actions");
+    const claimed = await post("other", `/notifications/items/${encodeURIComponent(key)}/claim`, {});
+    assert.equal(claimed.status, 201, JSON.stringify(claimed.body));
+    assert.equal((await rowOf())?.claimedById, loginOf.get("other"), "the row cannot tell its reader the claim is theirs");
   });
 
   it("marks by ids, never touching another account's rows", async () => {

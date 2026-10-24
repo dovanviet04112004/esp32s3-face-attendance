@@ -29,9 +29,11 @@ import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
 import { pushBody, type PushBody } from "./dto/push-body.js";
 import {
+  CLAIMABLE,
   factsFit,
   GATHERED_KINDS,
   kebab,
+  mayResolve,
   mutable,
   NOTICE_KINDS,
   receives,
@@ -113,8 +115,11 @@ export interface ItemSummary {
   actorName: string | null;
   openedAt: Date;
   closedAt: Date | null;
+  claimedById: string | null;
   claimedByName: string | null;
   dueAt: Date | null;
+  claimable: boolean;
+  resolvable: boolean;
 }
 
 type RawSubject = "subjectType" | "subjectId" | "subjectEmployeeId" | "dedupKey";
@@ -169,12 +174,15 @@ export async function namesOf(db: PrismaService, ids: (string | null)[]): Promis
 
 const ITEM_SUMMARY = {
   key: true,
+  queue: true,
+  employeeId: true,
   level: true,
   state: true,
   outcome: true,
   actorId: true,
   openedAt: true,
   closedAt: true,
+  claimedById: true,
   claimedAt: true,
   dueAt: true,
   actor: NAMED,
@@ -353,6 +361,7 @@ export class NotificationsService {
       rows.map((row) => ({ ...row, awaits: row.leftAt === null && row.item?.state === "OPEN" })),
     );
     const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
+    const claimLive = (item: { claimedAt: Date | null }) => item.claimedAt !== null && item.claimedAt.getTime() > lapsed;
     return rows.map(({ item, subjectType: _type, subjectId: _id, subjectEmployeeId: _person, dedupKey: _key, ...row }, at) => ({
       ...row,
       category: NOTICE_KINDS[row.kind].category,
@@ -366,7 +375,10 @@ export class NotificationsService {
         closedAt: item.closedAt,
         dueAt: item.dueAt,
         actorName: nameOf(item.actor),
-        claimedByName: item.claimedAt && item.claimedAt.getTime() > lapsed ? nameOf(item.claimedBy) : null,
+        claimedById: claimLive(item) ? item.claimedById : null,
+        claimedByName: claimLive(item) ? nameOf(item.claimedBy) : null,
+        claimable: CLAIMABLE.has(item.queue),
+        resolvable: mayResolve(viewer, item),
       },
       subject: subjects[at],
     }));
