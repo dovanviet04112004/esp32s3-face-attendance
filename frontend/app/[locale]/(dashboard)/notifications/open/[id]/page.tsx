@@ -59,7 +59,7 @@ function OpenNotice() {
         await api.post("/notifications/read", { ids: [notice.id] });
         void cache.invalidateQueries({ queryKey: ["notifications"] });
         if (!left) {
-          router.replace(NOTICE_LOOK[notice.kind].path(notice, reader) ?? "/", { transitionTypes: [NOTICE_TRANSITION] });
+          router.replace(NOTICE_LOOK[notice.kind].path(notice, reader) ?? "/notifications", { transitionTypes: [NOTICE_TRANSITION] });
         }
       } catch (fell) {
         if (!left) {
