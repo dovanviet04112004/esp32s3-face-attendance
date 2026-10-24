@@ -75,6 +75,14 @@ const TEAM_COUNTS: Record<TeamCount, "teamLate" | "teamNotPunched" | "teamAbsent
 // These kiosk sentences name only a family of codes, so the row names the code itself beside them.
 const FAMILY_SENTENCES: ReadonlySet<NoticeSentence> = new Set<NoticeSentence>(["kindKIOSK_ALERT_fault", "kindKIOSK_ALERT_update"]);
 
+// The codes the backup watch reports, as payroll/mail-text.ts names them (KEHOACH 9.22.2).
+const BACKUP_CODES = ["WAL_FAILING", "DUMP_STALE", "BIOMETRIC_STALE", "BASE_STALE", "WAL_STALE", "OFFSITE_STALE"] as const;
+type BackupCode = (typeof BACKUP_CODES)[number];
+
+function isBackupCode(code: string): code is BackupCode {
+  return (BACKUP_CODES as readonly string[]).includes(code);
+}
+
 function counted(facts: Notice["facts"], name: string): number {
   const value = facts?.[name];
   return typeof value === "number" ? value : 0;
@@ -138,6 +146,12 @@ export function useNoticeWords() {
     return typeof firmware === "string" && typeof models === "string" ? t("updateRuns", { firmware, models }) : null;
   }
 
+  /** Each backup the watch finds failing, in words; a code this page does not know reads as itself. */
+  function backup(facts: Notice["facts"]): string | null {
+    const problems = typeof facts?.problems === "string" ? facts.problems.split(",").filter(Boolean) : [];
+    return problems.map((code) => (isBackupCode(code) ? t(`backup_${code}`) : code)).join(" · ") || null;
+  }
+
   /** The kiosk by its name, or by its id until somebody names it. */
   function kioskName(notice: Notice): string | null {
     const subject = notice.subject;
@@ -185,6 +199,9 @@ export function useNoticeWords() {
       }
       if (notice.kind === "KIOSK_ALERT") {
         return kiosk(notice);
+      }
+      if (notice.kind === "BACKUP_ALERT") {
+        return backup(notice.facts);
       }
       if (notice.kind === "UPDATE_FINISHED") {
         return [kioskName(notice), finished(notice.facts)].filter(Boolean).join(" · ") || null;
@@ -421,7 +438,9 @@ export function NoticeLine({ notice, state = "always" }: { notice: Notice; state
             {pill}
             {about ? (
               <>
-                <span className="min-w-0 truncate max-md:order-last max-md:basis-full">{about}</span>
+                <span title={about} className="min-w-0 truncate max-md:order-last max-md:basis-full">
+                  {about}
+                </span>
                 <span aria-hidden className="max-md:hidden">
                   ·
                 </span>
@@ -433,7 +452,11 @@ export function NoticeLine({ notice, state = "always" }: { notice: Notice; state
       ) : (
         <span className="flex min-w-0 flex-1 flex-col gap-1 whitespace-normal">
           <span className={cn("break-words", unread && "font-medium")}>{say.sentence(notice)}</span>
-          {about ? <span className="truncate text-sm text-kumo-subtle">{about}</span> : null}
+          {about ? (
+            <span title={about} className="truncate text-sm text-kumo-subtle">
+              {about}
+            </span>
+          ) : null}
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-kumo-subtle">
             {pill}
             <span className="tabular-nums">{say.when(notice)}</span>
