@@ -19,7 +19,11 @@ const THIN = "NV9601";
 const GONE = "NV9602";
 const LAPSED = "NV9603";
 const ELSEWHERE = "NV9604";
-const MADE_CODES = [THIN, GONE, LAPSED, ELSEWHERE];
+const TERMINATED = "NV9605";
+const UNDATED = "NV9606";
+const MADE_CODES = [THIN, GONE, LAPSED, ELSEWHERE, TERMINATED, UNDATED];
+const LEAVING_NAME = "Hợp đồng chấm dứt, nghỉ giữa tháng";
+const UNDATED_NAME = "Hợp đồng chấm dứt, chưa ghi ngày nghỉ";
 const OTHER_ENTITY = "E2E-OTHER";
 
 describe("d02-lt extract (e2e)", () => {
@@ -108,6 +112,17 @@ describe("d02-lt extract (e2e)", () => {
     await db.employee.create({
       data: { code: ELSEWHERE, fullName: "Người của pháp nhân khác", active: true, legalEntityId: otherId },
     });
+    for (const [code, fullName, leaveDate] of [
+      [TERMINATED, LEAVING_NAME, new Date("2026-06-15T00:00:00.000Z")],
+      [UNDATED, UNDATED_NAME, null],
+    ] as const) {
+      const made = await db.employee.create({
+        data: { code, fullName, active: true, legalEntityId: entityId, hireDate: new Date("2026-01-01T00:00:00.000Z"), leaveDate },
+      });
+      await db.employmentContract.create({
+        data: { employeeId: made.id, kind: "INDEFINITE", state: "TERMINATED", startDate: new Date("2026-01-01T00:00:00.000Z") },
+      });
+    }
   });
 
   after(async () => {
@@ -139,6 +154,18 @@ describe("d02-lt extract (e2e)", () => {
     assert.equal(row[20], "2026-01-01", "fixed term start belongs in column 21");
     assert.equal(row[21], "2026-08-31", "fixed term end belongs in column 22");
     assert.doesNotMatch(row[COLUMNS - 1] ?? "", /chưa có hợp đồng/);
+  });
+
+  it("counts a terminated contract until the leave date that stands for its end, and not without one", async () => {
+    const rows = await extract();
+    const leaving = rowOf(rows, LEAVING_NAME);
+    assert.ok(leaving);
+    assert.equal(leaving[19], "2026-01-01", "an indefinite contract ended by the leave date lost column 20");
+    assert.doesNotMatch(leaving[COLUMNS - 1] ?? "", /chưa có hợp đồng/);
+    const undated = rowOf(rows, UNDATED_NAME);
+    assert.ok(undated);
+    assert.equal(undated[19], "", "a terminated contract with no leave date was filed as in force");
+    assert.match(undated[COLUMNS - 1] ?? "", /chưa có hợp đồng hiệu lực/);
   });
 
   it("files one legal entity at a time", async () => {

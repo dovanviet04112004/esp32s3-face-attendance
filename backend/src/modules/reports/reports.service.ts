@@ -858,9 +858,12 @@ export class ReportsService {
         contracts: {
           // In force on the closing day, not today, so a term that has ended since still counts.
           where: {
-            state: { in: ["ACTIVE", "ENDED"] },
             startDate: { lte: on },
-            OR: [{ endDate: null }, { endDate: { gte: on } }],
+            AND: [
+              { OR: [{ endDate: null }, { endDate: { gte: on } }] },
+              // A termination carries no date of its own, so the leave date stands in for it (KEHOACH 9.19).
+              { OR: [{ state: { in: ["ACTIVE", "ENDED"] } }, { state: "TERMINATED", employee: { leaveDate: { gte: on } } }] },
+            ],
           },
           orderBy: { startDate: "desc" },
           take: 1,
