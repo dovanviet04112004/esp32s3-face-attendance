@@ -216,7 +216,7 @@ function waitingAt(notice: Notice): string {
 function decidedAt(notice: Notice): string {
   const subject = notice.subject;
   if (subject?.type === "CERTIFICATE") {
-    return "/me/letters";
+    return subject.id ? `/me/letters?open=${subject.id}` : "/me/letters";
   }
   if (subject?.type === "PROFILE_CHANGE" || subject?.type === "DEPENDENT") {
     return "/me/profile";
