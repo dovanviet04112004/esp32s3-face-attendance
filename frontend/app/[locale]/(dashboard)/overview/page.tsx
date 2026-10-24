@@ -407,7 +407,7 @@ function TodayCard({ asked }: { asked: UseQueryResult<Today | null> }) {
   // Payroll staff cannot open the leave ledger, so their leave count lists the names in place.
   const leaveHref = allows(role, employeeId !== null, "/leave") ? `/leave?kind=LEAVE&state=APPROVED&${range}` : undefined;
   const figures: Figure[] = [
-    { key: "present", label: t("present"), value: today?.present, share: today?.expected ?? 0, href: `/attendance?${range}` },
+    { key: "present", label: t("present"), value: today?.present, share: today?.expected || undefined, href: `/attendance?${range}` },
     { key: "late", label: t("late"), value: today?.late, href: `/attendance?${range}&show=late` },
     { key: "absent", label: t("absent"), value: today?.absentUnexcused, onPick: () => setListing("absent") },
     { key: "leave", label: t("onLeave"), value: today?.onLeave, href: leaveHref, onPick: () => setListing("onLeave") },
