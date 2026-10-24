@@ -93,9 +93,16 @@ export class KioskSweep implements OnModuleInit {
     return { opened, closed };
   }
 
+  // The subject columns find this kiosk's work by their index; the key prefix only picks its silences, retired ones too.
   private async toldSinceHeard(device: Silent): Promise<boolean> {
     const told = await this.db.noticeItem.findFirst({
-      where: { key: { startsWith: itemKey("KIOSK", { id: device.id, part: "offline" }) }, openedAt: { gt: device.lastSeenAt ?? new Date(0) } },
+      where: {
+        queue: "KIOSK",
+        subjectType: "DEVICE",
+        subjectId: device.id,
+        key: { startsWith: itemKey("KIOSK", { id: device.id, part: "offline" }) },
+        openedAt: { gt: device.lastSeenAt ?? new Date(0) },
+      },
       select: { id: true },
     });
     return told !== null;
