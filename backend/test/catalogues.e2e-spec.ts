@@ -11,6 +11,8 @@ import { configure } from "../src/bootstrap.js";
 import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { dayAsDate } from "../src/modules/timesheet/local-day.js";
+import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { cellsOf, signIn } from "./fixtures.js";
 
 const TITLE = "E2ECAT-KTV";
@@ -23,6 +25,10 @@ const LEFT_UNIT = "E2ECAT-LEFT";
 const RIGHT_UNIT = "E2ECAT-RIGHT";
 // Short of the five seconds each move's own transaction may run.
 const HOLD_MS = 1000;
+// A finished weekday no other suite builds or reads.
+const BUILT_DAY = "2026-08-19";
+const REBUILD_WAIT_MS = 30_000;
+const REBUILD_POLL_MS = 100;
 const LUNCH = "E2ECAT-LUNCH";
 const PHONE = "E2ECAT-PHONE";
 const DUTY = "E2ECAT-DUTY";
@@ -274,6 +280,36 @@ describe("user-maintained catalogues (e2e)", () => {
     assert.equal(retired.status, 200, JSON.stringify(retired.body));
     const all = await by("hr").get("/legal-entities?all=true");
     assert.ok((all.body as { id: string; active: boolean }[]).some((one) => one.id === otherEntityId && !one.active));
+  });
+
+  it("builds a finished day again when a holiday lands on it, changes its pay, or is taken away", async () => {
+    await app.get(TimesheetService).build(BUILT_DAY, workerId);
+    const day = () =>
+      db.attendanceDay.findUniqueOrThrow({
+        where: { employeeId_date: { employeeId: workerId, date: dayAsDate(BUILT_DAY) } },
+        select: { state: true, calendar: true },
+      });
+    const until = async (state: string, calendar: string): Promise<void> => {
+      for (let waited = 0; waited < REBUILD_WAIT_MS; waited += REBUILD_POLL_MS) {
+        const held = await day();
+        if (held.state === state && held.calendar === calendar) {
+          return;
+        }
+        await sleep(REBUILD_POLL_MS);
+      }
+      assert.fail(`${BUILT_DAY} still reads ${JSON.stringify(await day())}, not ${state} on a ${calendar}`);
+    };
+    assert.deepEqual(await day(), { state: "ABSENT", calendar: "WORKDAY" }, "the day did not start as an absence");
+
+    const made = await by("hr").post("/holidays", { legalEntityId: entityId, date: BUILT_DAY, name: "Nghỉ bù" });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    await until("HOLIDAY", "HOLIDAY");
+    const unpaid = await by("hr").patch(`/holidays/${made.body.id}`, { paid: false });
+    assert.equal(unpaid.status, 200, JSON.stringify(unpaid.body));
+    await until("HOLIDAY", "UNPAID_HOLIDAY");
+    const gone = await request(http).delete(`/holidays/${made.body.id}`).set("Authorization", `Bearer ${token.hr}`);
+    assert.equal(gone.status, 200, JSON.stringify(gone.body));
+    await until("ABSENT", "WORKDAY");
   });
 
   it("renames a holiday and refuses a year that is not a number", async () => {

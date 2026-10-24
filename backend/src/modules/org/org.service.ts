@@ -23,7 +23,8 @@ import { AuditService, trail } from "../audit/audit.service.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { ContractsSweep } from "../notifications/sweeps/contracts.sweep.js";
 import { ProbationSweep } from "../notifications/sweeps/probation.sweep.js";
-import { localDay } from "../timesheet/local-day.js";
+import { asDay, localDay } from "../timesheet/local-day.js";
+import { TimesheetService } from "../timesheet/timesheet.service.js";
 import { UsersService } from "../users/users.service.js";
 import type {
   CreateContractDto,
@@ -105,6 +106,7 @@ export class OrgService {
     private readonly contractsDue: ContractsSweep,
     private readonly probationDue: ProbationSweep,
     private readonly config: ConfigService<Env, true>,
+    private readonly timesheet: TimesheetService,
   ) {}
 
   /**
@@ -294,6 +296,7 @@ export class OrgService {
         subject: AUDIT_SUBJECTS.ORG,
         subjectId: made.id,
       });
+      await this.rebuildIfPast(made.date);
       return made;
     } catch (error) {
       if (isPrismaCode(error, UNIQUE_VIOLATION)) {
@@ -315,14 +318,18 @@ export class OrgService {
       subjectId: id,
       meta: trail(held, body),
     });
+    if (body.paid !== undefined && body.paid !== held.paid) {
+      await this.rebuildIfPast(saved.date);
+    }
     return saved;
   }
 
   async removeHoliday(id: string, viewer: Viewer): Promise<{ done: true }> {
-    await this.writableHoliday(id, viewer);
+    const held = await this.writableHoliday(id, viewer);
     await this.db.holiday.delete({ where: { id } }).catch((error: unknown) => {
       throw isPrismaCode(error, RECORD_NOT_FOUND) ? new NotFoundException("HOLIDAY_NOT_FOUND") : error;
     });
+    await this.rebuildIfPast(held.date);
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.ORG_HOLIDAY_DELETE,
@@ -330,6 +337,14 @@ export class OrgService {
       subjectId: id,
     });
     return { done: true };
+  }
+
+  // A finished day's rows carry its calendar, and the pay run reads those rows rather than the holidays (KEHOACH 9.8).
+  private async rebuildIfPast(date: Date): Promise<void> {
+    const day = asDay(date);
+    if (day < this.timesheet.today()) {
+      await this.timesheet.scheduleBuild(day, day);
+    }
   }
 
   private async writableHoliday(id: string, viewer: Viewer): Promise<Holiday> {
