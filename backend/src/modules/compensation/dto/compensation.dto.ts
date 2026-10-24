@@ -180,16 +180,24 @@ export class BulkRaiseDto {
   @IsDateString()
   effectiveFrom!: string;
 
-  @ApiPropertyOptional({ example: 1000, description: "Basis points: 1000 is ten per cent" })
+  @ApiPropertyOptional({
+    example: 1000,
+    minimum: 1,
+    description: "Basis points: 1000 is ten per cent; give this or amount, never both",
+  })
   @IsOptional()
   @IsInt()
-  @Min(0)
+  @Min(1)
   percentBp?: number;
 
-  @ApiPropertyOptional({ example: 1000000, description: "A flat amount instead of a rate" })
+  @ApiPropertyOptional({
+    example: 1000000,
+    minimum: 1,
+    description: "Dong added to each base pay; give this or percentBp, never both",
+  })
   @IsOptional()
   @IsInt()
-  @Min(0)
+  @Min(1)
   amount?: number;
 
   @ApiPropertyOptional({

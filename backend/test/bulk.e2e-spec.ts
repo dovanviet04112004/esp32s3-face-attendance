@@ -26,6 +26,7 @@ const RATE_FROM = "2029-07-01";
 const AMOUNT_FROM = "2030-01-01";
 const TAKEN_FROM = "2030-07-01";
 const EMPTY_FROM = "2031-07-01";
+const STEPLESS_FROM = "2032-01-01";
 const HIRED_FROM = "2028-01-01";
 const REASON = "ANNUAL_REVIEW" as const;
 // Its own people rather than the whole company: the company-wide figure is a
@@ -247,6 +248,23 @@ describe("bulk raise (e2e)", () => {
     }
     const raised = await db.compensationRecord.count({ where: { effectiveFrom: new Date(EMPTY_FROM) } });
     assert.equal(raised, 0, "an empty selection raised somebody");
+  });
+
+  it("refuses a raise by neither a rate nor an amount, by both, or by nothing", async () => {
+    const asked: [object, string[]][] = [
+      [{ percentBp: undefined }, ["percentBp", "amount"]],
+      [{ amount: RAISE_AMOUNT }, ["percentBp", "amount"]],
+      [{ percentBp: 0 }, ["percentBp"]],
+    ];
+    for (const [change, fields] of asked) {
+      for (const path of ["/compensation/bulk/preview", "/compensation/bulk"]) {
+        const res = await bulk(path, { effectiveFrom: STEPLESS_FROM, ...change });
+        assert.equal(res.status, 400, `${path} ${JSON.stringify(change)}: ${JSON.stringify(res.body)}`);
+        assert.equal(res.body.message, "VALIDATION_FAILED");
+        assert.deepEqual(res.body.fields, fields);
+      }
+    }
+    assert.equal((await recordsOn(STEPLESS_FROM)).length, 0, "a raise of nothing wrote a copy of the old pay");
   });
 });
 

@@ -63,6 +63,8 @@ const DEPENDENT_EXPORT_COLUMNS = [
   "createdAt", "state", "decidedBy", "decidedAt", "decisionNote",
 ];
 
+const RAISE_STEP_FIELDS = ["percentBp", "amount"];
+
 type ListedDependent = Prisma.DependentGetPayload<{ include: { employee: typeof PERSON_VIEW } }>;
 
 export type QueuedDependent = ListedDependent & { decidedByName: string | null };
@@ -348,6 +350,10 @@ export class CompensationService {
    *  writer's own record is left out, as it would be refused one at a time.
    */
   async previewRaise(viewer: Viewer, body: BulkRaiseDto): Promise<RaisePlan> {
+    const steps = [body.percentBp, body.amount].filter((one) => one !== undefined && one !== null);
+    if (steps.length !== 1) {
+      throw new BadRequestException({ message: "VALIDATION_FAILED", fields: RAISE_STEP_FIELDS });
+    }
     this.mayWrite(viewer);
     refuseOwn(viewer);
     const on = new Date(body.effectiveFrom);
@@ -374,7 +380,7 @@ export class CompensationService {
          AND (${chosen}::int[] IS NULL OR e."id" = ANY(${chosen}::int[]))
        ORDER BY e."id", c."effectiveFrom" DESC
     `;
-    const step = body.percentBp;
+    const step = body.percentBp ?? undefined;
     const raised = (from: bigint): bigint =>
       step === undefined ? from + BigInt(body.amount ?? 0) : from + (from * BigInt(step)) / 10_000n;
     rows.sort((left, right) => left.code.localeCompare(right.code));
