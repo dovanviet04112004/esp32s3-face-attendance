@@ -14,6 +14,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useFormatter, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
 
+import { mayTick } from "@/components/employees/checklist";
 import { DataTable, PersonCell, type Column } from "@/components/tables/data-table";
 import { ChoiceField } from "@/components/ui/choice-field";
 import { FilterBar, useSettled } from "@/components/ui/filter-bar";
@@ -64,6 +65,7 @@ interface OpenTask {
   id: string;
   title: string;
   ownerRole: Owner;
+  ownerId: number | null;
   dueOn: string;
   run: {
     kind: Kind;
@@ -124,6 +126,7 @@ function Onboarding() {
   const router = useRouter();
   const cache = useQueryClient();
   const role = useSession((s) => s.role);
+  const viewerId = useSession((s) => s.employeeId);
   const faultOf = useFault();
   const notify = useNotify();
   const optional = useOptional();
@@ -428,7 +431,7 @@ function Onboarding() {
           }
           rowHref={(row) => `/employees/${row.run.employee.id}?tab=checklist`}
           rowActions={(row) => [
-            ...(mayFinish
+            ...(mayFinish && mayTick(row, row.run.employee.id, { role, employeeId: viewerId })
               ? [{ key: "finish", label: t("finish"), icon: CheckIcon, disabled: finish.isPending, onSelect: () => finish.mutate(row) }]
               : []),
             {

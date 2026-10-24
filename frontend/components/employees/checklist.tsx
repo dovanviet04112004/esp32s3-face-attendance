@@ -13,10 +13,12 @@ import { useNotify } from "@/components/ui/notify";
 import { StatePill } from "@/components/ui/pill";
 import { SkeletonLine } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/auth";
 import { useFault } from "@/lib/fault";
 import { dayOnly, todayIso } from "@/lib/format";
 
 const KINDS = ["ONBOARDING", "OFFBOARDING"] as const;
+const TICKS_ANY_TASK = ["ADMIN", "HR"];
 
 type Kind = (typeof KINDS)[number];
 
@@ -28,6 +30,24 @@ interface Task {
   dueOn: string;
   doneAt: string | null;
   note: string | null;
+}
+
+/** Whether the viewer may tick this task off: the rule OnboardingService.finish enforces (KEHOACH 9.16 item 10). */
+export function mayTick(
+  task: Pick<Task, "ownerRole" | "ownerId">,
+  personId: number,
+  viewer: { role: string | null; employeeId: number | null },
+): boolean {
+  if (task.ownerRole !== "SELF" && personId === viewer.employeeId) {
+    return false;
+  }
+  if (viewer.role !== null && TICKS_ANY_TASK.includes(viewer.role)) {
+    return true;
+  }
+  if (task.ownerRole === "SELF") {
+    return personId === viewer.employeeId;
+  }
+  return task.ownerRole === "MANAGER" && viewer.employeeId !== null && task.ownerId === viewer.employeeId;
 }
 
 interface Run {
@@ -58,6 +78,8 @@ export function Checklist({
   const cache = useQueryClient();
   const faultOf = useFault();
   const notify = useNotify();
+  const role = useSession((s) => s.role);
+  const viewerId = useSession((s) => s.employeeId);
 
   const [kind, setKind] = useState<Kind>("ONBOARDING");
   const [starting, setStarting] = useState(false);
@@ -181,7 +203,7 @@ export function Checklist({
           rowActions={
             mayFinish
               ? (row) =>
-                  row.doneAt === null
+                  row.doneAt === null && mayTick(row, employeeId, { role, employeeId: viewerId })
                     ? [
                         {
                           key: "finish",
