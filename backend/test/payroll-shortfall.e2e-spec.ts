@@ -11,7 +11,7 @@ import { BYTE_ORDER_MARK } from "../src/common/csv.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { PayrollService } from "../src/modules/payroll/payroll.service.js";
-import { cellsOf, signIn } from "./fixtures.js";
+import { cellsOf, paidLeaveType, signIn } from "./fixtures.js";
 
 // An entity of its own, so every run and lock here reaches only the people this suite made.
 const ENTITY_CODE = "E2E-PAYS";
@@ -304,7 +304,11 @@ const JUNE_ENTITY = "E2E-PAYI";
 const JOINER = "NV9I01";
 const QUITTER = "NV9I02";
 const STAYER = "NV9I03";
-const JUNE_CODES = [JOINER, QUITTER, STAYER];
+// A paid morning and an unpaid afternoon of one day: half a day of each.
+const HALVER = "NV9I04";
+const HALVED_DAY = "2026-06-15";
+const UNPAID_TYPE = "E2E-UNPAID";
+const JUNE_CODES = [JOINER, QUITTER, STAYER, HALVER];
 // June holds fifteen working days ahead of the 20th, and nineteen after the 3rd.
 const JOINED = "2026-06-20";
 const LAST_DAY = "2026-06-03";
@@ -323,6 +327,7 @@ describe("the insurance of a month somebody joins or leaves (e2e)", () => {
     await db.payrollPeriod.deleteMany({ where: { legalEntity: { code: JUNE_ENTITY } } });
     await db.employee.deleteMany({ where: { code: { in: JUNE_CODES } } });
     await db.legalEntity.deleteMany({ where: { code: JUNE_ENTITY } });
+    await db.leaveType.deleteMany({ where: { code: UNPAID_TYPE } });
   }
 
   before(async () => {
@@ -349,6 +354,7 @@ describe("the insurance of a month somebody joins or leaves (e2e)", () => {
       [JOINER]: JUNE_WORKDAYS.filter((day) => day >= JOINED),
       [QUITTER]: JUNE_WORKDAYS.filter((day) => day <= LAST_DAY),
       [STAYER]: JUNE_WORKDAYS,
+      [HALVER]: JUNE_WORKDAYS.filter((day) => day !== HALVED_DAY),
     };
     for (const code of JUNE_CODES) {
       const made = await db.employee.create({
@@ -375,11 +381,47 @@ describe("the insurance of a month somebody joins or leaves (e2e)", () => {
         })),
       });
     }
+    const paid = await paidLeaveType(db);
+    const unpaid = await db.leaveType.create({ data: { code: UNPAID_TYPE, name: "Nghỉ không lương (e2e)", paid: false } });
+    const halver = idOf.get(HALVER) as number;
+    for (const [dayPart, leaveTypeId] of [["MORNING", paid.id], ["AFTERNOON", unpaid.id]] as const) {
+      await db.request.create({
+        data: {
+          employeeId: halver,
+          kind: "LEAVE",
+          state: "APPROVED",
+          leaveTypeId,
+          fromDate: dateOf(HALVED_DAY),
+          toDate: dateOf(HALVED_DAY),
+          halfDay: true,
+          dayPart,
+          days: 0.5,
+          reason: "e2e",
+        },
+      });
+    }
+    await db.attendanceDay.create({ data: { employeeId: halver, date: dateOf(HALVED_DAY), state: "LEAVE" } });
   });
 
   after(async () => {
     await sweep();
     await app.close();
+  });
+
+  it("pays each half of a day of leave as half a day of its own type", async () => {
+    const period = await db.payrollPeriod.create({
+      data: { legalEntityId: entityId, year: 2026, month: 6, startDate: dateOf("2026-06-01"), endDate: dateOf("2026-06-30") },
+    });
+    const run = await db.payrollRun.create({ data: { periodId: period.id, kind: "REGULAR" } });
+    assert.equal((await payroll.runNow(run.id)).state, "DONE");
+    const slip = await db.payslip.findFirstOrThrow({ where: { runId: run.id, employeeId: idOf.get(HALVER) } });
+    assert.deepEqual(
+      [slip.workedDays.toFixed(2), slip.paidLeaveDays.toFixed(2), slip.unpaidDays.toFixed(2)],
+      ["21.00", "0.50", "0.50"],
+      "a day of two halves was paid as two days, or as none",
+    );
+    assert.equal(slip.grossPay.toFixed(0), String((BASE / 26) * 21.5), "the base paid other than twenty-one and a half days");
+    await db.payrollPeriod.delete({ where: { id: period.id } });
   });
 
   it("charges no insurance for a month mostly outside somebody's employment, and a full month in full", async () => {

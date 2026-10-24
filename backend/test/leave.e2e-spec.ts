@@ -38,6 +38,8 @@ const OWN_HOLIDAY = "2036-06-11";
 const OTHER_HOLIDAY = "2036-06-12";
 const NEXT_HOLIDAY = "Lễ thử ngày mở hộp";
 const DAY_MS = 86_400_000;
+// A Tuesday of a year nothing else here touches, so its halves move no balance another case reads.
+const HALVED_DAY = "2041-04-16";
 
 function dateOf(day: string): Date {
   return new Date(`${day}T00:00:00.000Z`);
@@ -309,6 +311,23 @@ describe("leave balance (e2e)", () => {
     assert.equal(res.body.message, "HALF_DAY_NOT_WORKING");
     const asked = await charge(SUNDAY, SUNDAY, { halfDay: "true" });
     assert.equal(asked.body.message, "HALF_DAY_NOT_WORKING", "the preview and the filing disagree");
+  });
+
+  it("takes the morning and the afternoon of one day as two requests, and nothing else on that day", async () => {
+    const morning = await fileLeave(HALVED_DAY, HALVED_DAY, { halfDay: true, dayPart: "MORNING" });
+    assert.equal(morning.status, 201, JSON.stringify(morning.body));
+    assert.equal((await asAdmin(`/requests/${morning.body.id}/decide`, { approve: true })).status, 201);
+    const afternoon = await fileLeave(HALVED_DAY, HALVED_DAY, { halfDay: true, dayPart: "AFTERNOON" });
+    assert.equal(afternoon.status, 201, "an approved morning kept the afternoon of the same day from being filed");
+    const clashes: [object, string][] = [
+      [{ halfDay: true, dayPart: "MORNING" }, "a second morning"],
+      [{ halfDay: true }, "a half naming no part of the day"],
+      [{}, "a whole day"],
+    ];
+    for (const [extra, what] of clashes) {
+      const clash = await fileLeave(HALVED_DAY, HALVED_DAY, extra);
+      assert.deepEqual([clash.status, clash.body.message], [409, "LEAVE_OVERLAP"], `${what} was taken on a day already held`);
+    }
   });
 
   it("refuses a range that holds no working day, and one reaching a third year", async () => {

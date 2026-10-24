@@ -425,6 +425,25 @@ export class TimesheetService implements OnModuleInit {
     `;
   }
 
+  /** Turn a date already counted absent into leave once both its halves are approved leave (KEHOACH 9.5);
+   *  a day the device saw, or a hand correction, is left alone.
+   */
+  markHalvesApproved(tx: Prisma.TransactionClient, employeeId: number, date: Date): Promise<number> {
+    return tx.$executeRaw`
+      UPDATE "AttendanceDay" d
+         SET "state" = 'LEAVE', "updatedAt" = now()
+       WHERE d."employeeId" = ${employeeId}
+         AND d."date" = ${date}::date
+         AND d."state" = 'ABSENT'
+         AND d."punchCount" = 0
+         AND d."adjustedById" IS NULL
+         AND (SELECT count(DISTINCT r."dayPart")
+                FROM "Request" r
+               WHERE r."employeeId" = d."employeeId" AND r."kind" = 'LEAVE' AND r."state" = 'APPROVED'
+                 AND r."halfDay" AND r."fromDate" = d."date") = 2
+    `;
+  }
+
   /**
    * Put an approved correction on a day, creating the row when the build has
    * not reached it. The first correction keeps what the device measured in
@@ -612,12 +631,22 @@ export class TimesheetService implements OnModuleInit {
 
     // A half day cannot be one day state; half a day of leave moves one end of the shift instead (KEHOACH 9.8).
     const whole = approved.filter((row) => !row.halfDay);
-    const onLeave = new Set(whole.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId));
     const offSite = new Set(whole.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId));
-    const halfOff = new Map<number, DayPart>();
+    const halves = new Map<number, Set<DayPart>>();
     for (const row of approved) {
       if (row.halfDay && row.kind === "LEAVE" && row.dayPart !== null) {
-        halfOff.set(row.employeeId, row.dayPart);
+        halves.set(row.employeeId, (halves.get(row.employeeId) ?? new Set<DayPart>()).add(row.dayPart));
+      }
+    }
+    // Both halves of one date on leave make a day of leave (KEHOACH 9.5).
+    const onLeave = new Set([
+      ...whole.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId),
+      ...[...halves].filter(([, parts]) => parts.size === 2).map(([employeeId]) => employeeId),
+    ]);
+    const halfOff = new Map<number, DayPart>();
+    for (const [employeeId, parts] of halves) {
+      if (parts.size === 1) {
+        halfOff.set(employeeId, [...parts][0]);
       }
     }
     const rows = staff.map((person) =>

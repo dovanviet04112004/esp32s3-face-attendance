@@ -135,8 +135,8 @@ interface DayTally {
 
 interface LeaveTally {
   employeeId: number;
-  paidLeave: number;
-  unpaidLeave: number;
+  paidLeaveHundredths: number;
+  unpaidLeaveHundredths: number;
 }
 
 interface PayRow {
@@ -299,6 +299,11 @@ function workdaysOutside(
     }
   }
   return days;
+}
+
+/** Day hundredths as the Decimal(6,2) a payslip's day columns hold; halves stay exact. */
+function daysOf(hundredths: number): string {
+  return (hundredths / 100).toFixed(2);
 }
 
 function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string): Dong {
@@ -1100,9 +1105,12 @@ export class PayrollService {
          GROUP BY "employeeId"
       `,
       this.db.$queryRaw<LeaveTally[]>`
+        -- A day of leave can be two approved halves, each of its own type and worth half a day (KEHOACH 9.5).
         SELECT d."employeeId",
-               count(*) FILTER (WHERE t."paid")::int     AS "paidLeave",
-               count(*) FILTER (WHERE NOT t."paid")::int AS "unpaidLeave"
+               coalesce(sum(CASE WHEN r."halfDay" THEN 50 ELSE 100 END) FILTER (WHERE t."paid"), 0)::int
+                 AS "paidLeaveHundredths",
+               coalesce(sum(CASE WHEN r."halfDay" THEN 50 ELSE 100 END) FILTER (WHERE NOT t."paid"), 0)::int
+                 AS "unpaidLeaveHundredths"
           FROM "AttendanceDay" d
           JOIN "Request" r ON r."employeeId" = d."employeeId" AND r."kind" = 'LEAVE'
                           AND r."state" = 'APPROVED' AND d."date" BETWEEN r."fromDate" AND r."toDate"
@@ -1188,10 +1196,11 @@ export class PayrollService {
       }
       const day = dayOf.get(employeeId);
       const off = leaveOf.get(employeeId);
-      const paidLeave = off?.paidLeave ?? 0;
+      const paidLeave = off?.paidLeaveHundredths ?? 0;
       // A working day outside the employment dates is neither worked nor paid (KEHOACH 9.7).
-      const unpaid = (off?.unpaidLeave ?? 0) + (day?.absentDays ?? 0) + (outsideOf.get(employeeId) ?? 0);
-      const paidDays = (day?.workedDays ?? 0) + (day?.holidayDays ?? 0) + paidLeave;
+      const unpaidWholeDays = (day?.absentDays ?? 0) + (outsideOf.get(employeeId) ?? 0);
+      const unpaid = (off?.unpaidLeaveHundredths ?? 0) + unpaidWholeDays * 100;
+      const paidDays = ((day?.workedDays ?? 0) + (day?.holidayDays ?? 0)) * 100 + paidLeave;
       const priced = policyOf.get(employeeId) as RunPolicy;
       const result = calculate({
         policy: priced.calc,
@@ -1199,8 +1208,8 @@ export class PayrollService {
         insuranceSalary: BigInt(record.insuranceSalary.split(".")[0]),
         allowances: allowanceOf.get(record.recordId) ?? [],
         dependentCount: dependentOf.get(employeeId) ?? 0,
-        paidDayHundredths: BigInt(paidDays) * 100n,
-        unpaidDayHundredths: BigInt(unpaid) * 100n,
+        paidDayHundredths: BigInt(paidDays),
+        unpaidDayHundredths: BigInt(unpaid),
         overtime: {
           weekdayMinutes: day?.weekdayOt ?? 0,
           weekendMinutes: day?.weekendOt ?? 0,
@@ -1220,8 +1229,8 @@ export class PayrollService {
         employeeId,
         policyId: priced.id,
         workedDays: day?.workedDays ?? 0,
-        paidLeaveDays: paidLeave,
-        unpaidDays: unpaid,
+        paidLeaveDays: daysOf(paidLeave),
+        unpaidDays: daysOf(unpaid),
         workedMinutes: day?.workedMinutes ?? 0,
         overtimeMinutes: (day?.weekdayOt ?? 0) + (day?.weekendOt ?? 0) + (day?.holidayOt ?? 0),
         grossPay: result.grossPay.toString(),

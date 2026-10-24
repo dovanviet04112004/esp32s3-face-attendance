@@ -572,8 +572,10 @@ export class LeaveService {
       if (held.kind === "LEAVE" && held.leaveTypeId) {
         await this.settle(tx, held, body.approve);
       }
-      if (held.kind === "LEAVE" && !held.halfDay && body.approve) {
-        await this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "LEAVE");
+      if (held.kind === "LEAVE" && body.approve) {
+        await (held.halfDay
+          ? this.timesheet.markHalvesApproved(tx, held.employeeId, held.fromDate)
+          : this.timesheet.markApproved(tx, held.employeeId, held.fromDate, held.toDate, "LEAVE"));
       }
       // Registered in advance, so a kiosk that never sees their face proves nothing (KEHOACH 9.17 item 3).
       if (OFF_SITE.includes(held.kind) && body.approve) {

@@ -29,7 +29,8 @@ const HALF = "NV9104";
 const FIXED = "NV9105";
 const TRIP = "NV9106";
 const REMOTE = "NV9107";
-const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED, TRIP, REMOTE];
+const BOTH_HALVES = "NV9123";
+const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED, TRIP, REMOTE, BOTH_HALVES];
 // Hired the day after DAY, so DAY is no day of theirs.
 const UNHIRED = "NV9110";
 const HIRED_AFTER = "2026-03-17";
@@ -154,6 +155,20 @@ describe("timesheet leave (e2e)", () => {
       },
     });
     idOf.set(UNHIRED, unhired.id);
+    await db.request.create({
+      data: {
+        employeeId: idOf.get(BOTH_HALVES) as number,
+        kind: "LEAVE",
+        state: "APPROVED",
+        leaveTypeId,
+        fromDate: date,
+        toDate: date,
+        halfDay: true,
+        dayPart: "MORNING",
+        days: 0.5,
+        reason: "e2e",
+      },
+    });
 
     const shift = await db.shift.create({ data: { name: HALF_SHIFT, startTime: "08:00", endTime: "17:00", graceMinutes: 5 } });
     await db.device.create({ data: { id: HALF_KIOSK, status: "APPROVED" } });
@@ -229,6 +244,37 @@ describe("timesheet leave (e2e)", () => {
 
   it("builds no day for somebody hired after it", async () => {
     assert.equal(await stateOf(UNHIRED), "MISSING", "a day before the hire date was counted as an absence");
+  });
+
+  it("makes a day of leave of two approved halves, at the second approval and at every build", async () => {
+    assert.equal(await stateOf(BOTH_HALVES), "ABSENT", "one approved half made a whole day of leave");
+    const employeeId = idOf.get(BOTH_HALVES) as number;
+    const afternoon = await db.request.create({
+      data: {
+        employeeId,
+        kind: "LEAVE",
+        state: "PENDING",
+        leaveTypeId,
+        fromDate: date,
+        toDate: date,
+        halfDay: true,
+        dayPart: "AFTERNOON",
+        days: 0.5,
+        reason: "e2e",
+      },
+    });
+    await db.leaveBalance.update({
+      where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year: 2026 } },
+      data: { pending: { increment: 0.5 } },
+    });
+    const decided = await request(http)
+      .post(`/requests/${afternoon.id}/decide`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ approve: true });
+    assert.equal(decided.status, 201, JSON.stringify(decided.body));
+    assert.equal(await stateOf(BOTH_HALVES), "LEAVE", "approving the second half left the day absent");
+    await timesheet.build(DAY, employeeId);
+    assert.equal(await stateOf(BOTH_HALVES), "LEAVE", "a rebuild undid a day of two approved halves");
   });
 
   it("counts lateness and early leave only on the half of a day not taken off", async () => {
