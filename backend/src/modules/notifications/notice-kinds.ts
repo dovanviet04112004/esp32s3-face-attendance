@@ -72,6 +72,9 @@ export const TEAM_SUMMARY_CRON = "*/15 5-11 * * *";
 
 export const KIOSK_BURST_QUIET_MINUTES = 60;
 
+/** Minutes a boot stands without its boot-time fault, after which that fault counts as mended (KEHOACH 9.21.4). */
+export const KIOSK_BOOT_SETTLE_MINUTES = 10;
+
 /** Kinds whose pushes gather per person in every role, as a desk's always do: one bulk change writes many rows (KEHOACH 9.21.4). */
 export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED", "UPDATE_FINISHED"]);
 

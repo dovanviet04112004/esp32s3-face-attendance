@@ -5,7 +5,7 @@ import { after, before, describe, it } from "node:test";
 import type { INestApplication } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Test } from "@nestjs/testing";
-import type { Notification, Role } from "@prisma/client";
+import type { Notification, Prisma, Release, Role } from "@prisma/client";
 import request from "supertest";
 
 import { AppModule } from "../src/app.module.js";
@@ -13,10 +13,12 @@ import { configure } from "../src/bootstrap.js";
 import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
+import { UPDATE_FINISHED } from "../src/modules/models/release-rules.js";
 import { KIOSK_EVENT, type KioskMessage } from "../src/modules/mqtt/mqtt.events.js";
 import { MailerService } from "../src/modules/notifications/mailer.service.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { KioskSweep } from "../src/modules/notifications/sweeps/kiosk.sweep.js";
+import { ReleaseSweep } from "../src/modules/notifications/sweeps/release.sweep.js";
 import { DocumentsSweep } from "../src/modules/notifications/sweeps/documents.sweep.js";
 import { TasksSweep } from "../src/modules/notifications/sweeps/tasks.sweep.js";
 import type { MailBody } from "../src/modules/payroll/mail-text.js";
@@ -38,8 +40,18 @@ const DEPARTMENT_CODE = `E2E-NK-D-${RUN}`;
 const DOCUMENT_CODE = `E2E-NK-DOC-${RUN}`;
 const RETURN_CODE = `E2E-NK-RET-${RUN}`;
 const CLAIM = "246813";
+const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
+// A kiosk per kind of evidence, so one family's proof never closes another's work.
+const FAULTY = {
+  boot: `e2e-nkb-${RUN}`,
+  face: `e2e-nkc-${RUN}`,
+  punch: `e2e-nks-${RUN}`,
+  quiet: `e2e-nkq-${RUN}`,
+  update: `e2e-nku-${RUN}`,
+} as const;
+const KIOSKS = [DEVICE, ...Object.values(FAULTY)];
 
 function factsOf(row: Notification | null): Record<string, unknown> {
   return (row?.facts ?? {}) as Record<string, unknown>;
@@ -64,10 +76,32 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
   const post = (who: Who, path: string, body: object = {}) =>
     request(app.getHttpServer()).post(path).set("Authorization", `Bearer ${tokenOf.get(who)}`).send(body);
 
+  // What a kiosk says goes through both listeners, so its row is kept and its work opened, as from the broker.
+  const said = (deviceId: string, type: string, receivedAt: Date, ts: Date = receivedAt) =>
+    app.get(EventEmitter2).emitAsync(KIOSK_EVENT.event, {
+      topic: "event",
+      deviceId,
+      receivedAt,
+      payload: { deviceId, ts: ts.getTime(), type, severity: type === "BOOTED" ? "INFO" : "ERROR" },
+    });
+  const faultOf = (deviceId: string, part: string) =>
+    db.noticeItem.findUniqueOrThrow({ where: { key: itemKey("KIOSK", { id: deviceId, part }) } });
+  const faulty = (id: string, data: Omit<Prisma.DeviceCreateInput, "id"> = {}) =>
+    db.device.create({ data: { id, status: "APPROVED", online: true, ...data } });
+  const punched = (deviceId: string, ts: Date, receivedAt: Date) =>
+    db.attendanceRecord.create({
+      data: { localId: String(receivedAt.getTime()), deviceId, employeeId: idOf.get("hire") as number, ts, direction: "IN", receivedAt },
+    });
+  // Minutes from a test's start, so a sweep can be run as if the clock had moved on.
+  const clock = () => {
+    const start = Date.now();
+    return (minutes: number) => new Date(start + minutes * MINUTE_MS);
+  };
+
   // People hang off the department and the department off the entity, so they go in that order.
   async function sweep(): Promise<void> {
-    await db.noticeItem.deleteMany({ where: { queue: "KIOSK", subjectId: DEVICE } });
-    await db.device.deleteMany({ where: { id: DEVICE } });
+    await db.noticeItem.deleteMany({ where: { queue: "KIOSK", subjectId: { in: KIOSKS } } });
+    await db.device.deleteMany({ where: { id: { in: KIOSKS } } });
     await db.noticeItem.deleteMany({ where: { queue: { in: ["TASKS", "DOCUMENTS"] }, employee: { code: { in: PEOPLE.map(codeOf) } } } });
     await db.checklistRun.deleteMany({ where: { employee: { code: { in: PEOPLE.map(codeOf) } } } });
     await db.checklistTemplate.deleteMany({ where: { department: { code: DEPARTMENT_CODE } } });
@@ -244,6 +278,126 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
       0,
       "a revoked kiosk kept open work",
     );
+  });
+
+  it("clears a boot-time fault once a later boot stands the settle time without it, and only then", async () => {
+    const kiosk = app.get(KioskSweep);
+    const id = FAULTY.boot;
+    const at = clock();
+    const state = async () => (await faultOf(id, "model-load-failed")).state;
+    await faulty(id);
+    await said(id, "BOOTED", at(-2));
+    await said(id, "MODEL_LOAD_FAILED", at(-2));
+    await kiosk.closeVanished(id, at(30));
+    assert.equal(await state(), "OPEN", "the boot that reported the fault cleared it");
+    await said(id, "BOOTED", at(1));
+    await said(id, "MODEL_LOAD_FAILED", at(2));
+    await kiosk.closeVanished(id, at(30));
+    assert.equal(await state(), "OPEN", "a boot that reported the fault again cleared it");
+    await said(id, "BOOTED", at(3));
+    await kiosk.closeVanished(id, at(12));
+    assert.equal(await state(), "OPEN", "a boot younger than the settle time cleared the fault");
+    await kiosk.closeVanished(id, at(14));
+    assert.equal(await state(), "CLEARED", "a settled boot without the fault left it open");
+  });
+
+  it("clears a camera fault on a face seen after it, never on a punch taken ahead of it, and reopens when it returns", async () => {
+    const kiosk = app.get(KioskSweep);
+    const id = FAULTY.face;
+    const at = clock();
+    await faulty(id);
+    await said(id, "CAMERA_FAULT", at(-1));
+    const first = await faultOf(id, "camera-fault");
+    assert.equal(first.state, "OPEN");
+    await punched(id, at(-5), at(1));
+    await kiosk.closeVanished(id);
+    assert.equal((await faultOf(id, "camera-fault")).state, "OPEN", "a punch taken ahead of the fault and sent after it cleared it");
+    await said(id, "QUALITY_REJECTED", at(1));
+    await kiosk.closeVanished(id);
+    assert.equal((await db.noticeItem.findUniqueOrThrow({ where: { id: first.id } })).state, "CLEARED", "a face seen after the fault left it open");
+
+    await said(id, "CAMERA_FAULT", at(2));
+    const back = await faultOf(id, "camera-fault");
+    assert.ok(back.state === "OPEN" && back.id !== first.id, "a fault back after it cleared opened no work under its key");
+    const told = await db.notification.findFirst({ where: { itemId: back.id, userId: loginOf.get("admin") } });
+    assert.ok(told && told.readAt === null, "the ADMIN was not told the fault came back");
+    await punched(id, at(3), at(3));
+    await kiosk.closeVanished(id);
+    assert.equal((await faultOf(id, "camera-fault")).state, "CLEARED", "a punch taken after the fault left it open");
+  });
+
+  it("clears a storage fault once a punch gets through after it, whenever the punch was taken", async () => {
+    const kiosk = app.get(KioskSweep);
+    const id = FAULTY.punch;
+    const at = clock();
+    await faulty(id);
+    await said(id, "STORAGE_FAULT", at(-1));
+    await kiosk.closeVanished(id, at(90));
+    assert.equal((await faultOf(id, "storage-fault")).state, "OPEN", "a storage fault cleared with no punch through");
+    await punched(id, at(-30), at(1));
+    await kiosk.closeVanished(id);
+    assert.equal((await faultOf(id, "storage-fault")).state, "CLEARED", "a punch through after the fault left it open");
+  });
+
+  it("clears a ToF fault after an online hour without it, never while offline, freshly booted, or still reporting", async () => {
+    const kiosk = app.get(KioskSweep);
+    const id = FAULTY.quiet;
+    const at = clock();
+    const state = async () => (await faultOf(id, "tof-fault")).state;
+    await faulty(id, { bootedAt: at(-120) });
+    await said(id, "TOF_FAULT", at(-1));
+    await kiosk.closeVanished(id, at(30));
+    assert.equal(await state(), "OPEN", "the fault cleared inside its quiet hour");
+    await db.device.update({ where: { id }, data: { online: false } });
+    await kiosk.closeVanished(id, at(70));
+    assert.equal(await state(), "OPEN", "an offline kiosk cleared its fault");
+    await db.device.update({ where: { id }, data: { online: true, bootedAt: at(30) } });
+    await kiosk.closeVanished(id, at(70));
+    assert.equal(await state(), "OPEN", "a kiosk booted inside the hour cleared its fault");
+    await db.device.update({ where: { id }, data: { bootedAt: at(-120) } });
+    await said(id, "TOF_FAULT", at(40));
+    await kiosk.closeVanished(id, at(70));
+    assert.equal(await state(), "OPEN", "a fault said again inside the hour cleared");
+    await kiosk.closeVanished(id, at(101));
+    assert.equal(await state(), "CLEARED", "an online hour without the fault left it open");
+  });
+
+  it("clears a failed update once the kiosk runs the newest of every kind, or a later update finishes", async () => {
+    const kiosk = app.get(KioskSweep);
+    const releases = app.get(ReleaseSweep);
+    const id = FAULTY.update;
+    const at = clock();
+    const newest = (firmware: string, models: string) =>
+      new Map([
+        ["FIRMWARE", { target: "FIRMWARE", version: firmware } as Release],
+        ["MODELS", { target: "MODELS", version: models } as Release],
+      ]);
+    await faulty(id, { fwVersion: "1.0.0", modelVersion: `recog-e2e-${RUN}` });
+    await said(id, "OTA_FAILED", at(-1));
+    const failed = await faultOf(id, "update");
+    assert.deepEqual([failed.state, failed.level], ["OPEN", "WARNING"]);
+    const held = releases.newest;
+    try {
+      releases.newest = async () => newest("1.1.0", `recog-e2e-${RUN}`);
+      await kiosk.closeVanished(id);
+      assert.equal((await faultOf(id, "update")).state, "OPEN", "a kiosk still behind cleared its failed update");
+      releases.newest = async () => newest("1.0.0", `recog-e2e-${RUN}`);
+      await kiosk.closeVanished(id);
+      assert.equal((await db.noticeItem.findUniqueOrThrow({ where: { id: failed.id } })).state, "CLEARED", "a kiosk on the newest kept its failed update");
+    } finally {
+      releases.newest = held;
+    }
+
+    await said(id, "OTA_ROLLED_BACK", at(1));
+    const again = await faultOf(id, "update");
+    assert.ok(again.state === "OPEN" && again.id !== failed.id, "a second failed update opened no work under its key");
+    await app.get(EventEmitter2).emitAsync(UPDATE_FINISHED, {
+      deviceId: id,
+      actorId: loginOf.get("admin"),
+      firmware: "1.1.0",
+      models: `recog-e2e-${RUN}`,
+    });
+    assert.equal((await faultOf(id, "update")).state, "CLEARED", "a finished update left the failed one open");
   });
 
   it("gives each onboarding task to its owner, reminds on the due day and the day after, and closes it as completed", async () => {

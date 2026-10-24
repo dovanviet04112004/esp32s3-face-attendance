@@ -109,7 +109,8 @@ export class ReleaseSweep {
     });
   }
 
-  private async newest(): Promise<Map<string, Release>> {
+  /** The newest release of each published target whose file is still on the server. */
+  async newest(): Promise<Map<string, Release>> {
     const found = await Promise.all(
       PUBLISHED_TARGETS.map((target) =>
         this.db.release.findFirst({ where: { target, path: { not: null } }, orderBy: { createdAt: "desc" } }),
