@@ -25,6 +25,7 @@ const EFFECTIVE_FROM = "2029-01-01";
 const RATE_FROM = "2029-07-01";
 const AMOUNT_FROM = "2030-01-01";
 const TAKEN_FROM = "2030-07-01";
+const EMPTY_FROM = "2031-07-01";
 const HIRED_FROM = "2028-01-01";
 const REASON = "ANNUAL_REVIEW" as const;
 // Its own people rather than the whole company: the company-wide figure is a
@@ -235,6 +236,17 @@ describe("bulk raise (e2e)", () => {
     assert.deepEqual(passedOver(res.body.skipped as RaiseSkip[]), [[taken, "PAY_DATE_TAKEN"]]);
     const kept = await db.compensationRecord.findFirstOrThrow({ where: { employeeId: taken, effectiveFrom: new Date(TAKEN_FROM) } });
     assert.equal(kept.baseSalary.toFixed(0), BASE_SALARY, "the raise wrote over a record it passed over");
+  });
+
+  it("refuses an empty selection rather than reading it as everyone in reach", async () => {
+    for (const path of ["/compensation/bulk/preview", "/compensation/bulk"]) {
+      const res = await bulk(path, { effectiveFrom: EMPTY_FROM, employeeIds: [] });
+      assert.equal(res.status, 400, `${path}: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.message, "VALIDATION_FAILED");
+      assert.deepEqual(res.body.fields, ["employeeIds"]);
+    }
+    const raised = await db.compensationRecord.count({ where: { effectiveFrom: new Date(EMPTY_FROM) } });
+    assert.equal(raised, 0, "an empty selection raised somebody");
   });
 });
 

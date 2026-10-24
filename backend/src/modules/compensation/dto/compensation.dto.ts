@@ -3,6 +3,7 @@ import { DependentRelation, DependentState, PayReason, Role } from "@prisma/clie
 import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -162,9 +163,15 @@ export class BulkRaiseDto {
   @IsUUID()
   departmentId?: string;
 
-  @ApiPropertyOptional({ type: [Number], example: [42, 57], description: "Or exactly these people" })
+  @ApiPropertyOptional({
+    type: [Number],
+    minItems: 1,
+    example: [42, 57],
+    description: "Or exactly these people, at least one; left out, everyone in the writer's scope",
+  })
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1)
   @Type(() => Number)
   @IsInt({ each: true })
   employeeIds?: number[];

@@ -351,7 +351,7 @@ export class CompensationService {
     this.mayWrite(viewer);
     refuseOwn(viewer);
     const on = new Date(body.effectiveFrom);
-    const chosen = body.employeeIds?.length ? body.employeeIds : null;
+    const chosen = body.employeeIds ?? null;
     const branch = body.departmentId ? await departmentSubtree(this.db, body.departmentId) : null;
     const visible = await this.scope.deskOrSelfEmployeeIds(viewer);
     const self = viewer.employeeId ?? 0;
