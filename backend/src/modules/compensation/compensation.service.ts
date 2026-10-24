@@ -101,14 +101,27 @@ function dateTaken(person: { employeeId: number; code: string; fullName: string 
   return { employeeId: person.employeeId, code: person.code, fullName: person.fullName, reason: "PAY_DATE_TAKEN" };
 }
 
-// A first record has no earlier one, so its from is null (KEHOACH 9.24 rule 4).
-function firstLine(actorId: string, employeeId: number, day: string, base: string): AuditEntry {
+function allowanceLines(rows: readonly CompensationAllowance[]): { code: string; amount: string }[] {
+  return rows.map((one) => ({ code: one.code, amount: String(one.amount) }));
+}
+
+// A first record has no earlier one, so every from is null (KEHOACH 9.24 rule 4).
+function firstLine(actorId: string, employeeId: number, day: string, base: string, insurance: string): AuditEntry {
   return {
     actorId,
     action: AUDIT_ACTIONS.PAY_CREATE,
     subject: AUDIT_SUBJECTS.EMPLOYEE,
     subjectId: String(employeeId),
-    meta: { effectiveFrom: day, from: null, to: base, reason: "HIRE", allowances: [] },
+    meta: {
+      effectiveFrom: day,
+      from: null,
+      to: base,
+      insuranceFrom: null,
+      insuranceTo: insurance,
+      reason: "HIRE",
+      allowancesFrom: null,
+      allowances: [],
+    },
   };
 }
 
@@ -277,8 +290,11 @@ export class CompensationService {
         effectiveFrom: body.effectiveFrom,
         from: held ? String(held.baseSalary) : null,
         to: String(body.baseSalary),
+        insuranceFrom: held ? String(held.insuranceSalary) : null,
+        insuranceTo: String(body.insuranceSalary),
         reason: body.reason,
-        allowances: made.allowances.map((one) => ({ code: one.code, amount: String(one.amount) })),
+        allowancesFrom: held ? allowanceLines(held.allowances) : null,
+        allowances: allowanceLines(made.allowances),
       },
     });
     return made;
@@ -318,7 +334,10 @@ export class CompensationService {
       },
     });
     const day = asDay(made.effectiveFrom);
-    return { id: made.id, line: firstLine(viewer.userId, employeeId, day, made.baseSalary.toFixed(0)) };
+    return {
+      id: made.id,
+      line: firstLine(viewer.userId, employeeId, day, made.baseSalary.toFixed(0), made.insuranceSalary.toFixed(0)),
+    };
   }
 
   /** Write the first pay record of every listed person who has none, in one statement (KEHOACH 9.6).
@@ -326,7 +345,7 @@ export class CompensationService {
    *  @ret the trail lines to record once the transaction commits
    */
   async seedFirst(tx: Prisma.TransactionClient, actorId: string, rows: readonly FirstPay[], fallbackDay: string): Promise<AuditEntry[]> {
-    const made = await tx.$queryRaw<{ employeeId: number; day: string; base: string }[]>`
+    const made = await tx.$queryRaw<{ employeeId: number; day: string; base: string; insurance: string }[]>`
       INSERT INTO "CompensationRecord" (
         "id", "employeeId", "effectiveFrom", "baseSalary", "insuranceSalary",
         "reason", "createdById", "createdAt")
@@ -341,9 +360,10 @@ export class CompensationService {
         JOIN "Employee" e ON e."code" = v."code"
        WHERE NOT EXISTS (SELECT 1 FROM "CompensationRecord" c WHERE c."employeeId" = e."id")
       ON CONFLICT ("employeeId", "effectiveFrom") DO NOTHING
-      RETURNING "employeeId", "effectiveFrom"::text AS "day", "baseSalary"::text AS "base"
+      RETURNING "employeeId", "effectiveFrom"::text AS "day", "baseSalary"::text AS "base",
+                "insuranceSalary"::text AS "insurance"
     `;
-    return made.map((one) => firstLine(actorId, one.employeeId, one.day, one.base));
+    return made.map((one) => firstLine(actorId, one.employeeId, one.day, one.base, one.insurance));
   }
 
   /** What a bulk raise would write, while it is still only a proposal. The

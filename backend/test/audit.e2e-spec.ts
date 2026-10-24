@@ -22,6 +22,7 @@ const CARRIER = "e2eaudit-carrier@kiosk.local";
 const CARRIER_PASSWORD = "kiosk-e2e-password";
 const FIRST_PAY = 11_000_000;
 const NEXT_PAY = 13_500_000;
+const CUT_INSURANCE = 5_000_000;
 const DOOR = "e2e-audit-door";
 const DOOR_CODE = "314159";
 
@@ -157,6 +158,31 @@ describe("audit trail (e2e)", () => {
       "a raise that does not say what it left behind is half an answer",
     );
     assert.equal(rows[1].meta?.from, null, "the first record has nothing before it");
+  });
+
+  it("says what the insurance salary went from and to while the base stays put", async () => {
+    const cut = await request(http)
+      .post("/compensation")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        employeeId,
+        effectiveFrom: "2027-01-01",
+        baseSalary: NEXT_PAY,
+        insuranceSalary: CUT_INSURANCE,
+        reason: "ADJUSTMENT",
+      });
+    assert.equal(cut.status, 201, JSON.stringify(cut.body));
+
+    const rows = await trail(`subjectType=employee&subjectId=${employeeId}&action=pay.create`);
+    const line = rows.find((row) => row.meta?.effectiveFrom === "2027-01-01");
+    assert.ok(line, "the cut left no pay line");
+    assert.deepEqual([line.meta?.from, line.meta?.to], [String(NEXT_PAY), String(NEXT_PAY)]);
+    assert.deepEqual(
+      [line.meta?.insuranceFrom, line.meta?.insuranceTo],
+      [String(NEXT_PAY), String(CUT_INSURANCE)],
+      "an insurance salary cut reads on the trail as no change at all",
+    );
+    assert.deepEqual([line.meta?.allowancesFrom, line.meta?.allowances], [[], []]);
   });
 
   it("says what a role change went from and to", async () => {
