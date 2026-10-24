@@ -79,6 +79,26 @@ export function calendarOn(date: Date, holidays: DatedHoliday[], legalEntityId: 
   return [SATURDAY, SUNDAY].includes(date.getUTCDay()) ? "WEEKEND" : "WORKDAY";
 }
 
+/** Working days from `from` to `to`, included, outside somebody's hire and leave dates: days neither
+ *  worked nor paid, which the 14-day insurance rule counts (KEHOACH 9.7).
+ */
+export function workdaysOutside(
+  from: Date,
+  to: Date,
+  person: { legalEntityId: string; hireDate: Date | null; leaveDate: Date | null },
+  holidays: readonly { date: Date; legalEntityId: string | null; paid: boolean }[],
+): number {
+  let days = 0;
+  for (let at = new Date(from); at <= to; at.setUTCDate(at.getUTCDate() + 1)) {
+    const outside = (person.hireDate !== null && at < person.hireDate) || (person.leaveDate !== null && at > person.leaveDate);
+    const declared = holidays.filter((one) => one.date.getTime() === at.getTime());
+    if (outside && calendarOn(at, declared, person.legalEntityId) === "WORKDAY") {
+      days += 1;
+    }
+  }
+  return days;
+}
+
 interface DayRow {
   employeeId: number;
   date: Date;

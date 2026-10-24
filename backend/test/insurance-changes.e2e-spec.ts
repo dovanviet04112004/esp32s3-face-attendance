@@ -21,11 +21,19 @@ const GONE = "NV9702";
 const RAISED = "NV9703";
 const CUT = "NV9704";
 const ABSENT = "NV9705";
-const MADE_CODES = [JOINED, GONE, RAISED, CUT, ABSENT];
+// Eight absences in April and seven in May: each month stays short of the fourteen.
+const SPREAD = "NV9706";
+const SPREAD_DAYS = ["2026-04-01", "2026-04-02", "2026-04-03", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09",
+  "2026-04-10", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12"];
+// Hired on 21 May: the fourteen working days of May ahead of it stop May's contribution, as on the payslip.
+const LATE_JOINER = "NV9707";
+const TWO_MONTHS_TO = "2026-05-31";
+const MADE_CODES = [JOINED, GONE, RAISED, CUT, ABSENT, SPREAD, LATE_JOINER];
 
 interface Change {
   code: string;
   reason: string;
+  effectiveFrom: string;
   fromSalary: string | null;
   toSalary: string | null;
 }
@@ -44,6 +52,7 @@ describe("insurance changes (e2e)", () => {
   let token = "";
   let entityId = "";
   let held: Changes;
+  let twoMonths: Changes;
 
   async function sweep(): Promise<void> {
     const made = await db.employee.findMany({
@@ -134,11 +143,21 @@ describe("insurance changes (e2e)", () => {
       })),
     });
 
-    const res = await request(http)
-      .get(`/reports/insurance-changes?legalEntityId=${entityId}&from=${FROM}&to=${TO}`)
-      .set("Authorization", `Bearer ${token}`);
-    assert.equal(res.status, 200);
-    held = res.body as Changes;
+    const spread = await make(SPREAD, { hireDate: new Date("2025-01-01T00:00:00.000Z") });
+    await db.attendanceDay.createMany({
+      data: SPREAD_DAYS.map((day) => ({ employeeId: spread, date: new Date(`${day}T00:00:00.000Z`), state: "ABSENT" as const })),
+    });
+    await make(LATE_JOINER, { hireDate: new Date("2026-05-21T00:00:00.000Z") });
+
+    const range = async (to: string) => {
+      const res = await request(http)
+        .get(`/reports/insurance-changes?legalEntityId=${entityId}&from=${FROM}&to=${to}`)
+        .set("Authorization", `Bearer ${token}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      return res.body as Changes;
+    };
+    held = await range(TO);
+    twoMonths = await range(TWO_MONTHS_TO);
   });
 
   after(async () => {
@@ -169,5 +188,23 @@ describe("insurance changes (e2e)", () => {
   it("stops the contribution once the unpaid days reach the policy's count", () => {
     assert.equal(held.unpaidDayThreshold, 14);
     assert.equal(only(held.decreases, ABSENT)?.reason, "UNPAID_14");
+  });
+
+  it("counts the unpaid days month by month, and dates each stop at its month's last day", () => {
+    assert.equal(only(twoMonths.decreases, SPREAD), undefined, "eight days in April and seven in May were filed as one stop");
+    assert.deepEqual(
+      [only(twoMonths.decreases, ABSENT)?.reason, only(twoMonths.decreases, ABSENT)?.effectiveFrom],
+      ["UNPAID_14", "2026-04-30"],
+    );
+  });
+
+  it("counts the working days ahead of a hire date toward the fourteen, as the payslip does", () => {
+    assert.equal(only(twoMonths.increases, LATE_JOINER)?.reason, "HIRED");
+    assert.deepEqual(
+      [only(twoMonths.decreases, LATE_JOINER)?.reason, only(twoMonths.decreases, LATE_JOINER)?.effectiveFrom],
+      ["UNPAID_14", "2026-05-31"],
+      "a month the payslip charges no insurance for was filed as contributing",
+    );
+    assert.equal(only(twoMonths.decreases, JOINED), undefined, "four working days ahead of a hire stopped a month");
   });
 });

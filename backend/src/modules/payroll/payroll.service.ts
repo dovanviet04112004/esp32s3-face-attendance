@@ -37,7 +37,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import { asDay, dayWindow, localDay } from "../timesheet/local-day.js";
-import { calendarOn } from "../timesheet/timesheet.service.js";
+import { workdaysOutside } from "../timesheet/timesheet.service.js";
 import {
   calculate,
   taxOn,
@@ -282,23 +282,6 @@ function paidElsewhere(periodId: string): Prisma.Sql {
 function slipsReached(viewer: Viewer): Prisma.PayslipWhereInput {
   const ids = viewer.entityIds;
   return ids === null ? {} : { OR: [ScopeService.ownedWhere(viewer, null), { period: { legalEntityId: { in: ids } } }] };
-}
-
-/** Working days of the period outside somebody's hire and leave dates, by the timesheet's one calendar (KEHOACH 9.5, 9.7). */
-function workdaysOutside(
-  period: PayrollPeriod,
-  person: { legalEntityId: string; hireDate: Date | null; leaveDate: Date | null },
-  holidays: readonly { date: Date; legalEntityId: string | null; paid: boolean }[],
-): number {
-  let days = 0;
-  for (let at = new Date(period.startDate); at <= period.endDate; at.setUTCDate(at.getUTCDate() + 1)) {
-    const outside = (person.hireDate !== null && at < person.hireDate) || (person.leaveDate !== null && at > person.leaveDate);
-    const declared = holidays.filter((one) => one.date.getTime() === at.getTime());
-    if (outside && calendarOn(at, declared, person.legalEntityId) === "WORKDAY") {
-      days += 1;
-    }
-  }
-  return days;
 }
 
 /** Day hundredths as the Decimal(6,2) a payslip's day columns hold; halves stay exact. */
@@ -1148,7 +1131,9 @@ export class PayrollService {
     const leaving = new Set(
       people.filter((one) => one.leaveDate !== null && one.leaveDate <= period.endDate).map((one) => one.id),
     );
-    const outsideOf = new Map(people.map((one) => [one.id, workdaysOutside(period, one, holidays)]));
+    const outsideOf = new Map(
+      people.map((one) => [one.id, workdaysOutside(period.startDate, period.endDate, one, holidays)]),
+    );
     const allowanceOf = new Map<string, CalcAllowance[]>();
     for (const row of allowances) {
       const list = allowanceOf.get(row.recordId) ?? [];

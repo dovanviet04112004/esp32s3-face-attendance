@@ -27,7 +27,7 @@ import { TallyRangeDto, type D02QueryDto } from "./dto/report.dto.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { asDay, dayAsDate, dayWindow, localDay, localMinutesSql, minutesIntoDay } from "../timesheet/local-day.js";
-import { countedPunchSql } from "../timesheet/timesheet.service.js";
+import { countedPunchSql, workdaysOutside } from "../timesheet/timesheet.service.js";
 import { JOB, QUEUE, type ReportJob } from "../../queue/queues.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
 
@@ -111,7 +111,8 @@ interface AwayRow {
   code: string;
   fullName: string;
   socialInsuranceNo: string | null;
-  days: number;
+  month: Date;
+  hundredths: number;
 }
 
 const PERSON_FIELDS = {
@@ -128,6 +129,14 @@ interface Person {
   code: string;
   fullName: string;
   socialInsuranceNo: string | null;
+}
+
+function firstOfMonth(at: Date): Date {
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1));
+}
+
+function lastOfMonth(at: Date): Date {
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 0));
 }
 
 function asChange(one: Person, reason: ChangeReason, on: Date): InsuranceChange {
@@ -935,7 +944,7 @@ export class ReportsService {
     }
     const policy = await this.policy.effectiveAt(to, legalEntityId);
     const threshold = policy.noContributionUnpaidDays;
-    const [joined, gone, moved, away] = await Promise.all([
+    const [joined, gone, moved, away, holidays] = await Promise.all([
       this.db.employee.findMany({
         where: { legalEntityId, hireDate: { gte: from, lte: to } },
         select: PERSON_FIELDS,
@@ -966,35 +975,62 @@ export class ReportsService {
            AND prev."insuranceSalary" IS DISTINCT FROM c."insuranceSalary"
          ORDER BY c."effectiveFrom", e."code"
       `,
+      // The payslip's own tally, month by month: absences within the employment dates and each unpaid half as 0.5.
       this.db.$queryRaw<AwayRow[]>`
         SELECT e."id" AS "employeeId", e."code", e."fullName", e."socialInsuranceNo",
-               count(*)::int AS "days"
+               date_trunc('month', d."date")::date AS "month",
+               sum(CASE WHEN d."state" = 'ABSENT' THEN 100 ELSE lt."unpaid" END)::int AS "hundredths"
           FROM "AttendanceDay" d
           JOIN "Employee" e ON e."id" = d."employeeId"
           LEFT JOIN LATERAL (
-            SELECT t."paid"
+            SELECT coalesce(sum(CASE WHEN r."halfDay" THEN 50 ELSE 100 END) FILTER (WHERE NOT t."paid"), 0)::int
+                     AS "unpaid"
               FROM "Request" r
               JOIN "LeaveType" t ON t."id" = r."leaveTypeId"
              WHERE r."employeeId" = d."employeeId"
                AND r."kind" = 'LEAVE' AND r."state" = 'APPROVED'
                AND d."date" BETWEEN r."fromDate" AND r."toDate"
-             LIMIT 1
           ) lt ON true
          WHERE e."legalEntityId" = ${legalEntityId}
            AND d."date" BETWEEN ${from}::date AND ${to}::date
-           AND (d."state" = 'ABSENT' OR (d."state" = 'LEAVE' AND lt."paid" IS NOT TRUE))
-         GROUP BY e."id", e."code", e."fullName", e."socialInsuranceNo"
-        HAVING count(*) >= ${threshold}
-         ORDER BY e."code"
+           AND ((d."state" = 'ABSENT'
+                 AND d."date" >= coalesce(e."hireDate", d."date") AND d."date" <= coalesce(e."leaveDate", d."date"))
+                OR (d."state" = 'LEAVE' AND lt."unpaid" > 0))
+         GROUP BY e."id", e."code", e."fullName", e."socialInsuranceNo", date_trunc('month', d."date")
       `,
+      this.db.holiday.findMany({
+        where: { date: { gte: from, lte: to } },
+        select: { date: true, legalEntityId: true, paid: true },
+      }),
     ]);
+
+    // Fourteen unpaid days stop a month's contribution, counted month by month as the payslip counts them (KEHOACH 9.7).
+    const unpaid = new Map<string, { person: Person; month: Date; hundredths: number }>();
+    const count = (person: Person, month: Date, hundredths: number): void => {
+      const key = `${person.id}:${asDay(month)}`;
+      unpaid.set(key, { person, month, hundredths: (unpaid.get(key)?.hundredths ?? 0) + hundredths });
+    };
+    for (const row of away) {
+      count({ id: row.employeeId, code: row.code, fullName: row.fullName, socialInsuranceNo: row.socialInsuranceNo }, row.month, row.hundredths);
+    }
+    for (const one of new Map([...joined, ...gone].map((person) => [person.id, person])).values()) {
+      const edges = [one.hireDate, one.leaveDate].filter((edge): edge is Date => edge !== null && edge >= from && edge <= to);
+      for (const first of new Set(edges.map((edge) => asDay(firstOfMonth(edge))))) {
+        const start = dayAsDate(first);
+        const end = lastOfMonth(start);
+        const days = workdaysOutside(start < from ? from : start, end > to ? to : end, { ...one, legalEntityId }, holidays);
+        count(one, start, days * 100);
+      }
+    }
+    const idle = [...unpaid.values()]
+      .filter((one) => one.hundredths >= threshold * 100)
+      .sort((a, b) => a.month.getTime() - b.month.getTime() || a.person.code.localeCompare(b.person.code));
 
     const newly = new Set(joined.map((one) => one.id));
     const increases = joined.map((one) => asChange(one, "HIRED", one.hireDate as Date));
     const decreases = [
       ...gone.map((one) => asChange(one, "LEFT", one.leaveDate as Date)),
-      // Fourteen unpaid days stop the month's contribution, the rule the payslip applies (KEHOACH 9.7).
-      ...away.map((one) => asChange({ ...one, id: one.employeeId }, "UNPAID_14", to)),
+      ...idle.map((one) => asChange(one.person, "UNPAID_14", lastOfMonth(one.month))),
     ];
     const adjustments = moved
       .filter((row) => !newly.has(row.employeeId))

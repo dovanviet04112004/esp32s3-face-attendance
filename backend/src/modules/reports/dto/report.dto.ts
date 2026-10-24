@@ -180,7 +180,7 @@ class InsuranceChangeView {
     type: String,
     format: "date",
     example: "2026-09-01",
-    description: "Hire, leave or pay date, YYYY-MM-DD; the range's last day for UNPAID_14",
+    description: "Hire, leave or pay date, YYYY-MM-DD; the last day of the month counted for UNPAID_14",
   })
   effectiveFrom!: string;
   @ApiProperty({
