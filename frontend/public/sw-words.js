@@ -31,6 +31,8 @@ self.SW_WORDS = {
     "TIMESHEET_MONTH_CLOSED": "Your month's timesheet is final",
     "UPDATE_FINISHED": "A kiosk finished updating",
     "gathered": "{count} new items are waiting on you",
+    "gatheredMixed": "{count} new notifications, some of them waiting on you",
+    "gatheredNews": "{count} new notices for you",
     "other": "There is news for you"
   },
   "vi": {
@@ -58,6 +60,8 @@ self.SW_WORDS = {
     "TIMESHEET_MONTH_CLOSED": "Bảng công tháng của bạn đã chốt",
     "UPDATE_FINISHED": "Một kiosk đã cập nhật xong",
     "gathered": "{count} việc mới đang chờ bạn",
+    "gatheredMixed": "{count} thông báo mới, có việc đang chờ bạn",
+    "gatheredNews": "{count} tin mới cho bạn",
     "other": "Có tin mới cho bạn"
   }
 };
