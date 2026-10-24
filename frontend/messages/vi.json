@@ -2046,6 +2046,8 @@
     "TIMESHEET_MONTH_CLOSED": "Bảng công tháng của bạn đã chốt",
     "PUNCH_RECORDED": "Đã nhận lượt chấm công của bạn",
     "gathered": "{count} việc mới đang chờ bạn",
+    "gatheredNews": "{count} tin mới cho bạn",
+    "gatheredMixed": "{count} thông báo mới, có việc đang chờ bạn",
     "other": "Có tin mới cho bạn"
   },
   "org": {

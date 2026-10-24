@@ -105,10 +105,13 @@ self.addEventListener("message", (event) => {
   event.waitUntil(caches.keys().then((names) => Promise.all(names.filter(drawer).map((n) => caches.delete(n)))));
 });
 
+// What the rows of a gathered push are, as its body names them; a body that names none reads as work.
+const GATHERED_WORDS = { work: "gathered", news: "gatheredNews", mixed: "gatheredMixed" };
+
 function wording(body) {
   const words = self.SW_WORDS[body.locale] || self.SW_WORDS.vi;
   if (body.count > 1) {
-    return words.gathered.replace("{count}", String(body.count));
+    return (words[GATHERED_WORDS[body.gathered]] || words.gathered).replace("{count}", String(body.count));
   }
   return words[body.kind] || words.other;
 }
@@ -129,7 +132,7 @@ self.addEventListener("push", (event) => {
       badge: "/badge.png",
       tag,
       renotify: body.renotify === true,
-      data: { id: body.id || null, kind: body.kind || null, locale },
+      data: { id: body.id || null, kind: body.kind || null, count: body.count || 1, locale },
     }),
   );
 });
@@ -149,10 +152,14 @@ async function reopen(target) {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const held = event.notification.data || {};
-  const path = held.id
-    ? `/notifications/open/${held.id}`
-    : held.kind
-      ? `/notifications/open/none?kind=${encodeURIComponent(held.kind)}`
-      : "";
+  // A gathered push stands for several rows, so it opens them all rather than the newest one.
+  const path =
+    held.count > 1
+      ? "/notifications?tab=unread"
+      : held.id
+        ? `/notifications/open/${held.id}`
+        : held.kind
+          ? `/notifications/open/none?kind=${encodeURIComponent(held.kind)}`
+          : "";
   event.waitUntil(reopen(new URL(`/${held.locale || "vi"}${path}`, self.location.origin).href));
 });

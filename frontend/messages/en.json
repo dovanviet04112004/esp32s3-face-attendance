@@ -2046,6 +2046,8 @@
     "TIMESHEET_MONTH_CLOSED": "Your month's timesheet is final",
     "PUNCH_RECORDED": "Your punch was received",
     "gathered": "{count} new items are waiting on you",
+    "gatheredNews": "{count} new notices for you",
+    "gatheredMixed": "{count} new notifications, some of them waiting on you",
     "other": "There is news for you"
   },
   "org": {
