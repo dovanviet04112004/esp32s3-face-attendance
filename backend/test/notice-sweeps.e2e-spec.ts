@@ -181,6 +181,29 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     assert.equal((await itemOf("ADVANCES_TO_DECIDE", advance)).lastMark, null, "decided work was reminded");
   });
 
+  it("brings the desk into a request waiting on a manager at its seventh day's reminder, told once, and not a day earlier", async () => {
+    const filed = await post("late", "/requests", { kind: "REMOTE_WORK", fromDate: "2036-09-01", toDate: "2036-09-01", reason: "e2e" });
+    assert.equal(filed.status, 201, JSON.stringify(filed.body));
+    const id = filed.body.id as string;
+    const item = await itemOf("REQUESTS", id);
+    assert.ok(await seatOf(item.key, "boss"), "the manager was not told");
+    assert.equal(await seatOf(item.key, "desk"), null, "the desk was told of a request its manager answers");
+
+    await age("Request", "createdAt", id, 6);
+    await stalled.sweep();
+    await app.get(NoticeItemsService).regroup(item, "quiet");
+    assert.equal(await seatOf(item.key, "desk"), null, "the desk joined on the sixth day");
+
+    await age("Request", "createdAt", id, 7);
+    await stalled.sweep();
+    await stalled.sweep();
+    const desk = await seatOf(item.key, "desk");
+    assert.ok(desk && desk.readAt === null && desk.leftAt === null, "the desk was not told at the seventh day's reminder");
+    assert.equal(desk.remindCount, 0, "the desk heard the seventh day more than once");
+    assert.equal((await seatOf(item.key, "boss"))?.remindCount, 2, "the manager missed a mark");
+    await post("late", `/requests/${id}/cancel`);
+  });
+
   it("warns the pay desk of a dispute a day from its due date, then again once overdue", async () => {
     const policy = await db.payrollPolicy.findFirstOrThrow({ orderBy: { effectiveFrom: "asc" } });
     const month = 1 + (Number.parseInt(RUN, 16) % 12);

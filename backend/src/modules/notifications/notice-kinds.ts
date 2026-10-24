@@ -27,9 +27,12 @@ export function kebab(name: string): string {
   return name.toLowerCase().replaceAll("_", "-");
 }
 
+/** The reminder, in whole days waited, at which a request still waiting on a manager reaches the HR desk too (KEHOACH 9.21.4). */
+export const ESCALATION_MARK = 7;
+
 /** The whole days of waiting at which a queue's work speaks again (KEHOACH 9.17 item 12, 9.21.4). */
 export const QUEUE_MARKS: Partial<Record<NoticeQueue, readonly number[]>> = {
-  REQUESTS: [3, 7, 14],
+  REQUESTS: [3, ESCALATION_MARK, 14],
   ADVANCES_TO_DECIDE: [3, 7],
   ADVANCES_TO_PAY: [3, 7],
   CERTIFICATES: [3, 7],

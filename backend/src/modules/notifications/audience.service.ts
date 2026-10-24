@@ -8,7 +8,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_DESKS, THE_DESK } from "../leave/queue-filter.js";
 import { asDay, dayAsDate, dayWindow, localDay } from "../timesheet/local-day.js";
-import { INBOX_ROLES, TEAM_READERS } from "./notice-kinds.js";
+import { ESCALATION_MARK, INBOX_ROLES, TEAM_READERS } from "./notice-kinds.js";
 
 /** The where clause each queue's table takes. */
 export interface QueueWhere {
@@ -54,7 +54,7 @@ const DESK_OF: Record<Exclude<InboxQueue, "REQUESTS">, keyof typeof QUEUE_DESKS>
   DEPENDENTS: "dependents",
 };
 
-const ESCALATE_ON_DAY = 7;
+const kDayMs = 86_400_000;
 
 const HR_DESK: Role[] = ["ADMIN", "HR"];
 
@@ -261,12 +261,14 @@ export class AudienceService {
     return boss?.id ?? null;
   }
 
-  /** The whole working day of the company a request reaches the desk on (KEHOACH 9.21.4). */
+  /** A request filed earlier than this instant has waited ESCALATION_MARK whole company days, counted as the stalled
+   *  sweep counts them, so the desk joins at that very reminder (KEHOACH 9.21.4).
+   */
   escalatedBefore(): Date {
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const today = dayAsDate(localDay(new Date(), zone));
-    const first = asDay(new Date(today.getTime() - (ESCALATE_ON_DAY - 2) * 86_400_000));
-    return dayWindow(first, zone).from;
+    const notYet = asDay(new Date(today.getTime() - (ESCALATION_MARK - 1) * kDayMs));
+    return dayWindow(notYet, zone).from;
   }
 
   private async requestsWaitingOn(viewer: Viewer, notOwn: object): Promise<Prisma.RequestWhereInput | null> {
