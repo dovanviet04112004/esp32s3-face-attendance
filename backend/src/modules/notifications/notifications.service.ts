@@ -181,10 +181,10 @@ const ITEM_SUMMARY = {
   claimedBy: NAMED,
 } satisfies Prisma.NoticeItemSelect;
 
-// Left rows still list, to read as moved; they count nowhere (KEHOACH 9.21.4).
+// Left rows still list, to read as moved; they count nowhere. A put-away row leaves every tab but the archive (KEHOACH 9.21.4).
 const STATUS_WHERE: Record<NoticeStatus, Prisma.NotificationWhereInput> = {
   unread: { readAt: null, archivedAt: null, leftAt: null },
-  action: { leftAt: null, item: { is: { state: "OPEN" } } },
+  action: { leftAt: null, archivedAt: null, item: { is: { state: "OPEN" } } },
   all: { archivedAt: null },
   archived: { archivedAt: { not: null } },
 };
@@ -295,7 +295,7 @@ export class NotificationsService {
     const [unread, action, critical] = await Promise.all([
       this.db.notification.count({ where: { userId, ...STATUS_WHERE.unread } }),
       this.db.notification.count({ where: { userId, ...STATUS_WHERE.action } }),
-      this.db.notification.count({ where: { userId, leftAt: null, item: { is: { state: "OPEN", level: "CRITICAL" } } } }),
+      this.db.notification.count({ where: { userId, ...STATUS_WHERE.action, item: { is: { state: "OPEN", level: "CRITICAL" } } } }),
     ]);
     return { unread, action, critical };
   }

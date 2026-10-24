@@ -179,6 +179,17 @@ describe("the bell's list, counts and marks (e2e)", () => {
     assert.equal(counts.critical, 0);
     const action = (await get("reader", "/notifications?status=action")).body as PageBody;
     assert.deepEqual(action.rows.map((row) => row.item?.key), [itemKey]);
+
+    await db.noticeItem.update({ where: { id: item.id }, data: { level: "CRITICAL" } });
+    assert.equal(((await get("reader", "/notifications/counts")).body as { critical: number }).critical, 1);
+    const held = action.rows[0].id;
+    const away = await post("reader", "/notifications/archive", { ids: [held] });
+    assert.equal(away.status, 201, JSON.stringify(away.body));
+    assert.deepEqual([away.body.action, away.body.critical], [0, 0], "a put-away row of open work still counts as work to do");
+    assert.equal(((await get("reader", "/notifications?status=action")).body as PageBody).total, 0, "a put-away row stayed in the action tab");
+    const back = await post("reader", "/notifications/unarchive", { ids: [held] });
+    assert.deepEqual([back.body.action, back.body.critical], [1, 1], "a row brought back did not count as work again");
+    await db.noticeItem.update({ where: { id: item.id }, data: { level: "ACTION" } });
   });
 
   it("marks by ids, never touching another account's rows", async () => {
