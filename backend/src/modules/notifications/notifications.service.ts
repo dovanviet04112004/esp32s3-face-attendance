@@ -232,6 +232,8 @@ const kPushRetryMs = 30_000;
 const kBatch = 1000;
 // A push service answers in tens to hundreds of ms; fifty at once keeps a 5,000 fan-out to seconds.
 const kPushAtOnce = 50;
+// The notify worker runs one job at a time, so a push service that never answers must not hold it.
+const kPushTimeoutMs = 10_000;
 const kSecondMs = 1000;
 const DEFAULT_LOCALE = "vi";
 // Desk pushes gather into one; a CRITICAL notice never waits (KEHOACH 9.21.4).
@@ -844,7 +846,9 @@ export class NotificationsService {
     const owed: string[] = [];
     for (const sub of devices) {
       try {
-        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, sealed);
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, sealed, {
+          timeout: kPushTimeoutMs,
+        });
       } catch (fell) {
         const code = (fell as { statusCode?: number }).statusCode;
         if (code !== undefined && kDeadSubscription.includes(code)) {
