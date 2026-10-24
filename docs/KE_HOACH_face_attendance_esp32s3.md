@@ -9816,7 +9816,8 @@ nhìn. Cần nhắc theo mốc 30 / 15 / 7 ngày, và danh sách phải mở đ�
 **Người được nhắc là bàn nhân sự, vì bàn ấy mới ký được hợp đồng mới.** Còn 30 ngày thì một việc
 `CONTRACT_DUE` mở cho `ADMIN` và `HR`, nổi lại ở 15 và 7 ngày, và ở mốc 7 thì thành cảnh báo
 (§9.21.4). Nó tự đóng khi sự thật đổi: người ấy có một hợp đồng mới đang hiệu lực, hợp đồng này
-thôi hiệu lực, hay đã có ngày nghỉ việc được ghi. Quyết định để hết hạn mà không ký tiếp cũng là
+thôi hiệu lực, hay người ấy đã nghỉ việc. Một lịch nghỉ mới ghi chưa đóng việc, vì lịch ấy còn huỷ
+được, và huỷ rồi thì hợp đồng vẫn hết hạn đúng ngày cũ. Quyết định để hết hạn mà không ký tiếp cũng là
 một quyết định, nên HR đóng tay được kèm ghi chú, và lần đóng ấy có dòng audit. Người ký cũng có tin
 riêng, nhưng tin ấy tắt mặc định cho tới khi trang của họ có chỗ nói về hợp đồng: báo một điều mà
 bấm vào không thấy gì là một ngõ cụt (§9.15 luật 1).
@@ -9825,8 +9826,8 @@ bấm vào không thấy gì là một ngõ cụt (§9.15 luật 1).
 chính thức. Còn 7 ngày thì một việc `PROBATION_DUE` mở cho bàn nhân sự **và quản lý trực tiếp** —
 người biết người mới có qua được thử việc hay không là quản lý, còn người ký hợp đồng chính thức là
 bàn nhân sự — rồi nổi lại ở 3 và 1 ngày. Bản của quản lý mở hồ sơ, không mở hợp đồng, vì quản lý
-không đọc hợp đồng của cấp dưới (§9.4). Việc đóng khi hợp đồng chính thức bắt đầu, khi người ấy
-nghỉ, hay khi bàn nhân sự đóng tay kèm ghi chú.
+không đọc hợp đồng của cấp dưới (§9.4). Việc đóng khi hợp đồng chính thức bắt đầu, khi người ấy đã
+nghỉ việc (không phải lúc mới ghi lịch nghỉ), hay khi bàn nhân sự đóng tay kèm ghi chú.
 
 **3. Bảng ngoại lệ của hôm nay.** Không phải "ai đi làm" — mà **ai lệch**: chưa quẹt, quẹt muộn,
 quẹt một lần rồi biến mất, nghỉ không đơn, và lượt quẹt mang giờ nghi vấn (§9.8). Danh sách ngắn mà hành động được, mở mỗi sáng.
@@ -10324,8 +10325,8 @@ Năm chữ trong đoạn trên có đúng một nghĩa, vì hộp và chuông đ
   cũng không được tính, vì §9.4 từ chối mọi quyết định của nó (`DESK_NEEDS_EMPLOYEE`).
 - **Người gửi** gồm cả người xin hộ: một đổi thông tin bàn nhân sự xin thay cho người khác thì người
   xin không thấy nó trong hộp, không được báo và không quyết (§9.17 mục 6).
-- **Mốc 7 ngày** đếm theo ngày của công ty từ ngày gửi: từ đầu ngày thứ bảy, đơn còn chờ một quản lý
-  nằm cả trong hộp của bàn nhân sự.
+- **Mốc 7 ngày** là lượt nhắc 7 ngày: đơn đã chờ đủ 7 ngày theo ngày của công ty mà còn chờ một quản
+  lý thì từ lúc ấy nằm cả trong hộp của bàn nhân sự, và bàn được báo ngay trong lượt nhắc ấy.
 
 **Chi tiết về người trong việc dựng lúc đọc, qua phạm vi của người đọc lúc ấy.** Dòng chỉ giữ tham
 chiếu. Tên, mã, phòng ban, ngày tháng dựng lúc đọc, qua `visibleEmployeeIds` với dữ liệu nhân sự và
@@ -10344,12 +10345,15 @@ như `:camera-fault`, và hai loạt `:spoof`, `:unknown`. Một bản phát hà
 `releases:<id bản>`, và một người phải lấy mặt lại là `recapture:<id nhân viên>`.
 
 **Việc của một tình trạng lặp lại mở lại được dưới đúng khoá cũ.** Kiosk tuần này mất kết nối, tuần
-sau mất lại; một lỗi phần cứng `ADMIN` đã đóng rồi tái phát; sao lưu hỏng hai lần trong một ngày; một
-người lấy mặt lại xong thì lần đổi model nhận diện sau lại phải lấy nữa. Lần mở sau thấy khoá đã đóng
-thì việc cũ cùng các dòng của nó chuyển sang khoá `<khoá>:<lúc đóng, mili giây>`, giữ nguyên ai đã xử
-lý và lúc nào, rồi việc mới mở dưới khoá cũ. Chỉ ba hàng đợi `KIOSK`, `BACKUP` và `RECAPTURE` làm vậy.
-Đơn từ, hợp đồng, bản phát hành và mọi việc mà mỗi lần có một chủ thể riêng thì đã đóng là đóng hẳn,
-và một lượt quét chạy lại không mở lại được chúng.
+sau mất lại; một lỗi phần cứng đã đóng, vì máy đã chạy lại hay vì `ADMIN` đóng tay, rồi tái phát; sao
+lưu hỏng hai lần trong một ngày; một người lấy mặt lại xong thì lần đổi model nhận diện sau lại phải lấy
+nữa. Lần mở sau thấy khoá đã đóng thì việc cũ cùng các dòng của nó chuyển sang khoá
+`<khoá>:<lúc đóng, mili giây>`, giữ nguyên ai đã xử lý và lúc nào, rồi việc mới mở dưới khoá cũ. Ba
+hàng đợi `KIOSK`, `BACKUP` và `RECAPTURE` làm vậy, và `DOCUMENTS` trong đúng một trường hợp: việc ký đã
+`EXPIRED` vì tài liệu ngừng dùng hay người ấy rời đối tượng, rồi tài liệu dùng lại hay người ấy vào lại
+đối tượng khi phiên bản ấy vẫn mới nhất và người ấy chưa ký. Đơn từ, hợp đồng, bản phát hành và mọi
+việc mà mỗi lần có một chủ thể riêng thì đã đóng là đóng hẳn, và một lượt quét chạy lại không mở lại
+được chúng.
 
 | `kind` · hàng đợi | Mở khi | Tới ai | Nhắc | Đóng khi | Mở trang |
 |---|---|---|---|---|---|
@@ -10360,11 +10364,11 @@ và một lượt quét chạy lại không mở lại được chúng.
 | `REQUEST_WAITING` · `PROFILE_CHANGES` | xin đổi thông tin | `ADMIN`, `HR` | 3 · 7 | duyệt; từ chối; rút | `/approvals?tab=profileChanges&open=<id>` |
 | `REQUEST_WAITING` · `DISPUTES` | khiếu nại phiếu lương — khoá theo id khiếu nại, không theo phiếu | `ADMIN`, `PAYROLL` | một ngày trước hạn trả lời; quá hạn thì `WARNING` | trả lời; rút | `/approvals?tab=disputes&open=<id>` |
 | `REQUEST_WAITING` · `DEPENDENTS` | đăng ký người phụ thuộc | `ADMIN`, `PAYROLL` | 3 · 7 | quyết | `/approvals?tab=dependents&open=<id>` |
-| `CONTRACT_DUE` · `CONTRACTS_DUE` | hợp đồng có hạn còn ≤ 30 ngày | `ADMIN`, `HR` | 15 · 7, `WARNING` ở 7 | có hợp đồng mới `ACTIVE`; hợp đồng thôi `ACTIVE`; đã ghi ngày nghỉ việc; HR đóng tay kèm ghi chú | `/employees/<id>?tab=contracts` |
-| `PROBATION_DUE` · `PROBATION_DUE` | thử việc còn ≤ 7 ngày | bàn nhân sự và quản lý trực tiếp | 3 · 1 | hợp đồng chính thức bắt đầu; người ấy nghỉ; đóng tay | hồ sơ người ấy; bản của quản lý không mở hợp đồng |
+| `CONTRACT_DUE` · `CONTRACTS_DUE` | hợp đồng có hạn còn ≤ 30 ngày | `ADMIN`, `HR` | 15 · 7, `WARNING` ở 7 | có hợp đồng mới `ACTIVE`; hợp đồng thôi `ACTIVE`; người ấy đã nghỉ việc, còn lịch nghỉ mới ghi thì chưa; HR đóng tay kèm ghi chú | `/employees/<id>?tab=contracts` |
+| `PROBATION_DUE` · `PROBATION_DUE` | thử việc còn ≤ 7 ngày | bàn nhân sự và quản lý trực tiếp | 3 · 1 | hợp đồng chính thức bắt đầu; người ấy đã nghỉ việc; đóng tay | hồ sơ người ấy; bản của quản lý không mở hợp đồng |
 | `TASK_ASSIGNED` · `TASKS` | lượt nhận việc hay nghỉ việc mở: mọi việc của lượt cùng lúc | việc `SELF` → chính người ấy; `MANAGER` → người phụ trách, không còn ai phụ trách có đăng nhập đang dùng thì bàn nhân sự; `HR` → `ADMIN`, `HR`; ngoài việc `SELF`, không bao giờ chính người đang nhận hay nghỉ việc | ngày hạn và một ngày sau, quá hạn thì `WARNING` | việc xong → `DONE` (`COMPLETED`); lượt không còn → `EXPIRED` | tab nhận việc của hồ sơ; việc `SELF` mở `/me` |
-| `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản; người vào đối tượng sau đó, ở lượt quét hằng ngày | chính người ấy, mỗi người một việc, rải qua hàng đợi | 3 · 7 ngày từ lúc phát hành | ký nhận → `DONE` (`SIGNED`); có phiên bản mới hơn, tài liệu ngừng dùng, hay người ấy rời đối tượng → `EXPIRED` | `/me/documents?doc=<id phiên bản>` |
-| `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng thì `ADMIN` đóng tay | `/devices/<id>` |
+| `DOCUMENT_TO_SIGN` · `DOCUMENTS` | phát hành một phiên bản; người vào đối tượng sau đó, ở lượt quét hằng ngày | chính người ấy, mỗi người một việc, rải qua hàng đợi | 3 · 7 ngày từ lúc phát hành | ký nhận → `DONE` (`SIGNED`); có phiên bản mới hơn, tài liệu ngừng dùng, hay người ấy rời đối tượng → `EXPIRED`; tài liệu dùng lại hay người ấy vào lại đối tượng khi chưa ký bản mới nhất → việc mở lại | `/me/documents?doc=<id phiên bản>` |
+| `KIOSK_ALERT` · `KIOSK` | `CRITICAL`: mất kết nối quá `KIOSK_OFFLINE_ALERT_MINUTES`, lỗi `*_FAULT`, `FACEDB_CORRUPT`, `MODEL_LOAD_FAILED`; `ACTION`: máy mới chờ duyệt; `WARNING`: `OTA_FAILED`, `OTA_ROLLED_BACK`, loạt giả mạo, loạt mặt lạ | `ADMIN`; mất kết nối thì thêm một thư | — | nối lại → `CLEARED`; duyệt → `DONE` (`APPROVED`); thu hồi → `DONE` (`REJECTED`), mọi việc khác của máy ấy `CLEARED`; loạt đã yên → `CLEARED`; lỗi và cập nhật hỏng → `CLEARED` khi máy cho thấy đã chạy lại (dưới bảng), và `ADMIN` vẫn đóng tay được | `/devices/<id>` |
 | `BACKUP_ALERT` · `BACKUP` | lượt canh sao lưu thấy hỏng (§9.22.2), `CRITICAL` | `ADMIN`; thư vẫn đi | — | lượt canh sau không còn mã hỏng nào → `CLEARED` | chi tiết ngay trên trang thông báo |
 | `RELEASE_AVAILABLE` · `RELEASES` | một bản firmware hay model lên server mà còn máy đã duyệt chạy bản cũ hơn nó (§7.7) | `ADMIN` | — | mọi máy đã duyệt đã lên → `DONE` (`COMPLETED`); bản mới hơn cùng loại lên, hay file bản ấy bị dọn → `EXPIRED` | `/devices` |
 | `FACE_RECAPTURE` · `RECAPTURE` | một kiosk người ấy được gán chạy model nhận diện mới hơn mọi bộ mẫu người ấy có (§7.5) | chính người ấy | — | có bộ mẫu trên model ấy hay mới hơn → `DONE` (`COMPLETED`); không còn kiosk nào như vậy — bị gỡ khỏi máy, xoá sinh trắc, máy về model cũ → `CLEARED` | `/me` |
@@ -10386,6 +10390,19 @@ Tám thứ trong bảng cần nói thêm:
   `KIOSK_UNKNOWN_BURST` lượt `UNKNOWN_FACE`, trong `KIOSK_BURST_WINDOW_MINUTES` phút. Mỗi kiosk mỗi
   loạt một việc mở, khoá `kiosk:<id máy>:<loạt>`; nó đóng khi kiosk yên một khoảng khai ở bảng tra,
   mặc định 60 phút.
+- **Lỗi và cập nhật hỏng đóng khi máy cho thấy đã chạy lại**, mỗi mã theo bằng chứng của nó, vì im
+  lặng một mình không nói gì về một bộ phận chỉ làm việc khi có người đứng trước máy:
+  - `MODEL_LOAD_FAILED`, `FACEDB_CORRUPT`: máy khởi động lại sau lần báo, và qua khoảng ổn định khai ở
+    bảng tra (mặc định 10 phút) sau `BOOTED` ấy mà không báo lại; hai mã này chỉ báo ngay lúc khởi động.
+  - `CAMERA_FAULT`: máy cho một kết quả nhìn mặt sau lần báo (một lượt chấm công, `SPOOF_DETECTED`,
+    `UNKNOWN_FACE` hay `QUALITY_REJECTED`) và không báo lại từ đó.
+  - `STORAGE_FAULT`: một lượt chấm công của máy tới server sau lần báo.
+  - `TOF_FAULT` và các mã `*_FAULT` còn lại: máy online liền một khoảng yên như của loạt mà không báo
+    lại. ToF đọc liên tục cả lúc máy ngủ, nên còn hỏng là còn báo, mỗi phút một lần.
+  - Cập nhật hỏng (`OTA_FAILED`, `OTA_ROLLED_BACK`): một lần cập nhật sau của máy cài xong, hay máy không
+    còn chạy bản nào cũ hơn bản mới nhất.
+
+  Lỗi tái phát thì việc mở lại dưới khoá cũ và `ADMIN` được báo lại.
 - **Lệch công là một việc mỗi người mỗi ngày** (`attendance:<id nhân viên>:<ngày>`), mở khi ngày có ít
   nhất một trong năm điều: đi muộn quá ân hạn của ca, về sớm, thiếu lượt vào hay lượt ra, vắng mà
   không có đơn đã duyệt, ở lại quá giờ ca từ ngưỡng của bảng tra mà không có đơn tăng ca đã duyệt
@@ -10637,8 +10654,9 @@ sống lại.
 còn hơn huỷ việc đã làm.
 
 **Giữ bao lâu.** Dòng `Notification` sống `NOTICE_KEEP_DAYS` ngày, mặc định 180, tính từ lúc đọc hay
-từ lúc việc của nó đóng. Việc đang mở và các dòng của nó **không bao giờ bị xoá**. Lượt dọn chạy mỗi
-đêm theo lô (§9.22.7). Chuông là chỗ xem lại, không phải sổ: sổ là bảng nghiệp vụ và nhật ký kiểm toán.
+từ lúc việc của nó đóng. Việc đang mở và các dòng của nó **không bao giờ bị xoá**. Việc đã đóng của
+hàng đợi không mở lại giữ dòng `NoticeItem` làm dấu, để lượt quét không mở lại nó; chỉ các dòng
+`Notification` của nó bị dọn. Lượt dọn chạy mỗi đêm theo lô (§9.22.7). Chuông là chỗ xem lại, không phải sổ: sổ là bảng nghiệp vụ và nhật ký kiểm toán.
 
 **Đổi lược đồ theo luật nở rồi co (§9.22.3c).** Nở: kiểu enum mới, và giá trị mới của enum sẵn có ở
 migration riêng bằng `ALTER TYPE … ADD VALUE`; bảng `NoticeItem`; cột mới, mọi cột mới của
