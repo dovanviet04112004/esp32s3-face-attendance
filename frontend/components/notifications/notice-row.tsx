@@ -25,7 +25,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
-import { dayOnly, days } from "@/lib/format";
+import { dayOf, dayOnly, days, todayIso } from "@/lib/format";
 import { isDeviceEvent } from "@/lib/ws";
 import { NOTICE_LOOK, type Notice, type NoticeSentence } from "./kinds";
 
@@ -121,6 +121,13 @@ export function useNoticeWords() {
     const at = new Date(iso);
     const today = at.toDateString() === now.toDateString();
     return format.dateTime(at, today ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  /** The company day open work is due, read as overdue once that day has gone. */
+  function dueBy(iso: string): string {
+    const due = dayOf(iso);
+    const day = format.dateTime(dayOnly(due), { day: "numeric", month: "numeric" });
+    return due < todayIso() ? t("stateOverdue", { day }) : t("stateDue", { day });
   }
 
   /** What is off on a day, in the order a person reads their day: absent or a punch missing first. */
@@ -272,7 +279,8 @@ export function useNoticeWords() {
             : item.claimedByName
               ? t("stateClaimed", { who: item.claimedByName })
               : null;
-        return { label: claimed ? `${label} · ${claimed}` : label, tone: loud ? "bad" : "waiting" };
+        const due = item.dueAt ? dueBy(item.dueAt) : null;
+        return { label: [label, due, claimed].filter(Boolean).join(" · "), tone: loud ? "bad" : "waiting" };
       }
       if (item.state === "DONE") {
         const outcome = item.outcome ?? "other";
