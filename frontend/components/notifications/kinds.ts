@@ -73,8 +73,13 @@ interface NoticeItem {
   actorName: string | null;
   openedAt: string;
   closedAt: string | null;
+  claimedById: string | null;
   claimedByName: string | null;
   dueAt: string | null;
+  /** Whether the group may say who is on it. */
+  claimable: boolean;
+  /** Whether this reader may close it by hand, with a note. */
+  resolvable: boolean;
 }
 
 /** Who and what a notice is about, built through the reader's scope when it is read; hidden names nothing. */

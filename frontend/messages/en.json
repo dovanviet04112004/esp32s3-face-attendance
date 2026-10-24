@@ -1788,7 +1788,7 @@
     "DEVICE_OFFLINE": "The kiosk is offline, so it cannot take anything now. Wait until it is back online, then try again.",
     "NOTICE_NOT_FOUND": "This notice was not found",
     "NOTICE_CHANNEL_LOCKED": "Work waiting on you always shows in the bell; only its push can be turned off",
-    "NOTICE_ITEM_CLOSED": "This work is already done and can no longer be claimed",
+    "NOTICE_ITEM_CLOSED": "This work has already been handled",
     "NOTICE_ITEM_NOT_RESOLVABLE": "This work closes when it is decided in its own queue, not by hand"
   },
   "search": {
@@ -1889,6 +1889,13 @@
     "markUnread": "Mark as unread",
     "archive": "Archive",
     "unarchive": "Unarchive",
+    "resolve": "Mark as handled…",
+    "resolveTitle": "Mark this work as handled",
+    "resolveLead": "The work closes for everyone it reached, and they see that you closed it. The note goes into the audit log.",
+    "resolveNote": "Note",
+    "resolveNoteHint": "What was done, such as a renewal annex signed or a camera replaced.",
+    "resolveConfirm": "Mark as handled",
+    "resolved": "Marked as handled",
     "marked_read": "Marked {count, plural, one {# notice} other {# notices}} as read",
     "marked_unread": "Marked {count, plural, one {# notice} other {# notices}} as unread",
     "marked_archive": "Archived {count, plural, one {# notice} other {# notices}}",

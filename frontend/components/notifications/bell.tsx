@@ -10,7 +10,7 @@ import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { NoticeList } from "./notice-list";
-import { NOTICES_KEY, useNoticeMarks, type NoticeCounts, type NoticeStatus } from "./notice-row";
+import { NOTICES_KEY, useNoticeActions, useNoticeMarks, type NoticeCounts, type NoticeStatus } from "./notice-row";
 
 const kPollMs = 60_000;
 const kMaxShown = 9;
@@ -62,6 +62,7 @@ export function NoticeBell() {
   const counts = useNoticeCounts();
   const marks = useNoticeMarks();
   const [open, setOpen] = useState(false);
+  const { actionsOf, dialog } = useNoticeActions(() => setOpen(false));
   const [picked, setPicked] = useState<NoticeStatus | null>(null);
   // Until the reader picks a tab, the first with something in it, read off the counts as they arrive.
   const tab = picked ?? ((counts.data?.action ?? 0) > 0 ? "action" : (counts.data?.unread ?? 0) > 0 ? "unread" : "all");
@@ -106,7 +107,7 @@ export function NoticeBell() {
                 }))}
               />
             </div>
-            <NoticeList status={tab} onGo={() => setOpen(false)} />
+            <NoticeList status={tab} onGo={() => setOpen(false)} actionsOf={actionsOf} />
             <div className="flex items-center justify-between gap-2 border-t border-kumo-hairline px-2 py-2">
               {(counts.data?.unread ?? 0) > 0 ? (
                 <Button
@@ -127,6 +128,7 @@ export function NoticeBell() {
           </Popover.Content>
         </Popover>
       </span>
+      {dialog}
     </>
   );
 }

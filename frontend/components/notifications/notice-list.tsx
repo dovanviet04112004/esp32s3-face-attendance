@@ -6,13 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 
-import { ActionMenu } from "@/components/tables/data-table";
+import { ActionMenu, type RowAction } from "@/components/tables/data-table";
 import { Failed } from "@/components/ui/failed";
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { NOTICE_LOOK, NOTICE_TRANSITION, useReader, type Notice } from "./kinds";
-import { NOTICES_KEY, NoticeLine, useNoticeActions, useNoticeMarks, type NoticeStatus } from "./notice-row";
+import { NOTICES_KEY, NoticeLine, useNoticeMarks, type NoticeStatus } from "./notice-row";
 
 const kBellTake = 20;
 
@@ -51,10 +51,17 @@ function Opener({ notice, onRead, onGo, children }: { notice: Notice; onRead: ()
 }
 
 /** The bell's rows for one tab, newest first. */
-export function NoticeList({ status, onGo }: { status: NoticeStatus; onGo: () => void }) {
+export function NoticeList({
+  status,
+  onGo,
+  actionsOf,
+}: {
+  status: NoticeStatus;
+  onGo: () => void;
+  actionsOf: (notice: Notice) => RowAction[];
+}) {
   const t = useTranslations("notices");
   const marks = useNoticeMarks();
-  const actionsOf = useNoticeActions();
 
   const notices = useQuery({
     queryKey: [...NOTICES_KEY, "bell", status],

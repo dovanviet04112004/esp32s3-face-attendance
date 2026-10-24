@@ -1,18 +1,28 @@
 "use client";
 
-import { ArchiveIcon, ArrowCounterClockwiseIcon, EnvelopeOpenIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
+import { Banner, LayerDialog, Textarea } from "@cloudflare/kumo";
+import {
+  ArchiveIcon,
+  ArrowCounterClockwiseIcon,
+  CheckCircleIcon,
+  EnvelopeOpenIcon,
+  EnvelopeSimpleIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useLocale, useNow, useTranslations } from "next-intl";
-import { useEffect } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useShortSpan } from "@/components/requests/inbox-preview";
 import { useRequestWords } from "@/components/requests/request-card";
 import type { RowAction } from "@/components/tables/data-table";
 import { useNotify } from "@/components/ui/notify";
+import { useOptional } from "@/components/ui/optional";
 import { StatePill, type Tone } from "@/components/ui/pill";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
+import { useFault } from "@/lib/fault";
 import { dayOnly, days } from "@/lib/format";
 import { NOTICE_LOOK, type Notice } from "./kinds";
 
@@ -41,6 +51,7 @@ export const NOTICES_KEY = ["notifications"] as const;
 // Relative times need an instant to count from, or the server and the browser each pick their own.
 const kTickMs = 60_000;
 const kDayMs = 86_400_000;
+const kNoteMax = 500;
 
 type Fact = "lateMinutes" | "earlyMinutes" | "overtimeMinutes";
 type TeamCount = "late" | "notPunched" | "absent" | "onLeave";
@@ -230,19 +241,96 @@ export function useReadSubject(type: string, id: string | null | undefined): voi
   }, [type, id]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** The row menu: read or unread, archive or bring back. */
-export function useNoticeActions(): (notice: Notice) => RowAction[] {
+/** The row menu: close open work by hand where the reader may, read or unread, archive or bring back.
+ *  `dialog` asks for the close's note and must render outside any popover the menu sits in.
+ *  @param beforeDialog called as the note dialog opens, so a popover can close first
+ */
+export function useNoticeActions(beforeDialog?: () => void): { actionsOf: (notice: Notice) => RowAction[]; dialog: ReactNode } {
   const t = useTranslations("notices");
+  const common = useTranslations("common");
+  const say = useNoticeWords();
+  const optional = useOptional();
   const marks = useNoticeMarks();
+  const cache = useQueryClient();
+  const notify = useNotify();
+  const faultOf = useFault();
+  const [closing, setClosing] = useState<Notice | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [fault, setFault] = useState<string | null>(null);
+
+  const resolve = useMutation({
+    mutationFn: ({ key, said }: { key: string; said: string }) =>
+      api.post(`/notifications/items/${encodeURIComponent(key)}/resolve`, { note: said }),
+    onSuccess: () => {
+      setAsking(false);
+      notify.done(t("resolved"));
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+    onSettled: () => void cache.invalidateQueries({ queryKey: NOTICES_KEY }),
+  });
+
+  function startClosing(notice: Notice): void {
+    beforeDialog?.();
+    setNote("");
+    setFault(null);
+    setClosing(notice);
+    setAsking(true);
+  }
+
   const mark = (action: MarkAction, notice: Notice) => () => marks.mutate({ action, ids: [notice.id] });
-  return (notice) => [
-    notice.readAt === null
-      ? { key: "read", label: t("markRead"), icon: EnvelopeOpenIcon, onSelect: mark("read", notice) }
-      : { key: "unread", label: t("markUnread"), icon: EnvelopeSimpleIcon, onSelect: mark("unread", notice) },
-    notice.archivedAt
-      ? { key: "unarchive", label: t("unarchive"), icon: ArrowCounterClockwiseIcon, onSelect: mark("unarchive", notice) }
-      : { key: "archive", label: t("archive"), icon: ArchiveIcon, onSelect: mark("archive", notice) },
-  ];
+  const actionsOf = (notice: Notice): RowAction[] => {
+    const open = notice.item?.state === "OPEN" && notice.leftAt === null ? notice.item : null;
+    // A day is let go on its own page, beside the request that explains it (KEHOACH 9.21.4).
+    const closable = open?.resolvable === true && notice.kind !== "ATTENDANCE_EXCEPTION";
+    return [
+      ...(closable ? [{ key: "resolve", label: t("resolve"), icon: CheckCircleIcon, onSelect: () => startClosing(notice) }] : []),
+      notice.readAt === null
+        ? { key: "read", label: t("markRead"), icon: EnvelopeOpenIcon, onSelect: mark("read", notice) }
+        : { key: "unread", label: t("markUnread"), icon: EnvelopeSimpleIcon, onSelect: mark("unread", notice) },
+      notice.archivedAt
+        ? { key: "unarchive", label: t("unarchive"), icon: ArrowCounterClockwiseIcon, onSelect: mark("unarchive", notice) }
+        : { key: "archive", label: t("archive"), icon: ArchiveIcon, onSelect: mark("archive", notice) },
+    ];
+  };
+
+  const about = closing ? say.about(closing) : null;
+  const dialog = (
+    <LayerDialog.Root open={asking} onOpenChange={(next) => !next && setAsking(false)} dismissDisabled={resolve.isPending}>
+      <LayerDialog.Content closeLabel={common("close")}>
+        <LayerDialog.Title>{t("resolveTitle")}</LayerDialog.Title>
+        <LayerDialog.Description>{t("resolveLead")}</LayerDialog.Description>
+        <LayerDialog.Body>
+          <div className="flex flex-col gap-4">
+            {closing ? (
+              <div className="flex flex-col gap-0.5 rounded-lg border border-kumo-hairline px-3 py-2">
+                <span className="font-medium">{say.sentence(closing)}</span>
+                {about ? <span className="text-sm text-kumo-subtle">{about}</span> : null}
+              </div>
+            ) : null}
+            <Textarea
+              label={optional(t("resolveNote"))}
+              description={t("resolveNoteHint")}
+              rows={3}
+              maxLength={kNoteMax}
+              value={note}
+              onValueChange={setNote}
+            />
+            {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
+          </div>
+        </LayerDialog.Body>
+        <LayerDialog.Actions dismissLabel={common("cancel")}>
+          <LayerDialog.Actions.Primary
+            loading={resolve.isPending}
+            onClick={() => closing?.item && resolve.mutate({ key: closing.item.key, said: note.trim() })}
+          >
+            {t("resolveConfirm")}
+          </LayerDialog.Actions.Primary>
+        </LayerDialog.Actions>
+      </LayerDialog.Content>
+    </LayerDialog.Root>
+  );
+  return { actionsOf, dialog };
 }
 
 /** One notice as the bell and the page both draw it, the unread dot ahead of the icon in both. "phone" is the

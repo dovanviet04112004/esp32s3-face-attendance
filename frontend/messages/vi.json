@@ -1788,7 +1788,7 @@
     "DEVICE_OFFLINE": "Máy đang offline nên không nhận được gì lúc này. Chờ máy online lại rồi thử lại.",
     "NOTICE_NOT_FOUND": "Không tìm thấy thông báo này",
     "NOTICE_CHANNEL_LOCKED": "Việc đang chờ bạn luôn hiện trong chuông; chỉ tắt được thông báo đẩy",
-    "NOTICE_ITEM_CLOSED": "Việc này đã xong, không nhận được nữa",
+    "NOTICE_ITEM_CLOSED": "Việc này đã được xử lý xong",
     "NOTICE_ITEM_NOT_RESOLVABLE": "Việc này đóng khi được quyết ở chính hàng đợi của nó, không đóng tay được"
   },
   "search": {
@@ -1889,6 +1889,13 @@
     "markUnread": "Đánh dấu chưa đọc",
     "archive": "Cất",
     "unarchive": "Bỏ cất",
+    "resolve": "Đánh dấu đã xử lý…",
+    "resolveTitle": "Đánh dấu việc này đã xử lý",
+    "resolveLead": "Việc đóng cho mọi người được báo, và họ thấy bạn đã đóng nó. Ghi chú đi vào nhật ký kiểm toán.",
+    "resolveNote": "Ghi chú",
+    "resolveNoteHint": "Đã làm gì, ví dụ đã ký phụ lục gia hạn hay đã thay camera.",
+    "resolveConfirm": "Đánh dấu đã xử lý",
+    "resolved": "Đã đánh dấu việc là đã xử lý",
     "marked_read": "Đã đánh dấu {count, number} thông báo là đã đọc",
     "marked_unread": "Đã đánh dấu {count, number} thông báo là chưa đọc",
     "marked_archive": "Đã cất {count, number} thông báo",

@@ -58,7 +58,7 @@ function Notifications() {
   const say = useNoticeWords();
   const counts = useNoticeCounts();
   const marks = useNoticeMarks();
-  const actionsOf = useNoticeActions();
+  const { actionsOf, dialog } = useNoticeActions();
   const [url, setUrl] = useUrlState({ tab: "", q: "", category: "", from: "", to: "" });
   const [typed, setTyped] = useState(url.q);
   const settled = useSettled(typed.trim());
@@ -222,6 +222,7 @@ function Notifications() {
           }
         />
       </PageLayout>
+      {dialog}
     </>
   );
 }
