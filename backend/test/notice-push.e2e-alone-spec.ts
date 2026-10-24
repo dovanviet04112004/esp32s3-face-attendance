@@ -41,6 +41,7 @@ const HANG_MS = 60_000;
 const DAY_MS = 86_400_000;
 const DEVICE = `e2e-np-${RUN}`;
 const KIOSK = `e2e-npk-${RUN}`;
+const KIOSK_NEW = `e2e-npn-${RUN}`;
 const SHIFT = `E2E NP ${RUN}`;
 // Days no other suite builds: two the asker missed, one they only came late on, one the orphan missed.
 const ABSENT_DAYS = ["2026-08-11", "2026-08-12"];
@@ -100,8 +101,8 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
 
   // A device's punches go with it, and they hold on to the people they are of.
   async function sweep(): Promise<void> {
-    await db.noticeItem.deleteMany({ where: { queue: "KIOSK", subjectId: KIOSK } });
-    await db.device.deleteMany({ where: { id: { in: [DEVICE, KIOSK] } } });
+    await db.noticeItem.deleteMany({ where: { queue: "KIOSK", subjectId: { in: [KIOSK, KIOSK_NEW] } } });
+    await db.device.deleteMany({ where: { id: { in: [DEVICE, KIOSK, KIOSK_NEW] } } });
     await db.user.deleteMany({ where: { email: { in: PEOPLE.map(mailOf) } } });
     await db.employee.deleteMany({ where: { code: { in: PEOPLE.map(codeOf) } } });
     await db.shift.deleteMany({ where: { name: { startsWith: SHIFT } } });
@@ -356,6 +357,22 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     const told = (await pushesTo("orphan", before + 2)).slice(before);
     assert.deepEqual(told.map((one) => one.body.kind).sort(), ["REQUEST_DECIDED", "SHIFT_CHANGED"], "the person heard other than the answer and the shift");
     assert.equal(told.find((one) => one.body.kind === "SHIFT_CHANGED")?.body.count, 1, "the window counted rows that never waited in it");
+  });
+
+  it("gathers a kiosk's ACTION and WARNING work for a desk, as any work short of CRITICAL", async () => {
+    const queue = (app.get(QUEUE_TOKEN) as Queues)[QUEUE.notify];
+    const items = app.get(NoticeItemsService);
+    await until(async () => (await queue.getDeduplicationJobId(`gather-${loginOf.get("admin")}`)) === null, "an earlier window");
+    await db.device.create({ data: { id: KIOSK_NEW, status: "PENDING" } });
+    // A spoof heard just now keeps the burst open through the window.
+    await db.deviceEvent.create({ data: { deviceId: KIOSK, type: "SPOOF_DETECTED", severity: "WARN", ts: new Date() } });
+    const before = (await pushesTo("admin", 0)).length;
+    await items.open("KIOSK", { id: KIOSK_NEW, part: "pending", employeeId: null }, { facts: { code: "PENDING" } });
+    await items.open("KIOSK", { id: KIOSK, part: "spoof", employeeId: null }, { level: "WARNING", facts: { code: "SPOOF_BURST" } });
+    await new Promise((done) => setTimeout(done, 1500));
+    const told = (await pushesTo("admin", before + 1)).slice(before);
+    assert.equal(told.length, 1, "a kiosk's ACTION and WARNING work each pushed on its own");
+    assert.deepEqual([told[0].body.kind, told[0].body.count, told[0].body.tag], ["KIOSK_ALERT", 2, "gathered"]);
   });
 
   it("pushes a person's missing punches and absences once, together, at the morning sweep, and never their lateness", async () => {

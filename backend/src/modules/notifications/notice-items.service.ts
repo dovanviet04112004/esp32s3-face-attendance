@@ -507,6 +507,7 @@ export class NoticeItemsService {
       await this.notices.announce(
         QUEUE_KIND[queue],
         surfaced.filter((one) => !fresh.includes(one.userId)).map((one) => ({ ...one, renotify: true })),
+        item.level,
       );
     } catch (fell) {
       this.log.error(`item ${key} was not reminded: ${String(fell)}`);
@@ -549,7 +550,7 @@ export class NoticeItemsService {
         this.feed.tell(one.userId, FEED.notice, { op: "item", key: item.key, state: item.state });
       }
     } else {
-      await this.notices.announce(QUEUE_KIND[item.queue], seated.map((one) => ({ ...one, renotify: false })));
+      await this.notices.announce(QUEUE_KIND[item.queue], seated.map((one) => ({ ...one, renotify: false })), item.level);
     }
     return { seated, left: left.map((one) => one.userId) };
   }

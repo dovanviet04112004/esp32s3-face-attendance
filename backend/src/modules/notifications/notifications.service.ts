@@ -613,8 +613,9 @@ export class NotificationsService {
 
   /** Tell each login's open screens of a row it just got, then queue its push where the person allows it.
    *  @ctx any | pushes leave through the notify queue, never inside the request; a sweep-pushed kind waits for its sweep
+   *  @param level the work's own, which a kiosk's work sets per piece; news reads as its kind's
    */
-  async announce(kind: NoticeKind, rows: Announced[]): Promise<void> {
+  async announce(kind: NoticeKind, rows: Announced[], level: NoticeLevel = NOTICE_KINDS[kind].level): Promise<void> {
     if (rows.length === 0) {
       return;
     }
@@ -627,7 +628,7 @@ export class NotificationsService {
     const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
     const pushed = rows.filter((one) => wants(one.userId, "PUSH"));
     const window = this.config.get("NOTICE_PUSH_GATHER_SECONDS", { infer: true });
-    const gathering = window > 0 ? await this.gathering(kind, pushed) : new Set<string>();
+    const gathering = window > 0 ? await this.gathering(kind, level, pushed) : new Set<string>();
     const now = pushed.filter((one) => !gathering.has(one.userId));
     for (let at = 0; at < now.length; at += kBatch) {
       await this.queues[QUEUE.notify].add(JOB.noticeFanout, {
@@ -653,12 +654,12 @@ export class NotificationsService {
   }
 
   // Desk logins gather every kind short of CRITICAL; a gathered kind gathers for everybody (KEHOACH 9.21.4).
-  private async gathering(kind: NoticeKind, pushed: Announced[]): Promise<Set<string>> {
+  private async gathering(kind: NoticeKind, level: NoticeLevel, pushed: Announced[]): Promise<Set<string>> {
     const logins = await this.db.user.findMany({
       where: { id: { in: pushed.map((one) => one.userId) } },
       select: { id: true, role: true },
     });
-    return new Set(logins.filter((one) => gathers(kind, NOTICE_KINDS[kind].level, one.role)).map((one) => one.id));
+    return new Set(logins.filter((one) => gathers(kind, level, one.role)).map((one) => one.id));
   }
 
   /** Send a fan-out job's pushes, one per row to every device of its login it still owes.
@@ -760,9 +761,9 @@ export class NotificationsService {
       },
       orderBy: { createdAt: "desc" },
       take: kBatch,
-      select: { id: true, kind: true, dedupKey: true },
+      select: { id: true, kind: true, dedupKey: true, item: { select: { level: true } } },
     });
-    const held = fresh.filter((one) => gathers(one.kind, NOTICE_KINDS[one.kind].level, login.role));
+    const held = fresh.filter((one) => gathers(one.kind, one.item?.level ?? NOTICE_KINDS[one.kind].level, login.role));
     const wanted = new Set<NoticeKind>();
     for (const kind of new Set(held.map((one) => one.kind))) {
       if ((await this.channelsFor(kind, [userId]))(userId, "PUSH")) {
