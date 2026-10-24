@@ -12,7 +12,10 @@ export const pushBody = z
     locale: z.enum(["vi", "en"]),
     tag: z.string().min(1).max(200),
     renotify: z.boolean(),
+    gathered: z.enum(["work", "news", "mixed"]).optional(),
   })
   .strict();
 
 export type PushBody = z.infer<typeof pushBody>;
+
+export type Gathered = NonNullable<PushBody["gathered"]>;

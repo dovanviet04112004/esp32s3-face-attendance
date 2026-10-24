@@ -178,6 +178,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     assert.equal(desk.length, 1, "the desk got a push per piece of work instead of one");
     assert.equal(desk[0].body.count, 2);
     assert.equal(desk[0].body.tag, "gathered");
+    assert.equal(desk[0].body.gathered, "work", "two requests waiting were not told as work");
   });
 
   it("pushes nothing of a kind whose push the person turned off", async () => {
@@ -222,6 +223,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     const told = sent.slice(at).filter((one) => one.endpoint === endpointOf("asker") && one.body.kind === "ATTENDANCE_EXCEPTION");
     assert.equal(told.length, 1, "a person's exceptions were not pushed as one, once");
     assert.deepEqual([told[0].body.count, told[0].body.tag], [2, "gathered"], "lateness was pushed with the absences");
+    assert.equal(told[0].body.gathered, "work", "days to explain were not told as work");
   });
 
   it("pushes a punch only once its person turns that on, with no row behind it", async () => {
@@ -263,5 +265,6 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     const told = (await pushesTo("asker", before + 1)).slice(before);
     assert.equal(told.length, 1, "each shift change buzzed the phone on its own");
     assert.deepEqual([told[0].body.kind, told[0].body.count, told[0].body.tag], ["SHIFT_CHANGED", 2, "gathered"]);
+    assert.equal(told[0].body.gathered, "news", "two shift changes were told as work waiting");
   });
 });

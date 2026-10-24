@@ -27,7 +27,7 @@ import { JOB, QUEUE, type NoticeFanoutJob, type NoticeGatherJob } from "../../qu
 import { filedBetween, personWhere, sortedBy } from "../leave/queue-filter.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
-import { pushBody, type PushBody } from "./dto/push-body.js";
+import { pushBody, type Gathered, type PushBody } from "./dto/push-body.js";
 import {
   CLAIMABLE,
   factsFit,
@@ -101,6 +101,12 @@ function storedFacts(kind: NoticeKind, facts: NoticeFacts): Record<string, unkno
     }
   }
   return held;
+}
+
+/** What the rows of a gathered push are, so its lock screen says work, news or both (KEHOACH 9.21.4). */
+function gatheredOf(kinds: NoticeKind[]): Gathered {
+  const work = kinds.filter((kind) => NOTICE_KINDS[kind].item).length;
+  return work === kinds.length ? "work" : work === 0 ? "news" : "mixed";
 }
 
 export type SubscriptionView = Omit<PushSubscription, "p256dh" | "auth">;
@@ -710,6 +716,7 @@ export class NotificationsService {
         locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
         tag: pushed.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
         renotify: true,
+        ...(pushed.length > 1 ? { gathered: gatheredOf(pushed.map((one) => one.kind)) } : {}),
       }),
     );
   }
@@ -740,6 +747,7 @@ export class NotificationsService {
               locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
               tag: rows.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
               renotify: true,
+              ...(rows.length > 1 ? { gathered: gatheredOf([kind]) } : {}),
             }),
           );
         }),
