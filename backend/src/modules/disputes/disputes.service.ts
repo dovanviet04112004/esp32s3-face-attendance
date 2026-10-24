@@ -100,7 +100,7 @@ export class DisputesService {
       subjectId: slip.id,
       meta: { lineCode, dueAt: made.dueAt.toISOString() },
     });
-    await this.items.open("DISPUTES", made);
+    await this.items.open("DISPUTES", made, { dueAt: made.dueAt });
     return made;
   }
 

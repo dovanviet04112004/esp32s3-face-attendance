@@ -201,14 +201,14 @@ export class ReconcileSweep implements OnModuleInit {
   }
 
   private async openMissing(queue: InboxQueue): Promise<number> {
-    const waiting = await this.db.$queryRaw<{ id: string; employeeId: number }[]>`
-      SELECT s."id", s."employeeId"
+    const waiting = await this.db.$queryRaw<{ id: string; employeeId: number; dueAt: Date | null }[]>`
+      SELECT s."id", s."employeeId", ${queue === "DISPUTES" ? Prisma.sql`s."dueAt"` : Prisma.sql`NULL::timestamp(3)`} AS "dueAt"
         FROM ${Prisma.raw(`"${QUEUE_LEDGER[queue].table}"`)} s
        WHERE s."state"::text = ${WAITING_STATE[queue]}
          AND NOT EXISTS (SELECT 1 FROM "NoticeItem" i WHERE i."key" = ${`${kebab(queue)}:`} || s."id")
     `;
-    for (const subject of waiting) {
-      await this.items.open(queue, subject, { joining: "quiet" });
+    for (const { dueAt, ...subject } of waiting) {
+      await this.items.open(queue, subject, { joining: "quiet", ...(dueAt ? { dueAt } : {}) });
     }
     return waiting.length;
   }

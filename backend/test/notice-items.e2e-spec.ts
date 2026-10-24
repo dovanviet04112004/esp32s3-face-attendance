@@ -317,6 +317,8 @@ describe("work a group shares, closed once for all (e2e)", () => {
     const payRow = await seatOf(item, "pay");
     const shown = await request(http).get(`/notifications/${payRow?.id}`).set("Authorization", `Bearer ${tokenOf.get("pay")}`);
     assert.deepEqual(shown.body.subject?.parent, { type: "PAYSLIP", id: slip.id }, "the desk's row lost the slip the bell opens");
+    const deadline = (await db.payslipDispute.findUniqueOrThrow({ where: { id } })).dueAt.toISOString();
+    assert.equal(shown.body.item?.dueAt, deadline, "the desk's row does not carry the dispute's reply deadline");
 
     const answered = await post("pay", `/payslip-disputes/${id}/answer`, { outcome: "REJECTED", answer: "Đã đối chiếu" });
     assert.equal(answered.status, 201, JSON.stringify(answered.body));
