@@ -7,6 +7,8 @@ import {
   CheckCircleIcon,
   EnvelopeOpenIcon,
   EnvelopeSimpleIcon,
+  UserCheckIcon,
+  UserMinusIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -214,7 +216,13 @@ export function useNoticeWords() {
         const waited = Math.max(0, Math.floor((now.getTime() - new Date(item.openedAt).getTime()) / kDayMs));
         const label = t("stateOpen", { count: waited });
         const loud = item.level === "WARNING" || item.level === "CRITICAL";
-        return { label: item.claimedByName ? `${label} · ${t("stateClaimed", { who: item.claimedByName })}` : label, tone: loud ? "bad" : "waiting" };
+        const claimed =
+          item.claimedById !== null && item.claimedById === userId
+            ? t("stateClaimedSelf")
+            : item.claimedByName
+              ? t("stateClaimed", { who: item.claimedByName })
+              : null;
+        return { label: claimed ? `${label} · ${claimed}` : label, tone: loud ? "bad" : "waiting" };
       }
       if (item.state === "DONE") {
         const outcome = item.outcome ?? "other";
@@ -273,7 +281,7 @@ export function useReadSubject(type: string, id: string | null | undefined): voi
   }, [type, id]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** The row menu: close open work by hand where the reader may, read or unread, archive or bring back.
+/** The row menu: claim open work or let go of it, close it by hand where the reader may, read or unread, archive or bring back.
  *  `dialog` asks for the close's note and must render outside any popover the menu sits in.
  *  @param beforeDialog called as the note dialog opens, so a popover can close first
  */
@@ -286,6 +294,7 @@ export function useNoticeActions(beforeDialog?: () => void): { actionsOf: (notic
   const cache = useQueryClient();
   const notify = useNotify();
   const faultOf = useFault();
+  const userId = useSession((s) => s.userId);
   const [closing, setClosing] = useState<Notice | null>(null);
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState("");
@@ -302,6 +311,16 @@ export function useNoticeActions(beforeDialog?: () => void): { actionsOf: (notic
     onSettled: () => void cache.invalidateQueries({ queryKey: NOTICES_KEY }),
   });
 
+  const claim = useMutation({
+    mutationFn: ({ key, taking }: { key: string; taking: boolean }) =>
+      taking
+        ? api.post(`/notifications/items/${encodeURIComponent(key)}/claim`, {})
+        : api.delete(`/notifications/items/${encodeURIComponent(key)}/claim`),
+    onSuccess: (_, { taking }) => notify.done(t(taking ? "claimed" : "unclaimed")),
+    onError: (fell: unknown) => notify.failed(fell),
+    onSettled: () => void cache.invalidateQueries({ queryKey: NOTICES_KEY }),
+  });
+
   function startClosing(notice: Notice): void {
     beforeDialog?.();
     setNote("");
@@ -315,7 +334,15 @@ export function useNoticeActions(beforeDialog?: () => void): { actionsOf: (notic
     const open = notice.item?.state === "OPEN" && notice.leftAt === null ? notice.item : null;
     // A day is let go on its own page, beside the request that explains it (KEHOACH 9.21.4).
     const closable = open?.resolvable === true && notice.kind !== "ATTENDANCE_EXCEPTION";
+    const taking = open?.claimable === true ? open.claimedById !== userId : null;
     return [
+      ...(open && taking !== null
+        ? [
+            taking
+              ? { key: "claim", label: t("claim"), icon: UserCheckIcon, onSelect: () => claim.mutate({ key: open.key, taking }) }
+              : { key: "unclaim", label: t("unclaim"), icon: UserMinusIcon, onSelect: () => claim.mutate({ key: open.key, taking }) },
+          ]
+        : []),
       ...(closable ? [{ key: "resolve", label: t("resolve"), icon: CheckCircleIcon, onSelect: () => startClosing(notice) }] : []),
       notice.readAt === null
         ? { key: "read", label: t("markRead"), icon: EnvelopeOpenIcon, onSelect: mark("read", notice) }
