@@ -14,6 +14,7 @@ import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import type { InboxQueue } from "../src/modules/notifications/audience.service.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { BackupSweep } from "../src/modules/notifications/sweeps/backup.sweep.js";
 import { CleanupSweep } from "../src/modules/notifications/sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sweep.js";
 import { ProbationSweep } from "../src/modules/notifications/sweeps/probation.sweep.js";
@@ -42,6 +43,8 @@ const codeOf = (who: Who) => `E2ESW${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-notice-sweeps-${who}-${RUN}@kiosk.local`;
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
+// A spell no watch here ever opens, so its alert is this suite's alone.
+const BACKUP_DAY = "1999-12-31";
 
 describe("the stalled sweep in every inbox queue (e2e)", () => {
   let app: INestApplication;
@@ -83,6 +86,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
   }
 
   async function sweep(): Promise<void> {
+    await db.noticeItem.deleteMany({ where: { queue: "BACKUP", subjectId: BACKUP_DAY } });
     await db.payrollPeriod.deleteMany({ where: { year: PAY_YEAR } });
     await db.user.deleteMany({ where: { email: { in: PEOPLE.map(mailOf) } } });
     await db.employee.deleteMany({ where: { code: { in: PEOPLE.map(codeOf) } } });
@@ -406,6 +410,16 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     for (const item of await both()) {
       assert.equal(item.state, "CLEARED", `${item.queue}: work about a person who has left stayed open`);
     }
+  });
+
+  it("clears a backup alert once the backup watch is switched off", async () => {
+    const alert = () => db.noticeItem.findUniqueOrThrow({ where: { key: itemKey("BACKUP", BACKUP_DAY) } });
+    await app
+      .get(NoticeItemsService)
+      .open("BACKUP", { id: BACKUP_DAY, employeeId: null }, { level: "CRITICAL", facts: { problems: "DUMP_STALE" } });
+    assert.equal((await alert()).state, "OPEN");
+    assert.deepEqual(await app.get(BackupSweep).sweep(), { problems: [] });
+    assert.equal((await alert()).state, "CLEARED", "a backup alert outlived the watch that raised it");
   });
 
   it("cleans news read and the rows of work closed past the keep, keeps closed work closed, and never touches open work", async () => {

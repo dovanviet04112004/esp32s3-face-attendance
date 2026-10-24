@@ -81,10 +81,13 @@ export class BackupSweep implements OnModuleInit {
     );
   }
 
-  /** Mail every active ADMIN about each problem found, once a day while it lasts, and keep one BACKUP_ALERT open meanwhile. */
+  /** Mail every active ADMIN about each problem found, once a day while it lasts, and keep one BACKUP_ALERT open meanwhile;
+   *  with the watch switched off, none stays open.
+   */
   async sweep(): Promise<{ problems: BackupProblem[] }> {
     const staleHours = this.config.get("BACKUP_STALE_HOURS", { infer: true });
     if (staleHours === 0) {
+      await this.track([], new Date());
       return { problems: [] };
     }
     const [archiver] = await this.db.$queryRaw<ArchiverState[]>`
