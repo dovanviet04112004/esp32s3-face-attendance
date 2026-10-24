@@ -91,6 +91,8 @@ interface NoticeSubject {
   request?: { kind: RequestKind; fromDate: string; toDate: string; days: string; leaveType: { code: string; name: string } | null } | null;
   /** The record the notice opens when the subject sits inside it: a dispute's payslip, a payroll run's period. */
   parent?: { type: string; id: string } | null;
+  /** The kiosk, for a notice about one; its name is null until somebody names it. */
+  device?: { name: string | null } | null;
 }
 
 export interface Notice {
@@ -137,6 +139,8 @@ export type NoticeSentence =
   | "kindKIOSK_ALERT_offline"
   | "kindKIOSK_ALERT_pending"
   | "kindKIOSK_ALERT_fault"
+  | "kindKIOSK_ALERT_model"
+  | "kindKIOSK_ALERT_facedb"
   | "kindKIOSK_ALERT_update"
   | "kindKIOSK_ALERT_spoof"
   | "kindKIOSK_ALERT_unknown"
@@ -237,6 +241,8 @@ function payslipAt(notice: Notice): string {
 const KIOSK_SENTENCE: Readonly<Record<string, NoticeSentence>> = {
   OFFLINE: "kindKIOSK_ALERT_offline",
   PENDING: "kindKIOSK_ALERT_pending",
+  MODEL_LOAD_FAILED: "kindKIOSK_ALERT_model",
+  FACEDB_CORRUPT: "kindKIOSK_ALERT_facedb",
   OTA_FAILED: "kindKIOSK_ALERT_update",
   OTA_ROLLED_BACK: "kindKIOSK_ALERT_update",
   SPOOF_BURST: "kindKIOSK_ALERT_spoof",

@@ -24,7 +24,8 @@ import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useFault } from "@/lib/fault";
 import { dayOnly, days } from "@/lib/format";
-import { NOTICE_LOOK, type Notice } from "./kinds";
+import { isDeviceEvent } from "@/lib/ws";
+import { NOTICE_LOOK, type Notice, type NoticeSentence } from "./kinds";
 
 export type NoticeStatus = "action" | "unread" | "all" | "archived";
 
@@ -68,6 +69,9 @@ const TEAM_COUNTS: Record<TeamCount, "teamLate" | "teamNotPunched" | "teamAbsent
   absent: "teamAbsent",
   onLeave: "teamOnLeave",
 };
+
+// These kiosk sentences name only a family of codes, so the row names the code itself beside them.
+const FAMILY_SENTENCES: ReadonlySet<NoticeSentence> = new Set<NoticeSentence>(["kindKIOSK_ALERT_fault", "kindKIOSK_ALERT_update"]);
 
 function counted(facts: Notice["facts"], name: string): number {
   const value = facts?.[name];
@@ -132,6 +136,26 @@ export function useNoticeWords() {
     return typeof firmware === "string" && typeof models === "string" ? t("updateRuns", { firmware, models }) : null;
   }
 
+  /** The kiosk by its name, or by its id until somebody names it. */
+  function kioskName(notice: Notice): string | null {
+    const subject = notice.subject;
+    return subject?.id ? (subject.device?.name ?? subject.id) : null;
+  }
+
+  /** The kiosk, the code its sentence leaves unnamed, and the number the kiosk reported with it. */
+  function kiosk(notice: Notice): string | null {
+    const said = [kioskName(notice)];
+    const code = notice.facts?.code;
+    if (FAMILY_SENTENCES.has(NOTICE_LOOK.KIOSK_ALERT.sentence(notice).key) && isDeviceEvent(code)) {
+      said.push(kiosks(`event_${code}`));
+    }
+    const errorCode = notice.facts?.errorCode;
+    if (typeof errorCode === "number") {
+      said.push(t("kioskErrorCode", { code: String(errorCode) }));
+    }
+    return said.filter(Boolean).join(" · ") || null;
+  }
+
   return {
     deviations,
 
@@ -157,8 +181,11 @@ export function useNoticeWords() {
       if (notice.kind === "RELEASE_AVAILABLE") {
         return release(notice.facts);
       }
+      if (notice.kind === "KIOSK_ALERT") {
+        return kiosk(notice);
+      }
       if (notice.kind === "UPDATE_FINISHED") {
-        return finished(notice.facts);
+        return [kioskName(notice), finished(notice.facts)].filter(Boolean).join(" · ") || null;
       }
       const subject = notice.subject;
       if (!subject || subject.hidden) {
