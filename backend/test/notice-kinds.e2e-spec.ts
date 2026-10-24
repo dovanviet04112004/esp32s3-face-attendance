@@ -36,6 +36,7 @@ const ENTITY_CODE = `E2E-NK-${RUN}`;
 const DEVICE = `e2e-nk-${RUN}`;
 const DEPARTMENT_CODE = `E2E-NK-D-${RUN}`;
 const DOCUMENT_CODE = `E2E-NK-DOC-${RUN}`;
+const RETURN_CODE = `E2E-NK-RET-${RUN}`;
 const CLAIM = "246813";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -70,7 +71,7 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     await db.noticeItem.deleteMany({ where: { queue: { in: ["TASKS", "DOCUMENTS"] }, employee: { code: { in: PEOPLE.map(codeOf) } } } });
     await db.checklistRun.deleteMany({ where: { employee: { code: { in: PEOPLE.map(codeOf) } } } });
     await db.checklistTemplate.deleteMany({ where: { department: { code: DEPARTMENT_CODE } } });
-    await db.document.deleteMany({ where: { code: DOCUMENT_CODE } });
+    await db.document.deleteMany({ where: { code: { in: [DOCUMENT_CODE, RETURN_CODE] } } });
     await db.user.deleteMany({ where: { email: { in: PEOPLE.map(mailOf) } } });
     await db.employee.deleteMany({ where: { code: { in: PEOPLE.map(codeOf) } } });
     await db.department.deleteMany({ where: { code: DEPARTMENT_CODE } });
@@ -347,10 +348,61 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     const second = await publish();
     assert.equal((await workOf(first))?.state, "EXPIRED", "work on a superseded version stayed open");
     assert.equal((await workOf(second))?.state, "OPEN", "the next version opened no work");
+    await signing.sweep();
+    assert.equal((await workOf(first))?.state, "EXPIRED", "work on a superseded version opened again");
 
     const signed = await post("hire", `/me/documents/${second}/ack`);
     assert.equal(signed.status, 201, JSON.stringify(signed.body));
     const done = await workOf(second);
     assert.deepEqual([done?.state, done?.outcome, done?.actorId], ["DONE", "SIGNED", loginOf.get("hire")]);
+  });
+
+  it("opens a reader's signing work again once the document or the reader is back, told once, and never once signed", async () => {
+    const signing = app.get(DocumentsSweep);
+    const hire = idOf.get("hire") as number;
+    const made = await post("hr", "/documents", { code: RETURN_CODE, title: `Quy chế ${RUN}`, departmentId });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const published = await post("hr", `/documents/${made.body.id}/versions`, { body: `Quy chế ${RUN}` });
+    assert.equal(published.status, 201, JSON.stringify(published.body));
+    const version = published.body.id as string;
+    await signing.fanOut(version);
+    const key = itemKey("DOCUMENTS", { id: version, part: String(hire) });
+    const current = () => db.noticeItem.findUniqueOrThrow({ where: { key } });
+    const toldOnce = async (itemId: string, why: string) => {
+      const rows = await db.notification.findMany({ where: { itemId } });
+      assert.deepEqual(rows.map((one) => [one.userId, one.readAt, one.remindCount]), [[loginOf.get("hire"), null, 0]], why);
+    };
+    const aim = (body: object) =>
+      request(app.getHttpServer()).patch(`/documents/${made.body.id}`).set("Authorization", `Bearer ${tokenOf.get("hr")}`).send(body);
+    const first = await current();
+    await db.documentVersion.update({ where: { id: version }, data: { publishedAt: new Date(Date.now() - 4 * DAY_MS) } });
+
+    assert.equal((await aim({ active: false })).status, 200);
+    assert.equal((await db.noticeItem.findUniqueOrThrow({ where: { id: first.id } })).state, "EXPIRED", "a retired document kept its work open");
+    assert.equal((await aim({ active: true })).status, 200);
+    await signing.sweep();
+    const back = await current();
+    assert.ok(back.id !== first.id && back.state === "OPEN", "a document back in use opened no work for its unsigned reader");
+    assert.equal(back.lastMark, 3, "work opened again owes a mark its version already passed");
+    await toldOnce(back.id, "work opened again with its document was not told exactly once");
+    const aside = await db.noticeItem.findUniqueOrThrow({ where: { id: first.id } });
+    assert.deepEqual([aside.key, aside.state], [`${key}:${aside.closedAt?.getTime()}`, "EXPIRED"], "the expired work did not step aside");
+
+    await db.employee.update({ where: { id: hire }, data: { departmentId: null } });
+    await signing.sweep();
+    assert.equal((await db.noticeItem.findUniqueOrThrow({ where: { id: back.id } })).state, "EXPIRED", "a reader out of the audience kept the work");
+    await db.employee.update({ where: { id: hire }, data: { departmentId } });
+    await signing.sweep();
+    const again = await current();
+    assert.ok(again.id !== back.id && again.state === "OPEN", "a reader back in the audience got no work again");
+    await toldOnce(again.id, "work opened again with its reader was not told exactly once");
+
+    assert.equal((await post("hire", `/me/documents/${version}/ack`)).status, 201);
+    await db.employee.update({ where: { id: hire }, data: { departmentId: null } });
+    await signing.sweep();
+    await db.employee.update({ where: { id: hire }, data: { departmentId } });
+    await signing.sweep();
+    const kept = await current();
+    assert.deepEqual([kept.id, kept.state, kept.outcome], [again.id, "DONE", "SIGNED"], "signed work opened again");
   });
 });

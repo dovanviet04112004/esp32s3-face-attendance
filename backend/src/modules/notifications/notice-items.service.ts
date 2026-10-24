@@ -125,6 +125,8 @@ const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIO
 /** What a reopening appends to the key of the closed work it moves aside: that work's close, in epoch milliseconds. */
 export const CLOSED_STAMP = Prisma.sql`(extract(epoch FROM "closedAt") * 1000)::bigint`;
 
+const CLOSED_STATES: readonly NoticeItemState[] = ["DONE", "WITHDRAWN", "EXPIRED", "CLEARED"];
+
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
 export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
 
@@ -308,7 +310,7 @@ export class NoticeItemsService {
     const key = itemKey(queue, subject);
     try {
       if (RECURRING.has(queue)) {
-        await this.retire(key);
+        await this.retire([key]);
       }
       const made = await this.db.noticeItem.createMany({
         data: [
@@ -336,12 +338,14 @@ export class NoticeItemsService {
     }
   }
 
-  // A closed item steps aside with its rows, keeping who handled it, so the condition can open again.
-  private async retire(key: string): Promise<void> {
+  /** Move the closed work under these keys aside with its rows, keeping who handled it, so each key can open again.
+   *  @ctx any | one statement; open work, and work closed in a state not listed, stays where it is
+   */
+  async retire(keys: string[], states: readonly NoticeItemState[] = CLOSED_STATES): Promise<void> {
     await this.db.$executeRaw`
       WITH old AS (
         UPDATE "NoticeItem" SET "key" = "key" || ':' || ${CLOSED_STAMP}
-         WHERE "key" = ${key} AND "state" <> 'OPEN'
+         WHERE "key" = ANY(${keys}::text[]) AND "state" <> 'OPEN' AND "state"::text = ANY(${[...states]}::text[])
         RETURNING "id", "key"
       )
       UPDATE "Notification" n SET "dedupKey" = old."key" FROM old WHERE n."itemId" = old."id"

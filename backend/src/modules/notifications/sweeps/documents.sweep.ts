@@ -7,7 +7,7 @@ import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
 import { localDateSql, localDay } from "../../timesheet/local-day.js";
-import { NoticeItemsService } from "../notice-items.service.js";
+import { itemKey, NoticeItemsService } from "../notice-items.service.js";
 import { QUEUE_MARKS } from "../notice-kinds.js";
 import { NotificationsService, type Announced } from "../notifications.service.js";
 
@@ -56,7 +56,8 @@ export class DocumentsSweep implements OnModuleInit {
     return { opened, reminded, closed };
   }
 
-  /** Open a version's work for each reader with an open login and no signature, a thousand at a time.
+  /** Open a version's work for each reader with an open login and no signature, a thousand at a time; work that expired
+   *  for a retired document or a reader out of its audience opens again once both are back.
    *  @ctx job | after a publish and in the daily sweep; an older version opens nothing, a second run adds nothing
    */
   async fanOut(versionId: string, now: Date = new Date()): Promise<number> {
@@ -90,8 +91,9 @@ export class DocumentsSweep implements OnModuleInit {
     }
   }
 
-  // Two statements a batch: the items, at the mark their wait has passed so it is not said again, then each open login's row.
+  // A batch of readers: expired work of those back steps aside (KEHOACH 9.21.4), the items open at the mark passed, then each login's row.
   private async openFor(versionId: string, readers: number[], now: Date): Promise<number> {
+    await this.items.retire(readers.map((id) => itemKey("DOCUMENTS", { id: versionId, part: String(id) })), ["EXPIRED"]);
     const made = await this.db.$queryRaw<{ id: string }[]>`
       INSERT INTO "NoticeItem" ("id", "key", "queue", "subjectType", "subjectId", "employeeId", "lastMark")
       SELECT gen_random_uuid()::text, 'documents:' || v."id" || ':' || r."id", 'DOCUMENTS'::"NoticeQueue",
