@@ -37,6 +37,7 @@ import { NotificationsService } from "../notifications/notifications.service.js"
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asCalcPolicy, PolicyService } from "../policy/policy.service.js";
 import { asDay, dayWindow, localDay } from "../timesheet/local-day.js";
+import { calendarOn } from "../timesheet/timesheet.service.js";
 import {
   calculate,
   taxOn,
@@ -281,6 +282,23 @@ function paidElsewhere(periodId: string): Prisma.Sql {
 function slipsReached(viewer: Viewer): Prisma.PayslipWhereInput {
   const ids = viewer.entityIds;
   return ids === null ? {} : { OR: [ScopeService.ownedWhere(viewer, null), { period: { legalEntityId: { in: ids } } }] };
+}
+
+/** Working days of the period outside somebody's hire and leave dates, by the timesheet's one calendar (KEHOACH 9.5, 9.7). */
+function workdaysOutside(
+  period: PayrollPeriod,
+  person: { legalEntityId: string; hireDate: Date | null; leaveDate: Date | null },
+  holidays: readonly { date: Date; legalEntityId: string | null; paid: boolean }[],
+): number {
+  let days = 0;
+  for (let at = new Date(period.startDate); at <= period.endDate; at.setUTCDate(at.getUTCDate() + 1)) {
+    const outside = (person.hireDate !== null && at < person.hireDate) || (person.leaveDate !== null && at > person.leaveDate);
+    const declared = holidays.filter((one) => one.date.getTime() === at.getTime());
+    if (outside && calendarOn(at, declared, person.legalEntityId) === "WORKDAY") {
+      days += 1;
+    }
+  }
+  return days;
 }
 
 function sumOf(lines: { code: string; amount: Prisma.Decimal }[], code: string): Dong {
@@ -1024,7 +1042,7 @@ export class PayrollService {
     policyOf: ReadonlyMap<number, RunPolicy>,
     ids: number[],
   ): Promise<{ gross: Dong; net: Dong; done: number; retroIds: string[]; advanceIds: string[] }> {
-    const [pay, allowances, days, leave, dependents, retros, advances, leavers] = await Promise.all([
+    const [pay, allowances, days, leave, dependents, retros, advances, people, holidays] = await Promise.all([
       this.db.$queryRaw<PayRow[]>`
         SELECT DISTINCT ON (c."employeeId")
                c."employeeId", c."id" AS "recordId",
@@ -1053,8 +1071,10 @@ export class PayrollService {
       this.db.$queryRaw<DayTally[]>`
         WITH paid AS (
           SELECT d."employeeId", d."state", d."calendar", d."workedMinutes",
+                 (d."date" < coalesce(e."hireDate", d."date") OR d."date" > coalesce(e."leaveDate", d."date")) AS "outside",
                  LEAST(d."overtimeMinutes", floor(coalesce(a."allowed", 0))::int) AS "overtimePaid"
             FROM "AttendanceDay" d
+            JOIN "Employee" e ON e."id" = d."employeeId"
             LEFT JOIN LATERAL (
               SELECT sum(r."minutes"::numeric / (r."toDate"::date - r."fromDate"::date + 1)) AS "allowed"
                 FROM "Request" r
@@ -1066,10 +1086,11 @@ export class PayrollService {
              AND d."date" BETWEEN ${period.startDate} AND ${period.endDate}
         )
         -- A day off worked is paid as overtime alone; a paid holiday is paid whether worked or not.
+        -- A day outside the employment dates is counted from the calendar instead, so never twice.
         SELECT "employeeId",
                count(*) FILTER (WHERE "state" = 'WORKED' AND "calendar" = 'WORKDAY')::int AS "workedDays",
                count(*) FILTER (WHERE "calendar" = 'HOLIDAY')::int                        AS "holidayDays",
-               count(*) FILTER (WHERE "state" = 'ABSENT')::int                            AS "absentDays",
+               count(*) FILTER (WHERE "state" = 'ABSENT' AND NOT "outside")::int          AS "absentDays",
                coalesce(sum("workedMinutes"), 0)::int                                     AS "workedMinutes",
                coalesce(sum("overtimePaid") FILTER (WHERE "calendar" = 'WORKDAY'), 0)::int AS "weekdayOt",
                coalesce(sum("overtimePaid") FILTER (WHERE "calendar" IN ('WEEKEND', 'UNPAID_HOLIDAY')), 0)::int
@@ -1106,13 +1127,20 @@ export class PayrollService {
         where: { employeeId: { in: ids }, state: "PAID" },
       }),
       this.db.employee.findMany({
-        where: { id: { in: ids }, leaveDate: { lte: period.endDate } },
-        select: { id: true },
+        where: { id: { in: ids } },
+        select: { id: true, legalEntityId: true, hireDate: true, leaveDate: true },
+      }),
+      this.db.holiday.findMany({
+        where: { date: { gte: period.startDate, lte: period.endDate } },
+        select: { date: true, legalEntityId: true, paid: true },
       }),
     ]);
 
     const payOf = new Map(pay.map((row) => [row.employeeId, row]));
-    const leaving = new Set(leavers.map((row) => row.id));
+    const leaving = new Set(
+      people.filter((one) => one.leaveDate !== null && one.leaveDate <= period.endDate).map((one) => one.id),
+    );
+    const outsideOf = new Map(people.map((one) => [one.id, workdaysOutside(period, one, holidays)]));
     const allowanceOf = new Map<string, CalcAllowance[]>();
     for (const row of allowances) {
       const list = allowanceOf.get(row.recordId) ?? [];
@@ -1161,7 +1189,8 @@ export class PayrollService {
       const day = dayOf.get(employeeId);
       const off = leaveOf.get(employeeId);
       const paidLeave = off?.paidLeave ?? 0;
-      const unpaid = (off?.unpaidLeave ?? 0) + (day?.absentDays ?? 0);
+      // A working day outside the employment dates is neither worked nor paid (KEHOACH 9.7).
+      const unpaid = (off?.unpaidLeave ?? 0) + (day?.absentDays ?? 0) + (outsideOf.get(employeeId) ?? 0);
       const paidDays = (day?.workedDays ?? 0) + (day?.holidayDays ?? 0) + paidLeave;
       const priced = policyOf.get(employeeId) as RunPolicy;
       const result = calculate({

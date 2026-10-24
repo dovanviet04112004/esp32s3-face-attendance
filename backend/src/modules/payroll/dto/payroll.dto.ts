@@ -539,7 +539,11 @@ export class PayslipView {
   state!: PayslipState;
   @ApiProperty({ example: "21", description: "Workdays worked, a decimal string" }) workedDays!: string;
   @ApiProperty({ example: "1", description: "Days on paid leave, a decimal string" }) paidLeaveDays!: string;
-  @ApiProperty({ example: "0", description: "Unpaid leave and absent days, a decimal string" }) unpaidDays!: string;
+  @ApiProperty({
+    example: "0",
+    description: "Unpaid leave, absences and working days outside the hire and leave dates, a decimal string; 14 or more stop the insurance",
+  })
+  unpaidDays!: string;
   @ApiProperty({ example: 10080, description: "Minutes worked in the month" }) workedMinutes!: number;
   @ApiProperty({ example: 150, description: "Overtime minutes paid: each day the lesser of measured and approved" })
   overtimeMinutes!: number;

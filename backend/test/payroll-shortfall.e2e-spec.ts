@@ -57,6 +57,9 @@ const POLICY = {
   nightPremiumBp: 3_000,
 };
 
+// The leaver's last day: two absences and the seven working days after it stay short of the fourteen.
+const LEAVER_LAST_DAY = "2026-03-20";
+
 // One day worked of three, too few absences to stop the contributions.
 const MARCH_DAYS = [
   { date: "2026-03-02", state: "WORKED" as const, workedMinutes: 480, punchCount: 2 },
@@ -154,7 +157,7 @@ describe("a payslip that comes short (e2e)", () => {
           code,
           fullName: `Thử phiếu âm ${code}`,
           active: !leaving,
-          leaveDate: leaving ? dateOf("2026-03-04") : null,
+          leaveDate: leaving ? dateOf(LEAVER_LAST_DAY) : null,
           legalEntityId: entityId,
           departmentId,
           hireDate: dateOf("2025-01-01"),
@@ -293,5 +296,105 @@ describe("a payslip that comes short (e2e)", () => {
     const paid = rows.find((row) => row[0] === SHORT);
     assert.ok(paid, "the bank file left out a slip in credit");
     assert.equal(paid[header.indexOf("amount")], slip.netPay.toFixed(0));
+  });
+});
+
+// An entity of its own, and June 2026, which starts on a Monday: its 22 working days count by hand.
+const JUNE_ENTITY = "E2E-PAYI";
+const JOINER = "NV9I01";
+const QUITTER = "NV9I02";
+const STAYER = "NV9I03";
+const JUNE_CODES = [JOINER, QUITTER, STAYER];
+// June holds fifteen working days ahead of the 20th, and nineteen after the 3rd.
+const JOINED = "2026-06-20";
+const LAST_DAY = "2026-06-03";
+const JUNE_WORKDAYS = [1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 29, 30].map(
+  (day) => `2026-06-${String(day).padStart(2, "0")}`,
+);
+
+describe("the insurance of a month somebody joins or leaves (e2e)", () => {
+  let app: INestApplication;
+  let db: PrismaService;
+  let payroll: PayrollService;
+  let entityId = "";
+  const idOf = new Map<string, number>();
+
+  async function sweep(): Promise<void> {
+    await db.payrollPeriod.deleteMany({ where: { legalEntity: { code: JUNE_ENTITY } } });
+    await db.employee.deleteMany({ where: { code: { in: JUNE_CODES } } });
+    await db.legalEntity.deleteMany({ where: { code: JUNE_ENTITY } });
+  }
+
+  before(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    configure(app);
+    await app.init();
+    db = app.get(PrismaService);
+    payroll = app.get(PayrollService);
+    await sweep();
+
+    entityId = (await db.legalEntity.create({ data: { code: JUNE_ENTITY, name: "Pháp nhân thử tháng vào ra" } })).id;
+    await db.payrollPolicy.create({
+      data: {
+        ...POLICY,
+        effectiveFrom: dateOf("2026-01-01"),
+        legalEntityId: entityId,
+        brackets: {
+          create: BRACKETS.map((band, at) => ({ ordinal: at + 1, upToAmount: band.upToAmount ?? null, rateBp: band.rateBp })),
+        },
+      },
+    });
+    const worked: Record<string, string[]> = {
+      [JOINER]: JUNE_WORKDAYS.filter((day) => day >= JOINED),
+      [QUITTER]: JUNE_WORKDAYS.filter((day) => day <= LAST_DAY),
+      [STAYER]: JUNE_WORKDAYS,
+    };
+    for (const code of JUNE_CODES) {
+      const made = await db.employee.create({
+        data: {
+          code,
+          fullName: `Thử tháng vào ra ${code}`,
+          active: code !== QUITTER,
+          legalEntityId: entityId,
+          hireDate: dateOf(code === JOINER ? JOINED : "2025-01-01"),
+          leaveDate: code === QUITTER ? dateOf(LAST_DAY) : null,
+        },
+      });
+      idOf.set(code, made.id);
+      await db.compensationRecord.create({
+        data: { employeeId: made.id, effectiveFrom: dateOf("2025-01-01"), baseSalary: BASE, insuranceSalary: BASE },
+      });
+      await db.attendanceDay.createMany({
+        data: worked[code].map((day) => ({
+          employeeId: made.id,
+          date: dateOf(day),
+          state: "WORKED" as const,
+          workedMinutes: 480,
+          punchCount: 2,
+        })),
+      });
+    }
+  });
+
+  after(async () => {
+    await sweep();
+    await app.close();
+  });
+
+  it("charges no insurance for a month mostly outside somebody's employment, and a full month in full", async () => {
+    const period = await db.payrollPeriod.create({
+      data: { legalEntityId: entityId, year: 2026, month: 6, startDate: dateOf("2026-06-01"), endDate: dateOf("2026-06-30") },
+    });
+    const run = await db.payrollRun.create({ data: { periodId: period.id, kind: "REGULAR" } });
+    assert.equal((await payroll.runNow(run.id)).state, "DONE");
+    const slips = await db.payslip.findMany({ where: { runId: run.id } });
+    const figures = (code: string) => {
+      const slip = slips.find((one) => one.employeeId === idOf.get(code));
+      return [slip?.insuranceEmployee.toFixed(0), slip?.unpaidDays.toFixed(0)];
+    };
+    assert.deepEqual(figures(JOINER), ["0", "15"], "a joiner paid insurance on a month mostly before they started");
+    assert.deepEqual(figures(QUITTER), ["0", "19"], "a leaver paid insurance on a month mostly after they left");
+    assert.deepEqual(figures(STAYER), [String(INSURANCE), "0"], "a full month lost its insurance");
   });
 });
