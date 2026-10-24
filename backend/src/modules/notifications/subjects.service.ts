@@ -33,6 +33,11 @@ export interface SubjectRequest {
   leaveType: { code: string; name: string } | null;
 }
 
+/** The kiosk a notice is about; only an ADMIN holds such notices. */
+export interface SubjectDevice {
+  name: string | null;
+}
+
 /** What a notice is about, as this viewer may see it now; hidden carries neither a name nor a way in. */
 export interface SubjectView {
   type: NoticeSubject;
@@ -41,6 +46,7 @@ export interface SubjectView {
   person: SubjectPerson | null;
   request: SubjectRequest | null;
   parent: SubjectParent | null;
+  device: SubjectDevice | null;
 }
 
 interface Subjected {
@@ -87,7 +93,7 @@ export class SubjectsService {
   }
 
   /** Each row's subject, in the order given; a row with no subject reads null.
-   *  @ctx any | at most six reads whatever the number of rows
+   *  @ctx any | at most seven reads whatever the number of rows
    */
   async describe(viewer: Viewer, rows: Subjected[]): Promise<(SubjectView | null)[]> {
     const reach = await this.reach(viewer);
@@ -105,7 +111,8 @@ export class SubjectsService {
     const requests = of("REQUEST");
     const disputes = of("DISPUTE");
     const runs = of("PAYROLL_RUN");
-    const [persons, filed, slips, periods] = await Promise.all([
+    const kiosks = of("DEVICE");
+    const [persons, filed, slips, periods, devices] = await Promise.all([
       people.length === 0 ? [] : this.db.employee.findMany({ where: { id: { in: people } }, select: PERSON_VIEW.select }),
       requests.length === 0
         ? []
@@ -115,9 +122,11 @@ export class SubjectsService {
           }),
       disputes.length === 0 ? [] : this.db.payslipDispute.findMany({ where: { id: { in: disputes } }, select: { id: true, payslipId: true } }),
       runs.length === 0 ? [] : this.db.payrollRun.findMany({ where: { id: { in: runs } }, select: { id: true, periodId: true } }),
+      kiosks.length === 0 ? [] : this.db.device.findMany({ where: { id: { in: kiosks } }, select: { id: true, name: true } }),
     ]);
     const personOf = new Map(persons.map((one) => [one.id, one]));
     const requestOf = new Map(filed.map((one) => [one.id, one]));
+    const deviceOf = new Map(devices.map((one) => [one.id, one]));
     const parentOf = new Map<string, SubjectParent>([
       ...slips.map((one): [string, SubjectParent] => [`DISPUTE:${one.id}`, { type: "PAYSLIP", id: one.payslipId }]),
       ...periods.map((one): [string, SubjectParent] => [`PAYROLL_RUN:${one.id}`, { type: "PAYROLL_PERIOD", id: one.periodId }]),
@@ -127,7 +136,7 @@ export class SubjectsService {
         return null;
       }
       if (!sees(row)) {
-        return { type: row.subjectType, id: null, hidden: true, person: null, request: null, parent: null };
+        return { type: row.subjectType, id: null, hidden: true, person: null, request: null, parent: null, device: null };
       }
       const asked = row.subjectId ? requestOf.get(row.subjectId) : undefined;
       return {
@@ -139,6 +148,7 @@ export class SubjectsService {
           ? { kind: asked.kind, fromDate: asked.fromDate, toDate: asked.toDate, days: asked.days.toString(), leaveType: asked.leaveType }
           : null,
         parent: parentOf.get(`${row.subjectType}:${row.subjectId}`) ?? null,
+        device: row.subjectType === "DEVICE" && row.subjectId ? { name: deviceOf.get(row.subjectId)?.name ?? null } : null,
       };
     });
   }

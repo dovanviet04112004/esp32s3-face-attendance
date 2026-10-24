@@ -203,6 +203,8 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     const camera = await itemOf("camera-fault");
     assert.ok(camera && camera.state === "OPEN" && camera.level === "CRITICAL", "a fault opened no critical work");
     assert.equal(await db.noticeItem.count({ where: { key: { startsWith: keyOf("camera-fault") } } }), 1, "a repeat opened work twice");
+    const bell = await request(app.getHttpServer()).get(`/notifications/${(await told(camera.id))?.id}`).set("Authorization", `Bearer ${tokenOf.get("admin")}`);
+    assert.deepEqual(bell.body.subject?.device, { name: "Cổng thử" }, "the fault's row does not name its kiosk");
     const resolved = await post("admin", `/notifications/items/${keyOf("camera-fault")}/resolve`, { note: "e2e" });
     assert.equal(resolved.status, 201, JSON.stringify(resolved.body));
     const traced = await db.auditLog.findFirst({ where: { action: "notice.resolve", subjectType: "device", subjectId: DEVICE } });

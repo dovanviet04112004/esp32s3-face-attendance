@@ -263,6 +263,11 @@ export class SubjectParentView {
   id!: string;
 }
 
+export class SubjectDeviceView {
+  @ApiProperty({ type: String, nullable: true, example: "Cổng chính", description: "The kiosk's name; null until somebody names it" })
+  name!: string | null;
+}
+
 /** Who and what a notice is about, built when it is read, through the reader's scope (KEHOACH 9.21.4). */
 export class NoticeSubjectView {
   @ApiProperty({ enum: NoticeSubject, enumName: "NoticeSubject", example: NoticeSubject.REQUEST, description: "What kind of record" })
@@ -291,6 +296,9 @@ export class NoticeSubjectView {
     description: "The record the notice opens when the subject sits inside it: a dispute's payslip, a run's period",
   })
   parent!: SubjectParentView | null;
+
+  @ApiProperty({ type: SubjectDeviceView, nullable: true, description: "The kiosk, for a notice about one; null otherwise" })
+  device!: SubjectDeviceView | null;
 }
 
 export class NoticeView {
