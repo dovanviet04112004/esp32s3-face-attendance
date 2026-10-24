@@ -1680,6 +1680,7 @@
     "SHIFT_NOT_FOUND": "No such shift.",
     "TASK_ALREADY_DONE": "Somebody has already marked this done.",
     "TASK_NOT_FOUND": "No such task.",
+    "TASK_NOT_YOURS": "Someone else owns this task; only they or the HR desk can mark it done.",
     "USER_NOT_FOUND": "No such account, or it is closed.",
     "VERSION_NOT_FOUND": "No such version of the document.",
     "RATE_LIMITED": "Too many requests. Wait a moment and try again.",

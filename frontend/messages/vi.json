@@ -1680,6 +1680,7 @@
     "SHIFT_NOT_FOUND": "Không tìm thấy ca làm việc này.",
     "TASK_ALREADY_DONE": "Việc này đã có người đánh dấu xong.",
     "TASK_NOT_FOUND": "Không tìm thấy việc này.",
+    "TASK_NOT_YOURS": "Việc này do người khác phụ trách, chỉ người ấy hoặc bộ phận nhân sự đánh dấu xong được.",
     "USER_NOT_FOUND": "Không tìm thấy tài khoản này, hoặc tài khoản đã đóng.",
     "VERSION_NOT_FOUND": "Không tìm thấy bản này của tài liệu.",
     "RATE_LIMITED": "Thao tác quá nhanh. Chờ một lát rồi thử lại.",

@@ -1,10 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   Prisma,
   type ChecklistKind,
   type ChecklistTask,
   type ChecklistTemplateItem,
+  type Role,
   type TaskOwner,
 } from "@prisma/client";
 
@@ -70,6 +71,18 @@ export interface OpenCounts {
 }
 
 const kMsPerDay = 86_400_000;
+// The HR desk ticks any task in its scope; everyone else only the tasks they own (KEHOACH 9.16 item 10).
+const TICKS_ANY_TASK: ReadonlySet<Role> = new Set<Role>(["ADMIN", "HR"]);
+
+function ownsTask(viewer: Viewer, owner: TaskOwner, ownerId: number | null, onRunOf: number): boolean {
+  if (viewer.employeeId === null) {
+    return false;
+  }
+  if (owner === "SELF") {
+    return onRunOf === viewer.employeeId;
+  }
+  return owner === "MANAGER" && ownerId === viewer.employeeId;
+}
 
 /** What planting a run needs off the record: who they are and who owns the
  *  tasks written for a manager.
@@ -358,12 +371,15 @@ export class OnboardingService {
     if (!(await this.scope.reaches(viewer, visible, task.run.employeeId))) {
       throw new NotFoundException("TASK_NOT_FOUND");
     }
-    if (task.doneAt !== null) {
-      throw new ConflictException("TASK_ALREADY_DONE");
-    }
     // The person on the checklist ticks their own tasks, not the desk's or their manager's (KEHOACH 9.4).
     if (task.ownerRole !== "SELF") {
       refuseOwn(viewer, task.run.employeeId);
+    }
+    if (!TICKS_ANY_TASK.has(viewer.role) && !ownsTask(viewer, task.ownerRole, task.ownerId, task.run.employeeId)) {
+      throw new ForbiddenException("TASK_NOT_YOURS");
+    }
+    if (task.doneAt !== null) {
+      throw new ConflictException("TASK_ALREADY_DONE");
     }
     // Claimed by the update itself, so two people ticking at once cannot both be recorded.
     const claimed = await this.db.checklistTask.updateMany({

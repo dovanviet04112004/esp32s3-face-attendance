@@ -11,7 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { dayAsDate, localDay } from "../src/modules/timesheet/local-day.js";
-import { paidLeaveType, seedEntityId } from "./fixtures.js";
+import { paidLeaveType, seedEntityId, signIn } from "./fixtures.js";
 
 const HIRE = "E2EON01";
 const FROM_NEW_YEAR = "E2EON02";
@@ -23,6 +23,9 @@ const EMAIL = "e2eon@kiosk.local";
 const SECOND_EMAIL = "e2eon2@kiosk.local";
 const CLERK_EMAIL = "e2eon-clerk@kiosk.local";
 const CLERK_PASSWORD = "kiosk-e2e-password";
+const BOSS_EMAIL = "e2eon-boss@kiosk.local";
+const OUTSIDER_EMAIL = "e2eon-outsider@kiosk.local";
+const TICK_PASSWORD = "kiosk-e2e-ticking-password";
 const TITLE = "E2EON-JT";
 const YEAR = 2039;
 const LATE_START = `${YEAR}-10-01`;
@@ -65,7 +68,7 @@ describe("onboarding (e2e)", () => {
   let entityId = "";
 
   async function sweep(): Promise<void> {
-    await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL, CLERK_EMAIL] } } });
+    await db.user.deleteMany({ where: { email: { in: [EMAIL, SECOND_EMAIL, CLERK_EMAIL, BOSS_EMAIL, OUTSIDER_EMAIL] } } });
     await db.employee.deleteMany({ where: { code: { in: [HIRE, FROM_NEW_YEAR, GONE, BOSS, CLERK, PAID] } } });
     await db.jobTitle.deleteMany({ where: { code: TITLE } });
     await db.payrollPeriod.deleteMany({ where: { legalEntityId: entityId, year: YEAR, month: 10 } });
@@ -371,6 +374,44 @@ describe("onboarding (e2e)", () => {
       [["baseSalary", "SELF_DECISION"]],
       "a file let its importer set their own pay",
     );
+  });
+
+  it("lets the HR desk tick any task and everyone else only the tasks they own", async () => {
+    const run = await db.checklistRun.findUniqueOrThrow({
+      where: { employeeId_kind: { employeeId: hireId, kind: "ONBOARDING" } },
+      include: { tasks: { orderBy: { ordinal: "asc" } } },
+    });
+    const desk = run.tasks.find((one) => one.ownerRole === "HR");
+    const own = run.tasks.find((one) => one.ownerRole === "SELF");
+    assert.ok(desk && own, "the hire's run lacks a desk task or a task of their own");
+    const bosses = await db.checklistTask.create({
+      data: { runId: run.id, ordinal: run.tasks.length + 1, title: "Giao việc đầu tiên", ownerRole: "MANAGER", ownerId: bossId, dueOn: new Date(LATE_START) },
+    });
+    const passwordHash = await hashPassword(TICK_PASSWORD);
+    await db.user.update({ where: { email: EMAIL }, data: { passwordHash } });
+    await db.user.createMany({
+      data: [
+        { email: BOSS_EMAIL, passwordHash, role: "MANAGER", employeeId: bossId },
+        { email: OUTSIDER_EMAIL, passwordHash, role: "EMPLOYEE", employeeId: newYearId },
+      ],
+    });
+    const [hire, boss, outsider] = await Promise.all(
+      [EMAIL, BOSS_EMAIL, OUTSIDER_EMAIL].map((email) => signIn(http, email, TICK_PASSWORD)),
+    );
+    const tick = (who: string, taskId: string) =>
+      request(http).post(`/checklist-tasks/${taskId}/finish`).set("Authorization", `Bearer ${who}`).send({});
+    const refused = async (who: string, taskId: string, status: number, code: string) => {
+      const res = await tick(who, taskId);
+      assert.deepEqual([res.status, res.body.message], [status, code], `${taskId} answered ${JSON.stringify(res.body)}`);
+    };
+
+    await refused(boss, desk.id, 403, "TASK_NOT_YOURS");
+    await refused(boss, own.id, 403, "TASK_NOT_YOURS");
+    await refused(hire, bosses.id, 403, "SELF_DECISION");
+    await refused(outsider, own.id, 404, "TASK_NOT_FOUND");
+    assert.equal((await tick(boss, bosses.id)).status, 201, "a manager could not tick their own task");
+    assert.equal((await tick(hire, own.id)).status, 201, "the hire could not tick their own task");
+    assert.equal((await tick(token, desk.id)).status, 201, "the desk could not tick the desk's task");
   });
 });
 
