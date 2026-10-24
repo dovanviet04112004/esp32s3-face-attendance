@@ -15,6 +15,9 @@ import { hashPassword } from "../src/modules/auth/password.js";
 import { KIOSK_EVENT } from "../src/modules/mqtt/mqtt.events.js";
 import { pushBody } from "../src/modules/notifications/dto/push-body.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
+import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
+import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
+import { QUEUE } from "../src/queue/queues.js";
 import { seedEntityId } from "./fixtures.js";
 
 // Push turns on with a key pair, and a one-second window keeps the desk's gathering inside a test.
@@ -75,6 +78,14 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
       if (mine.length >= count || Date.now() > deadline) {
         return mine;
       }
+      await new Promise((done) => setTimeout(done, POLL_MS));
+    }
+  }
+
+  async function until(check: () => Promise<boolean>, what: string): Promise<void> {
+    const deadline = Date.now() + WAIT_MS;
+    while (!(await check())) {
+      assert.ok(Date.now() < deadline, `timed out waiting for ${what}`);
       await new Promise((done) => setTimeout(done, POLL_MS));
     }
   }
@@ -179,6 +190,27 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     assert.equal(desk[0].body.count, 2);
     assert.equal(desk[0].body.tag, "gathered");
     assert.equal(desk[0].body.gathered, "work", "two requests waiting were not told as work");
+  });
+
+  it("opens the desk's next window after a gather that failed for good", async () => {
+    const notices = app.get(NotificationsService);
+    const queue = (app.get(QUEUE_TOKEN) as Queues)[QUEUE.notify];
+    const desk = loginOf.get("desk") as string;
+    const held = notices.gather;
+    let tries = 0;
+    notices.gather = async (userId: string) => {
+      tries += userId === desk ? 1 : 0;
+      throw new Error("e2e: the gather fell over");
+    };
+    try {
+      await file("orphan");
+      await until(async () => tries >= 3 && (await queue.getDeduplicationJobId(`gather-${desk}`)) === null, "the gather failing for good");
+    } finally {
+      notices.gather = held;
+    }
+    const before = (await pushesTo("desk", 0)).length;
+    await file("orphan");
+    assert.equal((await pushesTo("desk", before + 1)).length, before + 1, "a failed gather swallowed the desk's next window");
   });
 
   it("pushes nothing of a kind whose push the person turned off", async () => {

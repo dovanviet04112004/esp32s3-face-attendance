@@ -630,11 +630,12 @@ export class NotificationsService {
       const held = since.get(one.userId);
       since.set(one.userId, held && held < one.at ? held : one.at);
     }
+    // A deduplication id lapses as its job ends, failed included, so no window outlives its gather.
     for (const [userId, at] of since) {
       await this.queues[QUEUE.notify].add(
         JOB.noticeGather,
         { type: JOB.noticeGather, userId, since: at.toISOString() } satisfies NoticeGatherJob,
-        { jobId: `gather-${userId}`, delay: window * kSecondMs },
+        { deduplication: { id: `gather-${userId}` }, delay: window * kSecondMs },
       );
     }
   }
