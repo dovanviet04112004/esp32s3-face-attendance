@@ -401,6 +401,8 @@ export class OrgService {
     }
     refuseOwn(viewer, held.employeeId);
     const moved = await this.db.$transaction(async (tx) => {
+      // Moves of one person's contracts queue here, so a second activation ends the first.
+      await tx.$executeRaw`SELECT 1 FROM "Employee" WHERE "id" = ${held.employeeId} FOR NO KEY UPDATE`;
       if (body.state === "ACTIVE") {
         await tx.employmentContract.updateMany({
           where: { employeeId: held.employeeId, state: "ACTIVE", id: { not: id } },

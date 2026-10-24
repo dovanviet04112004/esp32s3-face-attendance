@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -17,6 +18,8 @@ const DOMAIN = "@e2e-hiring.local";
 const OTHER_ENTITY = `${PREFIX}-LE`;
 const ACCOUNTS = { admin: "admin@kiosk.local", hr: "hr@kiosk.local", payroll: "payroll@kiosk.local" };
 const DAY_MS = 86_400_000;
+// Short of the five seconds each activation's own transaction may run.
+const HOLD_MS = 1000;
 
 type Who = keyof typeof ACCOUNTS;
 
@@ -220,5 +223,41 @@ describe("hiring and the employee record (e2e)", () => {
     const check = await as("hr", "post", "/employees/import").send({ csv: res.text });
     assert.equal(check.status, 201);
     assert.deepEqual(check.body.faults, [], "the example line fails the import it documents");
+  });
+
+  it("leaves one contract in force when two are activated at once", async () => {
+    const id = await hire("30", { legalEntityId: entityId });
+    const [first, second] = await Promise.all(
+      ["A", "B"].map((tag) =>
+        db.employmentContract.create({
+          data: { employeeId: id, kind: "FIXED_TERM", number: `${PREFIX}-${tag}`, startDate: new Date("2026-11-01") },
+        }),
+      ),
+    );
+    let taken = (): void => undefined;
+    const held = new Promise<void>((done) => {
+      taken = done;
+    });
+    // Both rows stay locked meanwhile, so neither activation can commit until both are under way.
+    const hold = db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "EmploymentContract" WHERE "id" IN (${first.id}, ${second.id}) FOR UPDATE`;
+        taken();
+        await sleep(HOLD_MS);
+      },
+      { timeout: HOLD_MS * 4 },
+    );
+    await held;
+    const answers = await Promise.all(
+      [first, second].map((one) => as("hr", "patch", `/contracts/${one.id}`).send({ state: "ACTIVE" })),
+    );
+    await hold;
+    assert.deepEqual(answers.map((one) => one.status), [200, 200], JSON.stringify(answers.map((one) => one.body)));
+    const standing = await db.employmentContract.findMany({ where: { employeeId: id }, select: { state: true } });
+    assert.deepEqual(
+      standing.map((one) => one.state).sort(),
+      ["ACTIVE", "ENDED"],
+      "two contracts of one person stood at once",
+    );
   });
 });
