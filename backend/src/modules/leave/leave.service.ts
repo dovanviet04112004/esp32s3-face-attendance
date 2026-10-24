@@ -31,6 +31,7 @@ import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { AudienceService } from "../notifications/audience.service.js";
+import { INBOX_ROLES } from "../notifications/notice-kinds.js";
 import { NoticeItemsService } from "../notifications/notice-items.service.js";
 import { AttendanceSweep } from "../notifications/sweeps/attendance.sweep.js";
 import { asDay, dayAsDate } from "../timesheet/local-day.js";
@@ -903,7 +904,8 @@ export class LeaveService {
     if (THE_DESK.includes(viewer.role) && inEntities) {
       return null;
     }
-    if (viewer.employeeId !== null && held.approverId !== null) {
+    // An approver or stand-in answers only through a login that opens the inbox (KEHOACH 9.21.4).
+    if (viewer.employeeId !== null && held.approverId !== null && INBOX_ROLES.includes(viewer.role)) {
       if (held.approverId === viewer.employeeId) {
         return null;
       }

@@ -19,7 +19,11 @@ const UNSIGNED_BOSS = "E2EUR02";
 const UNSIGNED_REPORT = "E2EUR03";
 const LOCKED_BOSS = "E2EUR04";
 const LOCKED_REPORT = "E2EUR05";
-const CODES = [LONE, UNSIGNED_REPORT, LOCKED_REPORT, UNSIGNED_BOSS, LOCKED_BOSS];
+const VIEWER_BOSS = "E2EUR06";
+const VIEWER_REPORT = "E2EUR07";
+const REPORTS = [LONE, UNSIGNED_REPORT, LOCKED_REPORT, VIEWER_REPORT];
+const BOSSES = [UNSIGNED_BOSS, LOCKED_BOSS, VIEWER_BOSS];
+const CODES = [...REPORTS, ...BOSSES];
 const MAIL = (code: string) => `${code.toLowerCase()}@kiosk.local`;
 const PASSWORD = "kiosk-e2e-password";
 const DAY = "2039-05-02";
@@ -36,8 +40,8 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
   async function sweep(): Promise<void> {
     await clearDeskNotices(db, CODES);
     await db.user.deleteMany({ where: { email: { in: CODES.map(MAIL) } } });
-    await db.employee.deleteMany({ where: { code: { in: [LONE, UNSIGNED_REPORT, LOCKED_REPORT] } } });
-    await db.employee.deleteMany({ where: { code: { in: [UNSIGNED_BOSS, LOCKED_BOSS] } } });
+    await db.employee.deleteMany({ where: { code: { in: REPORTS } } });
+    await db.employee.deleteMany({ where: { code: { in: BOSSES } } });
   }
 
   async function person(code: string, managerId: number | null, login: "open" | "locked" | "none"): Promise<number> {
@@ -161,5 +165,39 @@ describe("a request nobody above can answer reaches the desk (e2e)", () => {
     const admin = await db.user.findUniqueOrThrow({ where: { email: "admin@kiosk.local" } });
     assert.equal(res.body.decidedById, admin.id, "the request does not say who answered it");
     assert.ok(!(await inboxOf(LOCKED_REPORT)).some((row) => row.id === mine), "a decided request still waits");
+  });
+
+  it("keeps a manager whose login cannot open the inbox from deciding, and leaves it to the desk", async () => {
+    const boss = await person(VIEWER_BOSS, null, "none");
+    await db.user.create({
+      data: { email: MAIL(VIEWER_BOSS), passwordHash: await hashPassword(PASSWORD), role: "VIEWER", employeeId: boss },
+    });
+    await person(VIEWER_REPORT, boss, "open");
+    const auth = app.get(AuthService);
+    const bossToken = tokensOf(await auth.signIn(MAIL(VIEWER_BOSS), PASSWORD, {})).accessToken;
+    const reportToken = tokensOf(await auth.signIn(MAIL(VIEWER_REPORT), PASSWORD, {})).accessToken;
+    const filing = await request(app.getHttpServer())
+      .post("/requests")
+      .set("Authorization", `Bearer ${reportToken}`)
+      .send({ kind: "REMOTE_WORK", fromDate: DAY, toDate: DAY, reason: "e2e" });
+    assert.equal(filing.status, 201, JSON.stringify(filing.body));
+    const mine = filing.body.id as string;
+    assert.equal((await db.request.findUniqueOrThrow({ where: { id: mine } })).approverId, boss);
+
+    const refused = await request(app.getHttpServer())
+      .post(`/requests/${mine}/decide`)
+      .set("Authorization", `Bearer ${bossToken}`)
+      .send({ approve: true });
+    assert.equal(refused.status, 403, JSON.stringify(refused.body));
+    assert.equal(refused.body.message, "NOT_YOUR_REQUEST");
+    assert.equal((await db.request.findUniqueOrThrow({ where: { id: mine } })).state, "PENDING", "a refused decision moved it");
+    const opened = await request(app.getHttpServer()).get(`/requests/${mine}`).set("Authorization", `Bearer ${bossToken}`);
+    assert.equal(opened.status, 404, "a login that may not decide opened the request");
+
+    const decided = await request(app.getHttpServer())
+      .post(`/requests/${mine}/decide`)
+      .set("Authorization", `Bearer ${desk}`)
+      .send({ approve: true });
+    assert.equal(decided.status, 201, JSON.stringify(decided.body));
   });
 });
