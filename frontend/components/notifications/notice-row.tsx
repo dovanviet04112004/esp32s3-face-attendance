@@ -75,6 +75,22 @@ const TEAM_COUNTS: Record<TeamCount, "teamLate" | "teamNotPunched" | "teamAbsent
 // These kiosk sentences name only a family of codes, so the row names the code itself beside them.
 const FAMILY_SENTENCES: ReadonlySet<NoticeSentence> = new Set<NoticeSentence>(["kindKIOSK_ALERT_fault", "kindKIOSK_ALERT_update"]);
 
+// The inbox tab a waiting record sits in; a request names its own kind instead.
+const WAITING_QUEUES: Readonly<Record<string, "queueDisputes" | "queueCertificates" | "queueProfile" | "queueDependents">> = {
+  DISPUTE: "queueDisputes",
+  CERTIFICATE: "queueCertificates",
+  PROFILE_CHANGE: "queueProfile",
+  DEPENDENT: "queueDependents",
+};
+
+const FILED_KINDS: Readonly<Record<string, "kindDispute" | "kindCertificate" | "kindProfileChange" | "kindDependent" | "kindAdvance">> = {
+  DISPUTE: "kindDispute",
+  CERTIFICATE: "kindCertificate",
+  PROFILE_CHANGE: "kindProfileChange",
+  DEPENDENT: "kindDependent",
+  ADVANCE: "kindAdvance",
+};
+
 // The codes the backup watch reports, as payroll/mail-text.ts names them (KEHOACH 9.22.2).
 const BACKUP_CODES = ["WAL_FAILING", "DUMP_STALE", "BIOMETRIC_STALE", "BASE_STALE", "WAL_STALE", "OFFSITE_STALE"] as const;
 type BackupCode = (typeof BACKUP_CODES)[number];
@@ -92,6 +108,8 @@ function counted(facts: Notice["facts"], name: string): number {
 export function useNoticeWords() {
   const t = useTranslations("notices");
   const kiosks = useTranslations("devices");
+  const inbox = useTranslations("requests");
+  const records = useTranslations("search");
   const format = useFormatter();
   const locale = useLocale();
   const now = useNow({ updateInterval: kTickMs });
@@ -144,6 +162,17 @@ export function useNoticeWords() {
     const firmware = facts?.firmware;
     const models = facts?.models;
     return typeof firmware === "string" && typeof models === "string" ? t("updateRuns", { firmware, models }) : null;
+  }
+
+  /** The queue a waiting record sits in, or what a record the reader filed is; a request says its own kind. */
+  function queueOf(notice: Notice): string | null {
+    const type = notice.subject?.type ?? "";
+    if (notice.kind === "REQUEST_WAITING") {
+      const queue = type === "ADVANCE" ? (notice.approved ? "queueToPay" : "queueAdvances") : WAITING_QUEUES[type];
+      return queue ? inbox(queue) : null;
+    }
+    const kind = notice.kind === "REQUEST_DECIDED" || notice.kind === "REQUEST_STALLED" ? FILED_KINDS[type] : undefined;
+    return kind ? records(kind) : null;
   }
 
   /** Each backup the watch finds failing, in words; a code this page does not know reads as itself. */
@@ -213,6 +242,10 @@ export function useNoticeWords() {
       const parts: string[] = [];
       if (subject.person?.fullName && subject.person.id !== employeeId) {
         parts.push(subject.person.fullName);
+      }
+      const queue = queueOf(notice);
+      if (queue) {
+        parts.push(queue);
       }
       if (subject.request) {
         const request = subject.request;
