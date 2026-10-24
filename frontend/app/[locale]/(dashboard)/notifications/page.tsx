@@ -94,6 +94,10 @@ function Notifications() {
 
   const loaded = notices.data?.pages.flatMap((one) => one.rows);
   const first = notices.data?.pages[0];
+  // The count reaches rows of a whole tab not loaded yet; a filter narrows past what it counts.
+  const unreadHere =
+    (loaded ?? []).some((row) => row.readAt === null && row.leftAt === null) ||
+    (!filtering && (tab === "unread" || tab === "all") && (counts.data?.unread ?? 0) > 0);
   const counted = (status: NoticeStatus) => (status === "action" ? counts.data?.action : status === "unread" ? counts.data?.unread : undefined);
 
   function open(notice: Notice): void {
@@ -142,7 +146,7 @@ function Notifications() {
         description={t("pageLead")}
         meta={counts.data && counts.data.unread > 0 ? <CountPill>{counts.data.unread}</CountPill> : undefined}
         actions={
-          (counts.data?.unread ?? 0) > 0 ? (
+          unreadHere ? (
             <Button icon={ChecksIcon} loading={marks.isPending && marks.variables?.ids === undefined} onClick={() => marks.mutate({ action: "read", filter })}>
               {t("markAll")}
             </Button>
