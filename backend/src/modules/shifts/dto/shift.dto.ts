@@ -112,7 +112,7 @@ export class AssignedManyView {
   @ApiProperty({ example: 12, description: "Rows written, or that the preview would write" }) assigned!: number;
   @ApiProperty({ type: [ShiftBatchRowView], description: "People put on the shift, or who would be, by code" })
   rows!: ShiftBatchRowView[];
-  @ApiProperty({ type: [BulkSkipView], description: "People who left, or already on the shift from that date" })
+  @ApiProperty({ type: [BulkSkipView], description: "People who left, or already starting a shift on that date" })
   skipped!: BulkSkipView[];
 }
 

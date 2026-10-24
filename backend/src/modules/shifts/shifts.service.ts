@@ -239,9 +239,9 @@ export class ShiftsService {
     });
   }
 
-  /** Many people onto one shift from one date; anybody already there from that date is skipped. */
-  /** Who would go on this shift from the date, passing over people who left and anyone already on it
-   *  from then; apply=true writes them in one statement, one audit line each (KEHOACH 9.20).
+  /** Many people onto one shift from one date; anybody already starting a shift that date is skipped. */
+  /** Who would go on this shift from the date, passing over people who left and anyone already starting
+   *  a shift then (KEHOACH 9.15); apply=true writes them in one statement, one audit line each (KEHOACH 9.20).
    */
   async assignMany(actorId: string, id: string, chosen: Chosen, body: AssignManyDto, apply: boolean): Promise<ShiftBatch> {
     await this.get(id);
@@ -249,7 +249,7 @@ export class ShiftsService {
     const validTo = body.validTo ? new Date(body.validTo) : null;
     const people = await this.db.employee.findMany({
       where: { id: { in: chosen.ids } },
-      select: { id: true, code: true, fullName: true, active: true, shifts: { where: { shiftId: id, validFrom }, select: { id: true } } },
+      select: { id: true, code: true, fullName: true, active: true, shifts: { where: { validFrom }, select: { id: true } } },
       orderBy: { code: "asc" },
     });
     const skipped = [...chosen.missing];

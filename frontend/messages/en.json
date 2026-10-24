@@ -1675,7 +1675,7 @@
     "PASSWORD_COMMON": "This password is on the list of passwords guessed first. Choose a phrase only you know.",
     "PASSWORD_PERSONAL": "A password cannot hold your email, your name or your employee code.",
     "MFA_CODE_NEEDED": "Your account signs in with two steps: give the six digits from your authenticator app to change the password.",
-    "SHIFT_ALREADY_ASSIGNED": "This person already starts that shift on that date.",
+    "SHIFT_ALREADY_ASSIGNED": "This person already starts a shift on that date.",
     "SHIFT_CROSSES_MIDNIGHT": "A shift has to end after it starts, on the same day. Shifts across midnight are not supported yet.",
     "SHIFT_NAME_TAKEN": "That shift name is taken.",
     "SHIFT_NOT_FOUND": "No such shift.",
@@ -2995,7 +2995,7 @@
     "ACCOUNT_LOCKED": "The login is locked",
     "CONSENT_MISSING": "Has not agreed to face data",
     "ALREADY_ON_KIOSK": "Already on this kiosk, or waiting on it",
-    "ALREADY_ON_SHIFT": "Already on this shift from that day",
+    "ALREADY_ON_SHIFT": "Already starts a shift on that day",
     "SELF": "Your own record",
     "ADMIN_ACCOUNT": "Holds an administrator account; offboard them on their own"
   },

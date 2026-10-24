@@ -236,6 +236,31 @@ describe("my shift roster (e2e)", () => {
     assert.equal(built.shiftId, early.id, "a rebuilt day lost the shift it was worked on");
   });
 
+  it("starts a person on one shift a day: a second answers SHIFT_ALREADY_ASSIGNED and a bulk run passes over them", async () => {
+    const [early, late] = await Promise.all([EARLY, LATE].map((name) => db.shift.findUniqueOrThrow({ where: { name } })));
+    const validFrom = `${YEAR}-12-01T00:00:00.000Z`;
+    const put = (shiftId: string) =>
+      request(http)
+        .post(`/shifts/${shiftId}/assignments`)
+        .set("Authorization", `Bearer ${admin}`)
+        .send({ employeeId: strangerId, validFrom });
+    assert.equal((await put(early.id)).status, 201);
+    const second = await put(late.id);
+    assert.deepEqual([second.status, second.body.message], [409, "SHIFT_ALREADY_ASSIGNED"], "two shifts start one person on one day");
+
+    const bulk = await request(http)
+      .post(`/shifts/${late.id}/assignments/bulk`)
+      .set("Authorization", `Bearer ${admin}`)
+      .send({ employeeIds: [strangerId], validFrom });
+    assert.equal(bulk.status, 201, JSON.stringify(bulk.body));
+    assert.deepEqual(
+      [bulk.body.assigned, (bulk.body.skipped as { reason: string }[]).map((one) => one.reason)],
+      [0, ["ALREADY_ON_SHIFT"]],
+      "the preview offered a person the write would refuse",
+    );
+    assert.equal(await db.shiftAssignment.count({ where: { employeeId: strangerId, validFrom: new Date(validFrom) } }), 1);
+  });
+
   it("refuses a month that is not a month", async () => {
     const res = await request(http)
       .get(`/shifts/roster?year=${YEAR}&month=13`)

@@ -1675,7 +1675,7 @@
     "PASSWORD_COMMON": "Mật khẩu này nằm trong danh sách mật khẩu hay bị đoán. Chọn một cụm từ chỉ bạn biết.",
     "PASSWORD_PERSONAL": "Mật khẩu không được chứa email, họ tên hay mã nhân viên của bạn.",
     "MFA_CODE_NEEDED": "Tài khoản của bạn có xác minh hai bước: nhập mã sáu số trong ứng dụng xác thực để đổi mật khẩu.",
-    "SHIFT_ALREADY_ASSIGNED": "Người này đã vào ca đó từ ngày ấy rồi.",
+    "SHIFT_ALREADY_ASSIGNED": "Người này đã có một ca bắt đầu từ ngày ấy rồi.",
     "SHIFT_CROSSES_MIDNIGHT": "Giờ ra của ca phải sau giờ vào, trong cùng một ngày. Ca qua nửa đêm chưa được hỗ trợ.",
     "SHIFT_NAME_TAKEN": "Tên ca này đã có.",
     "SHIFT_NOT_FOUND": "Không tìm thấy ca làm việc này.",
@@ -2995,7 +2995,7 @@
     "ACCOUNT_LOCKED": "Tài khoản đang bị khoá",
     "CONSENT_MISSING": "Chưa đồng ý dữ liệu khuôn mặt",
     "ALREADY_ON_KIOSK": "Đã có hoặc đang chờ chụp trên kiosk này",
-    "ALREADY_ON_SHIFT": "Đã ở ca này từ ngày ấy",
+    "ALREADY_ON_SHIFT": "Đã có một ca bắt đầu từ ngày ấy",
     "SELF": "Là chính bạn",
     "ADMIN_ACCOUNT": "Giữ tài khoản quản trị, cho nghỉ riêng từng người"
   },

@@ -551,6 +551,8 @@ model ShiftAssignment {
   employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([shiftId, employeeId, validFrom])
+  // One shift starts a person on a given day, or the build and the roster may each pick a different row (KEHOACH 9.15).
+  @@unique([employeeId, validFrom])
 }
 
 model Release {

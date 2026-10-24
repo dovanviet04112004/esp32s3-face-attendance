@@ -164,7 +164,7 @@ export class ShiftsController {
   @ApiOperation({ summary: "Put somebody on this shift from a date" })
   @ApiCreatedResponse({ type: AssignmentView })
   @ApiNotFoundResponse({ type: ErrorBody, description: "SHIFT_NOT_FOUND | EMPLOYEE_NOT_FOUND" })
-  @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_ALREADY_ASSIGNED" })
+  @ApiConflictResponse({ type: ErrorBody, description: "SHIFT_ALREADY_ASSIGNED: the person already starts a shift that day" })
   @ApiParam({ name: "id", description: "Shift id (UUID)", example: "2dbf73fd-d71d-4d2a-bacd-0362ce6b4cff" })
   assign(
     @CurrentViewer() viewer: Viewer,
@@ -181,7 +181,7 @@ export class ShiftsController {
   @AuditedInService()
   @ApiOperation({
     summary: "Preview putting many people on this shift from one date; apply=true writes (KEHOACH 9.20)",
-    description: "Takes employeeIds or the directory's filter. People who left are skipped, as is anyone already on it from that date.",
+    description: "Takes employeeIds or the directory's filter. People who left are skipped, as is anyone already starting a shift that date.",
   })
   @ApiCreatedResponse({ type: AssignedManyView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "SELECTION_INVALID, SELECTION_TOO_LARGE" })
