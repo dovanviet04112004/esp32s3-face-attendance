@@ -10599,9 +10599,11 @@ nhận năm trăm lượt hỏi trong cùng một giây.
 đợi `notify`: lô 1.000 người, `attempts` cộng `backoff`, idempotent theo `dedupKey`. Chốt một kỳ ba mươi
 nghìn phiếu vì thế trả lời khi kỳ đã chốt, không đợi ba mươi nghìn lần gọi nhà cung cấp (§9.9 luật 5).
 
-- **Thân tin đẩy là tham chiếu**: `{ v: 2, id, kind, category, count, locale }`. Không tên, không số
-  tiền — màn khoá là chỗ người cầm máy hộ cũng đọc được; con số nằm sau lần đăng nhập, cùng lý do
-  §9.11 không đính phiếu vào thư.
+- **Thân tin đẩy là tham chiếu**: `{ v: 2, id, kind, category, count, locale, tag, renotify }`, và tin
+  gom từ hai dòng trở lên mang thêm `gathered` (`work`, `news` hay `mixed`) để màn khoá nói đúng là
+  việc hay tin, chạm vào thì mở danh sách chưa đọc. `tag` là khoá của việc, chỉ gồm chữ khoá, không
+  chứa được tên. Không tên, không số tiền — màn khoá là chỗ người cầm máy hộ cũng đọc được; con số
+  nằm sau lần đăng nhập, cùng lý do §9.11 không đính phiếu vào thư.
 - **Một thẻ cho một việc**: tin sau của cùng việc thay tin trước trên màn khoá, lần nhắc dùng
   `renotify` để máy vẫn rung. Việc đóng thì **không đẩy thêm** — một tin "đã xong" lúc nửa đêm chỉ
   đánh thức người không còn việc gì — còn ứng dụng đang mở thì tự đóng các tin cùng thẻ trên máy.
