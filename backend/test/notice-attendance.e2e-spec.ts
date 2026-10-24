@@ -296,6 +296,7 @@ describe("the attendance family, each told to its own people and closed when the
     const mine = await db.noticeItem.findUniqueOrThrow({ where: { key: itemKey("TEAM_ATTENDANCE", { id: loginOf.get("boss") ?? "", part: NEXT }) } });
     assert.deepEqual(facts(mine), { day: NEXT, late: 1, notPunched: 1, absent: 1, onLeave: 1 }, "the manager's tree was counted wrong");
     assert.deepEqual([mine.subjectType, mine.subjectId], ["LOGIN", loginOf.get("boss")]);
+    assert.equal(mine.level, "INFO", "a morning summary opened at a level its kind does not declare");
     const rows = await db.notification.findMany({ where: { itemId: mine.id } });
     assert.deepEqual(rows.map((one) => [one.userId, one.readAt]), [[loginOf.get("boss"), null]], "the summary reached somebody else");
     assert.equal(await sweep.summariseFor(viewerOf("boss"), at(NEXT, "09:30")), false, "a second summary opened the same day");

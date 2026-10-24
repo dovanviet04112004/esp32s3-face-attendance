@@ -18,7 +18,7 @@ import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
 import { AuditService } from "../audit/audit.service.js";
 import { AudienceService } from "./audience.service.js";
-import { DUE_MARKS, DUE_WARNING, kebab, type ItemKind } from "./notice-kinds.js";
+import { DUE_MARKS, DUE_WARNING, kebab, NOTICE_KINDS, type ItemKind } from "./notice-kinds.js";
 import { NAMED, nameOf, NotificationsService } from "./notifications.service.js";
 import { SubjectsService, type SubjectView } from "./subjects.service.js";
 
@@ -326,7 +326,7 @@ export class NoticeItemsService {
             subjectType: QUEUE_SUBJECT[queue],
             subjectId: subject.id,
             employeeId: subject.employeeId,
-            level: opening.level,
+            level: opening.level ?? NOTICE_KINDS[QUEUE_KIND[queue]].level,
             facts: opening.facts,
             dueAt: opening.dueAt,
             lastMark: opening.lastMark,

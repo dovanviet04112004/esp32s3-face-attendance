@@ -99,7 +99,7 @@ export class KioskSweep implements OnModuleInit {
    *  @ctx any | after the registration commit; logs its own failures
    */
   async pending(deviceId: string): Promise<void> {
-    await this.items.open("KIOSK", { id: deviceId, part: "pending", employeeId: null }, { facts: { code: "PENDING" } });
+    await this.items.open("KIOSK", { id: deviceId, part: "pending", employeeId: null }, { level: "ACTION", facts: { code: "PENDING" } });
   }
 
   /** Close a kiosk's request to join as approved or refused; a revoked kiosk clears its other work too.
