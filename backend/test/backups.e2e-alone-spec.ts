@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import request from "supertest";
 
 import type { BackupProblem, MailBody } from "../src/modules/payroll/mail-text.js";
 
@@ -28,6 +29,7 @@ const PROBLEMS: BackupProblem[] = [
 ];
 const CHAINS = ["dump", "biometric", "base", "wal", "offsite"];
 const OPERATOR = "e2e-backup-watch@kiosk.local";
+const OPERATOR_PASSWORD = "e2e-backup-watch-password";
 const CODE = "E2EBKP01";
 const kHourMs = 3_600_000;
 
@@ -96,7 +98,7 @@ describe("backups (e2e)", () => {
     };
     await sweepAway();
     const operator = await db.user.create({
-      data: { email: OPERATOR, role: "ADMIN", passwordHash: await hashPassword("e2e-backup-watch-password") },
+      data: { email: OPERATOR, role: "ADMIN", passwordHash: await hashPassword(OPERATOR_PASSWORD) },
     });
     operatorId = operator.id;
   });
@@ -214,6 +216,29 @@ describe("backups (e2e)", () => {
     if (next.key === first.key) {
       assert.ok(stepped.key.startsWith(`${first.key}:`), "the closed spell kept the key the next one needs");
       assert.equal((await rowOf(first.id)).dedupKey, stepped.key, "the closed spell's rows kept the old key");
+    }
+    await ran("dump", 0);
+    assert.deepEqual(await sweep(), []);
+    toOperator();
+  });
+
+  it("answers an ADMIN's run of the watch while Redis does not, and still mails the ADMINs", async () => {
+    const login = await request(app.getHttpServer()).post("/auth/login").send({ email: OPERATOR, password: OPERATOR_PASSWORD });
+    assert.ok(login.body.accessToken, JSON.stringify(login.body));
+    await forget("dump");
+    await ran("dump", 27);
+    const exists = redis.client.exists;
+    redis.client.exists = (() => new Promise<number>(() => undefined)) as unknown as typeof exists;
+    try {
+      const run = await request(app.getHttpServer())
+        .post("/notifications/sweeps/backup")
+        .set("Authorization", `Bearer ${login.body.accessToken as string}`)
+        .timeout(10_000);
+      assert.equal(run.status, 201, JSON.stringify(run.body));
+      assert.deepEqual(run.body.result.problems, ["DUMP_STALE"]);
+      assert.equal(toOperator().length, 1, "a Redis that never answered kept the ADMIN from hearing of a stale chain");
+    } finally {
+      redis.client.exists = exists;
     }
     await ran("dump", 0);
     assert.deepEqual(await sweep(), []);

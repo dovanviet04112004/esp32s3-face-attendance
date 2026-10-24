@@ -100,7 +100,7 @@ export class BackupSweep implements OnModuleInit {
     const found = judgeBackups(archiver, await this.newestRuns(), now, staleHours);
     const failing = new Set(found.map((one) => one.problem));
     for (const problem of PROBLEMS.filter((one) => !failing.has(one))) {
-      await this.redis.client.del(ALARM.backup(problem));
+      await this.redis.quick((client) => client.del(ALARM.backup(problem)));
     }
     for (const finding of found) {
       await this.raise(finding, now);
@@ -145,7 +145,8 @@ export class BackupSweep implements OnModuleInit {
 
   private async raise(finding: BackupFinding, now: Date): Promise<void> {
     const key = ALARM.backup(finding.problem);
-    if (await this.redis.client.exists(key)) {
+    // Redis away reads as not told: the same alarm twice beats none.
+    if ((await this.redis.quick((client) => client.exists(key))) === 1) {
       return;
     }
     const admins = await this.db.user.findMany({
@@ -177,6 +178,6 @@ export class BackupSweep implements OnModuleInit {
     if (admins.length > 0 && reached === 0) {
       return;
     }
-    await this.redis.client.set(key, now.toISOString(), "EX", kRemindSeconds);
+    await this.redis.quick((client) => client.set(key, now.toISOString(), "EX", kRemindSeconds));
   }
 }
