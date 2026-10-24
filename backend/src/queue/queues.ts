@@ -78,11 +78,22 @@ export interface NoticeReconcileJob {
   type: typeof JOB.noticeReconcile;
 }
 
-/** Up to a thousand rows to push; a retry resends under the same tag, which a device shows once. */
+export interface PushRow {
+  id: string;
+  userId: string;
+  tag: string;
+  renotify: boolean;
+  count?: number; // rows a gathered push speaks for; 1 when absent
+  gathered?: "work" | "news" | "mixed"; // what a gathered push holds
+  subscriptions?: string[]; // the devices still owed it; absent is all
+}
+
+/** Up to a thousand pushes; one a push service put off comes back with only the devices still owed it, same tag. */
 export interface NoticeFanoutJob {
   type: typeof JOB.noticeFanout;
   kind: string;
-  rows: { id: string; userId: string; tag: string; renotify: boolean }[];
+  rows: PushRow[];
+  tries?: number;
 }
 
 export interface NoticeCleanupJob {

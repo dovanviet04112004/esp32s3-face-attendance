@@ -23,7 +23,7 @@ import type { Env } from "../../config/env.schema.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../queue/queue.module.js";
-import { JOB, QUEUE, type NoticeFanoutJob, type NoticeGatherJob } from "../../queue/queues.js";
+import { JOB, QUEUE, type NoticeFanoutJob, type NoticeGatherJob, type PushRow } from "../../queue/queues.js";
 import { filedBetween, personWhere, sortedBy } from "../leave/queue-filter.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import type { SubscribeDto, SetPreferenceDto } from "./dto/notifications.dto.js";
@@ -224,6 +224,11 @@ export interface PreferenceRow {
 const OFFERED: readonly OfferedChannel[] = ["IN_APP", "PUSH"];
 
 const kDeadSubscription = [404, 410];
+// Busy and down are the push service's own state; any other refusal is about the request and would only repeat.
+const kTooMany = 429;
+const kServerError = 500;
+const kPushRetries = 3;
+const kPushRetryMs = 30_000;
 const kBatch = 1000;
 // A push service answers in tens to hundreds of ms; fifty at once keeps a 5,000 fan-out to seconds.
 const kPushAtOnce = 50;
@@ -655,32 +660,84 @@ export class NotificationsService {
     return new Set(desks.map((one) => one.id));
   }
 
-  /** Send a fan-out job's pushes, one per row to every device of its login.
-   *  @ctx job | notify queue; a dead device is dropped, a slow one only logged
+  /** Send a fan-out job's pushes, one per row to every device of its login it still owes.
+   *  @ctx job | notify queue; a dead device is dropped, one a push service put off goes again later
    */
   async fanOut(job: NoticeFanoutJob): Promise<void> {
-    const people = [...new Set(job.rows.map((one) => one.userId))];
-    const [devices, localeOf] = await Promise.all([this.devicesOf(people), this.localesOf(people)]);
     const kind = job.kind as NoticeKind;
-    for (let at = 0; at < job.rows.length; at += kPushAtOnce) {
+    const rows = job.tries ? await this.stillOwed(job.rows) : job.rows;
+    await this.retryLater(kind, await this.sendRows(kind, rows), job.tries ?? 0);
+  }
+
+  // A retry skips what its person has read, put away or left since, and work that closed meanwhile (KEHOACH 9.21.4).
+  private async stillOwed(rows: PushRow[]): Promise<PushRow[]> {
+    const live = await this.db.notification.findMany({
+      where: {
+        id: { in: rows.map((one) => one.id).filter((id) => id !== "") },
+        readAt: null,
+        archivedAt: null,
+        leftAt: null,
+        OR: [{ itemId: null }, { item: { is: { state: "OPEN" } } }],
+      },
+      select: { id: true },
+    });
+    const owed = new Set(live.map((one) => one.id));
+    return rows.filter((one) => one.id === "" || owed.has(one.id));
+  }
+
+  // Each row to the devices it still owes, fifty at a time; answers the rows a push service put off.
+  private async sendRows(kind: NoticeKind, rows: PushRow[]): Promise<PushRow[]> {
+    const people = [...new Set(rows.map((one) => one.userId))];
+    const [devices, localeOf] = await Promise.all([this.devicesOf(people), this.localesOf(people)]);
+    const owed: PushRow[] = [];
+    for (let at = 0; at < rows.length; at += kPushAtOnce) {
       await Promise.all(
-        job.rows.slice(at, at + kPushAtOnce).map((row) =>
-          this.sendTo(
-            devices.get(row.userId) ?? [],
-            pushBody.parse({
-              v: 2,
-              id: row.id,
-              kind,
-              category: NOTICE_KINDS[kind].category,
-              count: 1,
-              locale: localeOf.get(row.userId) ?? DEFAULT_LOCALE,
-              tag: row.tag,
-              renotify: row.renotify,
-            }),
-          ),
-        ),
+        rows.slice(at, at + kPushAtOnce).map(async (row) => {
+          const held = (devices.get(row.userId) ?? []).filter((sub) => row.subscriptions?.includes(sub.id) ?? true);
+          const left = await this.sendTo(held, this.bodyOf(kind, row, localeOf.get(row.userId)));
+          if (left.length > 0) {
+            owed.push({ ...row, subscriptions: left });
+          }
+        }),
       );
     }
+    return owed;
+  }
+
+  // Only what a push service put off goes again, a thousand rows a job, a bounded number of rounds further apart each time.
+  private async retryLater(kind: NoticeKind, owed: PushRow[], tries: number): Promise<void> {
+    if (owed.length > 0 && tries >= kPushRetries) {
+      this.log.warn(`${owed.length} ${kind} push(es) given up after ${tries} retries`);
+      return;
+    }
+    for (let at = 0; at < owed.length; at += kBatch) {
+      await this.queues[QUEUE.notify].add(
+        JOB.noticeFanout,
+        { type: JOB.noticeFanout, kind, rows: owed.slice(at, at + kBatch), tries: tries + 1 } satisfies NoticeFanoutJob,
+        { delay: kPushRetryMs * 2 ** tries },
+      );
+    }
+  }
+
+  private bodyOf(kind: NoticeKind, row: PushRow, locale: "vi" | "en" = DEFAULT_LOCALE): PushBody {
+    return pushBody.parse({
+      v: 2,
+      id: row.id,
+      kind,
+      category: NOTICE_KINDS[kind].category,
+      count: row.count ?? 1,
+      locale,
+      tag: row.tag,
+      renotify: row.renotify,
+      ...(row.gathered ? { gathered: row.gathered } : {}),
+    });
+  }
+
+  // One push for a login's rows, newest first: that notice alone, or "N new items" under one tag.
+  private together(userId: string, rows: { id: string; dedupKey: string | null }[], gathered: Gathered): PushRow {
+    const newest = rows[0];
+    const tag = rows.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id);
+    return { id: newest.id, userId, tag, renotify: true, count: rows.length, ...(rows.length > 1 ? { gathered } : {}) };
   }
 
   /** One push for what a desk login got since its window opened, as "N new items" when more than one.
@@ -704,22 +761,9 @@ export class NotificationsService {
     if (!this.pushable || pushed.length === 0) {
       return;
     }
-    const [devices, localeOf] = await Promise.all([this.devicesOf([userId]), this.localesOf([userId])]);
-    const newest = pushed[0];
-    await this.sendTo(
-      devices.get(userId) ?? [],
-      pushBody.parse({
-        v: 2,
-        id: newest.id,
-        kind: newest.kind,
-        category: NOTICE_KINDS[newest.kind].category,
-        count: pushed.length,
-        locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
-        tag: pushed.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
-        renotify: true,
-        ...(pushed.length > 1 ? { gathered: gatheredOf(pushed.map((one) => one.kind)) } : {}),
-      }),
-    );
+    const kind = pushed[0].kind;
+    const row = this.together(userId, pushed, gatheredOf(pushed.map((one) => one.kind)));
+    await this.retryLater(kind, await this.sendRows(kind, [row]), 0);
   }
 
   /** One push per login for the rows of one kind it holds, newest first: that notice alone, or "N new items".
@@ -730,30 +774,10 @@ export class NotificationsService {
     if (!this.pushable || people.length === 0) {
       return 0;
     }
-    const [wants, devices, localeOf] = await Promise.all([this.channelsFor(kind, people), this.devicesOf(people), this.localesOf(people)]);
+    const wants = await this.channelsFor(kind, people);
     const pushed = people.filter((userId) => (held.get(userId)?.length ?? 0) > 0 && wants(userId, "PUSH"));
-    for (let at = 0; at < pushed.length; at += kPushAtOnce) {
-      await Promise.all(
-        pushed.slice(at, at + kPushAtOnce).map((userId) => {
-          const rows = held.get(userId) ?? [];
-          const newest = rows[0];
-          return this.sendTo(
-            devices.get(userId) ?? [],
-            pushBody.parse({
-              v: 2,
-              id: newest.id,
-              kind,
-              category: NOTICE_KINDS[kind].category,
-              count: rows.length,
-              locale: localeOf.get(userId) ?? DEFAULT_LOCALE,
-              tag: rows.length > 1 ? GATHERED_TAG : (newest.dedupKey ?? newest.id),
-              renotify: true,
-              ...(rows.length > 1 ? { gathered: gatheredOf([kind]) } : {}),
-            }),
-          );
-        }),
-      );
-    }
+    const rows = pushed.map((userId) => this.together(userId, held.get(userId) ?? [], gatheredOf([kind])));
+    await this.retryLater(kind, await this.sendRows(kind, rows), 0);
     return pushed.length;
   }
 
@@ -814,21 +838,28 @@ export class NotificationsService {
     return new Map(people.map((one) => [one.id, one.employee?.locale === "en" ? "en" : DEFAULT_LOCALE]));
   }
 
-  private async sendTo(devices: PushSubscription[], body: PushBody): Promise<void> {
+  // Answers the devices a push service put off: busy, down, or never reached. One it calls gone is dropped (KEHOACH 9.21.4).
+  private async sendTo(devices: PushSubscription[], body: PushBody): Promise<string[]> {
     const sealed = JSON.stringify(body);
+    const owed: string[] = [];
     for (const sub of devices) {
       try {
         await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, sealed);
-        await this.db.pushSubscription.update({ where: { id: sub.id }, data: { lastSentAt: new Date() } });
       } catch (fell) {
         const code = (fell as { statusCode?: number }).statusCode;
         if (code !== undefined && kDeadSubscription.includes(code)) {
           await this.db.pushSubscription.deleteMany({ where: { id: sub.id } });
           this.log.log(`dropped a dead subscription for ${sub.userId}`);
+        } else if (code === undefined || code === kTooMany || code >= kServerError) {
+          owed.push(sub.id);
+          this.log.warn(`push to ${sub.userId} put off: ${String(fell)}`);
         } else {
-          this.log.warn(`push to ${sub.userId} failed: ${String(fell)}`);
+          this.log.warn(`push to ${sub.userId} refused: ${String(fell)}`);
         }
+        continue;
       }
+      await this.db.pushSubscription.updateMany({ where: { id: sub.id }, data: { lastSentAt: new Date() } });
     }
+    return owed;
   }
 }

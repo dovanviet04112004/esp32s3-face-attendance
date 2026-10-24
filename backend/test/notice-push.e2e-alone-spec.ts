@@ -17,7 +17,7 @@ import { pushBody } from "../src/modules/notifications/dto/push-body.js";
 import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { NotificationsService } from "../src/modules/notifications/notifications.service.js";
 import { QUEUE_TOKEN, type Queues } from "../src/queue/queue.module.js";
-import { QUEUE } from "../src/queue/queues.js";
+import { JOB, QUEUE, type NoticeFanoutJob } from "../src/queue/queues.js";
 import { seedEntityId } from "./fixtures.js";
 
 // Push turns on with a key pair, and a one-second window keeps the desk's gathering inside a test.
@@ -54,6 +54,9 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
   let db: PrismaService;
   const sent: Sent[] = [];
   const gone = new Set<string>();
+  // Status codes an endpoint answers, one a send, then it takes pushes again.
+  const refusing = new Map<string, number[]>();
+  const tried = new Map<string, number>();
   const loginOf = new Map<Who, string>();
   const idOf = new Map<Who, number>();
   const tokenOf = new Map<Who, string>();
@@ -101,8 +104,13 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
   before(async () => {
     original = webpush.sendNotification;
     webpush.sendNotification = (async (subscription: webpush.PushSubscription, payload?: string | Buffer | null) => {
+      tried.set(subscription.endpoint, (tried.get(subscription.endpoint) ?? 0) + 1);
       if (gone.has(subscription.endpoint)) {
         throw Object.assign(new Error("gone"), { statusCode: 410 });
+      }
+      const refusal = refusing.get(subscription.endpoint)?.shift();
+      if (refusal !== undefined) {
+        throw Object.assign(new Error("refused"), { statusCode: refusal });
       }
       sent.push({ endpoint: subscription.endpoint, body: JSON.parse(String(payload)) as Record<string, unknown> });
       return { statusCode: 201, body: "", headers: {} };
@@ -232,6 +240,55 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
       await new Promise((done) => setTimeout(done, POLL_MS));
     }
     assert.equal(await db.pushSubscription.count({ where: { endpoint: endpointOf("boss") } }), 0, "a dead device stayed");
+  });
+
+  it("tries again only the devices a push service put off, for a bounded number of rounds, and never one it refused", async () => {
+    const queue = (app.get(QUEUE_TOKEN) as Queues)[QUEUE.notify];
+    const orphan = loginOf.get("orphan") as string;
+    const [busy, down, bad] = ["busy", "down", "bad"].map((name) => `${endpointOf("orphan")}-${name}`);
+    const subOf = new Map<string, string>();
+    for (const endpoint of [busy, down, bad]) {
+      subOf.set(endpoint, (await db.pushSubscription.create({ data: { userId: orphan, endpoint, p256dh: "k", auth: "a" } })).id);
+    }
+    refusing.set(busy, [503]);
+    refusing.set(down, [500, 500, 500, 500, 500]);
+    refusing.set(bad, [400]);
+    const to = (endpoint: string) => sent.filter((one) => one.endpoint === endpoint).length;
+    const retry = async () => {
+      const deadline = Date.now() + 2000;
+      for (;;) {
+        const held = (await queue.getDelayed()).find(
+          (job) => job.name === JOB.noticeFanout && (job.data as NoticeFanoutJob).rows.some((row) => row.userId === orphan),
+        );
+        if (held || Date.now() > deadline) {
+          return held;
+        }
+        await new Promise((done) => setTimeout(done, POLL_MS));
+      }
+    };
+
+    const before = to(endpointOf("orphan"));
+    const id = await file("orphan");
+    assert.equal((await post("desk", `/requests/${id}/decide`, { approve: true })).status, 201);
+    await until(async () => to(endpointOf("orphan")) > before, "the push of the decision");
+    let job = await retry();
+    assert.ok(job, "nothing waited to go again after a push service put two devices off");
+    assert.deepEqual(
+      (job.data as NoticeFanoutJob).rows.map((row) => [...(row.subscriptions ?? [])].sort()),
+      [[subOf.get(busy), subOf.get(down)].sort()],
+      "the retry holds other than the devices put off",
+    );
+    while (job) {
+      const tries = tried.get(down) ?? 0;
+      await job.promote();
+      await until(async () => (tried.get(down) ?? 0) > tries, "a retry going out");
+      job = await retry();
+    }
+    assert.equal(to(busy), 1, "a device put off once never got its push");
+    assert.equal(tried.get(down), 4, "a device always put off was not tried once and three rounds more");
+    assert.equal(tried.get(bad), 1, "a device refused for its request was tried again");
+    assert.equal(to(endpointOf("orphan")), before + 1, "a device that took the push got it again");
+    assert.equal(await db.pushSubscription.count({ where: { endpoint: bad } }), 1, "a refused device was dropped as if dead");
   });
 
   it("pushes a person's missing punches and absences once, together, at the morning sweep, and never their lateness", async () => {
