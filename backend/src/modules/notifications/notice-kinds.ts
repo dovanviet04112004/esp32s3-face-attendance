@@ -152,7 +152,7 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     receivers: ["ADMIN", "HR"],
     item: true,
     defaults: { IN_APP: true, PUSH: true },
-    facts: { daysLeft: "number" },
+    facts: { daysLeft: "number", dueDate: "day" },
   },
   // The direct manager decides whether the newcomer passes; the desk signs (KEHOACH 9.18 item 2).
   PROBATION_DUE: {
@@ -161,7 +161,7 @@ export const NOTICE_KINDS: Record<NoticeKind, KindRule> = {
     receivers: ["ADMIN", "HR", "MANAGER"],
     item: true,
     defaults: { IN_APP: true, PUSH: true },
-    facts: { daysLeft: "number" },
+    facts: { daysLeft: "number", dueDate: "day" },
   },
   // The codes failing now, comma-joined; the watch keeps them current while the spell lasts (KEHOACH 9.22.2).
   BACKUP_ALERT: {

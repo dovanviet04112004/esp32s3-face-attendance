@@ -5,7 +5,7 @@ import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
-import { localDay } from "../../timesheet/local-day.js";
+import { asDay, localDay } from "../../timesheet/local-day.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 import { DUE_MARKS } from "../notice-kinds.js";
 import { NotificationsService } from "../notifications.service.js";
@@ -14,6 +14,7 @@ interface Due {
   contractId: string;
   employeeId: number;
   daysLeft: number;
+  endDate: Date;
 }
 
 // Seven in the morning read in APP_TIMEZONE rather than the server's UTC (KEHOACH 9.8).
@@ -48,7 +49,7 @@ export class ContractsSweep implements OnModuleInit {
     const closed = await this.closeVanished();
     const today = localDay(now, this.config.get("APP_TIMEZONE", { infer: true }));
     const rows = await this.db.$queryRaw<Due[]>`
-      SELECT c."id" AS "contractId", c."employeeId", (c."endDate" - ${today}::date)::int AS "daysLeft"
+      SELECT c."id" AS "contractId", c."employeeId", (c."endDate" - ${today}::date)::int AS "daysLeft", c."endDate"
         FROM "EmploymentContract" c
         JOIN "Employee" e ON e."id" = c."employeeId"
        WHERE c."state" = 'ACTIVE' AND c."endDate" IS NOT NULL AND e."active"
@@ -56,7 +57,8 @@ export class ContractsSweep implements OnModuleInit {
     `;
     let told = 0;
     for (const row of rows) {
-      if (await this.items.speakDue("CONTRACTS_DUE", { id: row.contractId, employeeId: row.employeeId }, row.daysLeft)) {
+      const subject = { id: row.contractId, employeeId: row.employeeId };
+      if (await this.items.speakDue("CONTRACTS_DUE", subject, row.daysLeft, { dueDate: asDay(row.endDate) })) {
         await this.notices.raiseFor(row.employeeId, "CONTRACT_ENDING", { contractId: row.contractId, daysLeft: row.daysLeft });
         told += 1;
       }

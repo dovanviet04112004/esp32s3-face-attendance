@@ -450,8 +450,14 @@ export class NoticeItemsService {
 
   /** Open work against a date and speak at the days-left mark it has passed; the first mark is the opening.
    *  @ctx any | the mark is claimed on the item, so each is said once, a missed day included (KEHOACH 9.18)
+   *  @param facts what the work carries from its opening, which every row seated on it copies
    */
-  async speakDue(queue: "CONTRACTS_DUE" | "PROBATION_DUE" | "TASKS", subject: { id: string; employeeId: number }, daysLeft: number): Promise<boolean> {
+  async speakDue(
+    queue: "CONTRACTS_DUE" | "PROBATION_DUE" | "TASKS",
+    subject: { id: string; employeeId: number },
+    daysLeft: number,
+    facts: Prisma.InputJsonObject = {},
+  ): Promise<boolean> {
     const passed = (DUE_MARKS[queue] ?? []).filter((one) => daysLeft <= one).length;
     if (passed === 0) {
       return false;
@@ -459,7 +465,7 @@ export class NoticeItemsService {
     const key = itemKey(queue, subject.id);
     const fresh = !(await this.db.noticeItem.findUnique({ where: { key }, select: { id: true } }));
     if (fresh) {
-      await this.open(queue, subject);
+      await this.open(queue, subject, { facts });
     }
     if (!(await this.claimMark(queue, subject.id, passed))) {
       return false;

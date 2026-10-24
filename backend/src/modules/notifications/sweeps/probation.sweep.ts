@@ -5,7 +5,7 @@ import type { Env } from "../../../config/env.schema.js";
 import { PrismaService } from "../../../database/prisma.service.js";
 import { QUEUE_TOKEN, type Queues } from "../../../queue/queue.module.js";
 import { JOB, QUEUE } from "../../../queue/queues.js";
-import { localDay } from "../../timesheet/local-day.js";
+import { asDay, localDay } from "../../timesheet/local-day.js";
 import { NoticeItemsService } from "../notice-items.service.js";
 import { DUE_MARKS } from "../notice-kinds.js";
 
@@ -13,6 +13,7 @@ interface Due {
   contractId: string;
   employeeId: number;
   daysLeft: number;
+  probationEnd: Date;
 }
 
 const kDailyCron = "5 7 * * *";
@@ -45,7 +46,7 @@ export class ProbationSweep implements OnModuleInit {
     const closed = await this.closeVanished();
     const today = localDay(now, this.config.get("APP_TIMEZONE", { infer: true }));
     const rows = await this.db.$queryRaw<Due[]>`
-      SELECT c."id" AS "contractId", c."employeeId", (c."probationEnd" - ${today}::date)::int AS "daysLeft"
+      SELECT c."id" AS "contractId", c."employeeId", (c."probationEnd" - ${today}::date)::int AS "daysLeft", c."probationEnd"
         FROM "EmploymentContract" c
         JOIN "Employee" e ON e."id" = c."employeeId"
        WHERE c."state" = 'ACTIVE' AND c."probationEnd" IS NOT NULL AND e."active"
@@ -53,7 +54,8 @@ export class ProbationSweep implements OnModuleInit {
     `;
     let told = 0;
     for (const row of rows) {
-      if (await this.items.speakDue("PROBATION_DUE", { id: row.contractId, employeeId: row.employeeId }, row.daysLeft)) {
+      const subject = { id: row.contractId, employeeId: row.employeeId };
+      if (await this.items.speakDue("PROBATION_DUE", subject, row.daysLeft, { dueDate: asDay(row.probationEnd) })) {
         told += 1;
       }
     }

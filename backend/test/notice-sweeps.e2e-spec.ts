@@ -13,7 +13,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import type { InboxQueue } from "../src/modules/notifications/audience.service.js";
-import { itemKey } from "../src/modules/notifications/notice-items.service.js";
+import { itemKey, NoticeItemsService } from "../src/modules/notifications/notice-items.service.js";
 import { CleanupSweep } from "../src/modules/notifications/sweeps/cleanup.sweep.js";
 import { ContractsSweep } from "../src/modules/notifications/sweeps/contracts.sweep.js";
 import { ProbationSweep } from "../src/modules/notifications/sweeps/probation.sweep.js";
@@ -275,9 +275,28 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     const item = await itemOf("CONTRACTS_DUE", held.id);
     assert.equal(item.lastMark, 3);
     assert.equal(item.level, "WARNING");
+    assert.deepEqual(item.facts, { dueDate: asDay(day(6)) }, "the work does not carry the day the contract ends");
     const seat = await seatOf(item.key, "desk");
     assert.ok(seat && seat.readAt === null, "late work was not told");
     assert.equal(seat.remindCount, 0, "work told on opening was reminded in the same breath");
+    assert.deepEqual(seat.facts, { dueDate: asDay(day(6)), daysLeft: 6 }, "the desk's row does not carry the day the contract ends");
+  });
+
+  it("carries the day probation ends on every row, a manager who joins later included", async () => {
+    const held = await contractFor("asker", { kind: "PROBATION", probationEnd: day(4) });
+    await app.get(ProbationSweep).sweep();
+    const item = await itemOf("PROBATION_DUE", held.id);
+    assert.deepEqual(item.facts, { dueDate: asDay(day(4)) });
+    assert.deepEqual((await seatOf(item.key, "desk"))?.facts, { dueDate: asDay(day(4)), daysLeft: 4 });
+    assert.equal(await seatOf(item.key, "boss"), null);
+    await db.employee.update({ where: { id: idOf.get("asker") }, data: { managerId: idOf.get("boss") } });
+    try {
+      await app.get(NoticeItemsService).regroup(item, "quiet");
+      const joined = await seatOf(item.key, "boss");
+      assert.deepEqual(joined?.facts, { dueDate: asDay(day(4)) }, "a manager who joined later cannot tell when probation ends");
+    } finally {
+      await db.employee.update({ where: { id: idOf.get("asker") }, data: { managerId: null } });
+    }
   });
 
   it("opens probation work for the desk and the direct manager; only the desk closes it by hand, on the record", async () => {
