@@ -11,6 +11,7 @@ import { validateEnv } from "../src/config/env.schema.js";
 import { PrismaService } from "../src/database/prisma.service.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 import { MAX_DAY_ROWS } from "../src/modules/timesheet/dto/timesheet.dto.js";
+import { dayWindow } from "../src/modules/timesheet/local-day.js";
 import { TimesheetService } from "../src/modules/timesheet/timesheet.service.js";
 import { paidLeaveType } from "./fixtures.js";
 import { clearDeskNotices } from "./teardown.js";
@@ -32,6 +33,16 @@ const MADE_CODES = [AHEAD, BEHIND, MEASURED, HALF, FIXED, TRIP, REMOTE];
 // Hired the day after DAY, so DAY is no day of theirs.
 const UNHIRED = "NV9110";
 const HIRED_AFTER = "2026-03-17";
+// Half of DAY off each, on the suite's own 08:00-17:00 shift with 5 minutes of grace: its midpoint is 12:30.
+const MORNING_OFF = "NV9108";
+const AFTERNOON_OFF = "NV9109";
+const HALF_SHIFT = "E2E-TS nửa ngày";
+const HALF_KIOSK = "e2e-ts-half-kiosk";
+const MINUTE_MS = 60_000;
+const PUNCHES: [code: string, part: "MORNING" | "AFTERNOON", minutes: number[]][] = [
+  [MORNING_OFF, "MORNING", [12 * 60 + 40, 17 * 60]],
+  [AFTERNOON_OFF, "AFTERNOON", [7 * 60 + 58, 12 * 60 + 20]],
+];
 
 // Made here rather than by provisioning, which opens a login for everyone
 // waiting and would race the leave suite for the same people.
@@ -54,7 +65,9 @@ describe("timesheet leave (e2e)", () => {
     await clearDeskNotices(db, MADE_CODES);
     await db.attendanceDay.deleteMany({ where: { date } });
     await db.user.deleteMany({ where: { email: FILER_EMAIL } });
-    await db.employee.deleteMany({ where: { code: { in: [...MADE_CODES, UNHIRED] } } });
+    await db.device.deleteMany({ where: { id: HALF_KIOSK } });
+    await db.employee.deleteMany({ where: { code: { in: [...MADE_CODES, UNHIRED, MORNING_OFF, AFTERNOON_OFF] } } });
+    await db.shift.deleteMany({ where: { name: HALF_SHIFT } });
   }
 
   async function rowOf(code: string) {
@@ -142,6 +155,44 @@ describe("timesheet leave (e2e)", () => {
     });
     idOf.set(UNHIRED, unhired.id);
 
+    const shift = await db.shift.create({ data: { name: HALF_SHIFT, startTime: "08:00", endTime: "17:00", graceMinutes: 5 } });
+    await db.device.create({ data: { id: HALF_KIOSK, status: "APPROVED" } });
+    let localId = 0;
+    for (const [code, dayPart, minutes] of PUNCHES) {
+      const made = await db.employee.create({
+        data: {
+          code,
+          fullName: `Thử nghỉ nửa ngày ${code}`,
+          active: true,
+          departmentId: template.departmentId,
+          legalEntityId: template.legalEntityId,
+        },
+      });
+      idOf.set(code, made.id);
+      await db.shiftAssignment.create({ data: { shiftId: shift.id, employeeId: made.id, validFrom: date } });
+      await db.request.create({
+        data: {
+          employeeId: made.id,
+          kind: "LEAVE",
+          state: "APPROVED",
+          leaveTypeId,
+          fromDate: date,
+          toDate: date,
+          halfDay: true,
+          dayPart,
+          days: 0.5,
+          reason: "e2e",
+        },
+      });
+      await db.attendanceRecord.createMany({
+        data: minutes.map((at) => {
+          localId += 1;
+          const ts = new Date(dayWindow(DAY, env.APP_TIMEZONE).from.getTime() + at * MINUTE_MS);
+          return { localId: String(localId), deviceId: HALF_KIOSK, employeeId: made.id, ts, direction: "IN" };
+        }),
+      });
+    }
+
     await db.user.create({
       data: {
         email: FILER_EMAIL,
@@ -178,6 +229,21 @@ describe("timesheet leave (e2e)", () => {
 
   it("builds no day for somebody hired after it", async () => {
     assert.equal(await stateOf(UNHIRED), "MISSING", "a day before the hire date was counted as an absence");
+  });
+
+  it("counts lateness and early leave only on the half of a day not taken off", async () => {
+    const morning = await rowOf(MORNING_OFF);
+    const afternoon = await rowOf(AFTERNOON_OFF);
+    assert.deepEqual(
+      [morning?.state, morning?.lateMinutes, morning?.earlyLeaveMinutes],
+      ["WORKED", 5, 0],
+      "a morning off still owed the morning",
+    );
+    assert.deepEqual(
+      [afternoon?.state, afternoon?.lateMinutes, afternoon?.earlyLeaveMinutes],
+      ["WORKED", 0, 10],
+      "an afternoon off still owed the afternoon",
+    );
   });
 
   it("counts that day as leave and not as absence in the summary", async () => {

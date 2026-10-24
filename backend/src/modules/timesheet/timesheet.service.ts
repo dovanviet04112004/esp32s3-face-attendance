@@ -7,7 +7,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type AttendanceDay, type DayCalendar, type DayState } from "@prisma/client";
+import { Prisma, type AttendanceDay, type DayCalendar, type DayPart, type DayState } from "@prisma/client";
 
 import type { Env } from "../../config/env.schema.js";
 import { toExcelCsv } from "../../common/csv.js";
@@ -140,6 +140,18 @@ interface ShiftClock {
   startMinutes: number;
   endMinutes: number;
   graceMinutes: number;
+}
+
+/** The part of a shift owed on a day with half of it on approved leave: that half's end moves to the midpoint (KEHOACH 9.8). */
+function owedPart(shift: ShiftClock, halfOff: DayPart | undefined): ShiftClock {
+  const midpoint = shift.startMinutes + Math.floor((shift.endMinutes - shift.startMinutes) / 2);
+  if (halfOff === "MORNING") {
+    return { ...shift, startMinutes: midpoint };
+  }
+  if (halfOff === "AFTERNOON") {
+    return { ...shift, endMinutes: midpoint };
+  }
+  return shift;
 }
 
 @Injectable()
@@ -569,16 +581,14 @@ export class TimesheetService implements OnModuleInit {
       }),
       this.db.holiday.findMany({ where: { date }, select: { legalEntityId: true, paid: true } }),
       this.db.request.findMany({
-        // A half day cannot be one day state, so only whole days come through.
         where: {
           kind: { in: ["LEAVE", "BUSINESS_TRIP", "REMOTE_WORK"] },
           state: "APPROVED",
-          halfDay: false,
           fromDate: { lte: date },
           toDate: { gte: date },
           ...person,
         },
-        select: { employeeId: true, kind: true },
+        select: { employeeId: true, kind: true, halfDay: true, dayPart: true },
       }),
     ]);
     const shifts = await this.shiftsOn(date, only);
@@ -600,17 +610,22 @@ export class TimesheetService implements OnModuleInit {
       }
     }
 
-    const onLeave = new Set(
-      approved.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId),
-    );
-    const offSite = new Set(
-      approved.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId),
-    );
+    // A half day cannot be one day state; half a day of leave moves one end of the shift instead (KEHOACH 9.8).
+    const whole = approved.filter((row) => !row.halfDay);
+    const onLeave = new Set(whole.filter((row) => row.kind === "LEAVE").map((row) => row.employeeId));
+    const offSite = new Set(whole.filter((row) => row.kind !== "LEAVE").map((row) => row.employeeId));
+    const halfOff = new Map<number, DayPart>();
+    for (const row of approved) {
+      if (row.halfDay && row.kind === "LEAVE" && row.dayPart !== null) {
+        halfOff.set(row.employeeId, row.dayPart);
+      }
+    }
     const rows = staff.map((person) =>
       this.dayOf(person.id, date, seen.get(person.id), shifts.get(person.id), {
         calendar: calendarOn(date, holidays, person.legalEntityId),
         leave: onLeave.has(person.id),
         offSite: offSite.has(person.id),
+        halfOff: halfOff.get(person.id),
       }),
     );
     await this.write(date, rows);
@@ -689,7 +704,7 @@ export class TimesheetService implements OnModuleInit {
     date: Date,
     marks: { first: Date; last: Date; count: number; unsynced: boolean } | undefined,
     shift: ShiftClock | undefined,
-    day: { calendar: DayCalendar; leave: boolean; offSite: boolean },
+    day: { calendar: DayCalendar; leave: boolean; offSite: boolean; halfOff?: DayPart },
   ): DayRow {
     const { calendar } = day;
     if (!marks) {
@@ -711,8 +726,9 @@ export class TimesheetService implements OnModuleInit {
     const worked = Math.max(0, outAt - inAt);
     // No shift is owed on a day off, so every minute worked on one is overtime.
     const owed = calendar === "WORKDAY" ? shift : undefined;
-    const late = owed ? Math.max(0, inAt - (owed.startMinutes + owed.graceMinutes)) : 0;
-    const early = owed ? Math.max(0, owed.endMinutes - outAt) : 0;
+    const part = owed ? owedPart(owed, day.halfOff) : undefined;
+    const late = part ? Math.max(0, inAt - (part.startMinutes + part.graceMinutes)) : 0;
+    const early = part ? Math.max(0, part.endMinutes - outAt) : 0;
     const over = owed ? Math.max(0, outAt - owed.endMinutes) : calendar === "WORKDAY" ? 0 : worked;
     return {
       employeeId,
