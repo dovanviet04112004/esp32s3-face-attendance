@@ -72,7 +72,7 @@ export class KioskSweep implements OnModuleInit {
   }
 
   /** Close what came right, then open offline work for each kiosk in the fleet silent past the limit.
-   *  @ctx job | every five minutes; one silence is said once, the ADMINs mailed with it
+   *  @ctx job | every five minutes; one silence is said once, the ADMINs mailed until an address takes the letter
    */
   async sweep(now: Date = new Date()): Promise<{ opened: number; closed: number }> {
     const closed = await this.closeVanished(null, now);
@@ -83,13 +83,11 @@ export class KioskSweep implements OnModuleInit {
     });
     let opened = 0;
     for (const device of silent) {
-      if (await this.toldSinceHeard(device)) {
-        continue;
-      }
-      if (await this.items.open("KIOSK", { id: device.id, part: "offline", employeeId: null }, { level: "CRITICAL", facts: { code: "OFFLINE" } })) {
+      const told = await this.toldSinceHeard(device);
+      if (!told && (await this.items.open("KIOSK", { id: device.id, part: "offline", employeeId: null }, { level: "CRITICAL", facts: { code: "OFFLINE" } }))) {
         opened += 1;
-        await this.mailSilent(device, minutes);
       }
+      await this.mailSilent(device, minutes);
     }
     this.log.log(`kiosks swept: ${opened} silent told, ${closed} closed`);
     return { opened, closed };
@@ -261,7 +259,15 @@ export class KioskSweep implements OnModuleInit {
     return closed;
   }
 
+  // Owed while the silence's work is open and no ADMIN address took it; lastMark 1 on that work says one did.
   private async mailSilent(device: Silent, minutes: number): Promise<void> {
+    const work = await this.db.noticeItem.findUnique({
+      where: { key: itemKey("KIOSK", { id: device.id, part: "offline" }) },
+      select: { id: true, state: true, lastMark: true },
+    });
+    if (work?.state !== "OPEN" || work.lastMark !== null) {
+      return;
+    }
     const zone = this.config.get("APP_TIMEZONE", { infer: true });
     const root = this.config.get("APP_PUBLIC_URL", { infer: true });
     const body = kioskSilentMail(DEFAULT_MAIL_LOCALE, {
@@ -273,12 +279,18 @@ export class KioskSweep implements OnModuleInit {
       url: `${root}/${DEFAULT_MAIL_LOCALE}/devices/${device.id}`,
     });
     const admins = await this.db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });
+    let reached = 0;
     for (const admin of admins) {
       try {
         await this.mailer.send(admin.email, body);
+        reached += 1;
       } catch (error) {
         this.log.error(`kiosk ${device.id} silent: ${admin.email} refused: ${(error as Error).message}`);
       }
     }
+    if (admins.length > 0 && reached === 0) {
+      return;
+    }
+    await this.db.noticeItem.updateMany({ where: { id: work.id, lastMark: null }, data: { lastMark: 1 } });
   }
 }

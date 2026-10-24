@@ -51,7 +51,8 @@ const FAULTY = {
   quiet: `e2e-nkq-${RUN}`,
   update: `e2e-nku-${RUN}`,
 } as const;
-const KIOSKS = [DEVICE, ...Object.values(FAULTY)];
+const SILENT = `e2e-nko-${RUN}`;
+const KIOSKS = [DEVICE, SILENT, ...Object.values(FAULTY)];
 
 function factsOf(row: Notification | null): Record<string, unknown> {
   return (row?.facts ?? {}) as Record<string, unknown>;
@@ -255,7 +256,11 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     await kiosk.sweep();
     const silent = await itemOf("offline");
     assert.ok(silent && silent.state === "OPEN" && silent.level === "CRITICAL", "a silent kiosk opened no work");
-    assert.equal(mailed.filter((one) => one.to === mailOf("admin")).length, 1, "a silence was mailed other than once");
+    assert.equal(
+      mailed.filter((one) => one.to === mailOf("admin") && one.body.text.includes(DEVICE)).length,
+      1,
+      "a silence was mailed other than once",
+    );
     await kiosk.onStatus(heard(true));
     assert.equal((await itemOf("offline"))?.state, "OPEN", "the broker's replayed copy cleared a silence");
     await bus.emitAsync(KIOSK_EVENT.status, heard(false));
@@ -278,6 +283,29 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
       0,
       "a revoked kiosk kept open work",
     );
+  });
+
+  it("mails a silence again while every ADMIN address refuses it, and never again once one took it", async () => {
+    const kiosk = app.get(KioskSweep);
+    const mailer = app.get(MailerService);
+    await db.device.create({ data: { id: SILENT, status: "APPROVED", online: false, lastSeenAt: new Date(Date.now() - 2 * HOUR_MS) } });
+    const letters = () => mailed.filter((one) => one.to === mailOf("admin") && one.body.text.includes(SILENT)).length;
+    const held = mailer.send;
+    mailer.send = async () => {
+      throw new Error("421 service not available");
+    };
+    try {
+      await kiosk.sweep();
+    } finally {
+      mailer.send = held;
+    }
+    const silence = await faultOf(SILENT, "offline");
+    assert.ok(silence.state === "OPEN" && silence.lastMark === null, "a silence no address took was counted as mailed");
+    await kiosk.sweep();
+    assert.equal(letters(), 1, "the letter every address refused was not sent again");
+    assert.equal((await faultOf(SILENT, "offline")).lastMark, 1, "the letter that went out was not recorded on the work");
+    await kiosk.sweep();
+    assert.equal(letters(), 1, "a silence was mailed again once an address took the letter");
   });
 
   it("clears a boot-time fault once a later boot stands the settle time without it, and only then", async () => {
