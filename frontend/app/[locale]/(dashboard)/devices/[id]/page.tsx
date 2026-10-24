@@ -92,6 +92,7 @@ const kEventsShown = 12;
 
 const STATUS_TONE: Record<Device["status"], Tone> = { PENDING: "waiting", APPROVED: "good", REVOKED: "idle" };
 const kNameMax = 64;
+const kClaimDigits = 6;
 
 export default function DevicePage() {
   const t = useTranslations("devices");
@@ -109,6 +110,8 @@ export default function DevicePage() {
   const { items } = useFeed();
   const [editing, setEditing] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [claim, setClaim] = useState("");
   const [reading, setReading] = useState<ReleaseNotesFacts[] | null>(null);
   const [asking, setAsking] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
@@ -177,6 +180,17 @@ export default function DevicePage() {
       setEditing(false);
       notify.done(t("renamed"));
       void cache.invalidateQueries({ queryKey: ["devices"] });
+    },
+    onError: (fell: unknown) => setFault(faultOf(fell)),
+  });
+
+  const approve = useMutation({
+    mutationFn: () => api.post(`/devices/${id}/approve`, { claimCode: claim }),
+    onSuccess: () => {
+      setApproving(false);
+      notify.done(t("approvedDone", { name: device.data?.name ?? id }));
+      void cache.invalidateQueries({ queryKey: ["devices"] });
+      void cache.invalidateQueries({ queryKey: ["releases"] });
     },
     onError: (fell: unknown) => setFault(faultOf(fell)),
   });
@@ -281,6 +295,21 @@ export default function DevicePage() {
     <>
       <PageHeader
         title={title}
+        actions={
+          role === "ADMIN" && it?.status === "PENDING" ? (
+            <Button
+              variant="primary"
+              icon={CheckCircleIcon}
+              onClick={() => {
+                setFault(null);
+                setClaim("");
+                setApproving(true);
+              }}
+            >
+              {t("approve")}
+            </Button>
+          ) : undefined
+        }
         meta={
           it ? (
             <>
@@ -479,6 +508,35 @@ export default function DevicePage() {
           <LayerDialog.Actions dismissLabel={common("cancel")}>
             <LayerDialog.Actions.Primary loading={rename.isPending} onClick={() => rename.mutate()}>
               {common("save")}
+            </LayerDialog.Actions.Primary>
+          </LayerDialog.Actions>
+        </LayerDialog.Content>
+      </LayerDialog.Root>
+
+      <LayerDialog.Root open={approving} onOpenChange={setApproving} dismissDisabled={approve.isPending}>
+        <LayerDialog.Content closeLabel={common("close")}>
+          <LayerDialog.Title>{t("approveTitle", { name: it?.name ?? id })}</LayerDialog.Title>
+          <LayerDialog.Description>{t("approveLead")}</LayerDialog.Description>
+          <LayerDialog.Body>
+            <div className="flex flex-col gap-3">
+              <Input
+                label={t("claimLabel")}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder={t("claimPlaceholder")}
+                value={claim}
+                description={claim.length !== kClaimDigits ? t("claimHint", { digits: kClaimDigits }) : undefined}
+                // Cut after the clean-up, never by maxLength: the browser would cut a pasted "123 456" to "123 45" first.
+                onChange={(event) => setClaim(event.target.value.replace(/\D/g, "").slice(0, kClaimDigits))}
+                className="font-mono tracking-widest tabular-nums"
+              />
+              <p className="text-sm text-kumo-subtle">{[id, it?.location].filter(Boolean).join(" · ")}</p>
+              {fault ? <Banner variant="error" size="sm" icon={<WarningCircleIcon weight="fill" />} title={fault} /> : null}
+            </div>
+          </LayerDialog.Body>
+          <LayerDialog.Actions dismissLabel={common("cancel")}>
+            <LayerDialog.Actions.Primary loading={approve.isPending} disabled={claim.length !== kClaimDigits} onClick={() => approve.mutate()}>
+              {t("approve")}
             </LayerDialog.Actions.Primary>
           </LayerDialog.Actions>
         </LayerDialog.Content>
