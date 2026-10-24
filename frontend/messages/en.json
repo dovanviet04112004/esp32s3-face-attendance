@@ -1924,6 +1924,7 @@
     "empty": "Nothing yet",
     "openGone": "This notice is gone, or it is not yours.",
     "markAll": "Mark all read",
+    "kindREQUEST_DECIDED": "Your request has an answer",
     "kindREQUEST_DECIDED_true": "Your request was approved",
     "kindREQUEST_DECIDED_false": "Your request was turned down",
     "kindREQUEST_WAITING": "A request is waiting on you",

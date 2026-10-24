@@ -114,6 +114,7 @@ export interface Notice {
 
 /** The catalogue keys under "notices" that name a notice. */
 export type NoticeSentence =
+  | "kindREQUEST_DECIDED"
   | "kindREQUEST_DECIDED_true"
   | "kindREQUEST_DECIDED_false"
   | "kindREQUEST_WAITING"
@@ -314,7 +315,7 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
   REQUEST_DECIDED: {
     icon: CheckSquareIcon,
     category: "REQUESTS",
-    label: { key: "kindREQUEST_DECIDED_true" },
+    label: { key: "kindREQUEST_DECIDED" },
     sentence: (notice) => ({ key: notice.approved ? "kindREQUEST_DECIDED_true" : "kindREQUEST_DECIDED_false" }),
     path: decidedAt,
   },

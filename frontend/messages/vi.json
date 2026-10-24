@@ -1924,6 +1924,7 @@
     "empty": "Chưa có thông báo nào",
     "openGone": "Thông báo này không còn, hoặc không phải của bạn.",
     "markAll": "Đánh dấu đã đọc hết",
+    "kindREQUEST_DECIDED": "Đơn của bạn đã có kết quả",
     "kindREQUEST_DECIDED_true": "Đơn của bạn đã được duyệt",
     "kindREQUEST_DECIDED_false": "Đơn của bạn bị từ chối",
     "kindREQUEST_WAITING": "Có đơn chờ bạn duyệt",
