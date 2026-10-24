@@ -49,7 +49,7 @@ export class DocumentsSweep implements OnModuleInit {
     `;
     let opened = 0;
     for (const version of newest) {
-      opened += await this.fanOut(version.id);
+      opened += await this.fanOut(version.id, now);
     }
     const reminded = await this.remindDue(now);
     this.log.log(`documents swept: ${opened} opened, ${reminded} reminded, ${closed} closed`);
@@ -59,7 +59,7 @@ export class DocumentsSweep implements OnModuleInit {
   /** Open a version's work for each reader with an open login and no signature, a thousand at a time.
    *  @ctx job | after a publish and in the daily sweep; an older version opens nothing, a second run adds nothing
    */
-  async fanOut(versionId: string): Promise<number> {
+  async fanOut(versionId: string, now: Date = new Date()): Promise<number> {
     const version = await this.db.documentVersion.findUnique({ where: { id: versionId }, include: { document: true } });
     const newer = version ? await this.db.documentVersion.count({ where: { documentId: version.documentId, version: { gt: version.version } } }) : 0;
     if (!version || !version.document.active || newer > 0) {
@@ -81,7 +81,7 @@ export class DocumentsSweep implements OnModuleInit {
          LIMIT ${kBatch}
       `;
       if (readers.length > 0) {
-        opened += await this.openFor(versionId, readers.map((one) => one.id));
+        opened += await this.openFor(versionId, readers.map((one) => one.id), now);
       }
       if (readers.length < kBatch) {
         return opened;
@@ -90,13 +90,14 @@ export class DocumentsSweep implements OnModuleInit {
     }
   }
 
-  // Two statements a batch: the items, then a row for each open login that lacks one, told as new work.
-  private async openFor(versionId: string, readers: number[]): Promise<number> {
+  // Two statements a batch: the items, at the mark their wait has passed so it is not said again, then each open login's row.
+  private async openFor(versionId: string, readers: number[], now: Date): Promise<number> {
     const made = await this.db.$queryRaw<{ id: string }[]>`
-      INSERT INTO "NoticeItem" ("id", "key", "queue", "subjectType", "subjectId", "employeeId")
-      SELECT gen_random_uuid()::text, 'documents:' || ${versionId}::text || ':' || r."id", 'DOCUMENTS'::"NoticeQueue",
-             'DOCUMENT'::"NoticeSubject", ${versionId}::text, r."id"
+      INSERT INTO "NoticeItem" ("id", "key", "queue", "subjectType", "subjectId", "employeeId", "lastMark")
+      SELECT gen_random_uuid()::text, 'documents:' || v."id" || ':' || r."id", 'DOCUMENTS'::"NoticeQueue",
+             'DOCUMENT'::"NoticeSubject", v."id", r."id", ${this.passedMark(now)}
         FROM unnest(${readers}::int[]) AS r("id")
+        JOIN "DocumentVersion" v ON v."id" = ${versionId}::text
       ON CONFLICT ("key") DO NOTHING
       RETURNING "id"
     `;
@@ -114,17 +115,22 @@ export class DocumentsSweep implements OnModuleInit {
     return made.length;
   }
 
+  // Whole company days since the version `v` went out, the wait every mark counts.
+  private waited(now: Date): Prisma.Sql {
+    const zone = this.config.get("APP_TIMEZONE", { infer: true });
+    return Prisma.sql`(${localDay(now, zone)}::date - ${localDateSql(Prisma.sql`v."publishedAt"`, zone)})`;
+  }
+
+  private passedMark(now: Date): Prisma.Sql {
+    return Prisma.sql`(SELECT max(m) FROM unnest(${[...(QUEUE_MARKS.DOCUMENTS ?? [])]}::int[]) AS m WHERE m <= ${this.waited(now)})`;
+  }
+
   // The highest mark passed is claimed on every unsigned item at once, then their rows surface together.
   private async remindDue(now: Date): Promise<number> {
-    const zone = this.config.get("APP_TIMEZONE", { infer: true });
-    const today = localDay(now, zone);
-    const marks = [...(QUEUE_MARKS.DOCUMENTS ?? [])];
-    const waited = Prisma.sql`(${today}::date - ${localDateSql(Prisma.sql`v."publishedAt"`, zone)})`;
     const claimed = await this.db.$queryRaw<{ id: string; waited: number }[]>`
       UPDATE "NoticeItem" i SET "lastMark" = x."mark"
         FROM (
-          SELECT n."id", ${waited}::int AS "waited",
-                 (SELECT max(m) FROM unnest(${marks}::int[]) AS m WHERE m <= ${waited}) AS "mark"
+          SELECT n."id", ${this.waited(now)}::int AS "waited", ${this.passedMark(now)} AS "mark"
             FROM "NoticeItem" n
             JOIN "DocumentVersion" v ON v."id" = n."subjectId"
            WHERE n."queue" = 'DOCUMENTS' AND n."state" = 'OPEN'

@@ -336,6 +336,14 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     assert.equal(reminded.remindCount, 1, "the third day was said other than once");
     assert.deepEqual(reminded.facts, { daysWaited: 3 });
 
+    await db.employee.update({ where: { id: idOf.get("pay") }, data: { departmentId } });
+    await signing.sweep(new Date(Date.now() + 3 * DAY_MS));
+    const joined = await db.noticeItem.findUnique({ where: { key: itemKey("DOCUMENTS", { id: first, part: String(idOf.get("pay")) }) } });
+    assert.ok(joined, "a reader who joined the audience got no work");
+    assert.equal(joined.lastMark, 3, "work opened past the third day still owes that day");
+    const told = await db.notification.findFirstOrThrow({ where: { itemId: joined.id } });
+    assert.deepEqual([told.readAt, told.remindCount], [null, 0], "a reader who joined past the third day was told twice in one sweep");
+
     const second = await publish();
     assert.equal((await workOf(first))?.state, "EXPIRED", "work on a superseded version stayed open");
     assert.equal((await workOf(second))?.state, "OPEN", "the next version opened no work");
