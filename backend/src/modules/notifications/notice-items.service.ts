@@ -105,6 +105,7 @@ export interface Opening {
   level?: NoticeLevel;
   facts?: Prisma.InputJsonObject;
   dueAt?: Date;
+  lastMark?: number;
 }
 
 export interface Regrouped {
@@ -328,6 +329,7 @@ export class NoticeItemsService {
             level: opening.level,
             facts: opening.facts,
             dueAt: opening.dueAt,
+            lastMark: opening.lastMark,
           },
         ],
         skipDuplicates: true,
@@ -458,7 +460,7 @@ export class NoticeItemsService {
   }
 
   /** Open work against a date and speak at the days-left mark it has passed; the first mark is the opening.
-   *  @ctx any | the mark is claimed on the item, so each is said once, a missed day included (KEHOACH 9.18)
+   *  @ctx any | the opening takes its mark in its insert, later marks are claimed on the item: each said once (KEHOACH 9.18)
    *  @param facts what the work carries from its opening, which every row seated on it copies
    */
   async speakDue(
@@ -473,18 +475,16 @@ export class NoticeItemsService {
     }
     const key = itemKey(queue, subject.id);
     const fresh = !(await this.db.noticeItem.findUnique({ where: { key }, select: { id: true } }));
-    if (fresh) {
-      await this.open(queue, subject, { facts });
-    }
-    if (!(await this.claimMark(queue, subject.id, passed))) {
+    const opened = fresh && (await this.open(queue, subject, { facts, lastMark: passed }));
+    if (!opened && !(await this.claimMark(queue, subject.id, passed))) {
       return false;
     }
     const warning = DUE_WARNING[queue];
     if (warning !== undefined && daysLeft <= warning) {
       await this.db.noticeItem.updateMany({ where: { key, state: "OPEN" }, data: { level: "WARNING" } });
     }
-    // Work this sweep opened has just been told; a reminder on top would say one thing twice.
-    if (fresh) {
+    // Work this call opened has just been told; a reminder on top would say one thing twice.
+    if (opened) {
       await this.db.$executeRaw`
         UPDATE "Notification" n SET "facts" = n."facts" || ${JSON.stringify({ daysLeft })}::jsonb, "daysLeft" = ${daysLeft}::int
           FROM "NoticeItem" i

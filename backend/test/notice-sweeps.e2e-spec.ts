@@ -24,7 +24,7 @@ import { seedEntityId } from "./fixtures.js";
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-sweeps-password";
 const PAY_YEAR = 1992;
-const PEOPLE = ["asker", "desk", "pay", "boss", "renewed", "ended", "late", "newbie", "leaver"] as const;
+const PEOPLE = ["asker", "desk", "pay", "boss", "renewed", "ended", "late", "newbie", "leaver", "racer"] as const;
 type Who = (typeof PEOPLE)[number];
 const ROLE: Record<Who, Role> = {
   asker: "EMPLOYEE",
@@ -36,6 +36,7 @@ const ROLE: Record<Who, Role> = {
   late: "EMPLOYEE",
   newbie: "EMPLOYEE",
   leaver: "EMPLOYEE",
+  racer: "EMPLOYEE",
 };
 const codeOf = (who: Who) => `E2ESW${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-notice-sweeps-${who}-${RUN}@kiosk.local`;
@@ -303,6 +304,33 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     assert.ok(seat && seat.readAt === null, "late work was not told");
     assert.equal(seat.remindCount, 0, "work told on opening was reminded in the same breath");
     assert.deepEqual(seat.facts, { dueDate: asDay(day(6)), daysLeft: 6 }, "the desk's row does not carry the day the contract ends");
+  });
+
+  it("says the opening mark once when a second sweep runs while the first is still opening the work", async () => {
+    const contracts = app.get(ContractsSweep);
+    const items = app.get(NoticeItemsService);
+    const held = await contractFor("racer", { kind: "FIXED_TERM", endDate: day(25) });
+    const open = items.open.bind(items);
+    let second: Promise<unknown> | null = null;
+    items.open = async (...args: Parameters<NoticeItemsService["open"]>) => {
+      const opened = await open(...args);
+      if (args[1].id === held.id) {
+        second ??= contracts.sweep();
+        await second;
+      }
+      return opened;
+    };
+    try {
+      await contracts.sweep();
+    } finally {
+      items.open = open;
+    }
+    assert.ok(second, "the second sweep never ran while the work was opening");
+    const item = await itemOf("CONTRACTS_DUE", held.id);
+    assert.equal(item.lastMark, 1);
+    const seat = await seatOf(item.key, "desk");
+    assert.ok(seat && seat.readAt === null, "the work was not told");
+    assert.equal(seat.remindCount, 0, "a sweep racing the opening said the opening mark again");
   });
 
   it("carries the day probation ends on every row, a manager who joins later included", async () => {
