@@ -369,7 +369,7 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
     // A spoof heard just now keeps the burst open through the window.
     await db.deviceEvent.create({ data: { deviceId: KIOSK, type: "SPOOF_DETECTED", severity: "WARN", ts: new Date() } });
     const before = (await pushesTo("admin", 0)).length;
-    await items.open("KIOSK", { id: KIOSK_NEW, part: "pending", employeeId: null }, { facts: { code: "PENDING" } });
+    await items.open("KIOSK", { id: KIOSK_NEW, part: "pending", employeeId: null }, { level: "ACTION", facts: { code: "PENDING" } });
     await items.open("KIOSK", { id: KIOSK, part: "spoof", employeeId: null }, { level: "WARNING", facts: { code: "SPOOF_BURST" } });
     await new Promise((done) => setTimeout(done, 1500));
     const told = (await pushesTo("admin", before + 1)).slice(before);
