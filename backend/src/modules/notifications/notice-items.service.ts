@@ -16,7 +16,7 @@ import type { Env } from "../../config/env.schema.js";
 import { PrismaService } from "../../database/prisma.service.js";
 import { FEED, RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { AUDIT_ACTIONS, AUDIT_SUBJECTS } from "../audit/audit-actions.js";
-import { AuditService } from "../audit/audit.service.js";
+import { AuditService, type AuditEntry } from "../audit/audit.service.js";
 import { AudienceService } from "./audience.service.js";
 import { DUE_MARKS, DUE_WARNING, kebab, NOTICE_KINDS, type ItemKind } from "./notice-kinds.js";
 import { NAMED, nameOf, NotificationsService } from "./notifications.service.js";
@@ -77,6 +77,13 @@ function mayResolve(viewer: Viewer, item: { queue: NoticeQueue; employeeId: numb
   return SELF_RESOLVED.has(item.queue)
     ? viewer.employeeId !== null && item.employeeId === viewer.employeeId
     : (RESOLVERS[item.queue]?.includes(viewer.role) ?? false);
+}
+
+/** What a hand close is traced from: the kiosk for kiosk work, otherwise the person it is about (KEHOACH 9.24 rule 3). */
+function tracedFrom(item: { queue: NoticeQueue; subjectId: string; employeeId: number | null }): Pick<AuditEntry, "subject" | "subjectId"> {
+  return item.queue === "KIOSK"
+    ? { subject: AUDIT_SUBJECTS.DEVICE, subjectId: item.subjectId }
+    : { subject: AUDIT_SUBJECTS.EMPLOYEE, subjectId: String(item.employeeId) };
 }
 
 export interface Closing {
@@ -284,8 +291,7 @@ export class NoticeItemsService {
     await this.audit.record({
       actorId: viewer.userId,
       action: AUDIT_ACTIONS.NOTICE_RESOLVE,
-      subject: AUDIT_SUBJECTS.EMPLOYEE,
-      subjectId: String(item.employeeId ?? ""),
+      ...tracedFrom(item),
       meta: { key: item.key, note },
     });
     return this.detail(viewer, key);

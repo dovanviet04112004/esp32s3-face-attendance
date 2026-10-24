@@ -205,6 +205,8 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     assert.equal(await db.noticeItem.count({ where: { key: { startsWith: keyOf("camera-fault") } } }), 1, "a repeat opened work twice");
     const resolved = await post("admin", `/notifications/items/${keyOf("camera-fault")}/resolve`, { note: "e2e" });
     assert.equal(resolved.status, 201, JSON.stringify(resolved.body));
+    const traced = await db.auditLog.findFirst({ where: { action: "notice.resolve", subjectType: "device", subjectId: DEVICE } });
+    assert.equal((traced?.meta as { key?: string } | null)?.key, keyOf("camera-fault"), "a kiosk closed by hand is not traced from the kiosk");
     await report("CAMERA_FAULT");
     const back = await itemOf("camera-fault");
     assert.ok(back && back.state === "OPEN" && back.id !== camera.id, "a fault back after a hand close opened no work");

@@ -366,7 +366,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     assert.equal(closed.status, 201, JSON.stringify(closed.body));
     assert.equal(closed.body.state, "DONE");
     assert.equal(closed.body.outcome, "RESOLVED");
-    const trail = await db.auditLog.findFirst({ where: { action: "notice.resolve", subjectId: String(idOf.get("newbie")) } });
+    const trail = await db.auditLog.findFirst({ where: { action: "notice.resolve", subjectType: "employee", subjectId: String(idOf.get("newbie")) } });
     assert.equal((trail?.meta as { note?: string } | null)?.note, "Đã ký hợp đồng chính thức", "closing by hand left no audit");
     assert.equal((await post("desk", path, { note: "again" })).status, 409, "closed work closed twice");
   });
