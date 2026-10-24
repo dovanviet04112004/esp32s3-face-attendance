@@ -190,6 +190,7 @@ export class LeaveController {
 
   @Post("requests/decide-many")
   @RateBucket(THROTTLE.heavy)
+  @AuditedInService()
   @ApiOperation({ summary: "Decide up to 100 at once; each row goes through the single-decision rules" })
   @ApiCreatedResponse({ type: DecideManyView })
   @ApiBadRequestResponse({ type: ErrorBody, description: "DECISION_NOTE_REQUIRED when turning down" })
@@ -207,6 +208,7 @@ export class LeaveController {
   }
 
   @Post("requests/:id/decide")
+  @AuditedInService()
   @ApiOperation({ summary: "Approve or turn down; the balance moves here" })
   @ApiCreatedResponse({ type: FiledRequestView })
   @ApiForbiddenResponse({ type: ErrorBody, description: "SELF_DECISION, DESK_NEEDS_EMPLOYEE, NOT_YOUR_REQUEST" })

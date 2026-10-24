@@ -2825,6 +2825,8 @@
     "checklistTemplate_update": "Sửa mẫu checklist",
     "leaveType_create": "Thêm loại phép",
     "leaveType_update": "Sửa loại phép",
+    "request_approve": "Duyệt đơn",
+    "request_reject": "Từ chối đơn",
     "certificate_ask": "Xin giấy xác nhận",
     "certificate_issue": "Cấp giấy xác nhận",
     "certificate_reject": "Từ chối giấy xác nhận",

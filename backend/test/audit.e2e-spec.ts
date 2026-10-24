@@ -23,6 +23,7 @@ const CARRIER_PASSWORD = "kiosk-e2e-password";
 const FIRST_PAY = 11_000_000;
 const NEXT_PAY = 13_500_000;
 const CUT_INSURANCE = 5_000_000;
+const DECIDED_ON = "2040-04-02";
 const DOOR = "e2e-audit-door";
 const DOOR_CODE = "314159";
 
@@ -228,6 +229,45 @@ describe("audit trail (e2e)", () => {
       [{ fields: ["managerId"], managerId: { from: null, to: boss.id } }],
       "a new approver written as a field name alone is half an answer",
     );
+  });
+
+  it("names each decision on a request, approve or reject, under the person who asked", async () => {
+    const filed = (reason: string) =>
+      db.request.create({
+        data: {
+          employeeId,
+          kind: "REMOTE_WORK",
+          state: "PENDING",
+          fromDate: new Date(DECIDED_ON),
+          toDate: new Date(DECIDED_ON),
+          days: 1,
+          reason,
+        },
+      });
+    const yes = await filed("e2e approve");
+    const no = await filed("e2e reject");
+    const approved = await request(http)
+      .post(`/requests/${yes.id}/decide`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ approve: true });
+    assert.equal(approved.status, 201, JSON.stringify(approved.body));
+    const rejected = await request(http)
+      .post("/requests/decide-many")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ ids: [no.id], approve: false, note: "Trùng lịch" });
+    assert.equal(rejected.status, 201, JSON.stringify(rejected.body));
+    assert.deepEqual(rejected.body.decided, [no.id]);
+
+    const subject = `subjectType=employee&subjectId=${employeeId}`;
+    const yeses = await trail(`${subject}&action=request.approve`);
+    const noes = await trail(`${subject}&action=request.reject`);
+    assert.deepEqual(yeses.map((row) => row.meta?.requestId), [yes.id], "an approval left no line, or two");
+    assert.deepEqual(noes.map((row) => row.meta?.requestId), [no.id], "a rejection left no line, or two");
+    assert.deepEqual([noes[0].meta?.kind, noes[0].meta?.days, noes[0].meta?.note], ["REMOTE_WORK", 1, "Trùng lịch"]);
+    const routed = await db.auditLog.count({
+      where: { subjectType: "route", subjectId: "/requests/:id/decide", meta: { path: ["params", "id"], equals: yes.id } },
+    });
+    assert.equal(routed, 0, "the decision was written down twice, once as a bare route");
   });
 
   it("leaves nothing behind when a session merely carries on", async () => {

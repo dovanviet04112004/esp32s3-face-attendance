@@ -114,6 +114,8 @@ export const AUDIT_ACTIONS = {
 
   LEAVE_TYPE_CREATE: "leaveType.create",
   LEAVE_TYPE_UPDATE: "leaveType.update",
+  REQUEST_APPROVE: "request.approve",
+  REQUEST_REJECT: "request.reject",
 
   CERTIFICATE_ASK: "certificate.ask",
   CERTIFICATE_ISSUE: "certificate.issue",

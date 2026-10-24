@@ -2825,6 +2825,8 @@
     "checklistTemplate_update": "Checklist template edited",
     "leaveType_create": "Leave type added",
     "leaveType_update": "Leave type edited",
+    "request_approve": "Request approved",
+    "request_reject": "Request rejected",
     "certificate_ask": "Certificate asked for",
     "certificate_issue": "Certificate issued",
     "certificate_reject": "Certificate rejected",

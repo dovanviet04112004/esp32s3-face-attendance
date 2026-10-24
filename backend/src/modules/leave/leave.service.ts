@@ -595,6 +595,13 @@ export class LeaveService {
       }
       return tx.request.findUniqueOrThrow({ where: { id } });
     });
+    await this.audit.record({
+      actorId: viewer.userId,
+      action: body.approve ? AUDIT_ACTIONS.REQUEST_APPROVE : AUDIT_ACTIONS.REQUEST_REJECT,
+      subject: AUDIT_SUBJECTS.EMPLOYEE,
+      subjectId: String(held.employeeId),
+      meta: { requestId: id, kind: held.kind, days: Number(held.days), minutes: held.minutes, note: body.note ?? null },
+    });
     await this.items.close("REQUESTS", id, {
       state: "DONE",
       outcome: body.approve ? "APPROVED" : "REJECTED",
