@@ -338,7 +338,7 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
     }
   });
 
-  it("cleans news read and work closed past the keep, and never touches open work", async () => {
+  it("cleans news read and the rows of work closed past the keep, keeps closed work closed, and never touches open work", async () => {
     const long = new Date(Date.now() - 400 * DAY_MS);
     const asker = loginOf.get("asker") as string;
     const news = (readAt: Date | null) =>
@@ -363,14 +363,45 @@ describe("the stalled sweep in every inbox queue (e2e)", () => {
       });
       return { item, row };
     };
-    const [read, unread, open, closed] = [await news(long), await news(null), await work(false), await work(true)];
+    const movedAside = async () => {
+      const subjectId = String(idOf.get("asker"));
+      const item = await db.noticeItem.create({
+        data: {
+          key: `${itemKey("RECAPTURE", subjectId)}:${long.getTime()}`,
+          queue: "RECAPTURE",
+          subjectType: "EMPLOYEE",
+          subjectId,
+          employeeId: idOf.get("asker"),
+          openedAt: long,
+          state: "DONE",
+          outcome: "COMPLETED",
+          closedAt: long,
+        },
+      });
+      const row = await db.notification.create({
+        data: { userId: asker, kind: "FACE_RECAPTURE", itemId: item.id, dedupKey: item.key, readAt: long, createdAt: long },
+      });
+      return { item, row };
+    };
+    const [read, unread, open, closed, aside] = [await news(long), await news(null), await work(false), await work(true), await movedAside()];
+    const byHand = await db.noticeItem.findFirstOrThrow({ where: { queue: "PROBATION_DUE", employeeId: idOf.get("newbie") } });
+    assert.equal(byHand.state, "DONE");
+    await db.noticeItem.update({ where: { id: byHand.id }, data: { closedAt: long } });
     await app.get(CleanupSweep).sweep();
     const has = async (id: string) => (await db.notification.count({ where: { id } })) === 1;
     assert.equal(await has(read.id), false, "a notice read long ago stayed");
     assert.equal(await has(unread.id), true, "a notice nobody read was cleaned");
     assert.equal(await has(open.row.id), true, "a row of open work was cleaned");
     assert.equal(await db.noticeItem.count({ where: { id: open.item.id } }), 1, "open work was cleaned");
-    assert.equal(await db.noticeItem.count({ where: { id: closed.item.id } }), 0, "work closed long ago stayed");
     assert.equal(await has(closed.row.id), false, "a row of work closed long ago stayed");
+    assert.equal(await db.noticeItem.count({ where: { id: closed.item.id } }), 1, "work closed long ago lost the item that keeps it closed");
+    assert.equal(await db.noticeItem.count({ where: { id: aside.item.id } }), 0, "work a reopening moved aside long ago stayed");
+    assert.equal(await has(aside.row.id), false);
+    assert.equal(await db.notification.count({ where: { itemId: byHand.id } }), 0, "the rows of probation closed long ago stayed");
+
+    await app.get(ProbationSweep).sweep();
+    const still = await db.noticeItem.findUniqueOrThrow({ where: { key: byHand.key } });
+    assert.deepEqual([still.id, still.state], [byHand.id, "DONE"], "probation closed by hand opened again once its rows were cleaned");
+    assert.equal(await db.notification.count({ where: { itemId: byHand.id } }), 0, "a sweep spoke again of probation closed by hand");
   });
 });

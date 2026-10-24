@@ -1,14 +1,14 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type {
-  NoticeItem,
-  NoticeItemState,
-  NoticeLevel,
-  NoticeOutcome,
-  NoticeQueue,
-  NoticeSubject,
+import {
   Prisma,
-  Role,
+  type NoticeItem,
+  type NoticeItemState,
+  type NoticeLevel,
+  type NoticeOutcome,
+  type NoticeQueue,
+  type NoticeSubject,
+  type Role,
 } from "@prisma/client";
 
 import type { Viewer } from "../../common/scope/viewer.js";
@@ -121,6 +121,9 @@ interface Seated {
 
 // A condition that comes and goes on one subject, so its closed work makes way for the next (KEHOACH 9.21.4).
 const RECURRING: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["BACKUP", "KIOSK", "RECAPTURE"]);
+
+/** What a reopening appends to the key of the closed work it moves aside: that work's close, in epoch milliseconds. */
+export const CLOSED_STAMP = Prisma.sql`(extract(epoch FROM "closedAt") * 1000)::bigint`;
 
 // Work that takes more than one click to finish, where the group needs to see who is on it (KEHOACH 9.21.4).
 export const CLAIMABLE: ReadonlySet<NoticeQueue> = new Set<NoticeQueue>(["DISPUTES", "CERTIFICATES", "CONTRACTS_DUE", "PROBATION_DUE"]);
@@ -337,7 +340,7 @@ export class NoticeItemsService {
   private async retire(key: string): Promise<void> {
     await this.db.$executeRaw`
       WITH old AS (
-        UPDATE "NoticeItem" SET "key" = "key" || ':' || (extract(epoch FROM "closedAt") * 1000)::bigint
+        UPDATE "NoticeItem" SET "key" = "key" || ':' || ${CLOSED_STAMP}
          WHERE "key" = ${key} AND "state" <> 'OPEN'
         RETURNING "id", "key"
       )
