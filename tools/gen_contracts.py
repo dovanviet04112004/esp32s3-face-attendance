@@ -423,9 +423,10 @@ def render_c_serialize(model: Model) -> str:
         if not required:
             out.append(f"    if (in->has_{cname}) {{\n")
         if kind == "object":
+            attached = f'cJSON_AddItemToObject(root, "{field}", {cname})'
             out.append(
                 f"{indent}cJSON *{cname} = {model.c_prefix}_{cname}_to_json(&in->{cname});\n"
-                f'{indent}if ({cname} == NULL || !cJSON_AddItemToObject(root, "{field}", {cname})) {{\n'
+                f"{indent}if ({cname} == NULL || !{attached}) {{\n"
                 f"{indent}    cJSON_Delete({cname});\n"
                 f"{indent}    whole = false;\n"
                 f"{indent}}}\n"
