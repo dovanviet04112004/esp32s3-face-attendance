@@ -670,6 +670,13 @@ describe("payroll periods, runs and the timesheet behind them (e2e)", () => {
     });
     assert.equal(disordered.status, 400);
     assert.equal(disordered.body.message, "BRACKETS_OUT_OF_ORDER");
+    const capped = await as("payroll").post("/payroll-policies", {
+      ...policyFields("2026-06-01"),
+      legalEntityId: entityId,
+      brackets: [{ upToAmount: 10_000_000, rateBp: 500 }, { upToAmount: 30_000_000, rateBp: 1000 }],
+    });
+    assert.equal(capped.status, 400, "a top band with a ceiling leaves every dong above it untaxed");
+    assert.equal(capped.body.message, "BRACKETS_OUT_OF_ORDER");
     const taken = await as("payroll").post("/payroll-policies", {
       ...policyFields("2026-01-01"),
       legalEntityId: entityId,

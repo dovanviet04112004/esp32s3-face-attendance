@@ -1563,7 +1563,7 @@
     "problemTitle": "Chưa lưu được bản này",
     "problemDate": "Chọn ngày hiệu lực.",
     "problemFields": "Còn {count, plural, other {# ô}} trống hoặc âm.",
-    "problemBands": "Biểu thuế phải tăng dần theo mức trần, mỗi bậc có thuế suất, và chỉ bậc cuối để trống mức trần.",
+    "problemBands": "Biểu thuế phải tăng dần theo mức trần, mỗi bậc có thuế suất; mọi bậc trừ bậc cuối có mức trần, còn bậc cuối để trống mức trần.",
     "fieldMissing": "Nhập một số từ 0 trở lên"
   },
   "errors": {
@@ -1744,7 +1744,7 @@
     "DEPARTMENT_OTHER_ENTITY": "Phòng ban này thuộc pháp nhân khác.",
     "PERIOD_TAKEN": "Tháng này đã có kỳ lương cho pháp nhân ấy.",
     "POLICY_DATE_TAKEN": "Đã có một chính sách hiệu lực đúng ngày này cho phạm vi ấy. Chọn ngày khác.",
-    "BRACKETS_OUT_OF_ORDER": "Các bậc thuế phải tăng dần, và chỉ bậc cuối được để trống mức trần.",
+    "BRACKETS_OUT_OF_ORDER": "Các bậc thuế phải tăng dần: mọi bậc trừ bậc cuối phải có mức trần, và bậc cuối phải để trống mức trần.",
     "PERIOD_RUN_IN_PROGRESS": "Kỳ đang có một lượt chạy. Chờ lượt ấy xong rồi thử lại.",
     "PERIOD_STILL_OPEN": "Pháp nhân này còn một kỳ lương chưa chốt. Chốt kỳ ấy rồi mới mở kỳ mới.",
     "PERIOD_OUT_OF_ORDER": "Tháng này không sau kỳ lương mới nhất của pháp nhân. Kỳ lương chỉ mở theo thứ tự tháng.",

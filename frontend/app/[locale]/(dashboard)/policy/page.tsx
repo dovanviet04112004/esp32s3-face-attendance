@@ -120,7 +120,7 @@ function scopeOf(policy: { legalEntityId: string | null }): string {
   return policy.legalEntityId ?? COMPANY;
 }
 
-/** Bands must climb, and only the last may leave its ceiling empty, or the tax walk skips a slice. */
+/** Bands must climb, and the last alone has no ceiling, or the tax walk skips or never taxes a slice. */
 function bandsProblem(brackets: Draft["brackets"]): boolean {
   if (brackets.length === 0) {
     return true;
@@ -134,7 +134,7 @@ function bandsProblem(brackets: Draft["brackets"]): boolean {
       return !last;
     }
     const below = at === 0 ? -1 : Number(brackets[at - 1].upToAmount || Number.POSITIVE_INFINITY);
-    return Number(band.upToAmount) <= below;
+    return last || Number(band.upToAmount) <= below;
   });
 }
 

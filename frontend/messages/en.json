@@ -1563,7 +1563,7 @@
     "problemTitle": "This version cannot be saved yet",
     "problemDate": "Pick the date it takes effect.",
     "problemFields": "{count, plural, one {# field is} other {# fields are}} empty or negative.",
-    "problemBands": "Tax bands must rise by ceiling, each with a rate, and only the last may leave its ceiling empty.",
+    "problemBands": "Tax bands must rise by ceiling, each with a rate; every band but the last has a ceiling, and the last one's stays empty.",
     "fieldMissing": "Enter a number of 0 or more"
   },
   "errors": {
@@ -1744,7 +1744,7 @@
     "DEPARTMENT_OTHER_ENTITY": "This department belongs to another legal entity.",
     "PERIOD_TAKEN": "A pay period for that entity and month already exists.",
     "POLICY_DATE_TAKEN": "A policy already takes effect on that date for that scope. Pick another date.",
-    "BRACKETS_OUT_OF_ORDER": "Tax bands must rise in order, and only the last one may leave its ceiling empty.",
+    "BRACKETS_OUT_OF_ORDER": "Tax bands must rise in order: every band but the last needs a ceiling, and the last one's ceiling must stay empty.",
     "PERIOD_RUN_IN_PROGRESS": "A run is still going in this period. Wait for it to finish, then try again.",
     "PERIOD_STILL_OPEN": "This entity still has a pay period open. Lock it before opening another.",
     "PERIOD_OUT_OF_ORDER": "That month is not after the entity's newest pay period. Periods open in month order.",

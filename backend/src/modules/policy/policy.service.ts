@@ -12,7 +12,8 @@ import type { CreatePolicyDto } from "./dto/policy.dto.js";
 
 export type PolicyWithBrackets = PayrollPolicy & { brackets: TaxBracket[] };
 
-/** Bands climb strictly and only the last one is open-ended, or the tax walk skips or repeats a slice. */
+/** Ceilings climb strictly on every band but the last, which has none, or the tax walk skips,
+ *  repeats or never taxes a slice. */
 function bandsInOrder(brackets: CreatePolicyDto["brackets"]): boolean {
   return brackets.every((band, at) => {
     const last = at === brackets.length - 1;
@@ -20,7 +21,7 @@ function bandsInOrder(brackets: CreatePolicyDto["brackets"]): boolean {
       return last;
     }
     const below = at === 0 ? -1 : (brackets[at - 1].upToAmount ?? Number.POSITIVE_INFINITY);
-    return band.upToAmount > below;
+    return !last && band.upToAmount > below;
   });
 }
 
