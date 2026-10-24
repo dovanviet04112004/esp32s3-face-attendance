@@ -199,7 +199,12 @@ export class NoticeItemsService {
   async detail(viewer: Viewer, key: string): Promise<ItemDetail> {
     const { item, member } = await this.reachable(viewer, key);
     const [subject] = await this.subjects.describe(viewer, [
-      { subjectType: item.subjectType, subjectId: item.subjectId, subjectEmployeeId: item.employeeId },
+      {
+        subjectType: item.subjectType,
+        subjectId: item.subjectId,
+        subjectEmployeeId: item.employeeId,
+        awaits: member && item.state === "OPEN",
+      },
     ]);
     const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
     const claimLive = item.claimedAt !== null && item.claimedAt.getTime() > lapsed;

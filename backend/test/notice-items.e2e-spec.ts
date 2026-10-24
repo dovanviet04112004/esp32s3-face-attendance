@@ -409,4 +409,24 @@ describe("work a group shares, closed once for all (e2e)", () => {
     assert.equal(counts.body.requests, inbox.body.total, "the stand-in's inbox count is not their inbox");
     await post("deputy", `/requests/${own}/cancel`);
   });
+
+  it("names whom open work is about to the stand-in it waits on, and hides it from them once decided", async () => {
+    await standIn();
+    const id = await fileRequest("asker");
+    const item = await itemOf("REQUESTS", id);
+    const seat = await seatOf(item, "deputy");
+    assert.ok(seat, "the stand-in was not told");
+    const read = (path: string) => request(http).get(path).set("Authorization", `Bearer ${tokenOf.get("deputy")}`);
+    const shown = await read(`/notifications/${seat.id}`);
+    assert.equal(shown.body.subject?.hidden, false, "a stand-in cannot read whom the work waiting on them is about");
+    assert.equal(shown.body.subject?.person?.code, codeOf("asker"));
+    const detail = await read(`/notifications/items/${encodeURIComponent(item.key)}`);
+    assert.equal(detail.body.subject?.person?.code, codeOf("asker"), "the item does not name its person to the stand-in");
+    const found = await read(`/notifications?search=${codeOf("asker")}`);
+    assert.ok((found.body.rows as { id: string }[]).some((row) => row.id === seat.id), "a stand-in's search missed the work waiting on them");
+
+    assert.equal((await post("boss", `/requests/${id}/decide`, { approve: true })).status, 201);
+    const decided = await read(`/notifications/${seat.id}`);
+    assert.equal(decided.body.subject?.hidden, true, "a stand-in still reads whom a decided request outside their tree is about");
+  });
 });

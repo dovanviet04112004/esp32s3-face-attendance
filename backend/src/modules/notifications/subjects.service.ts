@@ -9,6 +9,9 @@ import { PERSON_VIEW } from "../leave/queue-filter.js";
 // HR data reads by the tree; pay and papers only by the desk or their owner (KEHOACH 9.4).
 const BY_TREE: ReadonlySet<NoticeSubject> = new Set<NoticeSubject>(["REQUEST", "CONTRACT", "PERSON_DAY", "TASK"]);
 
+// Work still waiting on the holder of the row: whoever it waits on reads whom it is about (KEHOACH 9.21.4).
+const AWAITING = { leftAt: null, item: { is: { state: "OPEN" } } } satisfies Prisma.NotificationWhereInput;
+
 export interface SubjectPerson {
   id: number;
   code: string;
@@ -44,6 +47,8 @@ interface Subjected {
   subjectType: NoticeSubject | null;
   subjectId: string | null;
   subjectEmployeeId: number | null;
+  /** The reader holds a live row of the work and it is still open, so it waits on them whatever their scope. */
+  awaits?: boolean;
 }
 
 /** People and days behind notices, built at read time through the reader's scope (KEHOACH 9.21.4). */
@@ -76,6 +81,7 @@ export class SubjectsService {
       OR: [
         { subjectType: { in: [...BY_TREE] }, subjectEmployee: { is: within(reach.byTree) } },
         { subjectType: { notIn: [...BY_TREE] }, subjectEmployee: { is: within(reach.byDesk) } },
+        { ...AWAITING, subjectEmployee: { is: person } },
       ],
     };
   }
@@ -88,7 +94,7 @@ export class SubjectsService {
     const reached = await this.ofEntities(viewer, rows);
     const sees = (row: Subjected): boolean => {
       const ids = row.subjectType !== null && BY_TREE.has(row.subjectType) ? reach.byTree : reach.byDesk;
-      if (row.subjectEmployeeId === null || row.subjectEmployeeId === viewer.employeeId) {
+      if (row.awaits || row.subjectEmployeeId === null || row.subjectEmployeeId === viewer.employeeId) {
         return true;
       }
       return ids === null ? reached === null || reached.has(row.subjectEmployeeId) : ids.includes(row.subjectEmployeeId);

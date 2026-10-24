@@ -348,7 +348,10 @@ export class NotificationsService {
     viewer: Viewer,
     rows: (Notification & { item: Prisma.NoticeItemGetPayload<{ select: typeof ITEM_SUMMARY }> | null })[],
   ): Promise<NoticeRow[]> {
-    const subjects = await this.subjects.describe(viewer, rows);
+    const subjects = await this.subjects.describe(
+      viewer,
+      rows.map((row) => ({ ...row, awaits: row.leftAt === null && row.item?.state === "OPEN" })),
+    );
     const lapsed = Date.now() - this.config.get("NOTICE_CLAIM_HOURS", { infer: true }) * kHourMs;
     return rows.map(({ item, subjectType: _type, subjectId: _id, subjectEmployeeId: _person, dedupKey: _key, ...row }, at) => ({
       ...row,
