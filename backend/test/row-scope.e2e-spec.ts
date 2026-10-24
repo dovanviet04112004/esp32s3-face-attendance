@@ -18,14 +18,16 @@ const MINE = "E2ESC02";
 const STRANGER = "E2ESC03";
 const LEFT = "E2ESC04";
 const RIGHT = "E2ESC05";
-const MADE_CODES = [BOSS, MINE, STRANGER, LEFT, RIGHT];
+const PAY_CLERK = "E2ESC06";
+const MADE_CODES = [BOSS, MINE, STRANGER, LEFT, RIGHT, PAY_CLERK];
 // Long enough for the second move to reach its own check, short of the transaction's five seconds.
 const OVERLAP_MS = 1500;
 
 const BOSS_EMAIL = "e2esc-boss@kiosk.local";
 const MINE_EMAIL = "e2esc-mine@kiosk.local";
+const PAY_EMAIL = "e2esc-pay@kiosk.local";
 const PASSWORD = "kiosk-e2e-password";
-const MADE_EMAILS = [BOSS_EMAIL, MINE_EMAIL];
+const MADE_EMAILS = [BOSS_EMAIL, MINE_EMAIL, PAY_EMAIL];
 
 const MONTH = { from: "2026-09-01", to: "2026-09-19" };
 // A pay period no other suite touches, so its sweep removes only this suite's payslip.
@@ -330,5 +332,35 @@ describe("row scope (e2e)", () => {
 
     // No waiting for a cache to lapse: the answer has to be right now.
     assert.equal((await as("boss")(`/employees/${stranger}`)).status, 200);
+  });
+
+  it("keeps a pay desk to its own requests in the request ledger", async () => {
+    await db.user.create({
+      data: { email: PAY_EMAIL, passwordHash: await hashPassword(PASSWORD), role: "PAYROLL", employeeId: idOf.get(PAY_CLERK) as number },
+    });
+    const signed = await request(http).post("/auth/login").send({ email: PAY_EMAIL, password: PASSWORD });
+    assert.equal(signed.status, 200, "payroll could not sign in");
+    token.pay = signed.body.accessToken;
+    const filed = (code: string) =>
+      db.request.create({
+        data: {
+          employeeId: idOf.get(code) as number,
+          kind: "REMOTE_WORK",
+          state: "APPROVED",
+          fromDate: new Date(MONTH.from),
+          toDate: new Date(MONTH.from),
+          reason: "e2e",
+        },
+      });
+    const own = await filed(PAY_CLERK);
+    const theirs = await filed(STRANGER);
+
+    const ledger = await as("pay")("/requests?take=100");
+    assert.equal(ledger.status, 200);
+    const shown = (ledger.body.rows as { id: string }[]).map((one) => one.id);
+    assert.ok(shown.includes(own.id), "a pay desk lost sight of its own request");
+    assert.ok(!shown.includes(theirs.id), "a pay desk read a stranger's request off the ledger");
+    assert.equal((await as("pay")(`/requests/${theirs.id}`)).status, 404);
+    assert.equal((await as("pay")(`/requests/${own.id}`)).status, 200);
   });
 });

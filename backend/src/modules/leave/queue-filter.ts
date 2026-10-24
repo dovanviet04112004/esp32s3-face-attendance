@@ -9,6 +9,8 @@ import type { Order, QueueQueryDto } from "./dto/queue.dto.js";
 // and a read on payroll (KEHOACH 9.15).
 export const THE_DESK: Role[] = ["ADMIN", "HR"];
 
+export const REQUEST_LEDGER: Role[] = ["ADMIN", "HR", "MANAGER"];
+
 /** Who decides each desk queue. The lists, the badge and the notices read this one table. */
 export const QUEUE_DESKS: Record<
   "certificates" | "profileChanges" | "disputes" | "dependents" | "advancesToDecide" | "advancesToPay" | "punches",

@@ -49,6 +49,7 @@ import type {
 import { LeaveYearService } from "./leave-year.service.js";
 import {
   PERSON_VIEW,
+  REQUEST_LEDGER,
   THE_DESK,
   personWhere,
   sortedBy,
@@ -511,7 +512,7 @@ export class LeaveService {
     if (!held) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
     }
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.ledgerPeople(viewer);
     const refusal = held.state === "PENDING" ? await this.refusal(viewer, held) : "NOT_PENDING";
     if (!(await this.scope.reaches(viewer, visible, held.employeeId)) && refusal !== null) {
       throw new NotFoundException("REQUEST_NOT_FOUND");
@@ -736,8 +737,16 @@ export class LeaveService {
     return dropped;
   }
 
+  /** Whose requests the ledger shows: a ledger role's whole scope, anyone else's own (KEHOACH 9.15). */
+  private async ledgerPeople(viewer: Viewer): Promise<number[] | null> {
+    if (REQUEST_LEDGER.includes(viewer.role)) {
+      return this.scope.visibleEmployeeIds(viewer);
+    }
+    return viewer.employeeId === null ? [] : [viewer.employeeId];
+  }
+
   private async ledgerWhere(viewer: Viewer, query: ListRequestsDto): Promise<Prisma.RequestWhereInput> {
-    const visible = await this.scope.visibleEmployeeIds(viewer);
+    const visible = await this.ledgerPeople(viewer);
     return {
       AND: [
         ScopeService.ownedWhere(viewer, visible),

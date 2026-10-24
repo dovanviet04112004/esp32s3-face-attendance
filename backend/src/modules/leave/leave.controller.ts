@@ -154,7 +154,9 @@ export class LeaveController {
   }
 
   @Get("requests")
-  @ApiOperation({ summary: "The ledger: every state in the viewer's tree, newest first by default" })
+  @ApiOperation({
+    summary: "The ledger: every state in the viewer's tree, or only their own for a role it does not answer; newest first by default",
+  })
   @ApiOkResponse({ type: RequestPageView })
   list(@CurrentViewer() viewer: Viewer, @Query() query: ListRequestsDto): Promise<Page<RequestRow>> {
     return this.leave.list(viewer, query);

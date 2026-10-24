@@ -6,7 +6,7 @@ import { ScopeService } from "../../common/scope/scope.service.js";
 import type { Viewer } from "../../common/scope/viewer.js";
 import type { Env } from "../../config/env.schema.js";
 import { codeHas, codeLeads, foldedHas, foldedLeads, PrismaService } from "../../database/prisma.service.js";
-import { QUEUE_DESKS } from "../leave/queue-filter.js";
+import { QUEUE_DESKS, REQUEST_LEDGER } from "../leave/queue-filter.js";
 import { asDay, localDay } from "../timesheet/local-day.js";
 import type { HitKind } from "./dto/search.dto.js";
 
@@ -43,7 +43,6 @@ const NONE: Pile = { hits: [], more: null };
 
 // The pages each role opens, as frontend/lib/nav.ts lets it (KEHOACH 9.15).
 const DIRECTORY: Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
-const LEDGER: Role[] = ["ADMIN", "HR", "MANAGER"];
 const PAY_DESK: Role[] = ["ADMIN", "HR", "PAYROLL"];
 const PEOPLE_DESK: Role[] = ["ADMIN", "HR"];
 const OPERATORS: Role[] = ["ADMIN"];
@@ -286,7 +285,7 @@ export class SearchService {
       where: { id: { in: ids } },
       select: { id: true, code: true, name: true },
     });
-    const tree = LEDGER.includes(viewer.role);
+    const tree = REQUEST_LEDGER.includes(viewer.role);
     return {
       hits: inOrder(ids, rows).map((row) => ({
         kind: "department",
@@ -300,7 +299,7 @@ export class SearchService {
   }
 
   private async requests(viewer: Viewer, term: string, visible: number[] | null): Promise<Pile> {
-    const ledger = LEDGER.includes(viewer.role);
+    const ledger = REQUEST_LEDGER.includes(viewer.role);
     if (!ledger && viewer.employeeId === null) {
       return NONE;
     }
