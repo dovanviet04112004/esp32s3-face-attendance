@@ -165,11 +165,7 @@ export class AttendanceSweep implements OnModuleInit {
          WHERE "Notification"."facts" IS DISTINCT FROM EXCLUDED."facts"
         RETURNING "id", "userId", "dedupKey", false AS "renotify", "createdAt" AS "at", (xmax = 0) AS "fresh"
       `;
-      await this.notices.announce(
-        "ATTENDANCE_EXCEPTION",
-        seated.filter((one) => one.fresh),
-        false,
-      );
+      await this.notices.announce("ATTENDANCE_EXCEPTION", seated.filter((one) => one.fresh));
     }
     return opened;
   }

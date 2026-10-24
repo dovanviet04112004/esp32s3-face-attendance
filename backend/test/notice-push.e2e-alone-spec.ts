@@ -29,9 +29,9 @@ process.env.NOTICE_PUSH_GATHER_SECONDS = "1";
 
 const RUN = randomUUID().slice(0, 6);
 const PASSWORD = "e2e-notice-push-password";
-const PEOPLE = ["asker", "orphan", "boss", "desk"] as const;
+const PEOPLE = ["asker", "orphan", "boss", "desk", "admin"] as const;
 type Who = (typeof PEOPLE)[number];
-const ROLE: Record<Who, Role> = { asker: "EMPLOYEE", orphan: "EMPLOYEE", boss: "MANAGER", desk: "HR" };
+const ROLE: Record<Who, Role> = { asker: "EMPLOYEE", orphan: "EMPLOYEE", boss: "MANAGER", desk: "HR", admin: "ADMIN" };
 const codeOf = (who: Who) => `E2ENP${PEOPLE.indexOf(who)}${RUN}`;
 const mailOf = (who: Who) => `e2e-notice-push-${who}-${RUN}@kiosk.local`;
 const endpointOf = (who: Who) => `https://fcm.googleapis.com/fcm/send/e2e-${who}-${RUN}`;
@@ -40,10 +40,12 @@ const POLL_MS = 100;
 const HANG_MS = 60_000;
 const DAY_MS = 86_400_000;
 const DEVICE = `e2e-np-${RUN}`;
+const KIOSK = `e2e-npk-${RUN}`;
 const SHIFT = `E2E NP ${RUN}`;
-// Days no other suite builds: two the asker missed, one they only came late on.
+// Days no other suite builds: two the asker missed, one they only came late on, one the orphan missed.
 const ABSENT_DAYS = ["2026-08-11", "2026-08-12"];
 const LATE_DAY = "2026-08-13";
+const QUIET_DAY = "2026-08-14";
 
 interface Sent {
   endpoint: string;
@@ -98,10 +100,11 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
 
   // A device's punches go with it, and they hold on to the people they are of.
   async function sweep(): Promise<void> {
-    await db.device.deleteMany({ where: { id: DEVICE } });
+    await db.noticeItem.deleteMany({ where: { queue: "KIOSK", subjectId: KIOSK } });
+    await db.device.deleteMany({ where: { id: { in: [DEVICE, KIOSK] } } });
     await db.user.deleteMany({ where: { email: { in: PEOPLE.map(mailOf) } } });
     await db.employee.deleteMany({ where: { code: { in: PEOPLE.map(codeOf) } } });
-    await db.shift.deleteMany({ where: { name: SHIFT } });
+    await db.shift.deleteMany({ where: { name: { startsWith: SHIFT } } });
   }
 
   before(async () => {
@@ -318,6 +321,41 @@ describe("pushes as references, one tag a piece of work, the desk's gathered (e2
       mute.delete(silent);
       await db.pushSubscription.deleteMany({ where: { endpoint: silent } });
     }
+  });
+
+  it("counts in a desk's window only what waited in it, never a CRITICAL notice that went alone", async () => {
+    const queue = (app.get(QUEUE_TOKEN) as Queues)[QUEUE.notify];
+    await until(async () => (await queue.getDeduplicationJobId(`gather-${loginOf.get("admin")}`)) === null, "an earlier window");
+    await db.device.create({ data: { id: KIOSK, status: "APPROVED", online: true } });
+    const before = (await pushesTo("admin", 0)).length;
+    const id = await file("orphan");
+    await app
+      .get(NoticeItemsService)
+      .open("KIOSK", { id: KIOSK, part: "camera-fault", employeeId: null }, { level: "CRITICAL", facts: { code: "CAMERA_FAULT" } });
+    await new Promise((done) => setTimeout(done, 1500));
+    const told = (await pushesTo("admin", before + 2)).slice(before);
+    assert.deepEqual(told.map((one) => one.body.kind).sort(), ["KIOSK_ALERT", "REQUEST_WAITING"], "the window took in the CRITICAL notice");
+    const waited = told.find((one) => one.body.kind === "REQUEST_WAITING");
+    assert.deepEqual([waited?.body.count, waited?.body.tag], [1, itemKey("REQUESTS", id)], "the window counted a notice pushed alone");
+  });
+
+  it("counts in a person's window only what waited in it, never a kind pushed at once or a row opened without a sound", async () => {
+    const { AttendanceSweep } = await import("../src/modules/notifications/sweeps/attendance.sweep.js");
+    const orphan = idOf.get("orphan") as number;
+    await db.attendanceDay.create({ data: { employeeId: orphan, date: new Date(QUIET_DAY), state: "ABSENT" } });
+    const shift = await post("desk", "/shifts", { name: `${SHIFT} window`, startTime: "08:00", endTime: "17:00", graceMinutes: 5 });
+    assert.equal(shift.status, 201, JSON.stringify(shift.body));
+    const id = await file("orphan");
+    const before = (await pushesTo("orphan", 0)).length;
+    const validFrom = new Date(Date.now() + 5 * DAY_MS).toISOString().slice(0, 10);
+    const assigned = await post("desk", `/shifts/${shift.body.id}/assignments`, { employeeId: orphan, validFrom });
+    assert.equal(assigned.status, 201, JSON.stringify(assigned.body));
+    assert.equal((await post("desk", `/requests/${id}/decide`, { approve: true })).status, 201);
+    await app.get(AttendanceSweep).afterBuild(QUIET_DAY, orphan);
+    await new Promise((done) => setTimeout(done, 1500));
+    const told = (await pushesTo("orphan", before + 2)).slice(before);
+    assert.deepEqual(told.map((one) => one.body.kind).sort(), ["REQUEST_DECIDED", "SHIFT_CHANGED"], "the person heard other than the answer and the shift");
+    assert.equal(told.find((one) => one.body.kind === "SHIFT_CHANGED")?.body.count, 1, "the window counted rows that never waited in it");
   });
 
   it("pushes a person's missing punches and absences once, together, at the morning sweep, and never their lateness", async () => {

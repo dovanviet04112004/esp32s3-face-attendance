@@ -37,6 +37,7 @@ import {
   mutable,
   NOTICE_KINDS,
   receives,
+  SWEEP_PUSHED,
   type NewsKind,
   type NoticeCategory,
   type OfferedChannel,
@@ -239,6 +240,11 @@ const DEFAULT_LOCALE = "vi";
 // Desk pushes gather into one; a CRITICAL notice never waits (KEHOACH 9.21.4).
 const GATHERED: readonly Role[] = ["ADMIN", "HR", "PAYROLL"];
 const GATHERED_TAG = "gathered";
+
+/** Whether a row's push waits for its login's window: the one rule announce and the window's gather both read. */
+function gathers(kind: NoticeKind, level: NoticeLevel, role: Role): boolean {
+  return level !== "CRITICAL" && (GATHERED_KINDS.has(kind) || GATHERED.includes(role));
+}
 
 /** A row just written or surfaced, with the key its push is tagged by and the database's time of it. */
 export interface Announced {
@@ -606,17 +612,16 @@ export class NotificationsService {
   }
 
   /** Tell each login's open screens of a row it just got, then queue its push where the person allows it.
-   *  @ctx any | pushes leave through the notify queue, never inside the request (KEHOACH 9.21.4)
-   *  @param pushing false for rows that open without a sound and are pushed later, together
+   *  @ctx any | pushes leave through the notify queue, never inside the request; a sweep-pushed kind waits for its sweep
    */
-  async announce(kind: NoticeKind, rows: Announced[], pushing = true): Promise<void> {
+  async announce(kind: NoticeKind, rows: Announced[]): Promise<void> {
     if (rows.length === 0) {
       return;
     }
     for (const one of rows) {
       this.feed.tell(one.userId, FEED.notice, { op: "new", id: one.id, kind, category: NOTICE_KINDS[kind].category });
     }
-    if (!this.pushable || !pushing) {
+    if (!this.pushable || SWEEP_PUSHED.has(kind)) {
       return;
     }
     const wants = await this.channelsFor(kind, rows.map((one) => one.userId));
@@ -649,17 +654,11 @@ export class NotificationsService {
 
   // Desk logins gather every kind short of CRITICAL; a gathered kind gathers for everybody (KEHOACH 9.21.4).
   private async gathering(kind: NoticeKind, pushed: Announced[]): Promise<Set<string>> {
-    if (GATHERED_KINDS.has(kind)) {
-      return new Set(pushed.map((one) => one.userId));
-    }
-    if (NOTICE_KINDS[kind].level === "CRITICAL") {
-      return new Set();
-    }
-    const desks = await this.db.user.findMany({
-      where: { id: { in: pushed.map((one) => one.userId) }, role: { in: [...GATHERED] } },
-      select: { id: true },
+    const logins = await this.db.user.findMany({
+      where: { id: { in: pushed.map((one) => one.userId) } },
+      select: { id: true, role: true },
     });
-    return new Set(desks.map((one) => one.id));
+    return new Set(logins.filter((one) => gathers(kind, NOTICE_KINDS[kind].level, one.role)).map((one) => one.id));
   }
 
   /** Send a fan-out job's pushes, one per row to every device of its login it still owes.
@@ -742,25 +741,36 @@ export class NotificationsService {
     return { id: newest.id, userId, tag, renotify: true, count: rows.length, ...(rows.length > 1 ? { gathered } : {}) };
   }
 
-  /** One push for what a desk login got since its window opened, as "N new items" when more than one.
-   *  @ctx job | notify queue; nothing goes out when the login has read it all meanwhile
+  /** One push for what waited in a login's window since it opened, as "N new items" when more than one.
+   *  @ctx job | notify queue; only rows announce held for the window count, none when all are read meanwhile
    */
   async gather(userId: string, since: Date): Promise<void> {
+    const login = await this.db.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!this.pushable || !login) {
+      return;
+    }
     const fresh = await this.db.notification.findMany({
-      where: { userId, readAt: null, archivedAt: null, leftAt: null, OR: [{ createdAt: { gte: since } }, { remindedAt: { gte: since } }] },
+      where: {
+        userId,
+        readAt: null,
+        archivedAt: null,
+        leftAt: null,
+        kind: { notIn: [...SWEEP_PUSHED] },
+        OR: [{ createdAt: { gte: since } }, { remindedAt: { gte: since } }],
+      },
       orderBy: { createdAt: "desc" },
       take: kBatch,
       select: { id: true, kind: true, dedupKey: true },
     });
-    const kinds = [...new Set(fresh.map((one) => one.kind))];
+    const held = fresh.filter((one) => gathers(one.kind, NOTICE_KINDS[one.kind].level, login.role));
     const wanted = new Set<NoticeKind>();
-    for (const kind of kinds) {
+    for (const kind of new Set(held.map((one) => one.kind))) {
       if ((await this.channelsFor(kind, [userId]))(userId, "PUSH")) {
         wanted.add(kind);
       }
     }
-    const pushed = fresh.filter((one) => wanted.has(one.kind));
-    if (!this.pushable || pushed.length === 0) {
+    const pushed = held.filter((one) => wanted.has(one.kind));
+    if (pushed.length === 0) {
       return;
     }
     const kind = pushed[0].kind;

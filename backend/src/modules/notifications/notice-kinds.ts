@@ -78,6 +78,9 @@ export const KIOSK_BOOT_SETTLE_MINUTES = 10;
 /** Kinds whose pushes gather per person in every role, as a desk's always do: one bulk change writes many rows (KEHOACH 9.21.4). */
 export const GATHERED_KINDS: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["SHIFT_CHANGED", "UPDATE_FINISHED"]);
 
+/** Kinds whose rows land without a sound; a sweep of their own pushes them later, together (KEHOACH 9.21.4). */
+export const SWEEP_PUSHED: ReadonlySet<NoticeKind> = new Set<NoticeKind>(["ATTENDANCE_EXCEPTION"]);
+
 /** Roles whose login opens the approvals inbox (KEHOACH 9.15). */
 export const INBOX_ROLES: readonly Role[] = ["ADMIN", "HR", "PAYROLL", "MANAGER"];
 
