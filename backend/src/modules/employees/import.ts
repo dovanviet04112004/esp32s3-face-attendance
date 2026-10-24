@@ -405,6 +405,7 @@ export interface PlanInput {
   catalogue: Catalogue;
   heldBy: ReadonlyMap<string, Held>;
   managers: ReadonlySet<string>;
+  departedManagers: ReadonlySet<string>;
   takenEmails: ReadonlySet<string>;
   today: string;
   importer: { employeeId: number | null; unlinkedDesk: boolean };
@@ -663,7 +664,10 @@ export function planRows(input: PlanInput): Planned {
     }
     const keepsDepartment = row.departmentCode === undefined && raw.departmentCode !== CLEAR;
     const place = placeRow(row, named, held, keepsDepartment, input.catalogue, fault);
-    if (row.managerCode && !input.managers.has(row.managerCode) && !arriving.has(row.managerCode)) {
+    // Somebody gone or with a last day set takes no reports, as on the single-row write (KEHOACH 9.4).
+    if (row.managerCode && input.departedManagers.has(row.managerCode)) {
+      fault("managerCode", "MANAGER_HAS_LEFT", row.managerCode);
+    } else if (row.managerCode && !input.managers.has(row.managerCode) && !arriving.has(row.managerCode)) {
       fault("managerCode", "MANAGER_UNKNOWN", row.managerCode);
     }
     if (held) {

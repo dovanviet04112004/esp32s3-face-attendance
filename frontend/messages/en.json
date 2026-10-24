@@ -2740,6 +2740,7 @@
     "DEPARTMENT_OTHER_ENTITY": "The current department belongs to another entity: add the departmentCode column.",
     "JOB_TITLE_UNKNOWN": "No job title has this code.",
     "MANAGER_UNKNOWN": "No employee has this code, here or in the file.",
+    "MANAGER_HAS_LEFT": "The person with this code has left or has a last day set, so cannot be a manager.",
     "LEGAL_ENTITY_RETIRED": "This legal entity is retired. Download a fresh template for the current list.",
     "DEPARTMENT_RETIRED": "This department is retired. Download a fresh template for the current list.",
     "JOB_TITLE_RETIRED": "This job title is retired. Download a fresh template for the current list.",

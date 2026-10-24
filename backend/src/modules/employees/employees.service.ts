@@ -495,7 +495,7 @@ export class EmployeesService implements OnModuleInit {
     const [catalogue, heldBy, managers, outside] = await Promise.all([
       this.catalogueNow(viewer),
       this.heldFor(codes, viewer),
-      this.codesAmong(bosses, viewer),
+      this.bossesAmong(bosses, viewer),
       this.codesOutside(codes, viewer),
     ]);
     read.rows.forEach((row, at) => {
@@ -510,7 +510,8 @@ export class EmployeesService implements OnModuleInit {
       read,
       catalogue,
       heldBy,
-      managers,
+      managers: managers.managing,
+      departedManagers: managers.departed,
       takenEmails: await this.loginEmailsAmong(asking),
       today: this.today(),
       importer: { employeeId: viewer.employeeId, unlinkedDesk: isUnlinkedDesk(viewer) },
@@ -709,16 +710,17 @@ export class EmployeesService implements OnModuleInit {
     return held;
   }
 
-  private async codesAmong(codes: string[], viewer: Viewer): Promise<Set<string>> {
-    const found = new Set<string>();
+  private async bossesAmong(codes: string[], viewer: Viewer): Promise<{ managing: Set<string>; departed: Set<string> }> {
+    const managing = new Set<string>();
+    const departed = new Set<string>();
     for (const slice of chunks(codes)) {
       const rows = await this.db.employee.findMany({
         where: { code: { in: slice }, ...ScopeService.peopleWhere(viewer, null) },
-        select: { code: true },
+        select: { code: true, active: true, leaveDate: true },
       });
-      rows.forEach((one) => found.add(one.code));
+      rows.forEach((one) => (one.active && one.leaveDate === null ? managing : departed).add(one.code));
     }
-    return found;
+    return { managing, departed };
   }
 
   // A code held by someone outside the account's entities can be neither made again nor edited (KEHOACH 9.4).

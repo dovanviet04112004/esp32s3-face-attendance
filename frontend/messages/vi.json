@@ -2740,6 +2740,7 @@
     "DEPARTMENT_OTHER_ENTITY": "Phòng ban hiện tại thuộc pháp nhân khác: thêm cột departmentCode.",
     "JOB_TITLE_UNKNOWN": "Không có chức danh nào mang mã này.",
     "MANAGER_UNKNOWN": "Không có nhân viên mang mã này, trong hệ hay trong tệp.",
+    "MANAGER_HAS_LEFT": "Người mang mã này đã nghỉ việc hoặc đã có lịch nghỉ, nên không làm quản lý được.",
     "LEGAL_ENTITY_RETIRED": "Pháp nhân này đã ngừng dùng. Tải mẫu mới để có danh mục hiện tại.",
     "DEPARTMENT_RETIRED": "Phòng ban này đã ngừng dùng. Tải mẫu mới để có danh mục hiện tại.",
     "JOB_TITLE_RETIRED": "Chức danh này đã ngừng dùng. Tải mẫu mới để có danh mục hiện tại.",

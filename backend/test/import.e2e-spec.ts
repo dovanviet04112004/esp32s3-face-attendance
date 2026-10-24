@@ -271,6 +271,29 @@ describe("employee import (e2e)", () => {
     assert.equal(staff?.compensation[0]?.insuranceSalary.toFixed(0), "10000000");
   });
 
+  it("refuses a manager who has left or has a last day set, naming the cell", async () => {
+    const entityId = await seedEntityId(db);
+    await db.employee.createMany({
+      data: [
+        { code: `${PREFIX}94`, fullName: "Đã nghỉ", active: false, leaveDate: new Date("2026-01-31"), legalEntityId: entityId },
+        { code: `${PREFIX}95`, fullName: "Sắp nghỉ", active: true, leaveDate: new Date("2099-01-31"), legalEntityId: entityId },
+      ],
+    });
+    const report = await send(
+      [HEAD, `${PREFIX}96,Người mới,${ENTITY},${PREFIX}94,,,,`, `${PREFIX}97,Người mới hai,${ENTITY},${PREFIX}95,,,,`].join("\r\n"),
+      true,
+    );
+    assert.equal(report.applied, false, "a file naming a leaver as manager was written");
+    assert.deepEqual(
+      report.faults.filter((one) => one.column === "managerCode").map((one) => [one.row, one.code, one.value]),
+      [
+        [2, "MANAGER_HAS_LEFT", `${PREFIX}94`],
+        [3, "MANAGER_HAS_LEFT", `${PREFIX}95`],
+      ],
+    );
+    assert.equal(await db.employee.count({ where: { code: { in: [`${PREFIX}96`, `${PREFIX}97`] } } }), 0);
+  });
+
   it("updates on a second pass and leaves the pay history alone", async () => {
     const report = await send(
       [HEAD, `${PREFIX}20,Tên đã đổi,${ENTITY},${PREFIX}21,1992-02-02,FEMALE,13000000,11000000`].join("\r\n"),

@@ -14,8 +14,11 @@ const OLD_BOSS = "E2ERG01";
 const NEW_BOSS = "E2ERG02";
 const MOVED = "E2ERG03";
 const STAYS = "E2ERG04";
-const MADE_CODES = [OLD_BOSS, NEW_BOSS, MOVED, STAYS];
+const LEAVING = "E2ERG05";
+const MADE_CODES = [OLD_BOSS, NEW_BOSS, MOVED, STAYS, LEAVING];
 const DEPT = "E2ERG-DEPT";
+const ELSEWHERE = "E2ERG-ELSE";
+const OTHER_ENTITY = "E2ERG-LE";
 
 interface Plan {
   applied: boolean;
@@ -31,13 +34,15 @@ describe("reorganisation (e2e)", () => {
   let db: PrismaService;
   let token = "";
   let departmentId = "";
+  let elsewhereId = "";
   let requestId = "";
   const idOf = new Map<string, number>();
 
   async function sweep(): Promise<void> {
     await db.request.deleteMany({ where: { employee: { code: { in: MADE_CODES } } } });
     await db.employee.deleteMany({ where: { code: { in: MADE_CODES } } });
-    await db.department.deleteMany({ where: { code: DEPT } });
+    await db.department.deleteMany({ where: { code: { in: [DEPT, ELSEWHERE] } } });
+    await db.legalEntity.deleteMany({ where: { code: OTHER_ENTITY } });
   }
 
   async function reorg(body: object, apply: boolean): Promise<request.Response> {
@@ -89,6 +94,11 @@ describe("reorganisation (e2e)", () => {
         data: { managerId: idOf.get(OLD_BOSS) },
       });
     }
+    await db.employee.update({ where: { id: idOf.get(LEAVING) }, data: { leaveDate: new Date("2099-01-31") } });
+    const other = await db.legalEntity.create({ data: { code: OTHER_ENTITY, name: "Pháp nhân khác" } });
+    elsewhereId = (
+      await db.department.create({ data: { code: ELSEWHERE, name: "Phòng pháp nhân khác", legalEntityId: other.id } })
+    ).id;
     const filed = await db.request.create({
       data: {
         employeeId: idOf.get(MOVED) as number,
@@ -136,6 +146,23 @@ describe("reorganisation (e2e)", () => {
     const res = await reorg({ fromDepartmentId: departmentId, toManagerCode: MOVED }, false);
     assert.equal(res.status, 409);
     assert.equal(res.body.message, "MANAGER_CYCLE");
+  });
+
+  it("refuses a department of another legal entity, or a manager with a last day set, and moves nobody", async () => {
+    const away = await reorg({ fromDepartmentId: departmentId, toDepartmentId: elsewhereId }, true);
+    assert.equal(away.status, 400, JSON.stringify(away.body));
+    assert.equal(away.body.message, "DEPARTMENT_OTHER_ENTITY");
+    const leaving = await reorg({ fromDepartmentId: departmentId, toManagerCode: LEAVING }, true);
+    assert.equal(leaving.status, 409, JSON.stringify(leaving.body));
+    assert.equal(leaving.body.message, "MANAGER_HAS_LEFT");
+    const still = await db.employee.findMany({
+      where: { code: { in: [MOVED, STAYS] } },
+      select: { departmentId: true, managerId: true },
+    });
+    assert.ok(
+      still.every((one) => one.departmentId === departmentId && one.managerId === idOf.get(OLD_BOSS)),
+      "a refused reorganisation moved somebody",
+    );
   });
 
   it("carries the move out, and takes the waiting request with it", async () => {

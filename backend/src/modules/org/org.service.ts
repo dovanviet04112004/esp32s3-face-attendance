@@ -133,6 +133,7 @@ export class OrgService {
         id: true,
         code: true,
         fullName: true,
+        legalEntityId: true,
         departmentId: true,
         department: { select: { code: true } },
         managerId: true,
@@ -147,20 +148,27 @@ export class OrgService {
     const toDepartment = body.toDepartmentId
       ? await this.db.department.findFirst({
           where: { id: body.toDepartmentId, ...ScopeService.entityWhere(viewer, false) },
-          select: { id: true, code: true },
+          select: { id: true, code: true, legalEntityId: true, active: true },
         })
       : null;
-    if (body.toDepartmentId && !toDepartment) {
+    if (body.toDepartmentId && !toDepartment?.active) {
       throw new NotFoundException("DEPARTMENT_NOT_FOUND");
+    }
+    // The same refusals as the single-row write: a department files only its own entity's people (KEHOACH 9.3).
+    if (toDepartment && people.some((one) => one.legalEntityId !== toDepartment.legalEntityId)) {
+      throw new BadRequestException("DEPARTMENT_OTHER_ENTITY");
     }
     const toManager = body.toManagerCode
       ? await this.db.employee.findFirst({
           where: { ...reached, code: body.toManagerCode },
-          select: { id: true, code: true },
+          select: { id: true, code: true, active: true, leaveDate: true },
         })
       : null;
     if (body.toManagerCode && !toManager) {
       throw new NotFoundException("EMPLOYEE_NOT_FOUND");
+    }
+    if (toManager && (!toManager.active || toManager.leaveDate !== null)) {
+      throw new ConflictException("MANAGER_HAS_LEFT");
     }
 
     const ids = people.map((one) => one.id);
