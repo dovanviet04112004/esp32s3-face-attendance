@@ -14,10 +14,11 @@ import {
   TerminalWindowIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
+import { PagingRow } from "@/components/tables/data-table";
 import { useNotify } from "@/components/ui/notify";
 import { useOptional } from "@/components/ui/optional";
 import { StatePill, type Tone } from "@/components/ui/pill";
@@ -39,6 +40,13 @@ interface CommandRow {
   issuedBy: string | null;
   expiresAt: string | null;
   createdAt: string;
+}
+
+interface CommandPage {
+  rows: CommandRow[];
+  total: number;
+  totalIsExact?: boolean;
+  next: string | null;
 }
 
 const STATE_TONE: Record<CommandState, Tone> = { QUEUED: "waiting", SENT: "waiting", DONE: "good", REJECTED: "bad", EXPIRED: "idle" };
@@ -155,10 +163,17 @@ export function KioskCommands({
   const [draft, setDraft] = useState<Draft>(BLANK);
   const key = ["devices", deviceId, "commands"];
 
-  const recent = useQuery({
+  const recent = useInfiniteQuery({
     queryKey: key,
-    queryFn: async () => (await api.get<CommandRow[]>(`/devices/${deviceId}/commands`)).data,
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const after = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : "";
+      return (await api.get<CommandPage>(`/devices/${deviceId}/commands${after}`)).data;
+    },
+    getNextPageParam: (last) => last.next ?? undefined,
   });
+  const rows = recent.data?.pages.flatMap((page) => page.rows) ?? [];
+  const first = recent.data?.pages[0];
 
   // The kiosk's answer reaches the feed first, and an unanswered command lapses at its deadline.
   const heard = items.find((item) => item.feed === "event" && item.body.deviceId === deviceId && ANSWERS.has(item.body.type))?.id;
@@ -167,7 +182,7 @@ export function KioskCommands({
       void cache.invalidateQueries({ queryKey: ["devices", deviceId, "commands"] });
     }
   }, [heard, cache, deviceId]);
-  const nextDeadline = (recent.data ?? [])
+  const nextDeadline = rows
     .filter((row) => (row.state === "SENT" || row.state === "QUEUED") && row.expiresAt)
     .map((row) => Date.parse(row.expiresAt as string))
     .sort((a, b) => a - b)[0];
@@ -219,7 +234,6 @@ export function KioskCommands({
     row.state === "EXPIRED" && row.expiresAt
       ? t("commandLapsed", { minutes: Math.max(1, Math.round((Date.parse(row.expiresAt) - Date.parse(row.createdAt)) / 60_000)) })
       : null;
-  const rows = recent.data ?? [];
   const target: Slot | null = activeSlot === null ? null : activeSlot === 0 ? 1 : 0;
 
   return (
@@ -286,27 +300,41 @@ export function KioskCommands({
             {t("commandsEmpty")}
           </p>
         ) : (
-          <div className="-mx-2 -my-1 max-h-96 overflow-y-auto px-2">
-            <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3">
-              {rows.map((row) => {
-                const at = new Date(row.createdAt);
-                const said = [row.resultNote === null ? lapsed(row) : noteOf(row.resultNote), row.issuedBy].filter(Boolean).join(" · ");
-                return (
-                  <li key={row.cmdId} className="col-span-3 grid grid-cols-subgrid items-start border-b border-kumo-hairline py-2 last:border-0">
-                    <span className="pt-0.5 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
-                      {format.dateTime(at, stampOptions(at))}
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{t(`command_${row.action}`)}</span>
-                      <span className="text-sm text-pretty break-words text-kumo-subtle">{said || common("empty")}</span>
-                    </span>
-                    <StatePill tone={STATE_TONE[row.state]} className="justify-self-end">
-                      {t(`commandState_${row.state}`)}
-                    </StatePill>
-                  </li>
-                );
-              })}
-            </ul>
+          <div className="flex flex-col">
+            <div className="-mx-2 -mt-1 max-h-96 overflow-y-auto px-2">
+              <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3">
+                {rows.map((row) => {
+                  const at = new Date(row.createdAt);
+                  const said = [row.resultNote === null ? lapsed(row) : noteOf(row.resultNote), row.issuedBy].filter(Boolean).join(" · ");
+                  return (
+                    <li key={row.cmdId} className="col-span-3 grid grid-cols-subgrid items-start border-b border-kumo-hairline py-2 last:border-0">
+                      <span className="pt-0.5 text-sm whitespace-nowrap text-kumo-subtle tabular-nums">
+                        {format.dateTime(at, stampOptions(at))}
+                      </span>
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{t(`command_${row.action}`)}</span>
+                        <span className="text-sm text-pretty break-words text-kumo-subtle">{said || common("empty")}</span>
+                      </span>
+                      <StatePill tone={STATE_TONE[row.state]} className="justify-self-end">
+                        {t(`commandState_${row.state}`)}
+                      </StatePill>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            {first ? (
+              <PagingRow
+                className="px-0"
+                paging={{
+                  shown: rows.length,
+                  total: first.total,
+                  exact: first.totalIsExact,
+                  onMore: recent.hasNextPage ? () => void recent.fetchNextPage() : undefined,
+                  loading: recent.isFetchingNextPage,
+                }}
+              />
+            ) : null}
           </div>
         )}
       </LayerCard.Primary>

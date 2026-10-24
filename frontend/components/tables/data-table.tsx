@@ -280,10 +280,10 @@ export function ActionMenu({ actions, label }: { actions: RowAction[]; label: st
   );
 }
 
-export function PagingRow({ paging }: { paging: Paging }) {
+export function PagingRow({ paging, className }: { paging: Paging; className?: string }) {
   const t = useTranslations("common");
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-kumo-hairline px-3 py-2.5 text-kumo-subtle">
+    <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t border-kumo-hairline px-3 py-2.5 text-kumo-subtle", className)}>
       <span className="tabular-nums">
         {t(paging.exact === false ? "showingOfAtLeast" : "showingOf", { shown: paging.shown, total: paging.total })}
       </span>
