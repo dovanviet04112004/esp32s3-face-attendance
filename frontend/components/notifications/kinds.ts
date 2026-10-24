@@ -284,7 +284,7 @@ function myDayAt(notice: Notice): string {
 function teamDayAt(notice: Notice, reader: Reader): string {
   const day = factText(notice, "day") ?? todayIso();
   if (day !== todayIso()) {
-    return `/timesheet?from=${day}&to=${day}&exceptions=1`;
+    return `/timesheet?from=${day}&to=${day}&exceptions=true`;
   }
   if (factCount(notice, "absent") + factCount(notice, "notPunched") > 0) {
     return `${reader.home}?focus=today&who=absent`;
