@@ -44,6 +44,12 @@ function factsOf(row: Notification | null): Record<string, unknown> {
   return (row?.facts ?? {}) as Record<string, unknown>;
 }
 
+interface BellRow {
+  id: string;
+  item: { key: string } | null;
+  subject: { hidden: boolean; person: { code: string } | null } | null;
+}
+
 describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () => {
   let app: INestApplication;
   let db: PrismaService;
@@ -267,6 +273,14 @@ describe("the kinds E27-T10 adds, each told once to the right people (e2e)", () 
     assert.ok(deskHolders.includes(loginOf.get("hr") as string), "the desk's task missed HR");
     assert.ok(!deskHolders.includes(loginOf.get("hire") as string), "the person was handed the desk's task about them");
     assert.equal((await itemOf(self)).subjectType, "TASK");
+    const bossBell = (query: string) =>
+      request(app.getHttpServer()).get(`/notifications${query}`).set("Authorization", `Bearer ${tokenOf.get("boss")}`);
+    const ownedRow = async (query: string) =>
+      ((await bossBell(query)).body.rows as BellRow[]).find((row) => row.item?.key === itemKey("TASKS", manager));
+    const owned = await ownedRow("");
+    assert.equal(owned?.subject?.hidden, false, "a manager cannot read whom the task they own is about");
+    assert.equal(owned?.subject?.person?.code, codeOf("hire"));
+    assert.ok(await ownedRow(`?search=${codeOf("hire")}`), "a manager's search missed the task they own");
 
     await tasks.sweep(now);
     await tasks.sweep(now);
