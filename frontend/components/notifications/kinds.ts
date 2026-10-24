@@ -25,7 +25,7 @@ import {
 } from "@phosphor-icons/react";
 
 import type { RequestKind } from "@/components/requests/request-card";
-import { useSession } from "@/lib/auth";
+import { useSession, type Role } from "@/lib/auth";
 import { todayIso } from "@/lib/format";
 import { homeFor } from "@/lib/nav";
 
@@ -173,14 +173,16 @@ interface Said {
   month?: string;
 }
 
-/** Who reads the notice, for the links that open the reader's own home. */
+/** Who reads the notice, for the links that open the reader's own home or the tab their role sees. */
 interface Reader {
   home: string;
+  role: Role | null;
 }
 
 export function useReader(): Reader {
   const home = useSession((s) => homeFor(s.role, s.employeeId !== null));
-  return { home };
+  const role = useSession((s) => s.role);
+  return { home, role };
 }
 
 interface KindLook {
@@ -380,7 +382,8 @@ export const NOTICE_LOOK: Record<NoticeKind, KindLook> = {
     category: "PEOPLE",
     label: { key: "kindPROBATION_DUE", count: kProbationDays },
     sentence: (notice) => dueSentence("kindPROBATION_DUE", notice.daysLeft ?? kProbationDays),
-    path: (notice) => personAt(notice),
+    // The manager's copy opens the person, not the contract (KEHOACH 9.21.4).
+    path: (notice, reader) => personAt(notice, reader.role === "MANAGER" ? "" : "?tab=contracts"),
   },
   BACKUP_ALERT: {
     icon: DatabaseIcon,
