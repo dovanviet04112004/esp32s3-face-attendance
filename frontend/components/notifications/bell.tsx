@@ -4,7 +4,7 @@ import { Badge, Button, LinkButton, Popover, Tabs } from "@cloudflare/kumo";
 import { BellIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Link } from "@/i18n/navigation";
 import { api } from "@/lib/api";
@@ -64,8 +64,15 @@ export function NoticeBell() {
   const [open, setOpen] = useState(false);
   const { actionsOf, dialog } = useNoticeActions(() => setOpen(false));
   const [picked, setPicked] = useState<NoticeStatus | null>(null);
-  // Until the reader picks a tab, the first with something in it, read off the counts as they arrive.
-  const tab = picked ?? ((counts.data?.action ?? 0) > 0 ? "action" : (counts.data?.unread ?? 0) > 0 ? "unread" : "all");
+  const first: NoticeStatus = (counts.data?.action ?? 0) > 0 ? "action" : (counts.data?.unread ?? 0) > 0 ? "unread" : "all";
+  const tab = picked ?? first;
+
+  // The first tab with something in it once the counts are in; it then stays while they move under the reader.
+  useEffect(() => {
+    if (open && picked === null && counts.data) {
+      setPicked(first);
+    }
+  }, [open, picked, counts.data, first]);
 
   function toggle(next: boolean): void {
     if (next) {
