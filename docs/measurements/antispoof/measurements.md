@@ -3228,3 +3228,69 @@ hay chạy trên board 🔬.
   CelebA. Nó nhìn cả khung hình, trong khi §41.2 cho thấy tín hiệu nằm ở vành ngữ cảnh quanh mặt.
   Phải chấm cả hai cách cắt trên 87 khung trước khi tính tới firmware.
 - Trọng số của MTFace và FeatherNetB là pickle, nên chỉ mở bằng `torch.load(weights_only=True)`.
+
+### 45.5 Thăm dò MTFace ShuffleNetV2-0.5x — float, 26/10
+
+Đây là phép thăm dò một lần ở scratchpad, không có target (như §44.2).
+- **Trọng số:** `shufflenetv2_0.5x.pth` (3.166.457 B, sha `bfcac00693fd2bf1…`), mở bằng
+  `torch.load(weights_only=True)`. File ghi `arch` `shufflenetv2_0.5x`, epoch 50; `state_dict_ema` rỗng
+  nên dùng `state_dict`.
+- **Kiến trúc:** dựng lại theo `nets/shufflenetv2.py` của repo, nạp `strict` khớp đủ khoá.
+- **Tiền xử lý:** như `export.py` của họ: RGB 224×224, chia 255, mean/std của ImageNet. Điểm sống là
+  lớp 0 của softmax.
+
+**87 khung board** (62 thật, 25 giả). Crop đi đường board (`fitted_square` + `resample_square` lên
+224), hộp mặt lấy từ `antispoof.detector`:
+
+| Cách cắt | AUC | thật ≥ 0,5 | giả < 0,5 | thật mất khi chặn hết giả | p5 thật − p95 giả | thật min · giả max |
+|---|---:|---:|---:|---:|---:|---|
+| cả khung 480×320 | 0,9994 | 16/62 | 25/25 | 1/62 | +0,014 | 0,003 · 0,004 |
+| 4,0× | 0,9800 | 28/62 | 25/25 | 12/62 | −0,003 | 0,003 · 0,074 |
+| **2,7×** (firmware) | **0,9813** | 28/62 | 25/25 | **11/62** | −0,003 | 0,003 · 0,074 |
+| 2,0× | 0,9652 | 27/62 | 25/25 | 21/62 | −0,006 | 0,002 · 0,074 |
+| 1,5× | 0,9335 | 9/62 | 25/25 | 30/62 | −0,036 | 0,000 · 0,085 |
+| V1SE INT8, 2,7× (§43.4) | 1,0000 | 59/62 (§44.2) | 25/25 | **0/62** | +0,559 | 0,073 · 0,003 |
+
+Chia theo phiên chụp:
+
+| Phiên | Cả khung, median | 2,7×, median |
+|---|---:|---:|
+| `s20260911d`, 36 khung thật trong phòng tối (recognition §7) | 0,129 | 0,209 |
+| `p2that`, 4 khung thật | 0,448 | 0,986 |
+| `p2gia`, 4 khung giả cùng phiên với `p2that` | 0,001 | 0,000 |
+
+- Cả khung tách gần hết theo thứ hạng nhưng điểm bị sập: 46/62 mặt thật dưới 0,5. Muốn giữ 61/62 phải hạ
+  ngưỡng xuống khoảng 0,005.
+- Cả 25 khung giả của bộ đều kề ống kính (§43.1). Ở chế độ cả khung, model có thể chỉ đang thấy "màn hình
+  choán khung", chứ không thấy mặt giả.
+
+**`phone_eval`** (76 thật, 35 giả, ảnh chụp bằng điện thoại):
+- Mọi ảnh đều dưới 0,5.
+- AUC 0,063 ở cả khung và 0,308 ở 2,7×, tức **đảo chiều**: đòn giả được chấm "sống" hơn mặt thật.
+- Trên cùng bộ, V1SE INT8 ở §43.5 cho `live_xa` 19/20 và `attack_anh` 12/12.
+
+**Tập lớn**, view wide 2,7× của shard (lưu sẵn ở 224). AUC của SynthASpoof và Axon chấm từng đòn với
+phần thật của chính bộ ấy (bonafide 2.000, selfie 24):
+
+| Tập | MTFace AUC | V1SE AUC (§43.5, T · I) | MTFace: thật ≥ 0,5 · giả < 0,5 | V1SE I: thật · giả (§43.5) |
+|---|---:|---:|---|---|
+| NUAA | 0,9926 | 0,9999 · 0,9999 | 0,929 · 0,975 | 0,895 · 0,999 |
+| LCC eval | **0,8807** | 0,856 · 0,853 | 0,675 · 0,887 | 0,901 · 0,558 |
+| SynthASpoof in | 0,9020 | — | 0,453 · 0,987 | 0,812 · 0,970 |
+| SynthASpoof iPad | 0,7586 | — | 0,453 · 0,870 | 0,812 · 0,515 |
+| SynthASpoof Samsung | 0,9149 | — | 0,453 · 0,970 | 0,812 · 0,865 |
+| SynthASpoof webcam | 0,8394 | — | 0,453 · 0,938 | 0,812 · 0,938 |
+| `unique` phát lại | 0,9354 | — | 0,692 · 0,980 | 1,000 · 0,823 |
+| Axon giấy 3D | 0,9698 | — | 0,875 · 0,896 | 1,000 · 0,306 |
+| Axon cutout | 0,9444 | — | 0,875 · 0,842 | 1,000 · 0,692 |
+| Axon latex · silicone · vải 3D | 0,726 · 0,619 · 0,680 | — | 0,875 · 0,18 / 0,13 / 0,22 | 1,000 · 0,06 / 0,02 / 0,14 |
+
+**Đọc ra:**
+- **Điểm vận hành:** ở ngưỡng 0,5 của chính nó, MTFace nghiêng hẳn về phía "giả". Nó chặn nhiều đòn hơn
+  V1SE ở mọi tập lớn, nhưng loại oan nhiều mặt thật hơn (SynthASpoof bonafide 0,453 so với 0,812).
+- **Khả năng phân biệt:** AUC không phụ thuộc ngưỡng. MTFace chỉ nhỉnh hơn ở LCC (0,881 so với
+  0,853–0,876) và kém hơn ở NUAA.
+- **Miền camera:** kém rõ. Ở crop 2,7× của firmware, chặn hết giả thì mất 11/62 mặt thật (V1SE mất 0/62).
+  Trên ảnh điện thoại thì đảo chiều.
+- **Kết luận:** dữ liệu riêng 30 triệu ảnh không cứu được khi đổi camera, nên model này không thay được
+  V1SE và không đáng nhập thành run.
