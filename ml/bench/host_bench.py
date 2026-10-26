@@ -249,6 +249,87 @@ def floor_table(runner, cfg, top: int) -> str:
     return "\n".join(lines)
 
 
+FAR_ROWS = 1024
+
+
+def lfw_names(path: Path) -> tuple[list[tuple[str, int]], np.ndarray]:
+    """Whose image each slot of lfw.bin holds, and each pair's same-person flag, from pairs.txt."""
+    slots: list[tuple[str, int]] = []
+    same: list[bool] = []
+    for line in path.read_text(encoding="utf-8").splitlines()[1:]:
+        fields = line.split("\t")
+        other = (fields[0], int(fields[2])) if len(fields) == 3 else (fields[2], int(fields[3]))
+        slots += [(fields[0], int(fields[1])), other]
+        same.append(len(fields) == 3)
+    return slots, np.array(same)
+
+
+def far_table(runner, cfg, top: int) -> str:
+    """How often each match_min floor takes one person for another, over every pair LFW names.
+
+    Each distinct image of lfw.bin is scored once against every other, unflipped, and pairs.txt
+    says whose it is (KEHOACH 1.2). The bound is one-sided Clopper-Pearson at 95%.
+    """
+    from scipy.stats import beta
+
+    from facepipe import ML_ROOT
+    from facepipe.compress.quant.ladder import data_path
+    from facepipe.tasks.recognition.eval import read_bin
+    from facepipe.tasks.recognition.quant import embeddings
+
+    encoded, issame = read_bin(ML_ROOT / cfg.data.params["benchmarks"] / "lfw.bin")
+    slots, same = lfw_names(data_path("recognition.lfw_pairs"))
+    if same.shape != issame.shape or (same != issame).any():
+        raise SystemExit("pairs.txt does not name lfw.bin: their same-person flags differ")
+    first: dict[tuple[str, int], int] = {}
+    for slot, key in enumerate(slots):
+        if bytes(encoded[first.setdefault(key, slot)]) != bytes(encoded[slot]):
+            raise SystemExit(f"pairs.txt does not name lfw.bin: {key} holds two images")
+    keys = list(first)
+    vectors = embeddings(runner, [encoded[first[key]] for key in keys], int(cfg.model.input_hw[0]))
+    vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-10)
+    people = {name: index for index, name in enumerate(sorted({name for name, _ in keys}))}
+    owner = np.array([people[name] for name, _ in keys])
+    columns = np.arange(len(keys))
+    over = np.zeros(len(FLOORS), dtype=np.int64)
+    total, moments, highest, kin = 0, np.zeros(2), [], []
+    for start in range(0, len(keys), FAR_ROWS):
+        rows = columns[start : start + FAR_ROWS]
+        score = vectors[rows] @ vectors.T
+        ahead = rows[:, None] < columns[None, :]
+        alike = owner[rows][:, None] == owner[None, :]
+        kin.append(score[ahead & alike])
+        stranger = ahead & ~alike
+        values = score[stranger]
+        total += values.size
+        moments += (values.sum(dtype=np.float64), np.square(values, dtype=np.float64).sum())
+        over += [int((values >= floor).sum()) for floor in FLOORS]
+        pick = np.argsort(values)[-top:]
+        row, col = np.divmod(np.flatnonzero(stranger)[pick], len(keys))
+        found = [
+            (float(values[k]), int(rows[r]), int(c)) for k, r, c in zip(pick, row, col, strict=True)
+        ]
+        highest = sorted(highest + found, reverse=True)[:top]
+    mean = moments[0] / total
+    kept = np.concatenate(kin)
+    named = [f"{name}_{number:04d}" for name, number in keys]
+    lines = [
+        f"lfw.bin named by pairs.txt: {len(keys)} images of {len(people)} people,"
+        f" {total} pairs of different people, {kept.size} of the same person",
+        f"strangers: mean {mean:.3f}  std {np.sqrt(moments[1] / total - mean**2):.3f}"
+        f"  highest {highest[0][0]:.3f}",
+        "highest strangers: " + "  ".join(f"{named[a]}~{named[b]} {s:.3f}" for s, a, b in highest),
+        "floor  strangers over  per comparison  at most (95%)  same person kept",
+    ]
+    for floor, count in zip(FLOORS, over, strict=True):
+        bound = beta.ppf(0.95, count + 1, total - count)
+        lines.append(
+            f"{floor:.2f}   {count:14d}  {count / total:14.2e}  {bound:13.2e}"
+            f"  {(kept >= floor).mean():.3f}"
+        )
+    return "\n".join(lines)
+
+
 DETECT_FLOORS = (0.25, 0.30, 0.35, 0.40, 0.45, 0.50)
 FACE_IOU = 0.5
 # Boxes overlapping the face less than this are something else the frame holds.
@@ -308,7 +389,9 @@ def detect_floor_table(runner, run: Path, cfg) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--model", type=Path, help=".onnx, .tflite or .espdl; --floors finds the locked one"
+        "--model",
+        type=Path,
+        help=".onnx, .tflite or .espdl; --floors and --far find the locked one",
     )
     parser.add_argument("--run", type=Path, required=True, help="run whose split and config apply")
     parser.add_argument(
@@ -317,7 +400,12 @@ def main(argv: list[str] | None = None) -> int:
         help="recognition: what each match_min floor keeps; detection: the same for detect_min",
     )
     parser.add_argument(
-        "--top", type=int, default=8, help="--floors: how many highest strangers to name"
+        "--far",
+        action="store_true",
+        help="recognition: false accepts of each match_min floor over every pair LFW names",
+    )
+    parser.add_argument(
+        "--top", type=int, default=8, help="--floors, --far: how many highest strangers to name"
     )
     parser.add_argument("--runtime", choices=("tflite", "onnx", "espdl"), default="tflite")
     parser.add_argument("--split", default=None, help="anti-spoof: score this split")
@@ -340,6 +428,12 @@ def main(argv: list[str] | None = None) -> int:
     run = args.run.resolve()
     cfg = ladder.config_of(run)
     branch = tasks.branch_of(run)
+    if args.far:
+        if branch != "recognition":
+            raise SystemExit("--far measures the recognition floor; this run is " + branch)
+        model = args.model or locked_espdl(run)
+        print(f"{model}\n{far_table(espdl_runner(model, run), cfg, args.top)}")
+        return 0
     if args.floors:
         if branch not in ("recognition", "detection"):
             raise SystemExit(

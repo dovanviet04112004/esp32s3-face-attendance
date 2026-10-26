@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: help setup git-hooks ml-sync ml-lock be-install fe-install \
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
-        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors detect-floors password-list \
+        train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors recog-far detect-floors password-list \
         idf fw-secrets fw-dev fw-bench fw-bench-tflm fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
         fw-bench-ai fw-bench-ai-facts fw-bench-ai-run kiosk-runtime runtime-image runtime-score runtime-check runtime-report \
         release release-notes models-release release-status \
@@ -225,6 +225,10 @@ eval-recog: ## Score recognition: LFW, CFP-FP, AgeDB, TAR@FAR (ARGS passed to it
 recog-floors: BRANCH = recognition
 recog-floors: ## The evidence for match_min: strangers' scores and the pairs each floor keeps, through the locked recog (RUN=, TOP=)
 	$(need_run)cd ml && $(ml_capped) $(ML_PY) bench/host_bench.py --floors --run $(quant_run) $(if $(TOP),--top $(TOP))
+
+recog-far: BRANCH = recognition
+recog-far: ## How often match_min takes one person for another, over every pair of different people LFW names, through the locked recog (RUN=, TOP=)
+	$(need_run)cd ml && $(ml_capped) $(ML_PY) bench/host_bench.py --far --run $(quant_run) $(if $(TOP),--top $(TOP))
 
 detect-floors: BRANCH = detection
 detect-floors: ## The evidence for detect_min: the face of each OV5640 test frame and the rest it scores, through the locked detector (RUN=)
