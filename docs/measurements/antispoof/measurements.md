@@ -3164,3 +3164,67 @@ trí mặt. Áp vào log 44.1, cả ba lượt đều không còn hiện "giả"
 pipeline vẫn thử lại cùng nhịp ấy, lần qua vẫn chỉ cần một khung trên ngưỡng, và phía giả của 44.2
 đứng dưới 0,010. Không đổi: `live_min` 500‰, crop 2,7×, các cổng hình học. Còn mở: khung raw có nhãn
 của mặt thật ≥ 200 px và ở mép, để biết vùng cắt dưới 1,6× có phải nguyên nhân phụ hay không (E8-T12).
+
+## 45. Quét đợt bốn: SDK, kho model của hãng, bài báo và cuộc thi, bản mới sau 18/09 — 26/10
+
+Cùng mục đích với §43: tìm model có trọng số công khai, nhìn một khung RGB, vừa board, và chưa có
+trong §41.9 hay §43. Ngân sách hôm nay chặt hơn §43, tính trên bộ khoá 14/10 (`latency.md` §14.19):
+
+| Ràng buộc | Giới hạn | Từ đâu |
+|---|---|---|
+| Thời gian chạy | ~83 ms | 360 ms một mặt trừ 276,7 ms của detect và recog |
+| Phép tính | ~50 MMAC | V1SE 42,7 MMAC chạy 72,6 ms |
+| Flash | ~765 KB | `models_0` 2.304 KB, detect + recog đã chiếm 1.538,7 KB |
+| PSRAM | ~1,07 MB | PSRAM trống của kiosk 1.788 KB, đã dưới mốc 2.000 KB của E9-T31 (`ram.md` §13) |
+
+Số tham số và MAC được đếm tĩnh: trên file ONNX/TFLite tải về, hoặc trên kiến trúc dựng lại từ code
+công bố khi trọng số là pickle. Không file pickle nào được mở. Chưa có model nào chấm trên 87 khung
+hay chạy trên board 🔬.
+
+### 45.1 Lọt hoặc gần lọt ngân sách
+
+| Model | Nguồn · ngày | Tham số · MAC | Đầu vào | Train trên | File · giấy phép |
+|---|---|---|---|---|---|
+| **MTFace ShuffleNetV2-0.5x** | Meituan, đội hạng 1 CVPR 2024 (arXiv 2404.08450), `Xianhua-He/cvpr2024-face-anti-spoofing-challenge`, 24/09/2024 | 0,24M · 34,6 MMAC ở 224, 17,7 ở 160, 11,3 ở 128; đếm trên kiến trúc dựng lại | **cả khung hình**, resize 224×224, mean/std ImageNet | ~30 triệu ảnh riêng, chỉ tấn công vật lý (issue #8, #12 của repo) | pickle `.pth` 3,17 MB, có `export.py` ra ONNX · code MIT, trọng số chưa ghi |
+| SmartFace `R7_SC_FULL_crop15` | `anh1303/SmartFace-AIoT-Based-Staff-Management-Attendance-System`, 07/10/2026 | 0,43M · 40,7 MMAC ở 80×80; đếm trên ONNX | 80×80 BGR [0,1], crop 1,5× | CelebA-Spoof đủ, thêm augment làm yếu dải tần FFT | ONNX 1,74 MB · không có LICENSE |
+| FeatherNetB RGB | `dtruong46me`, Kaggle, 24/06/2024 | 0,34M · 80,2 MMAC ở 224, 40,9 ở 160 | 224, không chuẩn hoá | LCC-FASD | pickle `.ckpt` 4,48 MB · MIT |
+| NXP MPP `antispoofing.tflite` | `nxp-mcuxpresso/mcux-sdk-middleware-mpp`, 09/06/2026 | 15,1K · 6,93 MMAC; đếm trên TFLite | **ảnh xám** 96×96, crop 1,0× | không ghi; app của NXP cho nó luồng IR | TFLite INT8 · README cấm dùng để train hay dựng model phái sinh |
+
+- **MTFace** là model duy nhất vừa ngân sách mà không chỉ train trên CelebA-Spoof. Repo không có số
+  nào cho bản 0.5x; số công bố là của ResNet-50 trên UniAttackData (ACER P1 0,20). Channel shuffle
+  xuất ra `Reshape`/`Transpose`/`Gather`, cả ba có trong esp-dl 3.3.11. Biến thể kiến trúc suy từ
+  code và cỡ file, chưa đọc được `state_dict`.
+- **SmartFace R7** là MiniFASNetV2 không SE, cùng bộ op với bản đang nạp, và cả 120 tensor khác bản
+  gốc. Tác giả tự báo LCC-FASD AUC 0,840, ACER chéo bộ ~27%. Nó chỉ train trên CelebA-Spoof, tức
+  đúng nhóm đã hỏng trên OV5640 ở §41.9.
+- **FeatherNetB** gần lọt: muốn vừa thời gian phải xuống 160 và train lại. Tác giả báo ACER 16,39%
+  trên LCC dev.
+- **NXP** không dùng được: ảnh xám, nhiều khả năng học trên IR, và giấy phép cấm làm model phái sinh.
+
+### 45.2 Vượt ngân sách, chỉ đáng làm teacher
+
+- MTFace ResNet-50 và Swin-V2 train trên cùng ~30 triệu ảnh. Đây là teacher có dữ liệu rộng nhất từng
+  tìm được cho đường distill của ADR-0003.
+- SDA-FAS (ECCV 2022, MIT; HTER OCI→M 5,00, ICM→O 5,07), IADG (CVPR 2023, Apache-2.0), GAC-FAS (CVPR
+  2024, ResNet-18), DGUA-FAS (ICIP 2023, MobileViT-S, có attention).
+
+### 45.3 Loại
+
+| Lý do | Model |
+|---|---|
+| Quá cỡ | SeetaFace6 `fas_first` (ResNet-18, 11,2M · 1,83 GMAC) và `fas_second` (SSD, 2,38M · 553 MMAC); Sophgo `cls_rgbliveness` (~11 MB INT8); Horizon X2 `faceAntiSpfRGB` (3,49M · 153 MMAC, op riêng); facenox AuraFAS (1,23M · 486,5 MMAC, AGPL); MobileNetV3-Small 2026 của SmartFace E1, kkirtac, spoofnet-v1, MTFace (1,1–1,5M); SATS-X (1,73M); huyquangthai (5,7M); MTFace ShuffleNetV2-1.0x (1,24M) |
+| Chỉ có bản đã biên dịch | Kendryte K230 `face_liveness_rgb.kmodel` (723 KB, không công bố kiến trúc); Sophgo `.cvimodel` |
+| Sai bài toán | vinaybr temporal INT8 (10 khung + cảm biến, LSTM); josephgitau (phát hiện face-swap); SmartFace E2 (DCT 224² trên CPU, ACER 25% ngay trong miền) |
+| MiniFASNet đóng gói lại | InspireFace Silent Liveness (MiniVision, crop 2,7×); Seeed reCamera; uniface; `thai231004` (121/121 tensor trùng MiniFASNetV2); HeronKyaw; vishalsgithub; các repo MOSIP Decode |
+| Không có model RGB chống giả | ESP-DL v3.3.14 và ESP-WHO, NXP eIQ, STM32 zoo, Hailo, Vitis AI 3.5, rknn_model_zoo, TI, Arm, GreenWaves, Himax/SSCMA, PaddleX/PaddleClas/PaddleHub, MindSpore/Ascend, ncnn/MNN/TNN/Tengine, MaixHub (1.287 model), Edge Impulse, Qualcomm AI Hub (FaceAttribNet chỉ ra vector `liveness_feature`), Kneron (chỉ có mã), OpenCV zoo, Luxonis |
+| Không phát hành trọng số | SSDG, SSAN, SAFAS, NAS-FAS, Tiny-FASNet (ảnh depth), CENATAV, kprokofi `MN3_small_075`, CDCN và DC-CDN chính thức |
+
+### 45.4 Đọc ra
+
+- Martinez-Díaz (CVPRW 2023) train ShuffleNet, MobileNetV3 và MicroNet trên CelebA-Spoof rồi chấm
+  WFAS: HTER 36–44%, ngang ResNet-50 (44,5). Cùng kết luận với §41.9: CelebA-Spoof là nguồn của vấn
+  đề, không phải kiến trúc.
+- Trong cỡ board chỉ còn MTFace ShuffleNetV2-0.5x là ứng viên chưa chấm có dữ liệu train không thuần
+  CelebA. Nó nhìn cả khung hình, trong khi §41.2 cho thấy tín hiệu nằm ở vành ngữ cảnh quanh mặt.
+  Phải chấm cả hai cách cắt trên 87 khung trước khi tính tới firmware.
+- Trọng số của MTFace và FeatherNetB là pickle, nên chỉ mở bằng `torch.load(weights_only=True)`.
