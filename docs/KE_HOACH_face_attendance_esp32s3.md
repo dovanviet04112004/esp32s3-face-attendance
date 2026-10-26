@@ -142,6 +142,7 @@ crop thực sự đạt được — số cuối là thứ đọc một điểm 
 | Glint360K | HF `gaunernst/glint360k-wds-gz` (**webdataset `.tar.gz`**, đã shard sẵn) | 122 GB / 1385 shard | train — khi cần nhiều ID hơn |
 | LFW · CFP-FP · AgeDB-30 | HF `gaunernst/face-recognition-eval` (`.bin` chuẩn insightface) | 488 MB cả bộ | đo TAR@FAR |
 | CFP-FF · CALFW · CPLFW | cùng repo trên, đi kèm sẵn | — | thêm chiều đánh giá, không tốn lần tải riêng |
+| Tên người của LFW | `pairs.txt` gốc của LFW trên figshare (`files/5976006`), đúng bản `sklearn.datasets.fetch_lfw_pairs` tải | 155 KB | gắn tên cho 7.701 ảnh của `lfw.bin`, ghép **29,6 triệu cặp khác người** để đo tỉ lệ nhận nhầm của `match_min` |
 | Tập nhân viên tự thu | tự thu | ≥2.000 ảnh | đo trên đúng người sẽ dùng máy |
 
 MS1MV3 là mặc định chứ không phải phương án dự phòng: bản `recordio` chỉ 27.4 GB, đúng
@@ -152,6 +153,11 @@ MS1MV3 là dữ liệu của các run recog **tự train** — trong đó có b�
 Trọng số recog chạy trên ESP-DL thì **không** train trên dữ liệu của dự án: FRBench train chúng
 trên MS1M bằng ArcFace, và dự án nhập nguyên (§3 lớp 2). LFW · CFP-FP · AgeDB-30 vẫn là thước
 đo chung cho cả hai, nên hai bản so được với nhau trên cùng bộ số.
+
+Sáu bộ `.bin` chỉ mang 18.998 cặp khác người, nên tỉ lệ nhận nhầm đo trên chúng chỉ chặn được dưới
+~1,6·10⁻⁴ mỗi phép so, trong khi kiosk so một khuôn mặt với mọi mẫu đã đăng ký. `lfw.bin` không mang
+tên người; `pairs.txt` khớp nó từng ô (6.000/6.000 cờ cùng người, 7.701 ảnh mỗi ảnh đúng một tên), nên
+mọi cặp hai người khác nhau trong 4.281 người của bộ ấy đều thành phép đo.
 
 **Dùng cho cả ba nhánh**
 
@@ -2840,7 +2846,8 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── recognition/
 │   │   ├── ms1mv3/{train.rec, train.idx, property}     + manifest.yaml   # ✅ mặc định
 │   │   ├── glint360k/glint360k-*.tar.gz                + manifest.yaml   # ✅ webdataset sẵn
-│   │   └── benchmarks/{lfw/, ...}                      + manifest.yaml   # ✅
+│   │   ├── benchmarks/{lfw/, ...}                      + manifest.yaml   # ✅
+│   │   └── lfw_pairs/pairs.txt                         + manifest.yaml   # ✅ tên người của lfw.bin
 │   └── device/                               # ★ ảnh OV5640 tự thu — dùng cho CẢ 3 nhánh
 │       └── ov5640/
 │           ├── images/                       # <session>_<seq>.jpg, gốc từ board
