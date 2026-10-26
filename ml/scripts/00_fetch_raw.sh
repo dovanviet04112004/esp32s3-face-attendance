@@ -213,6 +213,23 @@ fetch_widerface() {
     done
 }
 
+# The Hub mirror of lfw.bin carries no names; LFW's own pairs.txt names every slot of it.
+fetch_lfw_pairs() {
+    local ds="${RAW}/recognition/lfw_pairs" dest
+    dest="$(payload_dir "${ds}")"
+    if [[ -s "${dest}/pairs.txt" ]]; then
+        log "lfw_pairs: pairs.txt already downloaded"
+        return 0
+    fi
+    log "lfw_pairs: downloading pairs.txt"
+    curl -fL --retry 3 --retry-delay 5 -o "${dest}/pairs.txt.part" \
+        "$(manifest_field "${ds}" source_url)" || {
+        warn "pairs.txt failed; rerun to resume"
+        return 1
+    }
+    mv "${dest}/pairs.txt.part" "${dest}/pairs.txt"
+}
+
 # Mirrors on the Hub download straight into the data drive the symlinks point at.
 hf_cli() {
     if [[ -x "${ML_ROOT}/.venv/bin/hf" ]]; then
@@ -330,6 +347,7 @@ DATASETS=(
     "recognition/ms1mv3:ms1mv3:hf:gaunernst/ms1mv3-recordio"
     "recognition/glint360k:glint360k:hf:gaunernst/glint360k-wds-gz"
     "recognition/benchmarks:recognition_benchmarks:hf:gaunernst/face-recognition-eval"
+    "recognition/lfw_pairs:lfw_pairs:auto"
 )
 
 incomplete=0

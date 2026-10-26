@@ -1,0 +1,18 @@
+name: lfw_pairs
+source_url: https://ndownloader.figshare.com/files/5976006
+access: auto
+license: research-only
+downloaded: '2026-10-26'
+verified: true
+expects:
+- pairs.txt
+sha256:
+  pairs.txt: ea42330c62c92989f9d7c03237ed5d591365e89b3e649747777b70e692dc1592
+counts:
+  files: 1
+consumed_by:
+- recognition/far
+notes: pairs.txt goc cua LFW (View 2, 10 fold x 300 cap cung nguoi + 300 cap khac
+  nguoi), dung ban sklearn.datasets.fetch_lfw_pairs tai. No dat ten cho tung o cua
+  lfw.bin; host_bench --far tu choi file nao co co cung nguoi lech lfw.bin. KE HOACH
+  §1.2.

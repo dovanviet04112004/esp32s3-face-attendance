@@ -38,6 +38,7 @@ recognition:
   ms1mv3: data/raw/recognition/ms1mv3
   glint360k: data/raw/recognition/glint360k
   benchmarks: data/raw/recognition/benchmarks
+  lfw_pairs: data/raw/recognition/lfw_pairs/pairs.txt
   shards: data/interim/recognition/ms1mv3_shards
   identities: data/interim/recognition/identities.txt
 
