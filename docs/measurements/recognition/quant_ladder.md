@@ -88,5 +88,27 @@ chip là `make ai-unit` của chính hàng.
 - Biến thể `+fused_prelu` trên `qat` mất 0,016 CFP-FP nhưng AgeDB lên 0,864, nhanh hơn 26 ms; thêm
   `prelu_on_input_grid` thì CFP-FP rơi xuống 0,677.
 
+Accuracy 10-fold của cùng các hàng, chấm trong cùng lượt theo giao thức của §1, đọc từ `int8/ladder.yaml`
+của run:
+
+| Bậc | Hàng | LFW | CFP-FP | AgeDB-30 |
+|---|---|---:|---:|---:|
+| 0 | `float` | 0,9963 | 0,9530 | 0,9682 |
+| 2 | `minmax` | 0,9948 | 0,9156 | 0,9465 |
+| 2 | `percentile` | 0,9967 | 0,9493 | 0,9648 |
+| 2 | `mse` | 0,9958 | 0,9429 | 0,9583 |
+| 2 | `kl` | 0,9960 | 0,9391 | 0,9602 |
+| 3 | `int16_top1` | 0,9963 | 0,9426 | 0,9597 |
+| 3 | `int16_top2` | 0,9962 | 0,9420 | 0,9580 |
+| 3 | `int16_top4` | 0,9958 | 0,9434 | 0,9607 |
+| 3 | `int16_top8` | 0,9955 | 0,9430 | 0,9572 |
+| 4 | **`qat`** | **0,9962** | **0,9459** | **0,9623** |
+| 4 | `qat+fused_prelu` | 0,9958 | 0,9344 | 0,9625 |
+| 4 | `qat+fused_prelu+prelu_on_input_grid` | 0,9950 | 0,9177 | 0,9450 |
+
+Accuracy đo ở ngưỡng cân bằng nên xếp hàng khác thước chính. `percentile` hơn `qat` cả ba bộ ở accuracy
+(CFP-FP 0,9493 so với 0,9459), mà thua ở TAR@1e-3 CFP-FP (0,768 so với 0,799). Kiosk chạy ở FAR thấp
+nên thang chọn theo TAR@1e-3 (`measurements.md` §1).
+
 **Không hàng nào đạt cửa**, nên luật của KẾ HOẠCH §3.7 không chọn được hàng. Bộ đang deploy từ 24/09 cũng dưới cửa
 (CFP-FP 0,756, E9-T35). Hàng recog cuối cùng do chủ repo quyết; ADR-0006 ghi quyết định ấy.
