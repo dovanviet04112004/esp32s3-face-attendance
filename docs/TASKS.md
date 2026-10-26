@@ -127,6 +127,7 @@ Làm trước trong ba nhánh. Nó là cổng của pipeline, và **landmark c�
 | E5-T8 | **Thang lượng tử hoá (§3.7)** — Q0 rồi Q1 **Soát 01/10, còn nợ:** `quant_ladder.md` đủ ba bậc (da64adc3), bản deploy sụt 9% ở CFP-FP TAR@1e-3; thiếu `calib_sweep.md`. | `docs/measurements/<nhánh>/{quant_ladder,calib_sweep}.md` | E5-T6 |
 | ~~E5-T10~~ | `emit_golden.py` **Soát 01/10: xong** — dddec6b0, a7e5bb1f; 18 ca golden. | `contracts/golden/recognition/` có vector vàng | E5-T8 |
 | ~~E5-T11~~ | Export tflite + op check + `meta.json` + lock **Soát 01/10: xong** — MobileFaceNet-ECA Q1 ESP-DL, LFW 0,9958; sha256 trong lock = `meta.json` = `mobilefacenet_s8.espdl`. | LFW ≥ 99,0 ở INT8, hai file khớp sha256 | E5-T8 |
+| ~~E5-T12~~ | **Tỉ lệ nhận nhầm của `match_min` trên mọi cặp khác người của LFW** — xong 26/10 (kế hoạch 1ab2f2a2; abec1d9a, 18022795). `pairs.txt` gốc của LFW gắn tên cho 7.701 ảnh của `lfw.bin`, ghép 29.640.749 cặp khác người; `make recog-far` chấm qua hàng `qat` trên lock. Ở 450‰ lọt 46 cặp: 10 cặp errata LFW ghi là một người, 16 cặp là hai cách ghi tên một người. 20 cặp hai tên khác hẳn nhau cho **6,75·10⁻⁷ mỗi phép so** (≤ 9,8·10⁻⁷ ở 95%), tức người lạ trước kiosk đầy 333 người bị nhận nhầm ≤ 0,2% mỗi lượt (recognition §8.2) | FAR mỗi phép so ở 450‰ đo trên ≥ 600.000 cặp khác người có tên | E5-T11 |
 
 ---
 

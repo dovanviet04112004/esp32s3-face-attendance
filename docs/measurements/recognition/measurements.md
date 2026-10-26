@@ -351,7 +351,7 @@ Giới hạn của số này:
 
 - 0 trên 18.998 chỉ chặn tỉ lệ nhận nhầm mỗi phép so dưới ~1,6·10⁻⁴ (95%). Kiosk so 1:N và ra
   MATCH ngay ở khung đầu vượt ngưỡng, nên mỗi lượt một người lạ đứng trước N template chịu cỡ
-  2 × N lần con số ấy.
+  2 × N lần con số ấy. §8.2 đo tỉ lệ ấy trên 29,6 triệu cặp.
 - Cột người thật là benchmark ảnh-với-ảnh. Kiosk so một khung với template của chính camera ấy;
   tỉ lệ nhận trên OV5640 là E8-T12 🔬.
 
@@ -384,3 +384,69 @@ không lật như §8.
 cột người thật lệch số của §8 không quá 0,013 ở bộ nào. Hai cặp CPLFW không có mặt từng chấm 0,670 và
 0,503 ở file 24/09 nay chấm dưới 0,39, nên lần này không cặp nào phải loại tay. Giới hạn của §8 vẫn
 áp nguyên.
+
+### 8.2 Mọi cặp khác người của LFW — đo 26/10
+
+Cùng model, cùng mô phỏng ESP-PPQ và cosine không lật như §8.1. Đo bằng `make recog-far`.
+`pairs.txt` gốc của LFW (KẾ HOẠCH §1.2) gắn tên cho từng ô của `lfw.bin`: khớp 6.000/6.000 cờ
+cùng người, 7.701 ảnh mỗi ảnh đúng một tên. Mỗi ảnh chấm một lần rồi so với mọi ảnh khác.
+
+| | |
+|---|---|
+| Ảnh · người | 7.701 · 4.281 |
+| Cặp khác người | **29.640.749**, gấp 1.560 lần 18.998 cặp của §8.1 |
+| Cặp cùng người | 8.101 |
+| Điểm cặp khác người | trung bình 0,004 · độ lệch chuẩn 0,074, trùng cặp khác người LFW của §8.1 |
+
+| Ngưỡng | Cặp khác tên lọt | Mỗi phép so | Cận trên 95% | Cùng người qua |
+|---|---:|---:|---:|---:|
+| 0,30 | 6.847 | 2,31·10⁻⁴ | 2,36·10⁻⁴ | 0,991 |
+| 0,35 | 1.153 | 3,89·10⁻⁵ | 4,08·10⁻⁵ | 0,986 |
+| 0,40 | 172 | 5,80·10⁻⁶ | 6,59·10⁻⁶ | 0,971 |
+| **0,45** | **46** | **1,55·10⁻⁶** | **1,98·10⁻⁶** | **0,939** |
+| 0,50 | 34 | 1,15·10⁻⁶ | 1,53·10⁻⁶ | 0,889 |
+| 0,60 | 15 | 5,06·10⁻⁷ | 7,79·10⁻⁷ | 0,678 |
+
+- Cận trên là Clopper-Pearson một phía.
+- Cột cuối chấm trên 8.101 cặp cùng người, không phải 3.000 cặp của giao thức. Ở 450‰ nó cho
+  0,939, khớp 0,935 của §8.1.
+
+**Cột "lọt" đếm theo nhãn, mà nhãn LFW có lỗi.** 46 cặp lọt ở 450‰, chia theo nguồn:
+
+| Nhóm | Cặp | Gồm |
+|---|---:|---|
+| Errata của LFW ghi là một người | 10 | `Wang_Nan`~`Nan_Wang` (4); `John_Gruden_0001` là `Jon_Gruden` viết sai (5); `Flor_Montulo_0002` là ảnh của `Nora_Bendijo` (1) |
+| Hai cách ghi tên một nhân vật công chúng, errata không ghi | 16 | `Joseph_Blatter`~`Sepp_Blatter` (6); `Mireya_Elisa_Moscoso_Rodriguez`~`Mireya_Moscoso` (4); `Hassan_Wirajuda`~`Hasan_Wirayuda` (2); `Chyung_Dai-chul`~`Dai_Chul_Chyung`; `Felipe_De_Borbon`~`Prince_Felipe`; `Odai_Hussein`~`Uday_Hussein`; `Cristina_Fernandez`~`Cristina_Kirchner` |
+| Hai tên khác hẳn nhau | **20** | cao nhất `Martha_Bowen_0002`~`Gabrielle_Rose_0001` 0,942, `Isabela_Moraes`~`Carolina_Moraes` 0,763, `Shavon_Earp`~`Diana_Taurasi` 0,740; thấp nhất `Rafael_Ramirez_0003`~`Pierre_Pettigrew_0003` 0,451 |
+
+- Errata đọc qua bản chép trên cnblogs, vì trang `vis-www.cs.umass.edu/lfw` không vào được ngày 26/10.
+- Ba cặp đầu của nhóm cuối cao bất thường so với người lạ, nên có thể là ảnh gán nhầm. Không nguồn
+  nào ghi điều đó, nên chúng vẫn được tính là nhận nhầm.
+
+| Cách đếm ở 450‰ | Cặp | Mỗi phép so | Cận trên 95% |
+|---|---:|---:|---:|
+| Mọi cặp khác tên | 46 | 1,55·10⁻⁶ | 1,98·10⁻⁶ |
+| Bỏ nhóm errata | 36 | 1,21·10⁻⁶ | 1,60·10⁻⁶ |
+| **Chỉ hai tên khác hẳn nhau** | **20** | **6,75·10⁻⁷** | **9,80·10⁻⁷** |
+
+**Quy ra kiosk (tính từ bảng trên, không đo).** Kiosk có N người đăng ký giữ 3N mẫu, và thử tối đa
+2 khung (`kUnknownTries`). Một người lạ đứng trước máy vì thế chịu nhiều nhất 6N phép so. Phép cộng
+ấy coi 3 mẫu của một người và 2 khung của cùng một mặt là độc lập nhau, nên ra mức trên.
+
+| Người đăng ký | Mỗi lượt người lạ, 20 cặp | Cận 95%, 20 cặp | Cận 95%, cả 46 cặp |
+|---:|---:|---:|---:|
+| 10 | 0,004% | 0,006% | 0,012% |
+| 50 | 0,020% | 0,029% | 0,060% |
+| 100 | 0,040% | 0,059% | 0,119% |
+| 333 (đầy bảng 1.000 mẫu) | 0,135% | 0,196% | 0,396% |
+
+Giới hạn:
+
+- LFW là ảnh báo chí của người nổi tiếng, gần chính diện, khác khung OV5640. Tỉ lệ trên khung
+  kiosk vẫn là E8-T12 🔬.
+- Như §8, danh tính của benchmark được coi là người lạ với model. FRBench train trên MS1M, và phần
+  danh tính trùng giữa MS1M và LFW chưa được kiểm; nếu có trùng thì các số trên lạc quan.
+- Một nhân viên đã đăng ký chỉ bị nhận thành người khác khi mẫu của người kia vượt ngưỡng **và** vượt
+  điểm của chính mẫu mình, nên chịu ít hơn bảng trên. Tỉ lệ ấy chưa đo.
+
+Tái lập: `make data-fetch ARGS=lfw_pairs`, rồi `make recog-far TOP=60` để in đủ 46 cặp.
