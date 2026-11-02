@@ -27,15 +27,16 @@ gitignore.
 
 ## Sinh lại toàn bộ
 
-Chạy **từ gốc repo**, đúng thứ tự — `gen_pcb` đọc sơ đồ vừa sinh để lấy net:
+Chạy từ gốc repo:
 
 ```bash
-python3 hardware/gen/gen_fp.py     # ba footprint tự vẽ      -> lib/footprints/
-python3 hardware/gen/gen_sch.py    # sơ đồ + symbol          -> kicad/, lib/symbols/
-python3 hardware/gen/gen_pcb.py    # PCB                     -> kicad/
-kicad-cli pcb upgrade hardware/kicad/kiosk.kicad_pcb
-python3 tools/check_schematic.py && python3 tools/check_pcb.py
+make hw-gen      # gen_fp -> lib/footprints/, gen_sch -> kicad/ + lib/symbols/, gen_pcb -> kicad/, rồi pcb upgrade và hai check
+make hw-check    # ERC + DRC -> export/erc.rpt, export/drc.rpt (gitignore); lỗi hay cảnh báo nào cũng fail
+make hw-export   # PDF sơ đồ mang sha7 của commit KẾ HOẠCH cuối, SVG layout, ảnh render mặt trên -> export/
 ```
+
+Ba script chạy đúng thứ tự đó vì `gen_pcb` đọc sơ đồ vừa sinh để lấy net. `kicad-cli` ở máy này là
+bản Windows nên chỉ nhận đường dẫn Windows; Makefile tự đổi qua `wslpath` khi `KICAD_CLI` là file `.exe`.
 
 `pcb upgrade` là bắt buộc: `gen_pcb.py` ghi ở định dạng `20241229` rồi để KiCad nâng lên
 `20260206`, vì viết thẳng định dạng mới nhất bằng tay là chép một thứ sẽ đổi ở bản sau.

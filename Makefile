@@ -9,7 +9,7 @@ SHELL := /bin/bash
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
-        usb-list usb-attach usb-detach \
+        usb-list usb-attach usb-detach hw-gen hw-check hw-export \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
@@ -22,6 +22,10 @@ ML_EXTRAS := --extra $(TORCH) --extra export --extra espdl --extra bench --extra
 USBIPD ?= usbipd.exe
 # WSL here has no docker of its own; Docker Desktop's client stands in.
 DOCKER ?= $(or $(shell command -v docker 2>/dev/null),/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe)
+# KiCad 10.0.6 lives on Windows here, and its CLI reads only Windows paths (hardware/README.md).
+KICAD_CLI ?= $(or $(shell command -v kicad-cli 2>/dev/null),/mnt/d/KiCad/bin/kicad-cli.exe)
+kpath = $(if $(filter %.exe,$(KICAD_CLI)),"$$(wslpath -w $(CURDIR)/$(1))",$(1))
+HW_BOARD := hardware/kicad/kiosk
 # The e2e clone stays outside the tree: the repo's backend/.env would otherwise reach the suites.
 E2E_DIR ?= $(HOME)/.cache/kiosk-e2e
 CONC ?= 3
@@ -765,6 +769,29 @@ board-restore: idf ## Write back and verify what board-save kept in DIR; NVS nev
 	cd $(BOARD_DIR) && sha256sum -c SHA256SUMS
 	$(esptool_board) write-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
 	$(esptool_board) verify-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
+
+##@ Hardware (close KiCad first: it saves its own copy over a regenerated file)
+hw-gen: ## Regenerate hardware/kicad and hardware/lib from hardware/gen, then check board against sheet and pin map
+	python3 hardware/gen/gen_fp.py
+	python3 hardware/gen/gen_sch.py
+	python3 hardware/gen/gen_pcb.py
+	"$(KICAD_CLI)" pcb upgrade $(call kpath,$(HW_BOARD).kicad_pcb)
+	python3 tools/check_schematic.py && python3 tools/check_pcb.py
+
+hw-check: ## ERC and DRC into hardware/export/{erc,drc}.rpt, failing on any error or warning
+	"$(KICAD_CLI)" sch erc --format report --severity-error --severity-warning --exit-code-violations \
+	  -o $(call kpath,hardware/export/erc.rpt) $(call kpath,$(HW_BOARD).kicad_sch)
+	"$(KICAD_CLI)" pcb drc --format report --severity-error --severity-warning --exit-code-violations \
+	  -o $(call kpath,hardware/export/drc.rpt) $(call kpath,$(HW_BOARD).kicad_pcb)
+
+hw-export: ## Schematic PDF named after the last plan commit, layout SVG and top render, into hardware/export/
+	rm -f hardware/export/kiosk_schematic_*.pdf
+	"$(KICAD_CLI)" sch export pdf -o $(call kpath,hardware/export/kiosk_schematic_$(shell git log -1 --format=%h --abbrev=7 -- docs/KE_HOACH_face_attendance_esp32s3.md).pdf) \
+	  $(call kpath,$(HW_BOARD).kicad_sch)
+	"$(KICAD_CLI)" pcb export svg --layers F.Cu,B.Cu,Edge.Cuts,F.SilkS --page-size-mode 2 --exclude-drawing-sheet \
+	  -o $(call kpath,hardware/export/pcb_layout.svg) $(call kpath,$(HW_BOARD).kicad_pcb)
+	"$(KICAD_CLI)" pcb render --side top --width 1568 --height 1208 --background opaque \
+	  -o $(call kpath,hardware/export/pcb_top.png) $(call kpath,$(HW_BOARD).kicad_pcb)
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001
