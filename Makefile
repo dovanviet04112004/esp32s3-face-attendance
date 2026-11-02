@@ -107,6 +107,7 @@ check: ## Regenerate from contracts/ and fail if a committed file drifted
 
 lint: ## Every static check CI runs: the repo tools and ruff
 	python3 tools/check_comments.py
+	python3 tools/check_docs.py
 	python3 tools/check_layers.py
 	python3 tools/check_schematic.py
 	python3 tools/check_pcb.py

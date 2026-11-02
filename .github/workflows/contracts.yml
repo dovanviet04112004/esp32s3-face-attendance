@@ -83,6 +83,9 @@ jobs:
       - name: Comment rules
         run: python3 tools/check_comments.py
 
+      - name: Docs agree with each other and with the repo
+        run: python3 tools/check_docs.py
+
       # The ruff ml/uv.lock pins, over every Python file under its nearest config (KEHOACH 4.1).
       - name: Python lint and format
         run: |
