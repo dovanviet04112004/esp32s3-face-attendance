@@ -26,14 +26,14 @@ hợp lý duy nhất là sự đồng ý, và sự đồng ý phải **rút lạ
 
 | Loại | Nhạy cảm | Lưu ở đâu | Dạng lưu |
 |---|---|---|---|
-| **Embedding khuôn mặt** (vector 512 chiều INT8) | **Có** (Điều 2.4.đ) | Kiosk: LittleFS · Máy chủ: `FaceTemplate.embedding` | Kiosk: nhị phân thô · Máy chủ: **mã hoá đối xứng**, khoá ở biến môi trường |
-| Ảnh khuôn mặt lúc chấm công | **Có** | MinIO, đường dẫn ở `AttendanceRecord.photoUrl` | Tệp ảnh |
+| **Embedding khuôn mặt** (vector 512 chiều INT8) | **Có** (Điều 2.4.đ) | Kiosk: LittleFS · Máy chủ: `FaceTemplate.embedding`, cộng bản sao lưu mã hoá `age` trên VPS và ở bucket ngoài máy (KẾ HOẠCH §9.22.7) | Kiosk: nhị phân thô · Máy chủ: **mã hoá đối xứng**, khoá ở biến môi trường |
+| Ảnh khuôn mặt lúc chấm công | **Có** | **Chưa thu**: kiosk không gửi ảnh, `AttendanceRecord.photoUrl` luôn rỗng | — |
 | Họ tên, mã nhân viên, phòng ban | Không | Postgres | Rõ |
 | Số CCCD, mã số thuế, mã BHXH, số tài khoản | Không (nhưng là dữ liệu cá nhân cơ bản) | Postgres | Rõ |
 | Giờ vào, giờ ra, ngày công | Không | Postgres | Rõ |
 | Điểm khớp, điểm chống giả | Không | Postgres | Rõ |
 
-**Ảnh gốc không bao giờ rời kiosk trừ ảnh chấm công.** Quá trình ghi danh chạy trên board: ảnh
+**Ảnh gốc không bao giờ rời kiosk.** Quá trình ghi danh chạy trên board: ảnh
 chụp → embedding → ảnh bị bỏ. Máy chủ **không nhận ảnh ghi danh**, chỉ nhận vector.
 
 ---
@@ -68,9 +68,9 @@ Camera → (trên kiosk) phát hiện mặt → chống giả → trích embeddi
 | 5 | Xem dữ liệu sinh trắc không dấu vết | Trung bình | Nhật ký phủ cả **đọc**: mỗi lần phát template cho kiosk ghi một dòng |
 | 6 | Không xoá được khi rút đồng ý | Cao | Một lệnh rút đồng ý xoá template ở máy chủ **và** phát lệnh xoá tới mọi kiosk từng nhận |
 | 7 | Nhận nhầm người | Trung bình | Ngưỡng khớp và ngưỡng chống giả cấu hình được; mọi lượt lưu điểm số để tra lại |
-| 8 | Ảnh giả qua mặt hệ | Trung bình | 🔬 Model chống giả đo được 62/62 mặt thật INT8; ảnh in cỡ vừa vẫn lọt trong tập thử |
+| 8 | Ảnh giả qua mặt hệ | Trung bình | Model chống giả đang deploy giữ 59/62 mặt thật và chặn 25/25 khung giả do chính OV5640 chụp, ở ngưỡng 500‰ (`antispoof/quant_ladder.md` §12); tập giả mới có hai phiên nên còn phải đo thêm (E8-T12) 🔬 |
 | 9 | Dữ liệu giữ quá lâu | Trung bình | §9.22.7 đặt hạn giữ; sinh trắc xoá khi nghỉ việc, hồ sơ nhân sự ở lại |
-| 10 | Người lao động không biết mình bị xử lý gì | Trung bình | Cổng nhân viên cho xem lịch sử đồng ý của chính mình |
+| 10 | Người lao động không biết mình bị xử lý gì | Trung bình | `GET /biometric-consents/:employeeId` cho chính người ấy đọc lịch sử đồng ý của mình; cổng nhân viên (`/me`) chưa có trang hiện lịch sử này |
 
 ---
 
@@ -79,8 +79,8 @@ Camera → (trên kiosk) phát hiện mặt → chống giả → trích embeddi
 | Quyền | Điều | Thực hiện bằng cách nào |
 |---|---|---|
 | Được biết | 13 | Văn bản thông báo có **số phiên bản**, lưu cùng bản ghi đồng ý |
-| Đồng ý và **rút đồng ý** | 11, 12 | `POST /biometric-consents` và `POST /biometric-consents/:id/withdraw` |
-| Truy cập | 14 | `GET /biometric-consents/:employeeId` và cổng nhân viên |
+| Đồng ý và **rút đồng ý** | 11, 12 | `POST /biometric-consents` và `POST /biometric-consents/:employeeId/withdraw` |
+| Truy cập | 14 | `GET /biometric-consents/:employeeId`, chính người ấy gọi được; cổng nhân viên chưa có trang này |
 | Xoá | 16 | Rút đồng ý xoá luôn; nghỉ việc cũng xoá |
 | Hạn chế, phản đối | 17, 18 | Rút đồng ý là đường thực hiện; chuyển sang chấm công thẻ |
 | Khiếu nại | 19 | Kênh khiếu nại trong cổng nhân viên |
@@ -94,8 +94,8 @@ xoá, kiosk nhận lệnh xoá trong cùng một lần gọi.
 
 | Dữ liệu | Giữ bao lâu | Vì sao |
 |---|---|---|
-| Embedding khuôn mặt | Đến khi rút đồng ý hoặc nghỉ việc | Không còn mục đích thì không còn căn cứ giữ |
-| Ảnh chấm công | 🔬 Theo cấu hình, mặc định đề xuất 90 ngày | Đủ để đối chất một tranh chấp chấm công |
+| Embedding khuôn mặt | Đến khi rút đồng ý hoặc nghỉ việc; mọi bản sao lưu, kể cả bản ngoài máy, xoá theo trong vòng `BIOMETRIC_KEEP_DAYS` ngày (mặc định 7, KẾ HOẠCH §9.22.7) | Không còn mục đích thì không còn căn cứ giữ |
+| Ảnh chấm công | Không thu (kiosk không gửi ảnh); nếu bật thì đề xuất 90 ngày 🔬 | Đủ để đối chất một tranh chấp chấm công |
 | Bản ghi chấm công | Theo hạn lưu chứng từ lao động | Là căn cứ trả lương |
 | Phiếu lương và dòng phiếu | Theo hạn lưu chứng từ kế toán | Nghĩa vụ thuế và bảo hiểm |
 | Nhật ký truy cập sinh trắc | 🔬 Đề xuất 2 năm | Đủ để chứng minh khi bị hỏi |
