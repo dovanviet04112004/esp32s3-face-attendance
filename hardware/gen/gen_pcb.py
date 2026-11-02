@@ -68,9 +68,6 @@ PLACEMENT = {
     "C1": (137.0, 94.0, 0),
     "J10": (137.0, 107.0, 0),
     "J11": (148.5, 107.0, 0),
-    # The one stretch of bottom edge a USB plug can still reach (KEHOACH 2.5).
-    "J16": (111.13, 99.0, 90),
-    "J18": (124.73, 99.0, 90),
 }
 
 
@@ -106,10 +103,6 @@ BOARD_HOLES = {
     "H8": (5.0, 116.0, 0),
 }
 PLACEMENT.update(BOARD_HOLES)
-# Bare holes carrying no net, so like the screw holes they never reach the sheet.
-GRID_FP = "kiosk:SolderGrid_4x05_P2.54mm"
-SOLDER_GRID = {"J15": (112.4, 111.5, 0), "J17": (126.0, 111.5, 0)}
-PLACEMENT.update(SOLDER_GRID)
 # A plugged-in module keeps its body, and that body lands on the board. Drawn on the
 # silkscreen so nothing sits inside one. 🔬 ToF, expander and amplifier come off photos.
 MODULE_AREA = {
@@ -117,8 +110,6 @@ MODULE_AREA = {
     "J4 VL53L1X": (9.5, 7.0, 34.5, 22.0),
     "J5 PCF8574 48x16": (109.85, 7.0, 125.85, 55.0),
     "J7 MAX98357A": (109.85, 60.0, 129.85, 80.0),
-    "J15 USB-C": (105.9, 104.0, 118.9, 119.0),
-    "J17 microUSB": (119.5, 104.0, 132.5, 119.0),
     "U2 AMS1117-3.3": (16.0, 101.0, 29.0, 111.0),
 }
 
@@ -354,7 +345,7 @@ NY = int(BOARD_H / GRID) + 1
 
 # Rule 1 of section 2.5: the two grounds meet at exactly one point. They are laid as
 # two nets that block each other, so no second junction can appear by accident.
-RAIL2_GROUND = {"J11.2", "J9.1", "C3.2", "J18.2"}
+RAIL2_GROUND = {"J11.2", "J9.1", "C3.2"}
 GROUND_TIE = ("J10.2", "J11.2")
 # Rules 2, 6 and 7: a rail is drawn, not searched. Each heavy load reaches its own
 # terminal on its own copper, and each reservoir hangs on the load it holds up.
@@ -365,20 +356,18 @@ RAIL_TREE = {
         ("J10.1", "J7.7"),
         ("J10.1", "C1.1"),
         ("J7.7", "C2.1"),
-        ("J10.1", "J16.1"),
         ("U1.20", "U2.1"),
         ("U2.1", "C5.1"),
     ],
-    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1"), ("J11.1", "J18.1")],
+    "+5V_R2": [("J11.1", "J9.2"), ("J9.2", "C3.1")],
     "GND@tie": [GROUND_TIE],
-    # Four branches leave J10.2, which has the room; a pad wedged in a row carries two.
+    # Three branches leave J10.2, which has the room; a pad wedged in a row carries two.
     # The panel's return closes on U2.2 and goes no further (KEHOACH 2.5 rule 8).
     "GND@1": [
         ("J10.2", "J7.6"),
         ("J7.6", "C2.2"),
         ("J10.2", "C1.2"),
         ("J10.2", "U1.40"),
-        ("J10.2", "J16.2"),
         ("U1.40", "C5.2"),
         ("C5.2", "U2.2"),
         ("U2.2", "C4.2"),
@@ -387,7 +376,7 @@ RAIL_TREE = {
         ("J4.2", "J5.3"),
         ("J5.3", "J6.6"),
     ],
-    "GND@2": [("J11.2", "J9.1"), ("J9.1", "C3.2"), ("J11.2", "J18.2")],
+    "GND@2": [("J11.2", "J9.1"), ("J9.1", "C3.2")],
     # Last: it shares the back layer with two grounds that have less room than it.
     "+3V3_LCD": [("U2.3", "C4.1"), ("C4.1", "J3.1")],
 }
@@ -1058,15 +1047,13 @@ def main() -> None:
             )
 
     for ref, spot in PLACEMENT.items():
-        if ref in BOARD_HOLES or ref in SOLDER_GRID:
+        if ref in BOARD_HOLES:
             continue
         doc.append(place(ref, footprint[ref], nets[ref], net_id, spot))
     for ref, spot in lcd_holes().items():
         doc.append(place(ref, HOLE_FP, {}, net_id, spot))
     for ref in BOARD_HOLES:
         doc.append(place(ref, HOLE_FP, {}, net_id, PLACEMENT[ref]))
-    for ref in SOLDER_GRID:
-        doc.append(place(ref, GRID_FP, {}, net_id, PLACEMENT[ref]))
 
     doc += pin_labels(doc)
     move_references(doc)
