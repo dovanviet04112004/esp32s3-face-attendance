@@ -940,9 +940,9 @@ nên **loa đấu thẳng vào module**, board đế không mang đầu nối lo
 | VIN | **5V của rail 1** | Không lấy 3V3 vì mất công suất, và **không lấy chân 5V của board**: chân đó đi từ cáp USB, không tải nổi đỉnh 600 mA của amp — đo 10/09: tiếng nhỏ rồi rè, và đường USB của board rớt 3 lần khi phát to |
 | GND | GND | |
 | **BCLK** | **GPIO45** | GPIO43 đã giao cho `SDO` của LCD (§2.3A). GPIO45 là strapping VDD_SPI nhưng chỉ lấy mẫu **lúc reset**, mà I2S không đẩy chân lúc reset và chân có pull-down nội — đo trên board: kéo lên 20/20 mức cao, kéo xuống 0/20, tức trống thật |
-| **LRC / WS** | **GPIO44** | Nguyên là U0RXD, và **có trở kéo lên thụ động sẵn trên board** — đo 10/09: bật trở kéo xuống nội vẫn đọc mức 1, nhưng chip đẩy được cả hai mức nên I2S vẫn đúng. Hệ quả: **rút dây LRC ra thì amp không im mà nhả tiếng rác to**, vì nó vẫn chốt bit từ DIN nhưng lệch hàng khung nên biên độ nhảy gần đỉnh thang. Nghe được tiếng lúc thiếu dây khung không bao giờ là dấu hiệu tốt |
+| **LRC / WS** | **GPIO44** | Nguyên là U0RXD, và **có trở kéo lên thụ động sẵn trên board** — đo 10/09: bật trở kéo xuống nội vẫn đọc mức 1, nhưng chip đẩy được cả hai mức nên I2S vẫn đúng. Hệ quả: **rút dây LRC ra thì amp không im mà nhả tiếng rác to**, vì nó vẫn chốt bit từ DIN nhưng lệch hàng khung nên biên độ nhảy gần đỉnh thang. Nghe được tiếng lúc thiếu dây khung không bao giờ là dấu hiệu tốt. 🔬 Thứ kéo lên ấy nhiều khả năng là chân TXD của chip USB-UART CH343 trên devkit (pinout của profharris ghi IO44 = U0RXD nối CH343): nếu đúng thì đừng mở cổng UART của devkit lúc kiosk chạy, vì dữ liệu gửi xuống đè lên WS. Đo mức thấp của WS tại `J7.1` để xác nhận, phải dưới 0,6 V |
 | **DIN** | **GPIO46** | Strapping này chỉ chọn mức log ROM, không chặn boot. DIN là input trở kháng cao, pull-down nội của chip đã đủ — không cần hàn điện trở |
-| **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. Hoặc nối 100 kΩ lên VIN = chế độ mono (L+R)/2 |
+| **SD (shutdown/mode)** | **PCF8574 P3** | Kéo LOW khi không phát → hết nhiễu xì. P3 ở mức cao (~3,3 V) chọn kênh trái, đúng khe driver đẩy mẫu mono vào. Chế độ (L+R)/2 cần SD trong khoảng 0,16–0,77 V, tức trở ~1 MΩ lên 5 V đấu với trở kéo xuống ~100 kΩ trong chip; 100 kΩ lên 5 V cho ~2,5 V, vẫn là kênh trái |
 | GAIN | để hở | = 9 dB. Nối GND = 12 dB |
 | OUT+ / OUT− | Loa | Ngõ ra **cầu (BTL)** — **tuyệt đối không nối OUT− xuống GND** |
 | Tụ lọc | 470–1000 µF gần VIN, **chân dài (+) về VIN, chân vạch sọc (−) về GND** | Bắt buộc, nếu không sẽ reset board khi phát to. Cắm ngược cực thì tụ dẫn dòng và kéo sập VIN: amp rè rồi câm hẳn trong khi mọi chân tín hiệu vẫn đúng (đo 10/09). **Tụ đã cắm ngược một lần thì thay tụ mới, không cắm lại**: nội trở tăng vĩnh viễn, và khối ra class-D vẫn băm ~300 kHz kể cả khi đầu vào bằng 0 nên rail thiếu điện tích là rè ngay dù không có tín hiệu. Chân tụ trên breadboard rất dễ lỏng, và **rung của servo che được một chân lỏng** — đo 10/09 mất cả buổi vì chỗ này |
@@ -1129,6 +1129,10 @@ Hai rail, chung mass. Board đế nhận điện qua đúng hai domino vít: `J1
 | VL53L1X | 20 mA | 40 mA |
 | GT911 | 5 mA | |
 | **Tổng** | ~375 mA | **~1.34 A** |
+
+Đỉnh 600 mA của amp ứng với âm lượng khoảng 70 %, mức gieo mặc định. 🔬 Ở 100 %, đỉnh của clip cần
+khoảng 1,1–1,2 A và vượt mức ra sạch của amp (~4,5 V đỉnh ở 1 % THD trên loa 4 Ω), nên những âm
+tiết to nhất có thể đục.
 
 **Rail 2 — 5 V / ≥ 1 A, cơ cấu chấp hành**
 
@@ -5227,8 +5231,9 @@ hợp đồng bị mở rộng: thêm `cmdId` (tuỳ chọn) cùng hai giá tr�
 
 **`up/event` — người phát chỉ ghi nhận, `sync_task` mới nói.** Nơi phát hiện những tình huống
 hợp đồng liệt kê đều **không được phép chờ mạng**: `ai_task` mất khung (`CAMERA_FAULT`) hoặc thấy
-`SPOOF`/`UNKNOWN`, `tof_task` đọc lỗi khác timeout (`TOF_FAULT`), đường ghi log hỏng
-(`STORAGE_FAULT`), cùng các sự kiện của `sync_task`, `ota_task` và `ui_task` (§5.3). Nên chúng bỏ một
+`SPOOF`/`UNKNOWN`, `tof_task` đọc lỗi khác timeout (`TOF_FAULT`), `audio_task` không có clip phát
+được hoặc phát hỏng (`AUDIO_FAULT`), đường ghi log hỏng (`STORAGE_FAULT`), cùng các sự kiện của
+`sync_task`, `ota_task` và `ui_task` (§5.3). Nên chúng bỏ một
 bản ghi 88 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
 
 **`BOOTED` nói vì sao máy vừa khởi động.** `message` mang số lần khởi động cùng lý do
@@ -5920,7 +5925,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 |---|---|---|---|---|---|---|
 | `cam_task` | `drv_camera` | 0 | 7 | 4 KB | mỗi frame (~15 fps); màn phủ kín: thêm mỗi lần overlay đổi | `esp_camera_fb_get()` → vẽ preview kèm overlay của `ui_kiosk` → đẩy con trỏ vào `q_frame_ai` (overwrite). Màn phủ kín: chờ overlay mới tối đa một chu kỳ khung trước khi lấy khung (§4.5.5h) |
 | `tof_task` | `drv_tof` | 0 | 6 | 3 KB | ngắt GPIO3 / poll 100 ms | Đọc khoảng cách → phát `EVT_PRESENCE_ON/OFF`, đánh thức hệ thống |
-| `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file |
+| `audio_task` | `drv_audio` | 0 | 6 | 4 KB | chờ `q_audio` | Nạp `snd/ok.wav` từ partition `assets` **một lần lúc lên**, giữ PCM trong PSRAM rồi phát khi có `APP_SOUND_OK`: mở cửa xong không phải đọc file. Không có clip phát được, hay phát hỏng, thì báo `AUDIO_FAULT` |
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt INT GPIO14; poll 40 ms chỉ khi đang có ngón tay | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3). Không ai chạm thì không có giao dịch I2C nào ngoài một lượt đọc an toàn mỗi giây, phòng ngắt lỡ |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1). Máy nghỉ, màn Cập nhật hay một màn phủ kín đang mở thì model nghỉ, khung trả thẳng về pool (§5.4) |
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
@@ -5995,7 +6000,7 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | `q_uplink` | Queue, depth 16, `storage_attend_record_t` | 16 × 48 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × 160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
 | `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt (chờ 3 s); `ui_task` báo mẫu vừa chụp (200 ms); `ota_task` xoá bảng khi vé chết (2 s) | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
-| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task`, `sync_task`, `ota_task`, `ui_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 88 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task`, `audio_task`, `sync_task`, `ota_task`, `ui_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 88 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × 1.856 B | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
@@ -6173,7 +6178,7 @@ ota_0,      app,  ota_0,    0x20000,   0x2C0000,        # 2,75 MB  firmware A
 ota_1,      app,  ota_1,    0x2E0000,  0x2C0000,        # 2,75 MB  firmware B
 models_0,   data, 0x40,     0x5A0000,  0x240000,        # 2,25 MB  3 model của một runtime (slot A)
 models_1,   data, 0x41,     0x7E0000,  0x240000,        # 2,25 MB  slot B — OTA model có rollback
-assets,     data, spiffs,   0xA20000,  0x180000,        # 1.5 MB font, icon, âm thanh WAV
+assets,     data, spiffs,   0xA20000,  0x180000,        # 1.5 MB âm thanh WAV
 storage,    data, littlefs, 0xBA0000,  0x400000,        # 4 MB  face DB + log chấm công offline
 coredump,   data, coredump, 0xFA0000,  0x10000,
 # còn trống: 0xFB0000 → 0x1000000 (~320 KB) dự phòng
@@ -6197,7 +6202,7 @@ USB bảng mới, cả hai slot app và slot model.
 | `nvs` | Wi-Fi credential, device JWT, cấu hình, số serial — bố cục namespace ở §6.2.1 | `nvs_flash` |
 | `nvs_keys` | Khoá AES để mã hoá `nvs`. Chỉ có tác dụng khi bật Flash Encryption | `nvs_flash_secure_init` |
 | `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file INT8 của một runtime: `.espdl` 2.160 KB hoặc `.tflite` 1.481 KB | `esp_partition_mmap` → `const void*`, **0 byte RAM**; ESP-DL chép trọng số từ đó sang PSRAM lúc nạp |
-| `assets` | file WAV thông báo (`snd/ok.wav`); font biên dịch thẳng vào app (§6.2.8) | SPIFFS read-only |
+| `assets` | file WAV thông báo (`snd/ok.wav`); font biên dịch thẳng vào app (§6.2.8) | SPIFFS, không ai ghi lúc chạy |
 | `storage` | `db/faces.bin` (embedding), `log/attend.NNN` (append-only), `tmp/` — bố cục ở §6.2.3 | LittleFS (chống mất điện tốt hơn SPIFFS) |
 
 ### 6.2 Bố cục dữ liệu trên thiết bị
@@ -6216,7 +6221,7 @@ Bật **NVS encryption** (khoá nằm trong partition `nvs_keys`, bảo vệ b�
 | `device` | `serial`, `jwt`, `jwt_exp`, `claim`, `mqtt_uri`, `mqtt_user`, `mqtt_pass`, `sntp_host`, `tz`, `roster_ver`, `pending` | str / u32 / blob | `jwt` là vé máy tự xin (§7.3), `claim` là mã nhận máy của lượt đăng ký đang chờ (§7.3), `jwt_exp` (u32, epoch giây) đọc từ claim `exp` của chính nó, token xoay vòng khi còn 7 ngày; `mqtt_user`/`mqtt_pass` chỉ để **ghi đè** trên bàn thử hay server khách tự dựng — vắng thì `net_mqtt` nối bằng `deviceId` cộng `jwt`; `sntp_host` là host hiệu chỉnh giờ, §4.9 xếp host vào loại một nguồn duy nhất nên `sys_time` **nhận qua tham số**, không gõ vào code, và vắng thì `main` lùi về `CONFIG_APP_SNTP_DEFAULT_HOST` (`pool.ntp.org`) — thiếu giá trị lùi ấy thì bản `prod`, không console, không bao giờ chỉnh giờ; `tz` là chuỗi POSIX (`ICT-7`) đi cùng đường đó; `roster_ver` (u32) là con trỏ hội tụ của §7.5, ghi **sau khi** áp xong một lệnh roster nên mất điện giữa chừng chỉ tốn một lần đẩy lại, và về 0 khi bảng mặt bị bỏ vì đổi model nhận diện (§6.2.4); `pending` (blob `storage_pending_t`) là danh sách người chờ chụp ở máy này, layout khai ở `storage_format.h`. Khoá `enroll_out` do firmware có nút xoá ở máy để lại bị xoá ở lần khởi động đầu, nên yêu cầu nằm trong đó không bao giờ được gửi |
 | `model` | `active_slot` (u8: 0/1), `version` (str), `sha256` (blob 32B) | | chọn `models_0` hay `models_1` |
 | `sys` | `boot_count` (u32), `last_ota_result` (u8), `fw_valid` (u8), `rtc_ntp_set` (u8), `seed_ver` (u32), `ota_to` (str ≤ 32) | | `ota_to` là phiên bản firmware máy vừa khởi động lại để lên, ghi ngay trước `esp_restart()` của OTA và xoá ở lần khởi động kế tiếp: đúng phiên bản ấy thì màn quét nói "Đã cập nhật lên x.y.z", khác thì máy báo `OTA_ROLLED_BACK` với phiên bản bị bỏ (§7.7). `boot_count` dùng sinh `local_id`, và có bản thứ hai ở `log/boot.bin` vì mất NVS không được làm nó đếm lại (§6.2.5); `last_ota_result` là **cái chốt chống lặp** của A/B model — 0 không có gì đang thử, **1 vừa đổi `active_slot` và chưa được chứng minh**, 2 slot ấy nạp được, 3 nó hỏng và máy đã quay về. Không có chốt này thì hai slot cùng hỏng sẽ đá qua đá lại mãi mãi, vì mỗi lần boot đều thấy "model không nạp được" và đều kết luận "chắc slot kia tốt hơn". `rtc_ntp_set` = 1 khi DS3231 đã từng được một lần SNTP đặt lại. **Tầng nối dây ghi khoá này, không phải `sys_time`**: §4.5.4 cấm phụ thuộc ngang tầng nên L2 `sys_time` không gọi được L2 `sys_storage` (§6.2.5). `seed_ver` là số hiệu bộ gieo đang nằm trên thiết bị, xem luật ngay dưới bảng |
-| `ui` | `brightness` (u8), `volume` (u8), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
+| `ui` | `brightness` (u32, %), `volume` (u32, %), `lang` (str: `vi` / `en`) | | không nhạy cảm, cho phép sửa từ màn hình cài đặt. `lang` vắng mặt, rỗng, hay mang giá trị lạ đều rơi về `vi` (§3.1 CLAUDE.md luật 4) — một mã ngôn ngữ gõ sai phải ra màn hình đọc được, không phải màn hình trống |
 | `vision` | `face_min_px` (u32), `guide_min` (u32, %), `present_mm` (u32, mm) | | `face_min_px`, `guide_min` của §4.5.5d cộng ngưỡng "có người" của §2.3D: boot đầu gieo từ `Kconfig` của `svc_vision`, `SET_CONFIG` đổi `face_min_px` và `present_mm`. Ba ngưỡng của model không nằm ở NVS: chúng đi trong ảnh model (§6.2.2), và `SET_CONFIG` không chạm tới chúng |
 | `attend` | `dedup_min` (u32, phút), `allow_no_spoof` (u8) | | hai quyết định nghiệp vụ của §4.5.5f; boot đầu gieo từ `Kconfig` của `svc_attendance` theo đúng luật của `vision`, đổi bằng `SET_CONFIG`. `allow_no_spoof` chỉ để bàn thử chạy khi ảnh model chưa có nhánh spoof, mặc định 0 |
 
@@ -6256,7 +6261,9 @@ giống hệt `ESP_ERR_NVS_NOT_FOUND` rồi rơi về giá trị lùi. NVS giữ
 
 **Ghi NVS trên bàn đi qua console, không qua ảnh phân vùng.** `main/app_console.c` nhận
 `set`/`get`/`del` trên USB rồi ghi qua `sys_storage`, nên không giá trị bí mật nào phải tồn tại
-dưới dạng file. `del` có mặt vì thiếu nó thì cách duy nhất để dọn một khoá là đặt chuỗi rỗng,
+dưới dạng file. `set` ghi chuỗi, trừ khoá đang giữ một số u32 thì nó đọc giá trị là số thập phân
+và ghi u32: chuỗi đè lên khoá số thì `get_u32` trả `TYPE_MISMATCH` và lần khởi động sau gieo lại
+giá trị mặc định. `del` có mặt vì thiếu nó thì cách duy nhất để dọn một khoá là đặt chuỗi rỗng,
 tức tạo ra đúng trạng thái mà luật ngay trên phải đi vá. `Kconfig` của nó mặc định tắt và chỉ
 bật ở `sdkconfig.dev` với `sdkconfig.bench`, nên bản `prod` không biên dịch một dòng nào — một
 cờ lúc chạy thì không đủ, vì cờ ấy nằm trong chính NVS mà console ghi được.
@@ -6666,14 +6673,14 @@ Ba hệ quả bắt buộc:
 - Đổi layout thì tăng `format_ver` **và** sửa §6.2 trong cùng một commit — giống luật GPIO ở §2.
 - `ml/bench/device_client.py` khi cần đọc dump từ board thì sinh format string từ chính file này, không gõ tay `struct.unpack`.
 
-#### 6.2.8 Partition `assets` (SPIFFS, read-only)
+#### 6.2.8 Partition `assets` (SPIFFS)
 
 ```
 /assets
 └── snd/ok.wav                                    # 16 kHz, 16-bit, mono
 ```
 
-Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. Cập nhật bằng cách ghi đè cả partition qua OTA. Ảnh do `assets/build_assets.py` dựng bằng `spiffsgen.py` của IDF; script giữ **bảng ánh xạ** từ tên file nguồn sang tên trên thiết bị, nên đổi file âm thanh không phải sửa một dòng firmware nào.
+Không task nào ghi vào nó lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. SPIFFS của IDF không có cờ mount read-only: phân vùng mount bình thường, chỉ là không ai ghi. Cập nhật bằng cách dựng lại ảnh rồi ghi đè cả partition qua cổng nạp, `make fw-assets` rồi `make fw-part-write PART=assets IN=firmware/build/assets.bin`; OTA chưa có đường cho gói `ASSETS` (§7.7). Ảnh do `assets/build_assets.py` dựng bằng `spiffsgen.py` của IDF; script giữ **bảng ánh xạ** từ tên file nguồn sang tên trên thiết bị, nên đổi file âm thanh không phải sửa một dòng firmware nào. Script từ chối clip máy không phát được, theo đúng phép thử của `audio_task`: không phải PCM (mã định dạng 1), không phải 16 kHz 16-bit mono, hay to hơn `STORAGE_SOUND_CAP_BYTES` (128 KiB, khoảng 4 s) mà `audio_task` cấp làm bộ đệm.
 
 **Máy chỉ lên tiếng khi nó mở cửa.** `app_sound_t` có bốn tiếng `ok / denied / spoof / enroll`, nhưng máy chỉ mang và chỉ phát `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
 
