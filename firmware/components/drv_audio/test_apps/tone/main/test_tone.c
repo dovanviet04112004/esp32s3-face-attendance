@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app_config.h"
@@ -165,8 +166,13 @@ static const int16_t *shipped_pcm(size_t *samples)
         uint32_t size = 0;
         memcpy(&size, at + 4, sizeof(size));
         if (memcmp(at, "data", 4) == 0) {
-            *samples = size / sizeof(int16_t);
-            return (const int16_t *)(at + WAV_CHUNK_BYTES);
+            // EMBED_FILES aligns nothing and an int16_t load from an odd address faults, so the samples move out.
+            int16_t *pcm = malloc(size);
+            if (pcm != NULL) {
+                memcpy(pcm, at + WAV_CHUNK_BYTES, size);
+                *samples = size / sizeof(int16_t);
+            }
+            return pcm;
         }
         at += WAV_CHUNK_BYTES + size + (size & 1u);
     }
