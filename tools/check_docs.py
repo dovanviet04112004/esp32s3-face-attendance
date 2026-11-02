@@ -63,7 +63,7 @@ TOP_DIRS = (
     "tools",
     ".github",
 )
-HISTORY_WORDS = ("trước đây", "trước nay", "bản đầu", "lúc trước", "hồi trước", "đã từng")
+HISTORY_WORDS = ("trước đây", "trước nay", "bản đầu", "lúc trước", "hồi trước")
 BRANCHES = ("antispoof", "detection", "recognition", "rppg")
 
 SECTION = r"\d+(?:\.\d+)*[A-Za-z]?"
@@ -98,7 +98,7 @@ KEY_PARTS = re.compile(r"^(\d+(?:\.\d+)*)([A-Za-z]?)$")
 DELIMITER = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$")
 TARGET = re.compile(r"^([A-Za-z0-9][\w.-]*(?:[ \t]+[A-Za-z0-9][\w.-]*)*)[ \t]*:(?![:=])")
 MAKE_CALL = re.compile(r"(?:^|&&|;|\|\||\$)\s*make\s+([^;&|#]*)")
-TARGET_WORD = re.compile(r"^[a-z0-9][\w.-]*$")
+TARGET_WORD = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
 LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
 REPO_PATH = re.compile(rf"^(?:{'|'.join(re.escape(d) for d in TOP_DIRS)})/[\w.@+/-]*$")
 HISTORY = re.compile(
