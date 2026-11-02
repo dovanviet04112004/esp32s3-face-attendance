@@ -1130,9 +1130,9 @@ Hai rail, chung mass. Board đế nhận điện qua đúng hai domino vít: `J1
 | GT911 | 5 mA | |
 | **Tổng** | ~375 mA | **~1.34 A** |
 
-Đỉnh 600 mA của amp ứng với âm lượng khoảng 70 %, mức gieo mặc định. 🔬 Ở 100 %, đỉnh của clip cần
-khoảng 1,1–1,2 A và vượt mức ra sạch của amp (~4,5 V đỉnh ở 1 % THD trên loa 4 Ω), nên những âm
-tiết to nhất có thể đục.
+Đỉnh 600 mA của amp ứng với tín hiệu tới loa có đỉnh khoảng 63 % thang, còn trong mức ra sạch của
+amp (~4,5 V đỉnh ở 1 % THD trên loa 4 Ω); dòng amp đi theo bình phương biên độ. Tiếng bíp mở cửa có
+đỉnh nửa thang (§6.2.8), nên ở 100 % âm lượng amp cần khoảng 380 mA, ở mức gieo 70 % khoảng 185 mA 🔬.
 
 **Rail 2 — 5 V / ≥ 1 A, cơ cấu chấp hành**
 
@@ -3342,7 +3342,7 @@ firmware/
 ├── third_party/
 ├── assets/                           # ✅ commit — NGUỒN của partition `assets`
 │   ├── fonts/{gen_font.py, kiosk_ui_{15,20,24,28}.{c,h}}  # 4bpp khử răng cưa, sinh từ MiSans Latin
-│   ├── sounds/xincamon-1_1.wav       # thành snd/ok.wav qua STAGE; biểu tượng vẽ bằng code
+│   ├── sounds/{gen_beep.py, beep.wav}  # tiếng bíp mở cửa (§6.2.8), thành snd/ok.wav qua STAGE; biểu tượng vẽ bằng code
 │   └── build_assets.py               # → build/assets.bin (image SPIFFS)
 │
 ├── models/                           # ❌ gitignore trừ README và meta.json ✅; lock chỉ ở contracts/
@@ -6677,12 +6677,14 @@ Ba hệ quả bắt buộc:
 
 ```
 /assets
-└── snd/ok.wav                                    # 16 kHz, 16-bit, mono
+└── snd/ok.wav                                    # tiếng bíp; 16 kHz, 16-bit, mono
 ```
 
 Không task nào ghi vào nó lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. SPIFFS của IDF không có cờ mount read-only: phân vùng mount bình thường, chỉ là không ai ghi. Cập nhật bằng cách dựng lại ảnh rồi ghi đè cả partition qua cổng nạp, `make fw-assets` rồi `make fw-part-write PART=assets IN=firmware/build/assets.bin`; OTA chưa có đường cho gói `ASSETS` (§7.7). Ảnh do `assets/build_assets.py` dựng bằng `spiffsgen.py` của IDF; script giữ **bảng ánh xạ** từ tên file nguồn sang tên trên thiết bị, nên đổi file âm thanh không phải sửa một dòng firmware nào. Script từ chối clip máy không phát được, theo đúng phép thử của `audio_task`: không phải PCM (mã định dạng 1), không phải 16 kHz 16-bit mono, hay to hơn `STORAGE_SOUND_CAP_BYTES` (128 KiB, khoảng 4 s) mà `audio_task` cấp làm bộ đệm.
 
-**Máy chỉ lên tiếng khi nó mở cửa.** `app_sound_t` có bốn tiếng `ok / denied / spoof / enroll`, nhưng máy chỉ mang và chỉ phát `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
+**Máy chỉ lên tiếng khi nó mở cửa.** `app_sound_t` có bốn tiếng `ok / denied / spoof / enroll`, nhưng máy chỉ mang và chỉ phát `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Một tiếng bíp báo "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
+
+**`ok.wav` là tiếng bíp sinh bằng code, không phải bản ghi.** `assets/sounds/gen_beep.py` viết `sounds/beep.wav`: một sin 2 kHz dài 150 ms, hai sườn cosin 5 ms để loa không lách cách lúc bật tắt, đỉnh nửa thang (−6 dBFS). Nửa thang cân hai đầu: `drv_audio` chỉ nhân xuống theo âm lượng nên file nhỏ thì thanh trượt không nâng lên được, còn ở 100 % âm lượng dòng amp vẫn dưới ngân sách rail 1 (§2.5). Đổi cao độ, độ dài hay độ to là sửa hằng số trong script, sinh lại file rồi dựng lại ảnh như trên.
 
 Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch thẳng vào ảnh firmware (`assets/fonts/kiosk_ui_{15,20,24,28}.c`, §4.5.5h), vì chúng phải vẽ được trước khi mount xong bất cứ thứ gì.
 
