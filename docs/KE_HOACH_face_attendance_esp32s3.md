@@ -7777,16 +7777,6 @@ Firmware nền chạy song song với ba nhánh model, không phải đợi.
 
 ---
 
-## Nguồn tham khảo
-
-**Model**: [YuNet paper](https://link.springer.com/article/10.1007/s11633-023-1423-y) · [libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) · [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) · [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · [MobileFaceNet paper](https://arxiv.org/abs/1804.07573)
-
-**Dữ liệu — nguồn thật đang dùng** (trang chủ của dataset ở §1.2): [WIDER FACE](https://huggingface.co/datasets/wider_face) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://huggingface.co/datasets/Ar4ikov/celebA_spoof) · [NUAA](https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa) · [UniqueData live](https://huggingface.co/datasets/UniqueData/anti-spoofing_Real) · [UniqueData replay](https://huggingface.co/datasets/UniqueData/anti-spoofing_replay) · [AxonData masks](https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset) · [MS1MV3](https://huggingface.co/datasets/gaunernst/ms1mv3-recordio) · [Glint360K](https://huggingface.co/datasets/gaunernst/glint360k-wds-gz) · [benchmark nhận diện](https://huggingface.co/datasets/gaunernst/face-recognition-eval)
-
-**Nền tảng**: [esp-tflite-micro](https://components.espressif.com/components/espressif/esp-tflite-micro) · [ESP-NN](https://github.com/espressif/esp-nn) · [TFLite Micro memory management](https://github.com/tensorflow/tflite-micro/blob/main/tensorflow/lite/micro/docs/memory_management.md) · [esp32-camera](https://github.com/espressif/esp32-camera) · [ESP-IDF partition table](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/partition-tables.html) · [Pinout board GOOUUU ESP32-S3-CAM](https://github.com/profharris/GOOUUU_ESP32-S3-CAM)
-
----
-
 ## 9. Quản trị nhân sự — từ bảng chấm công thành hệ HR
 
 ### 9.1 Ranh giới: cái gì thuộc phần này, cái gì không
@@ -7803,21 +7793,22 @@ cùng một ngày.
 **Ngoài phạm vi, có chủ ý**: tuyển dụng, đánh giá năng lực, đào tạo. Ba thứ ấy là hệ riêng,
 gắn vào HR qua `employeeId` chứ không chia bảng, và không có cái nào chặn việc trả lương.
 
-### 9.2 Ba chỗ hệ hiện tại không đỡ nổi quy mô này
+### 9.2 Ba chỗ một hệ chấm công thuần không đỡ nổi quy mô này
 
-Không phải phỏng đoán — cả ba đọc ra được từ code đang chạy.
+Ba chỗ dưới đây là lý do phần nhân sự có mô hình dữ liệu riêng (§9.3) và luật truy vấn riêng (§9.9).
 
-**Bảng tổng hợp nạp toàn bộ bản ghi vào Node.** `reports.service.ts` gọi `findMany` trên cả
-dải thời gian rồi gom bằng một `Map` trong JavaScript. Ở 30 nghìn nhân viên, hai lượt mỗi ngày,
-một tháng là **1,8 triệu dòng** phải qua mạng, qua bộ giải mã, rồi nằm trong heap Node cùng lúc.
-Đây là chỗ gãy trước tiên và gãy dứt khoát.
+**Bảng tổng hợp không được nạp toàn bộ bản ghi vào Node.** Gọi `findMany` trên cả dải thời gian
+rồi gom bằng một `Map` trong JavaScript thì ở 30 nghìn nhân viên, hai lượt mỗi ngày, một tháng là
+**1,8 triệu dòng** phải qua mạng, qua bộ giải mã, rồi nằm trong heap Node cùng lúc — chỗ gãy
+trước tiên và gãy dứt khoát. `reports.service.ts` vì thế gộp bằng SQL (§9.9 luật 1).
 
-**`User` và `Employee` không nối với nhau.** Hai bảng rời, không khoá ngoại nào. Nghĩa là
-**người lao động hiện không đăng nhập được** — chỉ có tài khoản quản trị. Không có cổng nhân
-viên nào dựng được trước khi sửa chỗ này.
+**`User` phải nối với `Employee`.** Hai bảng rời thì người lao động không đăng nhập được, chỉ có
+tài khoản quản trị, và không cổng nhân viên nào dựng được. `User.employeeId` là khoá ngoại tới
+hồ sơ (§9.3).
 
-**`Employee.department` là một chuỗi.** Không có cây tổ chức, không có người quản lý trực tiếp,
-nên câu hỏi "ai duyệt đơn này" và "trưởng phòng thấy được những ai" không có đường trả lời.
+**Phòng ban là một cây, không phải một chuỗi.** Không có cây tổ chức thì câu hỏi "ai duyệt đơn
+này" và "trưởng phòng thấy được những ai" không có đường trả lời. `Employee.departmentId` là
+khoá ngoại vào cây `Department` (§9.3, §9.4).
 
 ### 9.3 Mô hình dữ liệu
 
@@ -7940,8 +7931,8 @@ qua một phép duy nhất viết cả hai trong một giao dịch.
 
 ### 9.4 Vai trò và phạm vi nhìn thấy
 
-`Role` hiện có `ADMIN`, `HR`, `VIEWER`. Bộ đó không tả nổi bài toán này, vì **quyền ở đây không
-phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng nào"**.
+Ba vai `ADMIN`, `HR`, `VIEWER` của một hệ chấm công thuần không tả nổi bài toán này, vì **quyền ở đây không
+phải chỉ là "gọi được endpoint nào", mà là "thấy được dòng nào"**. `Role` vì thế có sáu vai:
 
 | Vai | Thấy | Sửa |
 |---|---|---|
@@ -8062,7 +8053,7 @@ mọi người cho bất kỳ ai nối được tới cổng**. Nên:
 | `device`, `event` | tin của kiosk | chỉ `ADMIN` — §9.15 xếp `Kiosk` vào riêng vai đó |
 | `attendance` | một lượt chấm công | người thấy được **chính dòng ấy**: `ADMIN` và bàn giấy toàn hệ thấy tất, bàn giấy bị giới hạn thấy người của pháp nhân nó phụ trách, quản lý thấy cây dưới quyền mình, còn lại thấy mình |
 | `change` | tên tài nguyên vừa bị ghi, không id, không giá trị | như `attendance`, tính theo nhân viên sở hữu dòng vừa ghi |
-| `notice` | chỉ tham chiếu, ba dạng: `new` (id dòng, `kind`, nhóm), `item` (khoá việc, trạng thái, kết quả, người làm, lúc), `read` (id hoặc tất cả) — không tên, không câu, không tiền (§9.21.4) | `new`, `read`: đúng một tài khoản đăng nhập, trên mọi máy của nó; `item`: mọi tài khoản đang giữ một dòng của việc ấy |
+| `notice` | chỉ tham chiếu, bốn dạng: `new` (id dòng, `kind`, nhóm), `item` (khoá việc, trạng thái, kết quả, người làm, lúc), `read` (id hoặc tất cả), `punch` (giờ, kiosk, có trễ không) — không tên, không câu, không tiền (§9.21.4) | `new`, `read`: đúng một tài khoản đăng nhập, trên mọi máy của nó; `item`: mọi tài khoản đang giữ một dòng của việc ấy; `punch`: mọi máy của chính người chấm |
 
 Phạm vi chốt lúc bắt tay chứ không tra lại mỗi khung — một lượt quẹt không đáng một CTE đệ quy.
 Cái giá là một lần chuyển bộ phận chỉ ăn vào lần nối lại sau; §9.23 vốn đã đóng mọi phiên ở
@@ -8174,7 +8165,7 @@ dưới quyền, tập pháp nhân phụ trách) và tự thu hẹp truy vấn.
 Cây dưới quyền tính bằng **CTE đệ quy trên `managerId`**, có nhớ đệm, vì một trưởng bộ phận ở
 công ty mười nghìn người có thể có vài nghìn cấp dưới và hỏi lại mỗi request là tự phạt.
 
-**Mở đăng nhập hàng loạt không sinh mật khẩu nào.** Bản đầu có sinh, và nó hỏng theo hai cách
+**Mở đăng nhập hàng loạt không sinh mật khẩu nào.** Sinh mật khẩu thì hỏng theo hai cách
 đo được. Mỗi tài khoản tốn một lần băm scrypt — **302 tài khoản mất 8.604 ms**, tức ba mươi
 nghìn người là **860 giây trong một request**, không proxy nào chờ nổi. Và mật khẩu sinh ra chỉ
 tồn tại **trong chính câu trả lời**, nên một lượt đứt giữa chừng để lại hàng trăm tài khoản mà
@@ -8326,7 +8317,8 @@ chuyển từ năm trước (`carriedOver`), đã nghỉ (`taken`), đang chờ 
 sang năm sau (`carriedOut`). Không tính lại từ đầu mỗi lần hỏi — một phép cộng trên cả lịch sử là
 thứ chậm dần đều theo tuổi hệ thống.
 
-`LeaveRequest` đi qua máy trạng thái `DRAFT → PENDING → APPROVED | REJECTED | CANCELLED`.
+`Request` đi qua máy trạng thái `PENDING → APPROVED | REJECTED | CANCELLED`: đơn sinh thẳng ở
+`PENDING`, và chỉ huỷ được khi còn `PENDING`. `DRAFT` còn trong enum nhưng không đường nào ghi nó.
 
 **Một đơn nghỉ chỉ bị trừ ngày làm việc.** Ngày làm việc của một người là ngày mà lịch của bảng
 công (§9.8) gọi là `WORKDAY` với pháp nhân của người ấy: không phải thứ Bảy, không phải Chủ nhật,
@@ -8626,7 +8618,7 @@ Dựng bằng một job chạy đêm cho ngày hôm trước, cộng một lư�
 chữa thủ công. **Ngày hôm nay không nằm trong bảng** — nó tính trực tiếp từ lượt quẹt, vì hôm
 nay còn đang diễn ra và một dòng tổng kết giữa chừng là một dòng sai.
 
-Sửa tay được, nhưng **phải để lại vết**: `AttendanceDay` mang `adjustedBy` và `adjustReason`.
+Sửa tay được, nhưng **phải để lại vết**: `AttendanceDay` mang `adjustedById`, `adjustReason`, `adjustedAt`, và giữ `measuredMinutes` máy đo.
 Một bảng công mà HR sửa được không dấu vết thì không dùng để trả lương được.
 
 **Một múi giờ cho cả hệ, và dashboard vẽ theo đúng múi ấy.** Server, cơ sở dữ liệu và đồng hồ
@@ -8731,10 +8723,10 @@ tồn tại vì §9.2 cho thấy chính hệ này đã vi phạm nó, và cái g
 chỗ khác biệt thật không phải tốc độ mà là bộ nhớ — nhân tuyến tính lên 30.000 nhân viên thì
 cách cũ cần ~3,5 GB heap cho một báo cáo, tức là chết chứ không phải chậm.
 
-**2. `AttendanceRecord` chia mảnh theo tháng.** Phân mảnh dải trên `ts`, một mảnh một tháng.
+**2. `AttendanceDay` chia mảnh theo tháng trên `date`; `AttendanceRecord` thì không (§9.22.3b).**
 Truy vấn một tháng chỉ chạm một mảnh, và dọn dữ liệu quá hạn là `DROP` một mảnh chứ không phải
-`DELETE` vài triệu dòng. Chỉ làm khi bảng thật sự lớn — phân mảnh sớm là tự thêm việc vận hành
-mà chưa được gì.
+`DELETE` vài triệu dòng. Bảng lượt chấm công giữ nguyên một bảng, đánh chỉ mục `(ts, id)` và
+`(employeeId, ts, id)`; phân mảnh sớm là tự thêm việc vận hành mà chưa được gì.
 
 **3. Danh sách dài đi bằng con trỏ, không bằng `OFFSET`.** `OFFSET 50000` bắt Postgres đếm qua
 50 nghìn dòng rồi vứt đi, và cái giá đi thẳng theo độ sâu — đo trên **300.001 lượt quẹt**: trang
@@ -8785,8 +8777,8 @@ rồi tưởng không có ai. Prisma không biểu diễn được chỉ
 mục trên biểu thức, nên lần sinh migration kế tiếp sẽ đòi xoá nó; §9.22.3c chặn lệnh ấy.
 
 **5. Việc sống lâu hơn một request thì vào hàng đợi.** Chạy lương cho ba mươi nghìn người không
-phải là một lượt HTTP. `PayrollRun` chia lô theo phòng ban, mỗi lô một job BullMQ, có `attempts`
-và `backoff`, và **idempotent theo `(runId, employeeId)`** để giao hai lần không đẻ hai phiếu.
+phải là một lượt HTTP. `PayrollRun` là một job BullMQ trên hàng `payroll`, worker tính theo lô
+500 người, có `attempts` và `backoff`, và **idempotent theo `(runId, employeeId)`** để giao hai lần không đẻ hai phiếu.
 Thử lại chỉ dành cho lỗi thoáng qua: lỗi nghiệp vụ mang mã 4xx, như thiếu chính sách, dừng job ngay
 vì lần thử sau đọc cùng dữ liệu và ra cùng lỗi, chỉ giữ lượt ở `RUNNING` thêm mấy giây.
 
@@ -8809,7 +8801,7 @@ Danh sách nhỏ **không mất gì**: dưới trần thì con số vẫn chính
 kéo kết quả xuống dưới trần cũng thế. Chỉ danh sách thật sự dài mới thấy chữ "hơn".
 
 Chỉ mục đi kèm: `Employee(departmentId, active)`, `Employee(managerId)`,
-`AttendanceDay(employeeId, date)`, `AttendanceDay(date)`, `LeaveRequest(employeeId, state)`,
+`AttendanceDay(employeeId, date)`, `AttendanceDay(date)`, `Request(employeeId, state)`, `Request(state, fromDate)`,
 `LeaveRequest(state, from)`, `Payslip(runId)`, `Payslip(employeeId, periodId)`.
 
 ### 9.10 Cổng nhân viên và cổng quản lý
@@ -9344,7 +9336,7 @@ Nhân sự        ▸ Nhân viên · Nhận việc · Tài sản · Tài liệu
 Thời gian      ▸ Chấm công · Ca & lịch nghỉ · Báo cáo
 Lương          ▸ Lương
 Vận hành       ▸ Kiosk
-Thiết lập      ▸ Danh mục · Hệ thống · Cài đặt
+Thiết lập      ▸ Danh mục · Hệ thống · Thông báo · Cài đặt
 ```
 
 **Một mục thanh bên mở ra được nhiều trang anh em, và chúng nối nhau bằng thanh tab phụ** (§9.12).
@@ -9375,7 +9367,7 @@ Bốn luật đi kèm, đều đọc từ `lib/nav.ts`:
    chung một chỗ để tìm.
 
 **Nhóm nào rỗng với vai của người đang xem thì không hiện.** Một nhân viên thường thấy đúng hai
-nhóm đầu. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ không được đụng.
+nhóm: *Tôi* và *Thiết lập*. Làm mờ đi thay vì ẩn là cố ý khoe những gì họ không được đụng.
 
 **Mỗi phân hệ có đúng một màn hình "về một người".** Hồ sơ nhân viên là trang có tab: thông tin,
 hợp đồng, chấm công, nghỉ phép, lương, tài sản, nhận việc, hồ sơ giấy. Không rải mỗi thứ một
@@ -9424,18 +9416,18 @@ nhất; `frontend/lib/nav.ts` là bản thi hành của nó.
 | `Ca làm` | ✓ | ✓ | – | – | – | – |
 | `Báo cáo` | ✓ | ✓ | ✓ | – | – | – |
 | `Kỳ lương` · `Chính sách lương` | ✓ | ✓ đọc | ✓ | – | – | – |
-| `Cần xử lý hôm nay` | ✓ | ✓ | ✓ | – | – | – |
+| `Tổng quan` (việc của bàn nhân sự cho `ADMIN`, `HR`; kỳ đang mở cho `PAYROLL`) | ✓ | ✓ | ✓ | – | – | – |
 | `Kiosk` | ✓ | – | – | – | – | – |
 | `Tài liệu của tôi` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `Tài liệu` (phát hành, hồ sơ còn thiếu) | ✓ | ✓ | – | – | – | – |
 | `Cài đặt` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `Thông báo` (§9.21.4 — mở từ chuông trên thanh trên, không có dòng trên thanh bên) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Thông báo` (§9.21.4 — mở từ chuông trên thanh trên, và một dòng trong nhóm *Thiết lập*) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**`Cần xử lý hôm nay` là việc của bàn nhân sự, không phải của người trông máy.** Nó liệt kê hợp
+**Việc của bàn nhân sự trên `Tổng quan` không phải của người trông máy.** Thẻ ấy liệt kê hợp
 đồng sắp hết hạn, người sắp hết thử việc và ngày lệch giờ hôm nay — ba thứ §9.18 mục 1 và 2 giao
 cho HR, kèm câu "danh sách phải mở được từ trang chủ". Xếp nó vào nhóm thiết bị và khoá cho mỗi
-`ADMIN` là giấu công việc của một vai khỏi chính vai ấy. Dải thiết bị và luồng sự kiện trực tiếp
-trên cùng trang **vẫn chỉ `ADMIN` thấy**: một trang phục vụ ba vai thì phần nào của vai nào hiện
+`ADMIN` là giấu công việc của một vai khỏi chính vai ấy. Thẻ *Kiosk* trên cùng trang
+**vẫn chỉ `ADMIN` thấy**, còn luồng sự kiện trực tiếp nằm ở trang `Kiosk` (§9.10): một trang phục vụ ba vai thì phần nào của vai nào hiện
 theo vai ấy, chứ không phải cả trang mở hoặc cả trang đóng.
 
 **Số lượt chấm công theo người chỉ có một trang, và đó là `Chấm công`.** `Báo cáo` từng vẽ lại
@@ -9556,10 +9548,10 @@ rồi đăng nhập bằng vai hẹp hơn thì trình duyệt vẫn đứng nguy
 đường đọc **cùng một bảng**: đường đi tới không nằm trong danh sách của vai đang đăng nhập thì
 thay bằng trang nhà của chính vai ấy.
 
-**Một trang cụ thể được xét bằng dòng của chính nó.** `Phòng ban` nằm dưới `Cây tổ chức` về
-đường dẫn nhưng hẹp hơn về vai, nên phép so phải lấy **tiền tố dài nhất** khớp được, không lấy
-tiền tố đầu tiên — lấy cái đầu tiên thì một quản lý vào được `Phòng ban` qua đúng cái quyền cho
-họ xem `Cây tổ chức`.
+**Một trang cụ thể được xét bằng dòng của chính nó.** `Thêm nhân viên` (`/employees/new`) nằm dưới
+`Danh bạ` về đường dẫn nhưng hẹp hơn về vai, nên phép so phải lấy **tiền tố dài nhất** khớp được,
+không lấy tiền tố đầu tiên — lấy cái đầu tiên thì một quản lý vào được `Thêm nhân viên` qua đúng
+cái quyền cho họ xem `Danh bạ`.
 
 **Trang nào không có dòng nào trong bảng thì không mở được.** Đó là chủ ý: thêm một trang mà
 quên xếp nó vào bảng thì nó không chạy, thay vì chạy cho tất cả mọi người. Bảng là nguồn duy
@@ -9579,11 +9571,11 @@ không hiện ra để trả `403`.
 
 **Luật 2 — một thứ chờ quyết định thì nằm ở `Chờ duyệt`, không nằm trên trang tự phục vụ.** Đơn
 từ, khiếu nại phiếu lương, giấy xác nhận, đổi thông tin cá nhân, người phụ thuộc, **tạm ứng chờ
-duyệt** và **tạm ứng chờ chi** — cả bảy hàng đợi về một hộp. Để hộp duyệt ở ngay trang người lao
+duyệt**, **tạm ứng chờ chi** và lượt chấm công chờ duyệt (§9.8) — cả tám hàng đợi về một hộp. Để hộp duyệt ở ngay trang người lao
 động gửi đơn thì **cùng một việc có hai địa chỉ**, và người trực hộp phải nhớ hôm nay còn phải mở
 thêm trang nào nữa. Trang tự phục vụ chỉ gửi và theo dõi; nó không quyết.
 
-**Danh sách bảy này là danh sách đóng, và mỗi hàng đợi có tin ở cả hai đầu.** Một đường `decide` ở
+**Danh sách tám này là danh sách đóng, và mỗi hàng đợi trừ lượt chấm công (§9.8) có tin ở cả hai đầu.** Một đường `decide` ở
 backend mà không có hàng đợi tương ứng trong hộp là một đơn **treo vĩnh viễn**: người gửi thấy
 *đang chờ*, người duyệt không thấy gì, và không có màn hình nào nói rằng có việc bỏ sót — đơn tạm
 ứng đứng mãi ở `PENDING` thì phép trừ tạm ứng của kỳ lương cũng không bao giờ chạy. Một hàng đợi có
@@ -9887,9 +9879,10 @@ công những ngày đã làm; phiếu chốt cuối trả những thứ chỉ p
 **Tạm ứng không có dòng riêng ở phiếu chốt cuối, và đó là điều đúng.** Lượt chạy thường đã khấu
 trừ mọi tạm ứng còn treo của mọi người, mỗi kỳ, từ lúc `SalaryAdvance` ra đời; lúc chốt kỳ thì
 chúng chuyển sang `SETTLED` kèm id phiếu đã trừ. Thêm một dòng nữa ở phiếu chốt cuối là **thu
-hai lần cùng một khoản**. Điều khiến việc thu hồi này trước nay hụt đúng với người nghỉ không
-phải là thiếu một dòng, mà là bộ lọc `active = true` ở trên: người nghỉ giữa kỳ không có phiếu
-thường nào, nên không có chỗ nào trừ. Sửa bộ lọc là sửa luôn việc thu hồi.
+hai lần cùng một khoản**. Với người nghỉ, việc thu hồi không
+cần một dòng riêng mà cần đúng bộ lọc ở trên: chỉ lọc `active = true` thì người nghỉ giữa kỳ
+không có phiếu thường nào, nên không có chỗ nào trừ; bộ lọc gồm người nghỉ trong kỳ là gồm
+luôn việc thu hồi.
 
 **Hai trong bốn là người nhập, và đó là chủ ý chứ không phải chỗ làm dở.** Trợ cấp thôi việc
 theo BLLĐ 2019 điều 46 là nửa tháng lương mỗi năm làm việc **trừ đi thời gian đã đóng bảo hiểm
@@ -10174,13 +10167,13 @@ cửa vào phần còn lại và `Lương` lùi vào trong. Chấp nhận đư�
 thoại nhất** và có thanh bên đầy đủ trên máy tính; người lao động — nhóm chỉ có điện thoại —
 giữ nguyên năm ô.
 
-**Hộp chờ duyệt không nằm trong thanh tab, nó nằm trên thanh trên cùng cạnh chuông.** Ban đầu
-nó là mục thứ năm của `MANAGER`, và cách ấy hỏng ngay khi có mục thứ sáu: một người quản lý
+**Hộp chờ duyệt không nằm trong thanh tab, nó nằm trên thanh trên cùng cạnh chuông.** Để nó
+làm mục thứ năm của `MANAGER` thì hỏng ngay khi có mục thứ sáu: một người quản lý
 cũng là một người lao động, nên nhét *việc của người khác* vào thanh dành cho *việc của mình*
 là bắt hai thứ tranh nhau năm ô. Thanh trên cùng hợp hơn vì hộp duyệt **giống cái chuông hơn là
 giống một trang**: nó là thứ chờ mình xử lý, có số đếm, và cần **nhìn thấy từ mọi màn** chứ
 không chỉ khi đang đứng ở tầng gốc. Đổi lại, số đếm hiện liên tục thay vì biến mất sau một lần
-chạm — với vai có nhiều đích tới mức phải có nút "Thêm", trước đây nó bị chôn hẳn.
+chạm — với vai có nhiều đích tới mức phải có nút "Thêm", nằm trong thanh tab là nó bị chôn hẳn.
 
 Năm mục ấy là **việc của chính mình**, và thứ tự theo câu hỏi người ta mở máy lên để hỏi: hôm
 nay thế nào, mai vào ca nào, tháng này đi làm đủ chưa, đơn của tôi tới đâu, tháng rồi lĩnh bao
@@ -11008,10 +11001,10 @@ ngày không ai chịu nổi, và lúc đó không ai nhớ đã thêm gì.
   luôn chọn quét tuần tự, và điều đó **không nói gì** về việc thiếu chỉ mục — gọi nó là lỗi thì
   ba ngày sau không ai còn chạy công cụ nữa. Nên mỗi bảng có một **sàn số dòng**: dưới sàn thì
   in ra *chưa đủ dữ liệu để kết luận* và không fail; trên sàn thì một lượt quét tuần tự không
-  có lý do ghi lại là fail. Cùng tinh thần 🔬 của CLAUDE.md §8.10: không trình bày một phỏng
+  có lý do ghi lại là fail. Cùng tinh thần 🔬 của CLAUDE.md §8 luật 10: không trình bày một phỏng
   đoán như một số đo.
-- Theo dõi **kích thước bảng và độ phình** theo tuần. Bảng lượt chấm công lớn nhanh nhất và là
-  bảng đầu tiên cần chia mảnh (§9.9 luật 2).
+- Theo dõi **kích thước bảng và độ phình** theo tuần. Bảng lượt chấm công lớn nhanh nhất; nó cố ý
+  không chia mảnh (§9.22.3b), và số đo này là thứ mở lại quyết định ấy.
 
   **Một con số hôm nay không nói gì; hai con số cách nhau một tuần mới nói.** Nên
   `table-growth.sh` không in ra một bản chụp rồi thôi — nó **ghi mỗi lượt xuống một dòng** và
@@ -11102,8 +11095,8 @@ chứng rằng việc xoá đã xảy ra**, nên nó phải sống lâu hơn th�
 trên.
 
 **Và luật này phải có người kiểm, không thì nó là một comment.** Lượt diễn tập phục hồi dựng
-bản chính rồi **đếm `FaceTemplate`**; khác 0 là hỏng. Ai gỡ mất cờ loại trừ sẽ biết vào Chủ
-nhật kế tiếp, chứ không biết vào ngày có người hỏi.
+bản chính rồi **đếm `FaceTemplate`**; khác 0 là hỏng. Ai gỡ mất cờ loại trừ sẽ biết ở lượt diễn tập
+hằng tuần kế tiếp (E26-T14), chứ không biết vào ngày có người hỏi.
 
 **Xoá theo lô và xoá được lại.** Dọn vài triệu dòng bằng một `DELETE` là khoá bảng và phình
 WAL. Chia mảnh theo tháng rồi `DROP` một mảnh là tức thì (§9.9 luật 2) — đây là lý do thứ hai
@@ -11160,7 +11153,7 @@ ngay trong giây đó nhận về một vé 401. Thiếu mốc ấy thì ngườ
 thêm tối đa 15 phút, cả trên ổ cắm realtime.
 Một lượt đăng nhập cũng là một lượt dọn: xoá dòng đã hết hạn hoặc đã đóng, rồi bỏ thiết bị lâu
 nhất nếu tài khoản chạm trần `SESSIONS_PER_USER` — bảng phiên không được phép là bảng chỉ lớn
-lên. Đo sau khi sửa: điện thoại và laptop cùng gia hạn đều **200**; một lượt dùng lại trên điện
+lên. Đo: điện thoại và laptop cùng gia hạn đều **200**; một lượt dùng lại trên điện
 thoại giết đúng phiên điện thoại còn laptop vẫn **200**; đổi mật khẩu đưa số phiên sống về **0**;
 mở quá trần thì số dòng dừng đúng ở trần.
 
@@ -11289,3 +11282,13 @@ là thứ file ấy nói về khi nó nói về một thứ: kỳ lương cho fi
 cho D02-LT. File xuất một danh sách thì chủ thể là `export` kèm tên danh sách — `employees`,
 `payslips`, `requests`, `disputes`, `certificates`, `profile-changes`, `dependents`, `advances`,
 `timesheet`, `assets` —, một loại định danh cho một loại chủ thể như luật 3 đòi.
+
+---
+
+## Nguồn tham khảo
+
+**Model**: [YuNet paper](https://link.springer.com/article/10.1007/s11633-023-1423-y) · [libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) · [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) · [arcface_torch](https://github.com/deepinsight/insightface/tree/master/recognition/arcface_torch) · [MobileFaceNet paper](https://arxiv.org/abs/1804.07573)
+
+**Dữ liệu — nguồn thật đang dùng** (trang chủ của dataset ở §1.2): [WIDER FACE](https://huggingface.co/datasets/wider_face) · [RetinaFace 5-landmark](https://github.com/deepinsight/insightface/tree/master/detection/retinaface) · [CelebA-Spoof](https://huggingface.co/datasets/Ar4ikov/celebA_spoof) · [NUAA](https://huggingface.co/datasets/akahana/anti-spoofing-nuaaaa) · [UniqueData live](https://huggingface.co/datasets/UniqueData/anti-spoofing_Real) · [UniqueData replay](https://huggingface.co/datasets/UniqueData/anti-spoofing_replay) · [AxonData masks](https://huggingface.co/datasets/AxonData/face-anti-spoofing-dataset) · [MS1MV3](https://huggingface.co/datasets/gaunernst/ms1mv3-recordio) · [Glint360K](https://huggingface.co/datasets/gaunernst/glint360k-wds-gz) · [benchmark nhận diện](https://huggingface.co/datasets/gaunernst/face-recognition-eval) · [LCC-FASD](https://www.kaggle.com/datasets/faber24/lcc-fasd) · [SynthASpoof](https://github.com/meilfang/synthaspoof) · [tên người của LFW](https://ndownloader.figshare.com/files/5976006)
+
+**Nền tảng**: [esp-tflite-micro](https://components.espressif.com/components/espressif/esp-tflite-micro) · [ESP-NN](https://github.com/espressif/esp-nn) · [TFLite Micro memory management](https://github.com/tensorflow/tflite-micro/blob/main/tensorflow/lite/micro/docs/memory_management.md) · [esp32-camera](https://github.com/espressif/esp32-camera) · [ESP-IDF partition table](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/partition-tables.html) · [Pinout board GOOUUU ESP32-S3-CAM](https://github.com/profharris/GOOUUU_ESP32-S3-CAM)
