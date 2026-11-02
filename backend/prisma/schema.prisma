@@ -1437,7 +1437,7 @@ model PersonnelFileType {
 
 /**
  * A receipt for one piece of paper somebody handed in. It holds no scan: the
- * original is the paper, and there is no object store yet (KEHOACH 9.16.9).
+ * original is the paper, and there is no object store yet (KEHOACH 9.16 item 9).
  */
 model PersonnelFile {
   id           String            @id @default(uuid())

@@ -459,7 +459,7 @@ export class DocumentsService {
 
   /**
    * Who is short of what. A subtraction rather than a column, so adding a
-   * required kind changes the answer without touching a row (KEHOACH 9.16.9).
+   * required kind changes the answer without touching a row (KEHOACH 9.16 item 9).
    */
   /** Paged by the person rather than by the row: a page that ended halfway
    *  through somebody would show them as missing less than they are.
