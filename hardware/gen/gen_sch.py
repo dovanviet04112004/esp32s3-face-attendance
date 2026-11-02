@@ -158,11 +158,11 @@ PARTS = [
 # up, so the sheet says which rail it belongs to without reading a net label.
 TWO_PIN = [
     ("R1", "4k7", "+3V3", "I2C_SDA", 132.0, 153.67),
-    ("C1", "1000uF", "+5V_R1", "GND", 182.0, 187.96),
-    ("C2", "470uF", "+5V_R1", "GND", 182.0, 73.66),
-    ("C3", "470uF", "+5V_R2", "GND", 182.0, 132.08),
-    ("C4", "100uF", "+3V3_LCD", "GND", 132.0, 48.26),
-    ("C5", "470uF", "+5V_R1", "GND", 48.0, 207.01),
+    ("C1", "1000uF 10V", "+5V_R1", "GND", 182.0, 187.96),
+    ("C2", "470uF 10V", "+5V_R1", "GND", 182.0, 73.66),
+    ("C3", "470uF 10V", "+5V_R2", "GND", 182.0, 132.08),
+    ("C4", "100uF 6.3V", "+3V3_LCD", "GND", 132.0, 48.26),
+    ("C5", "470uF 10V", "+5V_R1", "GND", 48.0, 207.01),
 ]
 
 FONT = "(effects (font (size 1.27 1.27)))"
@@ -193,9 +193,8 @@ FOOTPRINTS = {
     "C2": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
     "C3": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
     "C5": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
-    # Same 2.50 mm holes as the 6.3 mm can, but the panel leaves a 7.30 mm gap
-    # and only a 5 mm body clears it either side (KEHOACH 2.5).
-    "C4": "Capacitor_THT:CP_Radial_D5.0mm_P2.50mm",
+    # Only a 5 mm can clears the panel's 7.30 mm gap, and it has 2.00 mm leads (KEHOACH 2.5).
+    "C4": "Capacitor_THT:CP_Radial_D5.0mm_P2.00mm",
 }
 
 

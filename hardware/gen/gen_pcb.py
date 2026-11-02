@@ -324,8 +324,8 @@ POWER_CLEAR, SIGNAL_CLEAR = 0.35, 0.25
 # back with no via. Supplies prefer the back and signals the front; crossing costs one.
 POWER_LAYER, SIGNAL_LAYER = '"B.Cu"', '"F.Cu"'
 LAYERS = (SIGNAL_LAYER, POWER_LAYER)
-# A power via carries a load's whole return, so it is drilled wider than a
-# signal one: IPC-2221 gives a 0.4 mm barrel 1.11 A and a 0.6 mm barrel 1.48 A.
+# A power via carries a load's whole return, so it is drilled wider than a signal
+# one: at 18 um plating IPC-2221 gives a 0.4 mm barrel 0.87 A, a 0.6 mm one 1.17 A.
 VIA = {SIGNAL_MM: (0.8, 0.4), POWER_MM: (1.2, 0.6)}
 PROBES = (SIGNAL_MM / 2, POWER_MM / 2, 0.4, 0.6)
 GRID = 0.2
@@ -619,7 +619,7 @@ def turn(x: float, y: float, deg: float, lx: float, ly: float) -> tuple:
 
 # Glyph figures are check_pcb's, kept here so the router can dodge what it measures.
 GLYPH_MM, REF_GLYPH_MM, LINE_MM = 0.62, 0.78, 1.0
-# Both floors a fab publishes for silkscreen: 0.8 mm tall, 0.15 mm pen (KEHOACH 2.3).
+# 0.8 mm tall holds only with the fab's high-precision silkscreen option (KEHOACH 2.3).
 SILK_MM, SILK_PEN_MM = "0.8", "0.15"
 
 
