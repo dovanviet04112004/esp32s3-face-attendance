@@ -2582,7 +2582,7 @@ esp32s3-face-attendance/
 │                                    #   APK, keystore và mật khẩu ký đều gitignore
 ├── deploy/        Docker Compose, traefik — CHỈ hạ tầng chạy, KHÔNG chứa CI
 ├── tools/         Script ngang khối: gen_contracts · check_comments · hook_check_comments · check_layers
-│                   · check_migrations · check_error_codes · check_plans
+│                   · check_migrations · check_error_codes · check_plans · check_docs
 │                   · check_routes · backfill · check_schematic · check_pcb
 │                   · check_notice_kinds · gen_sw_words          ★ §9.21.4
 │                   · check_commit_msg · release_notes           ★ §7.7
