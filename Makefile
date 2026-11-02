@@ -9,7 +9,7 @@ SHELL := /bin/bash
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
-        usb-list usb-attach usb-detach hw-gen hw-check hw-export \
+        usb-list usb-attach usb-detach hw-gen hw-check hw-export hw-fab \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
@@ -792,6 +792,16 @@ hw-export: ## Schematic PDF named after the last plan commit, layout SVG and top
 	  -o $(call kpath,hardware/export/pcb_layout.svg) $(call kpath,$(HW_BOARD).kicad_pcb)
 	"$(KICAD_CLI)" pcb render --side top --width 1568 --height 1208 --background opaque \
 	  -o $(call kpath,hardware/export/pcb_top.png) $(call kpath,$(HW_BOARD).kicad_pcb)
+
+hw-fab: ## Gerber and Excellon files for the fab, zipped under the HEAD sha, into hardware/export/fab/ (gitignored)
+	mkdir -p hardware/export/fab/gerber
+	rm -f hardware/export/fab/gerber/* hardware/export/fab/*.zip
+	"$(KICAD_CLI)" pcb export gerbers --layers F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts \
+	  --subtract-soldermask -o $(call kpath,hardware/export/fab/gerber/) $(call kpath,$(HW_BOARD).kicad_pcb)
+	"$(KICAD_CLI)" pcb export drill --format excellon --excellon-units mm --excellon-separate-th \
+	  --generate-map --map-format pdf -o $(call kpath,hardware/export/fab/gerber/) $(call kpath,$(HW_BOARD).kicad_pcb)
+	cd hardware/export/fab/gerber && python3 -m zipfile -c ../kiosk_$$(git rev-parse --short=8 HEAD).zip *
+	@ls -l hardware/export/fab/*.zip
 
 ##@ Board on WSL (usbipd)
 usb-list: ## USB devices on Windows; the ESP32-S3 shows as 303a:1001

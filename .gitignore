@@ -70,6 +70,7 @@ fp-info-cache
 _autosave-*
 .history/
 hardware/export/*.rpt
+hardware/export/fab/
 
 # ── Notebook: commit .ipynb nhưng không commit output ──
 .ipynb_checkpoints/

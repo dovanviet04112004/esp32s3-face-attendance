@@ -70,6 +70,23 @@ vít thì đầu vít chạm vào là chập. Cùng lý do, **không đồng nà
 lỗ vít**, hai mặt, dây lẫn via — cỡ long đen M3. DRC chỉ đo tới mép lỗ, còn thứ đè lên mặt board
 là đầu vít với trụ đồng, rộng gấp đôi lỗ (KẾ HOẠCH §2.5).
 
+## Đặt in
+
+`make hw-fab` xuất Gerber (đồng, mask, in lụa hai mặt, viền) và file khoan Excellon tách PTH/NPTH
+vào `export/fab/` (gitignore), rồi nén thành `kiosk_<sha>.zip` để upload. Thông số chọn ở JLCPCB,
+suy từ board:
+
+| Mục | Chọn |
+|---|---|
+| Vật liệu, số lớp, độ dày | FR-4, 2 lớp, 1,6 mm |
+| Đồng | 1 oz mặt ngoài |
+| Kích thước | 158 × 121 mm, một board, không ghép tấm |
+| Lỗ nhỏ nhất, dây/khe hẹp nhất | 0,40 mm; 0,25 / 0,255 mm, trong mức tiêu chuẩn |
+| Via | Tented |
+| In lụa | **High-precision characters**: chữ cao 0,8 mm (KẾ HOẠCH §2.3I) |
+| Bề mặt | HASL |
+| Lắp ráp, stencil | Không: mọi chân xuyên lỗ, hàn tay |
+
 ## Đóng KiCad trước khi sinh lại sơ đồ
 
 KiCad giữ cả file trong bộ nhớ. Đang mở mà có ai ghi đè file dưới đĩa thì lần Save
