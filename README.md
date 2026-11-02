@@ -37,24 +37,24 @@ EMQX ─► NestJS API ─► PostgreSQL ─► ngày công ─► lương
 - **Kiosk tự đăng ký, server duyệt.** Máy xin vé qua HTTPS, nối broker bằng vé ấy, nhận bản cập
   nhật firmware và model qua OTA (KẾ HOẠCH §7.3, §7.7).
 
-## Trạng thái — 10/10/2026
+## Trạng thái — 02/11/2026
 
 Chạy production từ 24/09/2026:
 
 - Dashboard ở [app.cckiosk.io.vn](https://app.cckiosk.io.vn). Bản Android tải ở trang
   [Releases](https://github.com/dovanviet04112004/esp32s3-face-attendance/releases).
 - API, broker và cơ sở dữ liệu chạy bằng Docker trên một VPS.
-- Firmware 0.9.9 là bản phát hành mới nhất. Ba model chạy bằng ESP-DL trên board thật.
+- Firmware 0.9.13 là bản phát hành mới nhất. Ba model chạy bằng ESP-DL trên board thật.
 
-Số đo trên board, model INT8, median 50 lượt khi máy rảnh, đo 23/09
-([`latency.md`](docs/measurements/latency.md) §13):
+Số đo trên board, bộ model đang deploy, khi máy rảnh, đo 18/10
+([`runtime_compare.md`](docs/measurements/runtime_compare.md)):
 
 | | Phát hiện | Chống giả | Nhận diện | Cả ba nối nhau |
 |---|---:|---:|---:|---:|
-| ESP-DL, bộ đang chạy | 64 ms | 85 ms | 302 ms | **452 ms** |
-| TFLite Micro + esp-nn, bộ đối chứng | 232 ms | 580 ms | 459 ms | 1.271 ms |
+| ESP-DL, bộ đang deploy | 32,9 ms | 73,3 ms | 246,4 ms | **353,6 ms** |
+| TFLite Micro + esp-nn, cùng bộ | 232,5 ms | 780,3 ms | 2.704,3 ms | 3.717,7 ms |
 
-Cùng một bộ model thì ESP-DL nhanh hơn TFLite Micro 5,4 lần. Camera xem trước đạt 13,9 fps
+Cùng một bộ model thì ESP-DL nhanh hơn TFLite Micro 10,5 lần; có tải preview thì một lượt là 406,2 ms. Camera xem trước đạt 13,9 fps
 ([`ram.md`](docs/measurements/ram.md)), sát trần 14,2 fps của OV5640 ở XCLK 27 MHz (KẾ HOẠCH §2.1).
 
 Độ chính xác của đúng các file đang chạy, chấm trên host bằng mô phỏng ESP-PPQ. Mô phỏng này khớp
@@ -62,16 +62,15 @@ Cùng một bộ model thì ESP-DL nhanh hơn TFLite Micro 5,4 lần. Camera xem
 
 | Nhánh | Kết quả |
 |---|---|
-| Phát hiện | AP 0,9497 với mặt từ 38 px, WIDER FACE val |
-| Chống giả | 87 khung do chính OV5640 chụp: giữ 61/62 mặt thật, chặn 25/25 khung giả, ngưỡng 500‰ |
-| Nhận diện | LFW 0,9958 · CFP-FP 0,9440 · AgeDB-30 0,9565 |
+| Phát hiện | AP 0,9544 với mặt từ 38 px, WIDER FACE val |
+| Chống giả | 87 khung do chính OV5640 chụp: giữ 59/62 mặt thật, chặn 25/25 khung giả, ngưỡng 500‰ |
+| Nhận diện | LFW 0,9962 · CFP-FP 0,9459 · AgeDB-30 0,9623 |
 
 Còn mở, chi tiết ở [TASKS.md](docs/TASKS.md):
 
 - Thời gian trọn một lượt chấm, từ lúc đứng vào tới lúc có kết quả 🔬.
 - FAR/FRR trên ảnh OV5640 của nhiều người (E8-T12).
 - Đáy RAM nội qua 10 phút chạy có Wi-Fi và MQTT/TLS, cần giữ từ 24 KB trở lên 🔬.
-- Một lượt ba model 452 ms, còn trên ngân sách 360 ms.
 - Secure Boot và mã hoá flash chưa bật (E13-T3).
 - Báo cáo ĐATN (E14): các chương chưa viết, `docs/thesis/` mới có ghi chép thực nghiệm.
 
@@ -97,15 +96,16 @@ trong cùng một commit. Sơ đồ nguyên lý và PCB (KiCad 10) sinh từ scr
 
 | Nhánh | Kiến trúc | Đầu vào | File `.espdl` |
 |---|---|---|---:|
-| Phát hiện | YuNet (`yunet_n`): box và 5 điểm mốc để căn mặt | 160×120 | 224 KB |
-| Chống giả | MiniFASNetV1SE, đọc vùng quanh mặt rộng 2,7 lần | 80×80 | 551 KB |
-| Nhận diện | MobileFaceNet-ECA, ra vector 512-D | 112×112 | 1.386 KB |
+| Phát hiện | YuNet (`yunet_n`): box và 5 điểm mốc để căn mặt | 160×120 | 193 KB |
+| Chống giả | MiniFASNetV1SE, đọc vùng quanh mặt rộng 2,7 lần | 80×80 | 577 KB |
+| Nhận diện | MobileFaceNet-ECA, ra vector 512-D | 112×112 | 1.346 KB |
 
-- Lượng tử INT8 bằng ESP-PPQ, chạy bằng ESP-DL 3.3.11, trọng số chép sang PSRAM. TFLite Micro
+- Lượng tử bằng ESP-PPQ theo thang bốn bậc (ADR-0006): INT8, riêng nhánh chống giả giữ một lớp
+  INT16. Chạy bằng ESP-DL 3.3.11, trọng số chép sang PSRAM. TFLite Micro
   với esp-nn vẫn dựng được (`AI_RUNTIME_TFLM` trong Kconfig) để làm đối chứng.
 - Model nằm ở partition riêng: hai slot `models_0` và `models_1`, mỗi slot 2,25 MB. Nhờ vậy model
   cập nhật qua OTA độc lập với firmware.
-- [`contracts/models.lock.json`](contracts/models.lock.json) ghi bộ đang deploy: file, sha256, run.
+- [`contracts/models.lock.json`](contracts/models.lock.json) ghi bộ đang deploy: file, sha256, run, ngưỡng.
   Script nạp model kiểm sha256 theo lock này trước khi ghi lên board.
 
 ## Bố cục repo
@@ -114,7 +114,7 @@ trong cùng một commit. Sơ đồ nguyên lý và PCB (KiCad 10) sinh từ scr
 |---|---|
 | [`contracts/`](contracts/README.md) | Nguồn sự thật chung: JSON Schema của payload MQTT, danh sách topic, model đang deploy, vector vàng. `make gen` sinh DTO TypeScript và header C từ đây |
 | `ml/` | Python 3.12, gói `facepipe`, quản lý bằng uv: dữ liệu, huấn luyện, lượng tử hoá, xuất và khoá model |
-| `firmware/` | ESP-IDF 6.0.2, C và C++. Component chia tầng `bsp_` `drv_` `sys_` `ai_` `net_` `svc_` `ui_`, 28 test app chạy trên board |
+| `firmware/` | ESP-IDF 6.0.2, C và C++. Component chia tầng `bsp_` `drv_` `sys_` `ai_` `net_` `svc_` `ui_`, 29 test app chạy trên board |
 | `hardware/` | Sơ đồ nguyên lý và PCB KiCad, sinh từ `hardware/gen/` |
 | `backend/` | NestJS 12, Prisma 7, PostgreSQL 16, Redis và BullMQ, MQTT tới EMQX |
 | `frontend/` | Next.js 16, React 19, Kumo; tiếng Việt và tiếng Anh; cài được như PWA |
