@@ -9,7 +9,7 @@ kiểm thử công khai.
 
 ---
 
-# 1. Đặt vấn đề
+## 1. Đặt vấn đề
 
 Nhánh anti-spoof đạt kết quả tốt trên các tập công khai nhưng **sụp trên thiết bị**. Ba
 model được chấm lại bằng đúng file INT8 mà board nạp, trên 64 khung mặt thật và 21 khung
@@ -26,7 +26,7 @@ Bản 3 kênh đang chạy trên board để lọt **81% ảnh giả**. Bản ch
 tiếp, lại **tệ hơn trên thiết bị** — hiện tượng này quay lại nhiều lần trong ngày và được
 phân tích ở §4.1.
 
-## 1.1. Kiểu tấn công đang xét
+### 1.1. Kiểu tấn công đang xét
 
 Ảnh chân dung kiểu ảnh thẻ, hiển thị trên màn hình điện thoại, đưa sát ống kính. Đây là
 kiểu tấn công rẻ nhất và dễ thực hiện nhất với một kiosk chấm công.
@@ -37,7 +37,7 @@ sáng đều — chính là thứ đẩy điểm lên, bất kể chân dung ấ
 
 ---
 
-# 2. Dữ liệu và giao thức đo
+## 2. Dữ liệu và giao thức đo
 
 | Hạng mục | Giá trị |
 |---|---|
@@ -51,7 +51,7 @@ Sau khi chạy detector và lọc nhãn: **21 khung ảnh giả** và **64 khung
 chấm; **51 khung không nhãn** tách riêng, chỉ dùng cho phép thích nghi thống kê ở §5 và
 không bao giờ được chấm điểm.
 
-## 2.1. Hai cái bẫy nhãn phải sửa trước khi đo bất cứ thứ gì
+### 2.1. Hai cái bẫy nhãn phải sửa trước khi đo bất cứ thứ gì
 
 Cả hai đều làm hỏng số đo một cách âm thầm, và cả hai chỉ lộ ra khi **mở ảnh ra nhìn**:
 
@@ -65,7 +65,7 @@ Cả hai đều làm hỏng số đo một cách âm thầm, và cả hai chỉ 
 > Bài học: **không suy đoán cái gì đang ở trước ống kính**. Chỉ đọc ảnh thô có nhãn, và
 > nhãn phải được kiểm bằng mắt trước khi tin.
 
-## 2.2. Cách chấm
+### 2.2. Cách chấm
 
 Mỗi khung đi qua đúng đường mà firmware chạy: detector YuNet lấy hộp mặt lớn nhất → cắt
 `tight` tỉ lệ 1,0× → đưa về 81 × 81 → thêm kênh bão hoà → chấm bằng **file INT8**, không
@@ -73,9 +73,9 @@ phải bằng trọng số float. Điểm báo cáo là xác suất lớp *thậ
 
 ---
 
-# 3. Phát hiện chính — đặc trưng bề mặt chuẩn hoá theo cỡ mặt
+## 3. Phát hiện chính — đặc trưng bề mặt chuẩn hoá theo cỡ mặt
 
-## 3.1. Định nghĩa
+### 3.1. Định nghĩa
 
 Với mỗi khung, lấy ảnh xám của vùng mặt ở đúng 81 × 81 mà model nhìn, chuẩn hoá về trung
 bình 0 và độ lệch chuẩn 1, rồi lấy trung bình trị tuyệt đối của **Laplace** (tổng đạo hàm
@@ -88,7 +88,7 @@ Da người có lỗ chân lông, sợi tóc, vi tương phản; mặt kính th�
 Một lớp tích chập **không tự tính được** đại lượng này, vì phép chia cho độ lệch chuẩn toàn
 ảnh là phi tuyến — cùng loại lý do đã dùng để thêm kênh bão hoà màu thứ tư.
 
-## 3.2. Số thô, và vì sao nó chưa đủ
+### 3.2. Số thô, và vì sao nó chưa đủ
 
 | Nhóm | p5 | trung vị | p95 |
 |---|---|---|---|
@@ -104,7 +104,7 @@ Hai dải gần như tách rời, nhưng một ngưỡng cố định thì chưa
 | 0,135 | 0 / 21 | 7 / 64 |
 | 0,150 | 0 / 21 | 18 / 64 |
 
-## 3.3. Nhiễu phải loại: cỡ mặt
+### 3.3. Nhiễu phải loại: cỡ mặt
 
 Toàn bộ 21 khung giả có bề rộng mặt **145 – 174 px** vì điện thoại được đưa sát ống kính,
 trong khi các khung mặt thật nằm sát ngưỡng đều chỉ **64 – 143 px**. Giả thuyết cạnh tranh
@@ -131,7 +131,7 @@ Củng cố thêm: khớp đường xu hướng trên riêng 64 khung mặt th�
 giác. Vậy mà 21 khung giả lại là những khung **to nhất và mịn nhất**, tức chúng đi ngược
 đúng chiều mà nhiễu cỡ mặt lẽ ra phải đẩy chúng.
 
-## 3.4. Kết quả sau khi trừ xu hướng cỡ mặt
+### 3.4. Kết quả sau khi trừ xu hướng cỡ mặt
 
 | Nhóm | Khoảng phần dư | Số khung |
 |---|---|---|
@@ -156,7 +156,7 @@ oan.
 Tuy nhiên con số AUC 1,0000 này **chưa qua kiểm chéo**. §3.6 cho thấy phần lớn nó là hệ quả
 của việc ngưỡng được đặt vừa khít vào hai điểm biên, và khi kiểm trung thực thì nó tụt xuống.
 
-## 3.5. Vì sao model hiện tại không dùng được manh mối này
+### 3.5. Vì sao model hiện tại không dùng được manh mối này
 
 Đo độ nét **trên chính pool huấn luyện, sau khi đã chạy đủ chuỗi tăng cường dữ liệu**
 (4.000 mẫu):
@@ -178,7 +178,7 @@ Hệ quả thiết kế: không thể sửa bằng cách thêm một kênh đầ
 tín hiệu để dạy model dùng kênh đó. Đường khả thi là **một cổng kiểm tra độc lập** chạy song
 song với model, hoặc bổ sung ảnh giả thật sự mịn vào pool.
 
-## 3.6. Kiểm chéo, và phép ghép với điểm model
+### 3.6. Kiểm chéo, và phép ghép với điểm model
 
 Hai câu hỏi phải trả lời trước khi tin vào §3.4: biên phân tách rộng bao nhiêu so với độ
 tản của chính dữ liệu, và ghép thêm điểm model vào có mở rộng được biên không.
@@ -215,12 +215,12 @@ phân loại nhầm.
 
 ---
 
-# 4. Các hướng đã thử và đã bị số liệu bác bỏ
+## 4. Các hướng đã thử và đã bị số liệu bác bỏ
 
 Phần này giữ lại đầy đủ vì nó là nội dung thực nghiệm có giá trị: mỗi dòng là một giả
 thuyết hợp lý bị chính phép đo đóng lại.
 
-## 4.1. Nhóm 1 — chỉnh model và dữ liệu huấn luyện
+### 4.1. Nhóm 1 — chỉnh model và dữ liệu huấn luyện
 
 | Hướng | Phép đo | Vì sao đóng |
 |---|---|---|
@@ -231,7 +231,7 @@ thuyết hợp lý bị chính phép đo đóng lại.
 | Thêm 20.000 mặt thật MS1MV3 | Dừng ở epoch 2 | Cùng cơ chế với dòng trên, dừng sớm để khỏi tốn 3 giờ |
 | Tinh chỉnh trên 85 khung thiết bị | Kiểm chéo 3 phần | **Mọi cấu hình đều tệ hơn bản gốc** — xem §4.3 |
 
-## 4.2. Nhóm 2 — nghi ngờ đường ảnh và lượng tử hoá
+### 4.2. Nhóm 2 — nghi ngờ đường ảnh và lượng tử hoá
 
 | Hướng | Phép đo | Vì sao đóng |
 |---|---|---|
@@ -246,7 +246,7 @@ xoá vân moiré, tức dấu hiệu kinh điển của màn hình. Phép đo ch
 trưng phân biệt **mạnh hơn** ở độ phân giải thấp. Nhờ đó **không phải đụng vào firmware
 camera**, tiết kiệm một nhánh công việc đáng kể.
 
-## 4.3. Tinh chỉnh trên dữ liệu thiết bị
+### 4.3. Tinh chỉnh trên dữ liệu thiết bị
 
 Câu hỏi thực tế: nếu thu thêm khung ảnh từ chính board rồi huấn luyện tiếp, có sửa được
 không? Để trả lời **trước khi** tốn thời gian thu dữ liệu, chạy kiểm chéo 3 phần trên 85
@@ -268,7 +268,7 @@ cao nhất, thứ tự điểm đảo ngược hoàn toàn (AUC 0,0060).
 
 ---
 
-# 5. Thích nghi thống kê không giám sát
+## 5. Thích nghi thống kê không giám sát
 
 Khác hẳn tinh chỉnh: **không đụng một trọng số nào**. Chỉ tính lại trung bình và phương sai
 đang cất trong các lớp chuẩn hoá, bằng 51 khung **không nhãn** của thiết bị. Không cần nhãn,
@@ -293,7 +293,7 @@ lớp sâu trên dữ liệu một lớp duy nhất thì model mất luôn khái
 Cả dải 8 – 20 lớp đều tốt hơn bản gốc. Việc kết quả **không phụ thuộc vào một con số cụ
 thể** là điều đáng tin hơn bản thân con số tốt nhất.
 
-## 5.1. Cái giá phải trả, và chẩn đoán
+### 5.1. Cái giá phải trả, và chẩn đoán
 
 | Khung mặt thật | Trước | Sau 12 lớp |
 |---|---|---|
@@ -311,11 +311,11 @@ khung giả xuống còn 2.
 
 ---
 
-# 6. Ba lần kết luận sai trong chính ngày làm việc này
+## 6. Ba lần kết luận sai trong chính ngày làm việc này
 
 Giữ lại vì chúng dạy về phương pháp đo nhiều hơn là về bài toán.
 
-## Sai 1 — đo trên dữ liệu thô thay vì dữ liệu model thật sự thấy
+### Sai 1 — đo trên dữ liệu thô thay vì dữ liệu model thật sự thấy
 
 Đo độ nét trên các shard **chưa qua tăng cường** cho AUC 0,376, tức manh mối chỉ **ngược
 chiều** so với thiết bị. Kết luận rút ra lúc đó: pool đang dạy model điều sai, cần một lần
@@ -328,14 +328,14 @@ luyện ba giờ ấy sẽ vô ích.**
 > Pool thô và pool sau tăng cường là **hai phân bố khác nhau**. Chỉ cái thứ hai mới nói
 > được model học gì.
 
-## Sai 2 — mô phỏng đường chụp bằng phép lấy mẫu lại
+### Sai 2 — mô phỏng đường chụp bằng phép lấy mẫu lại
 
 Để kiểm giả thuyết lệch miền, co ảnh pool xuống cỡ mặt của thiết bị rồi lượng tử về RGB565.
 Kết quả: pool **nét lên** thay vì mịn đi. Nguyên nhân không nằm ở đường chụp mà ở chính
 phép đo — đường hai bước dùng bộ lọc `BOX` bị đem so với đường một bước dùng `BILINEAR`.
 Chênh lệch đo được là **hiện vật của bộ lọc nội suy**, không phải của board.
 
-## Sai 3 — báo động giả về tầng nạp model
+### Sai 3 — báo động giả về tầng nạp model
 
 Khi so checkpoint với trọng số vừa nạp, thấy 217/252 tensor khác nhau, kể cả
 `classifier.weight` — thứ mà phép thích nghi không bao giờ đụng tới. Kết luận vội: tầng nạp
@@ -353,7 +353,7 @@ Tuy vậy lần soi đó lại lộ ra **hai lỗi thật** trong chính script 
 
 Bảng ở §5 là số **sau khi sửa** cả hai.
 
-## 6.1. Hai bài học phương pháp lặp lại nhiều lần
+### 6.1. Hai bài học phương pháp lặp lại nhiều lần
 
 - **34 khung chỉ để gợi ý, không để quyết định.** Khi rà 23 bản lưu trung gian, bản ở epoch
   11 tốt nhất trên 34 khung (AUC 0,9670) nhưng tập độc lập 716 khung đảo ngược thứ tự (bản
@@ -364,7 +364,7 @@ Bảng ở §5 là số **sau khi sửa** cả hai.
 
 ---
 
-# 7. Giới hạn của phát hiện ở §3
+## 7. Giới hạn của phát hiện ở §3
 
 | Giới hạn | Chi tiết | Mức nghiêm trọng |
 |---|---|---|
@@ -378,9 +378,9 @@ Bảng ở §5 là số **sau khi sửa** cả hai.
 
 ---
 
-# 8. Phép thử phương tiện thứ hai — đã chạy, đã đạt
+## 8. Phép thử phương tiện thứ hai — đã chạy, đã đạt
 
-## 8.1. Thiết kế, chốt trước khi chụp
+### 8.1. Thiết kế, chốt trước khi chụp
 
 Ngưỡng −0,062 và đường xu hướng `độ nét = 0,00067 × bề rộng + 0,099` giữ nguyên từ phiên
 13/09. Không khớp lại bất cứ tham số nào trên dữ liệu mới.
@@ -394,7 +394,7 @@ Ngưỡng −0,062 và đường xu hướng `độ nét = 0,00067 × bề rộn
 Năm khung mặt thật chụp trong **cùng phiên** là chốt kiểm soát: đèn và khoảng cách đổi thì
 cả hai nhóm cùng trôi, và khi đó số của nhóm giả không nói lên điều gì.
 
-## 8.2. Kết quả — phiên 14/09, điện thoại thứ hai
+### 8.2. Kết quả — phiên 14/09, điện thoại thứ hai
 
 | Khung | Nhãn | Bề rộng | Độ nét thô | Phần dư |
 |---|---|---|---|---|
@@ -410,7 +410,7 @@ cả hai nhóm cùng trôi, và khi đó số của nhóm giả không nói lên
 **4/4 giả dưới ngưỡng, 4/4 thật trên ngưỡng.** Chốt kiểm soát nằm +0,028…+0,034, đúng giữa
 dải thật gốc −0,061…+0,078, nên phiên không trôi.
 
-## 8.3. Bốn điều làm hẹp kết luận
+### 8.3. Bốn điều làm hẹp kết luận
 
 **Chấm được 8 trên 10 khung.** `p2gia_001` và `p2that_005` bị bộ dò không tìm ra mặt; khung
 giả đầu bị cắt mất cằm. Rụng chứ không phải trượt, nhưng cỡ mẫu còn 4 mỗi phía.
@@ -427,14 +427,14 @@ lớn hơn mức nhiễu giải thích được, nhưng biến này chưa khử.
 **Mới chỉ màn hình.** Ảnh in chưa đo. Phạm vi đúng của kết luận là **phát lại qua màn hình**,
 không phải mọi phương tiện tấn công.
 
-## 8.4. Việc đi kèm, độc lập với phép thử này
+### 8.4. Việc đi kèm, độc lập với phép thử này
 
 Bổ sung vài chục khung mặt thật **không nhãn** ở điều kiện thiếu sáng để mở rộng tập thích
 nghi ở §5, vá đúng ba khung bị chặn oan ở §5.1.
 
 ---
 
-# 9. Sinh ảnh giả từ dữ liệu sẵn có — hướng đi và lý do bị bác bỏ
+## 9. Sinh ảnh giả từ dữ liệu sẵn có — hướng đi và lý do bị bác bỏ
 
 Ràng buộc thực tế: không tiếp cận được board, nên không chụp thêm được khung nào. Câu hỏi
 đặt ra: có thể lấy ảnh mặt thật đã có, **mô phỏng cho giống ảnh qua OV5640**, rồi đưa vào
@@ -444,7 +444,7 @@ huấn luyện không?
 độ phân giải mà mặt sống không mất. Mô phỏng đúng điều đó — chứ không phải chỉ làm mờ nửa
 ảnh giả — thì không phải dạy mẹo.
 
-## 9.1. Thiết kế và hiệu chuẩn
+### 9.1. Thiết kế và hiệu chuẩn
 
 Mỗi ảnh mặt thật trong pool sinh ra hai bản, **cùng khuôn mặt, cùng cỡ, cùng đường cảm biến**,
 khác đúng một thứ:
@@ -465,7 +465,7 @@ Hiệu chuẩn `k` theo độ nét đo được trên thiết bị (mặt thật
 
 `k` = 0,35 trúng gần như tuyệt đối.
 
-## 9.2. Phép thử thứ nhất — mô phỏng có tái hiện được cái khó không
+### 9.2. Phép thử thứ nhất — mô phỏng có tái hiện được cái khó không
 
 Khớp một con số thống kê thì chưa đủ. Nếu model hiện tại bắt được ngay ảnh giả mô phỏng thì
 mô phỏng đã tạo ra một bài dễ, và huấn luyện trên đó vô ích. Chấm 800 cặp bằng model chroma:
@@ -480,7 +480,7 @@ mô phỏng đã tạo ra một bài dễ, và huấn luyện trên đó vô íc
 **Model bị lừa sạch** — đúng như nó bị lừa bởi ảnh giả thật (0,999). Mô phỏng tái hiện đúng
 chế độ hỏng. Đến đây hướng đi trông rất thuận.
 
-## 9.3. Phép thử thứ hai — kiểm cơ chế, và kết quả bác bỏ
+### 9.3. Phép thử thứ hai — kiểm cơ chế, và kết quả bác bỏ
 
 Vẫn còn một lỗ hổng: `k` được hiệu chuẩn để **khớp con số** độ nét, mà khớp một con số
 **không chứng minh cùng cơ chế**. Hai cơ chế khác nhau có thể cho cùng một độ nét.
@@ -505,7 +505,7 @@ Kết luận: ảnh giả trên thiết bị **không phải** ảnh chụp lạ
 **mặt thật bị lọc thông thấp nhẹ**. Huấn luyện theo thiết kế ở §9.1 sẽ dạy model bám vào
 **chỗ gãy do phép phóng to sinh ra** — một hiện vật không tồn tại trong ảnh giả thật.
 
-## 9.4. Vì sao không chuyển sang mô phỏng bằng chính phép lọc thông thấp
+### 9.4. Vì sao không chuyển sang mô phỏng bằng chính phép lọc thông thấp
 
 Nếu dựng dữ liệu đúng theo cơ chế vừa đo được thì việc đó **chính là làm mờ riêng nửa ảnh
 giả**. Khi độ mờ là khác biệt duy nhất giữa hai lớp, model học đúng một luật: *mờ thì là
@@ -522,7 +522,7 @@ phương án thay thế thuộc loại thứ hai.
 
 ---
 
-# 10. Trục thời gian — chưa kiểm được, không phải đã bác bỏ
+## 10. Trục thời gian — chưa kiểm được, không phải đã bác bỏ
 
 Mọi phép đo từ §1 đến §9 đều chấm **từng khung rời**. Nhưng board chạy video khoảng 14 fps,
 và mặt người sống thì luôn có vi chuyển động — chớp mắt, đổi biểu cảm, đầu lắc nhẹ. Ảnh tĩnh
@@ -556,9 +556,9 @@ trên nhiễu cảm biến không* — một chế độ hoàn toàn khác.
 
 ---
 
-# 11. Đổi đích giám sát — trục chưa đụng tới
+## 11. Đổi đích giám sát — trục chưa đụng tới
 
-## 11.1. Nhìn lại: mười hai hướng đã đóng đều nằm cùng một phía
+### 11.1. Nhìn lại: mười hai hướng đã đóng đều nằm cùng một phía
 
 Xếp lại toàn bộ §3 – §10 theo *thứ bị thay đổi*:
 
@@ -571,7 +571,7 @@ Xếp lại toàn bộ §3 – §10 theo *thứ bị thay đổi*:
 
 Cả ngày không hề đụng tới hàm mục tiêu. Nó vẫn là cross-entropy nhị phân từ đầu dự án.
 
-## 11.2. Vì sao một nhãn toàn cục là chỗ hỏng
+### 11.2. Vì sao một nhãn toàn cục là chỗ hỏng
 
 Cross-entropy nhị phân hỏi model đúng **một câu** cho cả khung hình. Một câu thì trả lời
 được bằng **bố cục tổng thể**, và số đo cho thấy model đang làm đúng thế:
@@ -585,7 +585,7 @@ Nó không phân loại *bề mặt sống* — nó phân loại *phong cách �
 sạch, sáng đều thì ăn điểm cao, bất kể chân dung ấy nằm trên da hay trên kính. Điều này đã
 ghi từ trước trong hồ sơ dự án và §1.1 lặp lại; đến đây thì nó là **giả thuyết trung tâm**.
 
-## 11.3. Bản đồ không gian vẫn còn, chỉ đang bị vứt
+### 11.3. Bản đồ không gian vẫn còn, chỉ đang bị vứt
 
 Chuỗi hạ mẫu của MiniFASNetV2-SE với đầu vào 81 × 81:
 
@@ -618,7 +618,7 @@ tính cục bộ, không ở chỗ khoanh vùng. Đây là dạng rẻ nhất c�
 | Cần dữ liệu mới | không |
 | Cần board | không |
 
-## 11.4. SSDG — bước hai
+### 11.4. SSDG — bước hai
 
 Nhắm vào chế độ hỏng đã lặp **2/2 lần** trong ngày: proxy tăng thì thiết bị giảm (§4.1).
 SSDG ép đặc trưng của **mặt thật** không phân biệt được giữa các miền, còn **tấn công** thì
@@ -628,7 +628,7 @@ Nhãn miền đã nằm sẵn trên shard (`synth_ipad`, `synth_samsung`, `uniqu
 phải gắn lại. Giá: thêm lớp đảo gradient và bộ lấy mẫu triplet bất đối xứng — đủ lớn để phải
 đo riêng, nên chạy sau và chỉ khi bước một đạt.
 
-## 11.5. Tiêu chí nghiệm thu, chốt trước khi chạy
+### 11.5. Tiêu chí nghiệm thu, chốt trước khi chạy
 
 21 khung tấn công + 64 khung mặt thật của OV5640, **giữ hoàn toàn ngoài tập huấn luyện**.
 
@@ -644,7 +644,7 @@ muốn — đây là lỗi đã mắc hai lần trong ngày (§6.1).
 bị **tệ đi**. Khác biệt của lần này là cả hai lần đó chỉ đổi *dữ liệu*, còn đây đổi *đích
 giám sát*. Đó là lý do để kỳ vọng khác, **không phải** bằng chứng rằng nó sẽ khác.
 
-## 11.6. Kết quả: trượt cả hai vế
+### 11.6. Kết quả: trượt cả hai vế
 
 90 epoch, cùng pool với bản đối chứng, khác đúng một biến là đầu phụ 6 × 6.
 
@@ -661,7 +661,7 @@ nhỉnh hơn ở tỉ lệ giả lọt (52,4% so với 66,7%).
 Giả thuyết trung tâm ở §11.2 — model phân loại *phong cách ảnh* nên ép nó tính cục bộ sẽ sửa
 được — **không đứng vững trước phép đo**.
 
-## 11.7. Thứ phép đo này trả về, giá trị hơn kết quả của nó
+### 11.7. Thứ phép đo này trả về, giá trị hơn kết quả của nó
 
 Chấm lại **chính run ấy** ở giữa lịch huấn luyện:
 
@@ -716,9 +716,9 @@ Không phương án nào trong bảng đủ để chốt. Hai việc còn lại,
 
 ---
 
-# 12. SSDG — đã chạy 90 epoch, trượt, và trả về số đo sắc nhất của cả dự án
+## 12. SSDG — đã chạy 90 epoch, trượt, và trả về số đo sắc nhất của cả dự án
 
-## 12.1. Thiết kế và tiêu chí
+### 12.1. Thiết kế và tiêu chí
 
 Hai hạng cộng vào mục tiêu, nhãn miền lấy sẵn từ thư mục shard nên không phải gắn lại:
 
@@ -744,7 +744,7 @@ Bài học phương pháp, đắt hơn bản thân bug: một khoá config **đ�
 nó **được đọc**. Từ nay mỗi lần đổi tham số dữ liệu phải in lại giá trị **lấy từ chính
 dataset đã dựng**, chứ không đọc lại từ file config.
 
-## 12.2. Kết quả
+### 12.2. Kết quả
 
 | Model | AUC | ACER | Giả lọt ≤ 5% | Thật bị chặn |
 |---|---|---|---|---|
@@ -755,7 +755,7 @@ dataset đã dựng**, chứ không đọc lại từ file config.
 ACER 0,2615 và 11/64: **trượt cả hai vế**. AUC 0,5938 chỉ hơn mức tung đồng xu 0,09 — tức
 trên khung của chính camera này, model gần như **không phân biệt được gì**.
 
-## 12.3. Số đo đáng giá hơn kết quả
+### 12.3. Số đo đáng giá hơn kết quả
 
 Chấm chính run ấy ở hai thời điểm, cùng bộ trọng số, cùng đường chấm:
 
@@ -776,7 +776,7 @@ gián tiếp yếu":
 > Trên nhánh này, **val không phải thước đo kém — nó ngược dấu.** Val càng tốt, board càng tệ,
 > đo được trong cùng một run, hai lần, ở hai biên độ khác nhau.
 
-## 12.4. Cái này nói gì về SSDG, và cái nó không nói
+### 12.4. Cái này nói gì về SSDG, và cái nó không nói
 
 SSDG san phẳng chênh lệch **giữa các miền có trong pool**. OV5640 không phải một trong số đó —
 cảnh báo này ghi trước khi phóng và kết quả không bác nó. Ép mạng vứt thông tin "miền nào" khi
@@ -789,12 +789,12 @@ bài toán mà kỹ thuật ấy giải.
 
 ---
 
-# 13. Dạy model chính manh mối nó đang bị bắt phớt lờ
+## 13. Dạy model chính manh mối nó đang bị bắt phớt lờ
 
 Ràng buộc của đồ án: lời giải phải nằm trong **model**, không phải một cổng kiểm tra viết tay
 bên cạnh. Mục này thiết kế phép thử theo đúng ràng buộc ấy, và chốt tiêu chí trước khi chạy.
 
-## 13.1. Chẩn đoán: model không phải không học được, nó bị dạy để bỏ qua
+### 13.1. Chẩn đoán: model không phải không học được, nó bị dạy để bỏ qua
 
 Ba số đo đặt cạnh nhau cho một chẩn đoán khác hẳn "model yếu":
 
@@ -819,7 +819,7 @@ từng lớp** để loại hiệu ứng lớp:
 Bên trong mỗi lớp, hai đại lượng **gần như độc lập**. Model đang dùng một thông tin khác
 hẳn — và dùng dở, vì 13/25 khung giả nó chấm trên 0,75.
 
-## 13.2. Rút lại lập luận ở §9.4
+### 13.2. Rút lại lập luận ở §9.4
 
 §9.4 từ chối việc lọc thông thấp riêng nửa ảnh giả, gọi đó là **mẹo** chứ không phải mô
 phỏng: gán một biến đổi nhân tạo cho đúng một lớp thì model chỉ học *mờ thì là giả*.
@@ -835,7 +835,7 @@ tái tạo manh mối đang có thật. Lý do từ chối ở §9.4 sai, và m�
 Cái §9.4 nói **đúng và vẫn giữ**: nếu độ mờ là khác biệt *duy nhất*, model học một luật giòn.
 Thiết kế dưới đây vì thế **không** thay các manh mối cũ của pool mà **cộng thêm** vào.
 
-## 13.3. Thiết kế
+### 13.3. Thiết kế
 
 | Bước | Nội dung |
 |---|---|
@@ -844,7 +844,7 @@ Thiết kế dưới đây vì thế **không** thay các manh mối cũ của p
 | 3 | Ngừng phá manh mối: hạ `recompress_probability`, thu hẹp `quality_range`, bỏ nhoè chuyển động. Chuỗi hiện tại phủ **32,8%** dải thiết bị, tắt hẳn thì **53,0%** (số đo 14/09) |
 | 4 | Train 90 epoch, cùng seed và cùng `split.lock` với bản đối chứng |
 
-## 13.4. Tiêu chí, chốt trước khi chạy
+### 13.4. Tiêu chí, chốt trước khi chạy
 
 Chấm trên **85 khung gốc** của OV5640 — 21 giả, 64 thật — giữ ngoài tập huấn luyện.
 
@@ -870,7 +870,7 @@ Tương quan **hạng** đỡ hơn nhưng chưa đủ (chroma: +0,187 so +0,479)
 hai hệ số**, và chỉ kết luận khi **cả bốn phép so cùng chiều**. Cỡ mẫu 21 khung giả không
 đỡ nổi một ngưỡng tuyệt đối, và sẽ không đỡ nổi cho tới khi có thêm khung giả của board.
 
-## 13.5. Cách đọc từng kết cục
+### 13.5. Cách đọc từng kết cục
 
 | Kết cục | Đọc là |
 |---|---|
@@ -879,7 +879,7 @@ hai hệ số**, và chỉ kết luận khi **cả bốn phép so cùng chiều*
 | Trượt, tương quan tăng | Model **học được** manh mối nhưng nó không đủ một mình. Hướng đúng, liều chưa đủ |
 | Trượt, tương quan ~0 | Model **từ chối học** manh mối dù nó là tín hiệu mạnh nhất trong dữ liệu. Lúc ấy vấn đề ở kiến trúc, không ở dữ liệu — và đó là kết luận đáng giá nhất của cả hướng này |
 
-## 13.6. Hiệu chuẩn, và ba con số không khớp nhau
+### 13.6. Hiệu chuẩn, và ba con số không khớp nhau
 
 Bước 1 của §13.3 cho **ba** ước lượng cho cùng một độ mờ, và chúng lệch nhau:
 
@@ -915,7 +915,7 @@ Kiểm trên đường dữ liệu thật sau khi cài: khung thật 0,2202 · g
 giữ 0,2477 và nửa giả của CelebA giữ 0,2172 — đúng yêu cầu, vì giấy không mất độ phân giải
 theo cơ chế này.
 
-## 13.7. Hai việc cố ý không làm trong lần chạy này
+### 13.7. Hai việc cố ý không làm trong lần chạy này
 
 **Không nâng hạn mức `synth_print`.** Không có khung ảnh in nào chụp bằng board, nên tác dụng
 của việc nâng **không đo được**. Thêm một biến không đo được vào cùng một run chỉ phá khả năng
@@ -924,7 +924,7 @@ quy trách nhiệm — đúng lỗi §12.1 vừa ghi. Print là một run riêng
 **Không đụng tới cổng ở §3.** Nó vẫn nằm trên board và vẫn tắt, nên không có đường nào để nó
 ảnh hưởng tới số đo của model.
 
-## 13.8. Lần chạy thứ nhất: trượt, và nó chỉ ra hai sai sót thiết kế
+### 13.8. Lần chạy thứ nhất: trượt, và nó chỉ ra hai sai sót thiết kế
 
 Chạy tới epoch 10 rồi dừng. Nhờ chấm 85 khung của board **mỗi chu kỳ val** (§13.9), đường
 cong hiện ra ngay thay vì phải chờ 90 epoch:
@@ -974,7 +974,7 @@ Model là mạng tích chập trên điểm ảnh, **không** chuẩn hoá theo 
 nên nó đọc **giá trị tuyệt đối**. Học "0,22 là mặt thật" rồi gặp mặt thật của board ở 0,167 —
 đó chính là cơ chế chặn oan.
 
-## 13.9. Hiệu chuẩn hai tầng, khớp đồng thời ba đích
+### 13.9. Hiệu chuẩn hai tầng, khớp đồng thời ba đích
 
 Hai bán kính, **khớp cùng lúc** chứ không nối tiếp, vì chúng tương tác: làm mờ một ảnh **đã
 mờ** lấy đi ít hơn làm mờ một ảnh sắc nét, nên một phép mờ đồng đều **thu hẹp** tỉ lệ giữa hai
@@ -1002,7 +1002,7 @@ con số 30% ban đầu do tác giả **bịa ra** để "tạo chồng lấn", 
 dữ liệu thì **mọi** khung tấn công camera từng chụp đều mịn, trải 0,099 – 0,131; chồng lấn
 giữa hai lớp trên thiết bị đến từ **mặt thật thiếu sáng**, không từ ảnh giả sắc nét.
 
-## 13.10. Hướng đi: hiệu chỉnh thống kê bề mặt của pool theo camera
+### 13.10. Hướng đi: hiệu chỉnh thống kê bề mặt của pool theo camera
 
 Sau mười lăm hướng đóng lại bằng số đo, đây là hướng đầu tiên cho kết quả vượt mọi bản cũ
 trên thiết bị. Phát biểu gọn:
@@ -1019,7 +1019,7 @@ Ba thành phần, mỗi cái sửa một sai sót đã đo được:
 | Làm mờ **mọi ảnh giả trừ giấy**, theo phương tiện ghi trong bản ghi | Điều kiện cũ đọc tên thư mục, bỏ sót 64,5% lớp giả (§13.8) |
 | Hai bán kính khớp đồng thời: mức tuyệt đối **và** khoảng cách | Khớp riêng tỉ lệ để lại cả pool nét hơn thiết bị 1,3 lần (§13.9) |
 
-### Bằng chứng
+#### Bằng chứng
 
 Chấm trên 85 khung OV5640, bản `ep13` của run `20260915-1005_168d426_71e22b`:
 
@@ -1038,7 +1038,7 @@ mờ-theo-thư-mục, vốn lại là run có điểm thiết bị kém nhất. 
 tượng ngược dấu ở §12.3, và là lý do việc chấm 85 khung **mỗi chu kỳ val** không phải tiện
 nghi mà là điều kiện cần: nếu chọn theo val thì run đúng đã bị giết từ epoch 2.
 
-### Chưa xong, và không được đọc thành đã xong
+#### Chưa xong, và không được đọc thành đã xong
 
 **Run mới ở epoch 14 trên 90.** Run trước cũng dẫn ở epoch 6 rồi sụp ở epoch 8.
 
@@ -1050,7 +1050,7 @@ nghi mà là điều kiện cần: nếu chọn theo val thì run đúng đã b�
 **Trần không đổi: pool vẫn 0% khung của camera này.** Hướng này khai thác nốt phần còn lại
 của trần cũ; nó không nâng trần.
 
-### Bước tiếp, theo thứ tự
+#### Bước tiếp, theo thứ tự
 
 **Thu ~300 khung của board.** Việc duy nhất phá được trần, và nó đồng thời đưa tập chấm từ 21
 khung giả lên ~100 — đủ để một kết luận không bị bốn khung lật ngược như §13.4 đã dính.
@@ -1067,13 +1067,13 @@ hiệu chuẩn mới nói được.
 
 ---
 
-# 14. Rò rỉ nhãn trong phép hiệu chỉnh bề mặt
+## 14. Rò rỉ nhãn trong phép hiệu chỉnh bề mặt
 
 Chương này ghi lại một sai sót của chính tôi, phát hiện ngày 15/09/2026, và số đo mà việc
 truy nó tới cùng đã sinh ra. Số đo ấy quan trọng hơn cả sai sót: nó giải thích toàn bộ hiện
 tượng ngược dấu kéo dài từ §4.1 tới §13.10.
 
-## 14.1. Dấu hiệu: một con số hoàn hảo, quá sớm
+### 14.1. Dấu hiệu: một con số hoàn hảo, quá sớm
 
 Run `20260915-1105_25974fd_9ad494` báo về:
 
@@ -1086,7 +1086,7 @@ Run `20260915-1105_25974fd_9ad494` báo về:
 Tách lớp hoàn hảo ở epoch 3 trên một bài toán mà mười lăm hướng trước đó đều trượt. Đó là
 chữ ký của rò rỉ, không phải của tiến bộ.
 
-## 14.2. Thước đo còn thiếu: trần của một phép so sánh
+### 14.2. Thước đo còn thiếu: trần của một phép so sánh
 
 Câu hỏi chưa ai đặt suốt cả nhánh: **một ngưỡng độ nét trần trụi, không model, đạt bao
 nhiêu trên chính 85 khung này?**
@@ -1106,7 +1106,7 @@ khung giả ở mức chặn 5%.
 luma đã chuẩn hoá tương phản. Nên AUC 0,9896 là trần trung thực, không phải kết quả của việc
 khớp vào tập chấm.
 
-## 14.3. Ba lỗ chồng lên nhau
+### 14.3. Ba lỗ chồng lên nhau
 
 | # | Lỗ | Hệ quả đo được |
 |---|---|---|
@@ -1121,7 +1121,7 @@ Kết cục: tôi dựng lại đúng **cổng bề mặt** ở §7 — thứ đ
 khác là giấu trong dữ liệu thay vì trong code, rồi đem chấm trên hai thước đo cùng làm từ
 cue ấy.
 
-## 14.4. Số đo quyết định: pool và thiết bị ngược dấu
+### 14.4. Số đo quyết định: pool và thiết bị ngược dấu
 
 Đo `surface_of` trên 1200 crop mỗi phía, sau toàn bộ augment, trước khi hiệu chỉnh:
 
@@ -1149,7 +1149,7 @@ val pool tốt lên là model học chặt thêm một quan hệ ngược dấu 
 dạng định lượng của câu ở §1.1 — model học *phong cách ảnh*, và trong CelebA-Spoof phong
 cách của lớp giả là ảnh chụp lại trong studio, nét hơn ảnh đời thường của lớp thật.
 
-## 14.5. Rút lại một phần §13.10
+### 14.5. Rút lại một phần §13.10
 
 Bảng bằng chứng ở §13.10 vẫn đúng như số, nhưng **cách đọc thì sai**. Đặt cạnh trần 0,9896:
 
@@ -1167,7 +1167,7 @@ Hệ quả thứ hai: với 85 khung hiện có, **không phân biệt được 
 vì trần bộ đo đã là 0,9896. Mọi con số ~1,0 ở đây là không thể bác bỏ, mà không bác bỏ được
 thì không chứng minh được.
 
-## 14.6. `dev_blocked` và `dev_caught` trộn hai đại lượng
+### 14.6. `dev_blocked` và `dev_caught` trộn hai đại lượng
 
 Cả hai đọc cùng vạch 0,75 cố định, nên khi phân bố trôi lên thì **cùng rơi** — không phải
 đánh đổi, mà là vạch bị bỏ lại phía sau. Chấm lại hai checkpoint của run
@@ -1193,7 +1193,7 @@ thì bản cuối bắt được **2 trên 21**. Vạch cố định đã che m�
 `DEVICE_BLOCKED_BUDGET` người bị từ chối, nên giá trả cố định qua mọi epoch và con số còn
 lại là khả năng phân biệt thuần.
 
-## 14.7. Sửa: một dải duy nhất, mù nhãn
+### 14.7. Sửa: một dải duy nhất, mù nhãn
 
 Không lật dấu bằng nhãn nữa. Xoá hẳn thông tin độ nét khỏi lúc học: **một dải chung cho cả
 hai lớp**, lấy từ phân vị p5–p95 của 85 khung **gộp nhãn** — `surface_band: [0.1018, 0.2110]`
@@ -1217,7 +1217,7 @@ Khi độ nét không còn nói gì về nhãn, model **buộc** phải tìm cue
 `surface_ceiling` ghi vào log mỗi run ngay dòng đầu (`surface_ceiling=0.9895833`), để không
 run nào báo được điểm thiết bị dưới trần mà không ai nhận ra.
 
-## 14.8. Các lỗi kỹ thuật trong phiên và cách sửa
+### 14.8. Các lỗi kỹ thuật trong phiên và cách sửa
 
 Ghi để lần sau không mất thời gian lại.
 
@@ -1243,7 +1243,7 @@ Hai lỗi thuộc về cách tôi báo cáo, ghi lại vì chúng đắt hơn l�
   thiết bị đều mượt (0,099–0,131).
 - Tôi dự đoán tương tác làm mờ sẽ **nới rộng** tỉ lệ giữa hai lớp; đo ra thì nó **thu hẹp**.
 
-## 14.9. Bước tiếp
+### 14.9. Bước tiếp
 
 **Thu ~300 khung của board** — giờ không còn là "nên có". Với trần 0,9896 trên 85 khung hiện
 tại, bộ đo **không thể** phân biệt model học được cue thật với model đọc độ nét. Đợt chụp mới
@@ -1259,13 +1259,13 @@ ra bằng cách lấy p5/p95 của hai lớp rời nhau.
 
 ---
 
-# 15. Hiệu chỉnh ba trục, và giới hạn của việc huấn luyện trên pool
+## 15. Hiệu chỉnh ba trục, và giới hạn của việc huấn luyện trên pool
 
 Chương 14 sửa phép hiệu chỉnh cho hết rò rỉ nhãn. Chương này mở rộng nó sang hai trục còn
 lại, đo được một bước nhảy thật, rồi chạm vào một giới hạn mà ba lần chạy độc lập đều chỉ
 về cùng một chỗ.
 
-## 15.1. Hai trục chưa ai đụng tới
+### 15.1. Hai trục chưa ai đụng tới
 
 Độ nét chỉ là một trong ba trục rẻ tiền tách được 85 khung. Đo cả ba, không model:
 
@@ -1285,7 +1285,7 @@ Và khoảng cách giữa pool với thiết bị, đo **trên lớp mặt thậ
 
 Bão hoà màu là lỗ hổng lớn nhất, và nó nằm đúng trên **kênh đầu vào thứ tư** của model.
 
-## 15.2. Một giả thuyết bị bác trước khi vặn nút
+### 15.2. Một giả thuyết bị bác trước khi vặn nút
 
 Nghi ngờ hợp lý: bão hoà 0,6556 cao bất thường, có thể chỉ vì khung thiết bị tối hơn, mà
 điểm ảnh tối thì tỉ số `(max-min)/max` bị thổi phồng.
@@ -1303,7 +1303,7 @@ Kiểm bằng cách kéo pool về đúng độ sáng thiết bị:
 Phơi sáng **không giải thích gì cả** — chênh lệch 0,0006. Bão hoà của camera là màu thật, và
 pool đang nuôi kênh chroma bằng một nửa dải board đưa vào.
 
-## 15.3. Thiết kế
+### 15.3. Thiết kế
 
 Mỗi trục một dải, lấy **p5–p95 trên 64 khung mặt thật của camera**: đích là thuộc tính của
 đường ống kính, không phải của một lớp, nên mọi crop đi cùng một phép biến đổi bất kể nhãn.
@@ -1322,7 +1322,7 @@ Nghiệm thu **trước khi chạy**, 700 crop mỗi phía:
 
 Cả ba ở mức may rủi — không trục nào chỉ được nhãn.
 
-## 15.4. Bước nhảy có thật
+### 15.4. Bước nhảy có thật
 
 Run `20260915-1207_7bb3a48_7adcb0`, lịch 8 epoch, val mỗi epoch. So cùng epoch 1, cùng giai
 đoạn warmup nên learning rate tương đương:
@@ -1336,7 +1336,7 @@ Run `20260915-1207_7bb3a48_7adcb0`, lịch 8 epoch, val mỗi epoch. So cùng ep
 Nuôi đúng dải bão hoà đổi được từ 9 lên 19 khung. Đây là bước nhảy lớn nhất đo được trong
 ngày, và `19/21` gần chạm cổng bề mặt (20/21).
 
-## 15.5. Nhưng checkpoint ấy không triển khai được
+### 15.5. Nhưng checkpoint ấy không triển khai được
 
 Chấm `ep1` trên từng khung, không chỉ nhìn AUC:
 
@@ -1360,7 +1360,7 @@ cái tự chọn ngưỡng tốt nhất.
 Khung bị chặn oan cũng có quy luật: cả 3 đều thuộc phiên `toi1209` — **phiên thiếu sáng**,
 3 trong 8 khung. Khớp với phép chẩn đoán ở §15.7: model yếu nhất ở vùng tối.
 
-## 15.6. Đường rơi, đo trên từng epoch
+### 15.6. Đường rơi, đo trên từng epoch
 
 | epoch | `dev_auc` | bắt giả @3 | **val pool eer** |
 |---|---|---|---|
@@ -1376,7 +1376,7 @@ Khung bị chặn oan cũng có quy luật: cả 3 đều thuộc phiên `toi120
 Giả thuyết "hạ learning rate ngay tại đỉnh sẽ neo model lại" — **bác bỏ**. Ở epoch 5 learning
 rate đã còn một nửa (0,0101) mà đà rơi còn nhanh hơn.
 
-## 15.7. Cú rơi nằm trên trục nào
+### 15.7. Cú rơi nằm trên trục nào
 
 Chấm chênh lệch điểm giữa checkpoint đỉnh và checkpoint đã rơi, chia đôi theo từng trục:
 
@@ -1397,7 +1397,7 @@ thật nhất** — đúng nửa model đánh mất trước.
 Trôi của lớp giả **+0,1302** so với lớp thật **+0,0004**: mất riêng phía giả, không phải cả
 phân bố trôi.
 
-## 15.8. Giới hạn: ba lần chạy chỉ về một chỗ
+### 15.8. Giới hạn: ba lần chạy chỉ về một chỗ
 
 | run | liều hiệu chỉnh | lịch | đỉnh | sau đó |
 |---|---|---|---|---|
@@ -1417,7 +1417,7 @@ chụp lại trong studio; ảnh giả của board là màn hình LCD điện th
 CelebA cho ra "ảnh studio nhìn qua OV5640", không cho ra "màn hình điện thoại nhìn qua
 OV5640". Càng học lâu, model càng bám vào nội dung — thứ không tồn tại trên camera này.
 
-## 15.9. Chỗ đứng cuối ngày
+### 15.9. Chỗ đứng cuối ngày
 
 **Đã đo được**:
 - Pool không sinh ra được model triển khai được cho camera này: đỉnh thì biên 0,0013, mà
@@ -1437,12 +1437,12 @@ kéo tách bạch từ 0,435σ xuống 0,095σ, và board lúc chạy thật kh�
 
 ---
 
-# 16. Đảo dấu là do trộn nguồn, và giám sát độ sâu
+## 16. Đảo dấu là do trộn nguồn, và giám sát độ sâu
 
 Chương này ghi ba việc: một phép đo **sửa lại kết luận của §14**, một trần đo lường rộng hơn
 tôi tưởng, và phép thử cuối cùng còn lại ở phía model.
 
-## 16.1. Trần của bộ đo rộng hơn một trục
+### 16.1. Trần của bộ đo rộng hơn một trục
 
 §14.2 đo trần bằng độ nét. Đo nốt hai trục còn lại, trên cùng 85 khung, không model nào:
 
@@ -1457,7 +1457,7 @@ tôi tưởng, và phép thử cuối cùng còn lại ở phía model.
 đến từ một phiên duy nhất**: chúng khác mặt thật **đồng thời trên mọi trục đơn giản**, không
 phải vì "giả thì thế" mà vì một máy, một độ sáng màn hình, một căn phòng.
 
-## 16.2. §14.4 sai: đảo dấu là tính chất của phép TRỘN
+### 16.2. §14.4 sai: đảo dấu là tính chất của phép TRỘN
 
 §14.4 kết luận "pool dạy ngược dấu" như một thuộc tính của dữ liệu. Đo lại **từng nguồn
 riêng**, 1400 crop mỗi nhóm, tắt hiệu chỉnh:
@@ -1487,7 +1487,7 @@ nguyên nhân:
 Augmentation đổi net khoảng 0,05 và đổi **ngược chiều** ở hai hàng, tức mức nhiễu. Trộn nguồn
 đổi từ 1,066 xuống 0,885. **Toàn bộ cú đảo dấu nằm ở phép trộn** — nghịch lý Simpson.
 
-## 16.3. Tỉ trọng nguồn không phải thứ KẾ HOẠCH tưởng
+### 16.3. Tỉ trọng nguồn không phải thứ KẾ HOẠCH tưởng
 
 Đếm xem bộ nạp **thực sự** đưa vào bao nhiêu, 2500 mẫu:
 
@@ -1514,7 +1514,7 @@ tỉ trọng viết ở §1 — *"lấy iPad tối đa, các kênh khác chỉ g
 chỉnh số shard — **chưa bao giờ có hiệu lực**. `interleave` giờ khai trong config thay vì nằm
 ẩn trong module.
 
-## 16.4. Hai thứ hỏng lặng lẽ, tìm thấy khi rà
+### 16.4. Hai thứ hỏng lặng lẽ, tìm thấy khi rà
 
 **SSDG chưa bao giờ được tắt.** §12.4 ghi nó "không được kích hoạt" và §12.2 đo nó **kém
 0,257 AUC**, nhưng `domain_weight: 0.1` nằm trong config từ commit thử nghiệm tới giờ. Mọi
@@ -1528,7 +1528,7 @@ bộ đường xuất INT8 đang hỏng**. Và `load_run` chỉ lọc `domain.*`
 
 Không phép đo nào bắt được mấy lỗi này vì không ai chạy lại bộ test.
 
-## 16.5. Giám sát bản đồ độ sâu — thiết kế và chất lượng nhãn
+### 16.5. Giám sát bản đồ độ sâu — thiết kế và chất lượng nhãn
 
 Xem §3 của KẾ HOẠCH. Nhãn sinh bằng Depth-Anything V2 small chạy trên view **wide** rồi cắt về
 `face_in_wide`: trên view **tight** bộ ước lượng không còn nền để neo và trả về một **mặt phẳng
@@ -1553,7 +1553,7 @@ Nhãn lưu ở lưới **63** và chỉ hạ về 21 ở bước cuối: các ph
 nhát cắt 0,7 trên lưới 21 đọc về chỉ còn **0,735** tương quan với chính crop của nó. Phép
 kiểm căn khớp nay nằm trong bộ test, không phải trong đầu tôi.
 
-## 16.6. Kết quả: giám sát độ sâu làm tệ đi
+### 16.6. Kết quả: giám sát độ sâu làm tệ đi
 
 Hai run, cùng 36 shard, cùng 5 epoch, cùng seed, khác **đúng một biến** là `depth_weight`.
 
@@ -1588,7 +1588,7 @@ mọi thước.
 vì hai bên cùng pool, nhưng kết luận đúng cho **pool đó**, chưa đúng cho pool đầy đủ. Kiểm
 tiếp tốn 2,5 giờ sinh nhãn cộng 45 phút train; với thành tích 0/3 thì chưa làm.
 
-## 16.7. Chỗ đứng sau ngày 15/09
+### 16.7. Chỗ đứng sau ngày 15/09
 
 **Bảy lần chạy, năm hướng, cùng một kiểu hỏng.** Hiệu chỉnh một trục, ba trục, đổi tỉ trọng
 nguồn, SSDG, giám sát độ sâu — mọi hướng đều đỉnh rất sớm rồi rơi, trong khi val pool lên đều
@@ -1607,9 +1607,9 @@ mà chưa bác bỏ được thì chưa phải bằng chứng. Ca chụp theo n�
 
 ---
 
-# 17. Đổi hướng ngày 16/09: nhập trọng số đã train, và tín hiệu nằm ở vành ngữ cảnh
+## 17. Đổi hướng ngày 16/09: nhập trọng số đã train, và tín hiệu nằm ở vành ngữ cảnh
 
-## 17.1. Phép thử gỡ nút
+### 17.1. Phép thử gỡ nút
 
 Sau bảy lần chạy cùng một kiểu hỏng (§16.7), phép thử rẻ nhất còn lại là đem một model
 chống giả **train ở nơi khác** về chấm trên khung của OV5640. Chọn MiniFASNetV2 của minivision
@@ -1620,7 +1620,7 @@ Hai lỗi phải sửa trước khi đọc được số: model card ghi sai ti�
 0–255** (không chia 255) và lớp sống ở **chỉ số 1** trong `[in, sống, phát lại]`. Thử bốn biến
 thể tiền xử lý trên ảnh pool cho khoảng cách logit 4,1 với BGR 0–255 so với 0,097 khi chia 255.
 
-## 17.2. Kết quả: cùng trọng số, hai crop, hai thế giới
+### 17.2. Kết quả: cùng trọng số, hai crop, hai thế giới
 
 Trên 85 khung OV5640 (§14), cắt bằng đúng quy tắc ô vuông của firmware:
 
@@ -1634,7 +1634,7 @@ cầm, mép màn hình nằm ngoài hộp mặt. §22 của `antispoof/measureme
 CelebA-Spoof học "phòng thường = giả"; lỗi ấy thuộc **dữ liệu train**, không thuộc ngữ cảnh.
 Trọng số train ở nơi khác không mang confound đó.
 
-## 17.3. Nhập thành run của mình
+### 17.3. Nhập thành run của mình
 
 `import_minifasnet.py` viết run đúng cấu trúc §4.2: `config.resolved.yaml`, `split.lock`,
 `env.txt`, `ckpt/{best,last}.pth` ở định dạng của `Trainer`, nên thang lượng tử, `update_lock`
@@ -1645,7 +1645,7 @@ nguyên ở ML và firmware. Parity với ONNX gốc 2,4e-6.
 Firmware đổi ba chỗ: `kFaceScale` 1,0 → 2,7 (`fitted()` đã là bản C của `fitted_box`, 0/87
 khung lệch), softmax đọc số lớp từ tensor, resolver thêm `PAD`.
 
-## 17.4. PReLU: bộ op cấm nó, và ba mặt thật đi theo nó
+### 17.4. PReLU: bộ op cấm nó, và ba mặt thật đi theo nó
 
 Đồ thị gốc có 33 PReLU — kernel tham chiếu, §3 cấm. Hệ số học được nhỏ (trung vị |a| 0,012) nên
 đổi sang ReLU **giữ thứ hạng** (AUC 0,9974) nhưng **mất 3/62 mặt thật** dưới cả giả cao nhất.
@@ -1666,14 +1666,14 @@ ADD; không PRELU; parity với "PReLU chỉ ở conv1" là 7,2e-7. Không train
 | ReLU trơn | 59/62 | 25/25 | +0,127 |
 | **ReLU + stem tách** (lên board) | **62/62** | **25/25** | **+0,368** |
 
-## 17.5. Ngưỡng là chỗ tách hai đám điểm, không phải số mặc định
+### 17.5. Ngưỡng là chỗ tách hai đám điểm, không phải số mặc định
 
 Model này trải mặt thật **0,17–1,0** và ép giả xuống **dưới 0,04**; ngưỡng 0,75 của model cũ
 chặn oan 15/62. Luật của kho gốc (argmax 3 lớp) cũng chặn oan 5–6/62 vì softmax 3 lớp không
 hiệu chỉnh cho camera này. Seed `live_min` chốt **120‰**: dải 0,04–0,16 giữ 62/62 và chặn
 25/25, biên hai phía 0,052 / 0,087.
 
-## 17.6. Giá trên board và chỗ đứng
+### 17.6. Giá trên board và chỗ đứng
 
 Spoof **490 ms** (bản 12/09: 234 ms) — không vì PAD (33 ms, 6,7%) mà vì **40,7 MMAC so với
 24,6 MMAC**; `arena_big` lên 743.468 B (bản ReLU trơn). PReLU gốc đo một lần để có số: **727 ms**, riêng

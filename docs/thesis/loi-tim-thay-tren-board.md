@@ -14,17 +14,17 @@ ra từ cùng một cơ chế, và cơ chế đó là thứ dễ tái phạm nh�
 
 ---
 
-# Phần A — Lỗi thật, nguyên nhân đã chứng minh
+## Phần A — Lỗi thật, nguyên nhân đã chứng minh
 
-## Lỗi 1 — Cuộc đua khởi tạo bus I2C
+### Lỗi 1 — Cuộc đua khởi tạo bus I2C
 
-### Hiện tượng
+#### Hiện tượng
 
 `drv_ioexp` trượt 3 trong 4 test case, luôn ở lần ghi đầu tiên, với `ESP_ERR_INVALID_RESPONSE`
 (thiết bị không ACK). Chạy lại nhiều lần vẫn trượt. Sau đó tự khỏi và pass 4/4, rồi lại
 trượt sau khi rút điện cắm lại.
 
-### Nguyên nhân
+#### Nguyên nhân
 
 Đo mốc thời gian ACK đầu tiên của từng thiết bị, tính từ lúc chip boot:
 
@@ -45,7 +45,7 @@ Từ đó thành một cuộc đua vài millisecond: driver nào chạm bus **ng
 thì NACK; driver nào tình cờ chậm vài ms — vì in log, vì tính toán gì đó — thì chạy. Nên mỗi
 lần sửa code là lỗi lại đổi mặt.
 
-### Vì sao suốt quá trình phát triển không ai thấy
+#### Vì sao suốt quá trình phát triển không ai thấy
 
 Vì **reset chip không tái hiện được nó**. Reset chỉ khởi động lại ESP32; các thiết bị I2C
 vẫn đang có điện và đã sẵn sàng từ lâu, nên chúng ACK ngay ở t+0. Chỉ **lần cấp điện đầu**
@@ -58,7 +58,7 @@ hoặc nạp lại firmware.
 Hệ quả nếu không tìm ra: lỗi sẽ xuất hiện đúng lần đầu người dùng cắm điện máy chấm công,
 tức chỗ khó gỡ nhất.
 
-### Cách sửa
+#### Cách sửa
 
 `bsp_board_init()` không trả về tới khi bus thật sự chở được giao dịch: thăm dò những thiết
 bị có địa chỉ cố định lúc cấp nguồn (`0x20`, `0x29`) tới khi cả hai ACK, trần **500 ms**,
@@ -67,7 +67,7 @@ quá trần thì trả `ESP_ERR_NOT_FOUND` kèm địa chỉ nào im.
 GT911 **không** nằm trong danh sách chờ: địa chỉ của nó do trình tự reset quyết định, nên
 `drv_touch_init()` tự lo con của mình.
 
-### Bằng chứng đã sửa
+#### Bằng chứng đã sửa
 
 Trên board, sau khi rút điện cắm lại — đúng điều kiện đã làm nó trượt 4 lần liền:
 
@@ -80,7 +80,7 @@ I (390) drv_ioexp: pcf8574 at 0x20, shadow 0xFF
 Kèm một test hồi quy mới: *"init trả về một bus đã chở được một lần ghi"* — đúng cái mà
 trước đó không test nào kiểm.
 
-### Một phần của lỗi này vẫn còn mở
+#### Một phần của lỗi này vẫn còn mở
 
 Bảng loại trừ ban đầu có một dòng ghi *"có người chạm lại dây → hỏi trực tiếp → không"*.
 Chủ repo trả lời đúng: không ai chạm dây. Nhưng về sau phát hiện **đầu cắm lớp cảm ứng trên
@@ -94,9 +94,9 @@ Phần cốt của lỗi 1 không phụ thuộc vào chúng — nó dựa trên 
 
 ---
 
-## Lỗi 2 — Giả định giá trị mặc định của chân ngắt
+### Lỗi 2 — Giả định giá trị mặc định của chân ngắt
 
-### Hiện tượng
+#### Hiện tượng
 
 Chân ngắt của VL53L1X giương **đủ 20/20 lần**, đúng nhịp, nhưng **mọi lần đọc dữ liệu ngay
 sau đó đều trả `ESP_ERR_TIMEOUT`**: cảm biến báo chưa có dữ liệu.
@@ -104,7 +104,7 @@ sau đó đều trả `ESP_ERR_TIMEOUT`**: cảm biến báo chưa có dữ li�
 Đây là dạng nguy hiểm hơn lỗi 1 về mặt chẩn đoán, vì nó **giả vờ đang chạy**. Đếm số ngắt
 thì thấy đủ, nhịp thì đúng, chỉ có số đọc ra là luôn rỗng.
 
-### Nguyên nhân
+#### Nguyên nhân
 
 Driver không gọi `VL53L1X_SetInterruptPolarity()`, tức để cảm biến ở giá trị mặc định của
 nó. Tài liệu của ST ghi rõ trong chính header:
@@ -121,7 +121,7 @@ Comment trong code lúc đó còn ghi ngược sự thật — rằng chip kéo 
 Một comment nói trái phần cứng thì tệ hơn không có comment, vì nó chặn người sau khỏi đi
 kiểm lại.
 
-### Vì sao lúc bình thường không gặp
+#### Vì sao lúc bình thường không gặp
 
 Vì **đếm ngắt thì thấy đúng**. Ai kiểm cũng sẽ kiểm điều dễ kiểm nhất: chân ngắt có giương
 không? Có, 20 trên 20, đúng nhịp 100 ms. Nhìn vào đó thì mọi thứ đang hoạt động.
@@ -133,13 +133,13 @@ Thêm nữa, nếu chỉ đọc theo chu kỳ (polling) mà không dựa vào ng
 chỉ tốn điện hơn. Lỗi sẽ ngủ tới đúng lúc ai đó bật chế độ ngủ sâu và trông vào chân ngắt
 để đánh thức.
 
-### Cách sửa
+#### Cách sửa
 
 Lập trình phân cực **active low** ngay trong `drv_tof_init()` thay vì trông vào mặc định.
 Đây cũng là điều mà lập luận an toàn chân strapping trong tài liệu thiết kế vốn đã giả định:
 "cảm biến chỉ kéo chân xuống sau khi được cấu hình".
 
-### Bằng chứng đã sửa
+#### Bằng chứng đã sửa
 
 Trước khi sửa: 20 ngắt, **0** lần đọc thành công. Sau khi sửa:
 
@@ -159,18 +159,18 @@ cảm biến — nó chặn hồng ngoại 940 nm. Không liên quan tới lỗi
 
 ---
 
-## Lỗi 3 — Một chốt an toàn biến màn hình chết thành board không boot được
+### Lỗi 3 — Một chốt an toàn biến màn hình chết thành board không boot được
 
 Lỗi này do chính tôi tạo ra khi sửa lỗi khác. Giữ lại trong báo cáo vì nó là ví dụ sạch cho
 một loại sai: **xử lý lỗi đúng ở tầng dưới, sai ở tầng trên**.
 
-### Hiện tượng
+#### Hiện tượng
 
 Sau khi thêm một phép kiểm mã sản phẩm vào `drv_touch_init()` — đọc thanh ghi `0x8140`, đòi
 đúng ba byte `"911"`, không đúng thì trả `ESP_ERR_NOT_FOUND` — thì màn hình **không lên đèn
 nền** nữa. Trông y như đèn nền chết.
 
-### Nguyên nhân
+#### Nguyên nhân
 
 `app_main()` bọc mọi bước khởi tạo trong `ESP_ERROR_CHECK`. Nên khi `drv_touch_init()` trả
 lỗi, `ESP_ERROR_CHECK` gọi `abort()` → chip reset → boot lại → lại trượt ở đúng chỗ đó.
@@ -179,7 +179,7 @@ Vòng lặp ấy chạy khoảng 150 ms một lượt. Đèn nền được bậ
 nhưng chỉ sáng trong phần cuối của mỗi 150 ms rồi tắt khi chip reset. Mắt người nhìn ra là
 **màn tối hẳn**, không phải "màn nhấp nháy".
 
-### Vì sao lúc bình thường không gặp
+#### Vì sao lúc bình thường không gặp
 
 Vì phép kiểm mới **đúng**: nó phát hiện đúng một panel không phục vụ thanh ghi. Cái sai nằm
 ở chỗ khác — ở **quyết định cả hệ phải chết theo**. Và quyết định đó đã nằm sẵn trong
@@ -189,7 +189,7 @@ Nói cách khác: thêm một phép kiểm trung thực vào tầng dưới đã
 có sẵn ở tầng trên. Triệu chứng thì hiện ra ở một bộ phận hoàn toàn khác (đèn nền), nên nó
 kéo người gỡ đi sai hướng — chính tôi đã đi sai hướng đó.
 
-### Cách sửa
+#### Cách sửa
 
 Chia ngoại vi thành hai loại, ghi vào tài liệu thiết kế §6.2.2:
 
@@ -207,7 +207,7 @@ if (touch != ESP_OK) {
 }
 ```
 
-### Bằng chứng đã sửa
+#### Bằng chứng đã sửa
 
 ```
 W (1007) app_main: touch absent: ESP_ERR_NOT_FOUND
@@ -219,9 +219,9 @@ Boot **một lần**, không abort, preview chạy — trong khi cảm ứng v�
 
 ---
 
-## Lỗi 4 — Một chân lỏng, và cả đường ghi vẫn báo thành công
+### Lỗi 4 — Một chân lỏng, và cả đường ghi vẫn báo thành công
 
-### Hiện tượng
+#### Hiện tượng
 
 Màn hình chỉ còn **sáng trơ**: đèn nền bật, không có nội dung gì. Trong khi đó log firmware
 hoàn toàn khoẻ:
@@ -234,7 +234,7 @@ I (14607) app_tasks: preview 14.187 fps
 
 Mọi lệnh SPI trả `ESP_OK`. Số fps đều đặn. Không một dòng lỗi nào.
 
-### Cách truy
+#### Cách truy
 
 Phép đo tách được "dữ liệu không tới panel" khỏi "tới nhưng sai" là **tô màu trơn** qua đúng
 đường driver mà preview dùng: đỏ 2,5 s → xanh lá 2,5 s → xanh dương 2,5 s ngay trong
@@ -247,7 +247,7 @@ panel, mà bus SPI không có cách nào biết điều đó.
 trưng của tiếp xúc chập chờn, không phải của lỗi logic. Chủ repo tìm ra một chân cắm lỏng
 trong bó dây SPI của LCD và cắm lại toàn bộ; màn chạy lại ngay.
 
-### Vì sao lúc bình thường không gặp
+#### Vì sao lúc bình thường không gặp
 
 Vì **SPI tới panel là bus một chiều**. Không có ACK như I2C, và module này không đấu đường
 `SDO` về, nên firmware không có bất kỳ đường phản hồi nào. `esp_lcd_panel_draw_bitmap()` trả
@@ -263,7 +263,7 @@ giá trị**. Bộ test `drv_lcd/test_apps/panel` có 9 case pass, mà 8 trong 9
 về; case duy nhất kiểm bằng mắt thì bị gắn thẻ `[manual]` và bị bỏ qua mặc định. Nên "9/9
 PASS" hoàn toàn tương thích với một màn hình không hiện gì.
 
-### Cách sửa
+#### Cách sửa
 
 Về phần cứng: cắm lại chân lỏng. Về phần phương pháp, ba điều:
 
@@ -276,9 +276,9 @@ Về phần cứng: cắm lại chân lỏng. Về phần phương pháp, ba đi
 
 ---
 
-## Lỗi 5 — Thư viện làm một việc không ghi trong hợp đồng của nó
+### Lỗi 5 — Thư viện làm một việc không ghi trong hợp đồng của nó
 
-### Hiện tượng
+#### Hiện tượng
 
 Để hết xé hình khi preview di chuyển, `drv_lcd` cần đọc vị trí tia quét của panel
 (`GET_SCANLINE`, `0x45`) qua đường `SDO`. Một chương trình thăm dò tự dựng bus SPI đọc được
@@ -289,7 +289,7 @@ Bisect từng bước khởi tạo cho ra một ranh giới sắc: đọc đư�
 `esp_lcd` gửi cho panel**, sau đó chết vĩnh viễn — reset panel, gửi lại nguyên chuỗi khởi tạo
 của chương trình thăm dò, nới xung CS từ 1 lên 1000 µs, đều không cứu được.
 
-### Nguyên nhân
+#### Nguyên nhân
 
 Trong `esp_lcd_panel_io_spi.c`, callback sau mỗi giao dịch gọi `gpio_ll_output_disable()` trên
 chân DC, và callback trước giao dịch kế mới bật lại. Nghĩa là **giữa hai giao dịch của
@@ -300,7 +300,7 @@ cao, tức là **dữ liệu**, và im lặng.
 
 Chương trình thăm dò không gặp vì nó tự sở hữu DC từ đầu đến cuối.
 
-### Vì sao lúc bình thường không gặp
+#### Vì sao lúc bình thường không gặp
 
 Vì hành vi đó **không sai với chính `esp_lcd`**: nó luôn bật DC trước khi gửi và chỉ tắt sau
 khi xong, nên mọi giao dịch của nó đều đúng. Nó chỉ sai với người thứ hai dùng chung chân —
@@ -311,12 +311,12 @@ Cùng buổi còn một bẫy cùng loại ở tầng dưới: `spi_bus_initiali
 vi nhưng **để driver ngõ ra của chân đó bật**. ESP lái chân SDO, panel không thể kéo nó xuống.
 Thăm dò không gặp vì trên chip vừa reset, chân đó chưa bị ai bật ngõ ra.
 
-### Cách sửa
+#### Cách sửa
 
 `drv_lcd` bật lại ngõ ra DC ngay trước mỗi lệnh đọc, và tắt ngõ ra MISO một lần khi tạo
 thiết bị đọc. Không sửa `esp_lcd`, không thay thư viện: hai dòng, đúng chỗ ranh giới đã đo.
 
-### Bằng chứng đã sửa
+#### Bằng chứng đã sửa
 
 ```
 I (848) drv_lcd: st7796 up at 320x480, 2 bounce of 30720 B, scanline reads 15
@@ -327,9 +327,9 @@ Và trên kính: chủ repo xác nhận khấc **hết hẳn**, màn không nh�
 
 ---
 
-## Lỗi 6 — Dòng tổng kết màu xanh che hai lần panic
+### Lỗi 6 — Dòng tổng kết màu xanh che hai lần panic
 
-### Hiện tượng
+#### Hiện tượng
 
 Bộ test của `sys_storage` chưa từng chạy trên board. Đi chạy nó thì bước đầu đã lộ một điều:
 **nó không biên dịch được** — `sys_storage_model_find()` đã thêm tham số thứ tư từ nhiều commit
@@ -347,7 +347,7 @@ thứ tám rồi chip tự reset (`rst:0xc RTC_SW_CPU_RST`); lần thứ ba mớ
 dùng lúc đầu chỉ giữ các dòng `PASS`/`FAIL` nên **tôi đã đọc kết quả này là "11/11"** — đúng
 cái mà bất kỳ ai nhìn vào dòng tổng kết cũng sẽ đọc.
 
-### Nguyên nhân
+#### Nguyên nhân
 
 ```
 ***ERROR*** A stack overflow in task main has been detected.
@@ -363,7 +363,7 @@ kiểm một vùng canh ở đáy stack. Cùng một vết tràn, nếu lúc chu
 đè, thì không bị bắt — bộ nhớ vẫn đã bị ghi lem, chỉ là không ai báo. **Kết quả "pass" của lần
 thứ ba là kết quả của một chương trình đã hỏng bộ nhớ.**
 
-### Vì sao lúc bình thường không gặp
+#### Vì sao lúc bình thường không gặp
 
 Ba lớp che chồng lên nhau, lớp nào cũng bình thường một cách hợp lý:
 
@@ -376,13 +376,13 @@ Firmware thật chưa bị vì `sys_storage_append()` chưa được ai gọi. K
 từ task riêng, con số 2,2 KB đó phải nằm trong ngân sách stack của task ấy — mà bảng stack
 trong tài liệu thiết kế §5 chưa từng có số đo cho việc này.
 
-### Cách sửa
+#### Cách sửa
 
 Hai mảng thành `static`. Test in luôn mức stack cao nhất của task để lần sau có số thay vì có
 cảm giác. Bật kiểm stack `STRONG` cho test app này (mới có 1 trong 9 test app bật). Và bộ lọc
 đọc log: **đếm số lần boot trong một lần cắm điện** — một bộ test đúng thì boot đúng một lần.
 
-### Bằng chứng đã sửa
+#### Bằng chứng đã sửa
 
 ```
 === số lần boot: 1 | panic: 0
@@ -392,15 +392,15 @@ main task stack left after 16 appends: 1348 B of 3584
 
 ---
 
-# Phần B — Hai lần tôi kết luận sai nguyên nhân
+## Phần B — Hai lần tôi kết luận sai nguyên nhân
 
 Hai mục dưới đây không phải lỗi của hệ thống, mà là lỗi của người gỡ. Chúng vào báo cáo vì
 cùng sinh ra từ một cơ chế duy nhất, và cơ chế đó tốn nhiều thời gian hơn cả ba lỗi thật ở
 trên cộng lại.
 
-## Sai 1 — Gán công cho một thay đổi, trong lúc phần cứng đang chập chờn
+### Sai 1 — Gán công cho một thay đổi, trong lúc phần cứng đang chập chờn
 
-### Tôi đã kết luận gì
+#### Tôi đã kết luận gì
 
 Rằng `drv_touch` không chạy vì **mốc giữ chân RST ở mức thấp quá ngắn**: 10 ms là không đủ,
 phải 100 ms. Lập luận nghe rất thuyết phục: chân RST của GT911 không đi qua GPIO của ESP32
@@ -410,7 +410,7 @@ mà đi qua PCF8574, con này kéo xuống thì mạnh nhưng **đẩy lên ch�
 Bằng chứng tôi đưa ra: nâng 10 → 100 ms thì `init` thành công, log ra
 `gt911 at 0x5D, 320x480`.
 
-### Vì sao nó sai
+#### Vì sao nó sai
 
 Ba điều, mỗi điều đủ để bác:
 
@@ -424,7 +424,7 @@ Ba điều, mỗi điều đủ để bác:
    **cạnh lên** của RST. Giữ RST ở mức **thấp** lâu hơn không tác động gì tới cạnh lên. Câu
    chuyện vật lý tôi kể không nối được với con số tôi sửa — mà tôi vẫn viết nó vào báo cáo.
 
-### Cơ chế đã lừa tôi
+#### Cơ chế đã lừa tôi
 
 Phần cứng chập chờn **chế ra quan hệ nhân quả**. Khi một hệ có lúc chạy có lúc không, thì
 bất kỳ thay đổi nào cũng có xác suất nhất định được theo sau bởi một lần chạy được. Người
@@ -434,7 +434,7 @@ loại theo đúng cách ngược lại: "sửa Y → vẫn trượt → loại 
 
 Nói gọn: **trong điều kiện chập chờn, cả phép xác nhận lẫn phép loại trừ đều mất hiệu lực.**
 
-### Đáng lẽ phải làm gì
+#### Đáng lẽ phải làm gì
 
 **Bật tắt lại thay đổi đó.** Một thay đổi chỉ được coi là nguyên nhân khi đảo nó về thì lỗi
 **quay lại**, và làm lại thì lỗi **mất đi** — lặp vài lần. Tôi không làm phép đảo đó; tôi
@@ -445,16 +445,16 @@ xong thì chưa được đi tìm nguyên nhân.** Cách chốt là đếm: ch�
 bao nhiêu lần đạt. Một con số như 3/10 tự nó đã nói "đây là tiếp xúc", trước khi bàn tới
 datasheet.
 
-## Sai 2 — Kết luận về thiết bị, trong lúc chưa đo dụng cụ đo
+### Sai 2 — Kết luận về thiết bị, trong lúc chưa đo dụng cụ đo
 
-### Tôi đã kết luận gì
+#### Tôi đã kết luận gì
 
 Đi tìm cách đọc vị trí tia quét của panel (để sửa lỗi xé hình khi ảnh di chuyển), tôi cần
 một chân ESP32 làm ngõ vào cho đường `SDO` của module LCD. Lần lượt dùng `GPIO48` rồi
 `GPIO38`, và cả hai lần đều kết luận: **module không đấu đường SDO ra chân**, đọc thanh ghi
 nào cũng ra một mức cố định.
 
-### Vì sao nó sai
+#### Vì sao nó sai
 
 Vì cả hai chân đó **không thể làm ngõ vào trên board này**, và tôi chưa đo điều đó trước khi
 kết luận về module. Sau khi đo mức nền của từng chân với **không cắm gì cả**:
@@ -481,7 +481,7 @@ Khi chuyển sang `GPIO43` — chân đã đo là trống thật — và panel �
 Số đọc **đi theo** số ghi, nên module **có** đấu đường SDO thật và panel **có** trả dữ liệu.
 Kết luận cũ sai hoàn toàn.
 
-### Cơ chế đã lừa tôi
+#### Cơ chế đã lừa tôi
 
 Giống hệt sai 1 ở dạng khác: **kết luận về đối tượng đo trong lúc chưa kiểm dụng cụ đo.**
 Ở sai 1, dụng cụ là đường tiếp xúc đang chập chờn. Ở sai 2, dụng cụ là chính chân GPIO.
@@ -494,7 +494,7 @@ dấu hiệu của *đúng*. Một giá trị sai mà lặp lại y nguyên 10 l
 một giá trị lúc đúng lúc sai. Nhưng chân bị ghim mức, dây bị đứt, hay bus bị kẹt đều cho ra
 số liệu **cực kỳ ổn định**.
 
-### Đáng lẽ phải làm gì
+#### Đáng lẽ phải làm gì
 
 **Đo đường nền trước, bằng một giá trị đã biết trước câu trả lời.**
 
@@ -508,9 +508,9 @@ số liệu **cực kỳ ổn định**.
 Ba phép trên rẻ hơn nhiều so với thời gian tôi đã tiêu, và mỗi phép đều cho câu trả lời nhị
 phân không cần suy luận.
 
-## Sai 3 — Ba lần kết luận "mất dữ liệu" bằng một hàm không tồn tại
+### Sai 3 — Ba lần kết luận "mất dữ liệu" bằng một hàm không tồn tại
 
-### Tôi đã kết luận gì
+#### Tôi đã kết luận gì
 
 Để nghiệm thu tiêu chí *"`faces.bin` sống sót khi rút điện giữa chừng"* của `sys_storage`, tôi
 viết một case kiểm chạy đầu tiên sau mỗi lần boot: nếu `faces.bin` và bản `.bak` đều không
@@ -519,7 +519,7 @@ Ba lần chạy, ba lần case báo đúng như vậy — kể cả `attend.000`
 cũng "mất". Tôi kết luận cả hệ thống file bị xoá, và đi tìm cơ chế: `format_if_mount_failed`,
 trình nạp ghi đè phân vùng, `empty_scratch()` xoá nhầm.
 
-### Vì sao nó sai
+#### Vì sao nó sai
 
 Từng giả thuyết đều bị chính số đo bác: LittleFS không in dòng `W "mount failed... formatting"`
 nào; `flash_args` của trình nạp không có địa chỉ phân vùng `storage`; `readdir` của
@@ -533,7 +533,7 @@ Case kiểm dùng `access(path, F_OK)`. `esp_littlefs` đăng ký với VFS các
 đường dẫn của một file vừa ghi xong. Đổi sang `stat()`: `primary 1, backup 1, attend.000 1` ở
 mọi lần boot. `sys_storage` đúng từ đầu; sai là thước đo.
 
-### Cơ chế đã lừa tôi
+#### Cơ chế đã lừa tôi
 
 Y hệt sai 2, và lần này tôi **đã biết bài học đó rồi** mà vẫn tái phạm: kết luận về đối tượng
 đo trong lúc chưa kiểm dụng cụ đo. Một hàm trả về "không tồn tại" cho mọi thứ trông giống hệt
@@ -541,14 +541,14 @@ một hệ thống file trống, và giống hệt qua cả ba lần — sự �
 đúng. Càng nguy hiểm vì kết luận sai ở đây là kết luận **nặng** ("mất toàn bộ dữ liệu sinh
 trắc và log chấm công"), và tôi đã suýt đem nó đi sửa `sys_storage`.
 
-### Đáng lẽ phải làm gì
+#### Đáng lẽ phải làm gì
 
 Trước khi tin `access()` báo "không có file", **gọi nó lên một file vừa tạo trong cùng dòng
 code** — một dòng, câu trả lời nhị phân, và nó sẽ nói ngay là hàm này không dùng được ở đây.
 Nguyên tắc chung: mọi phép kiểm "không thấy X" phải đi kèm một phép kiểm "có thấy được X khi X
 chắc chắn tồn tại không", nếu không thì "không thấy" không mang thông tin.
 
-### Kết quả thật, sau khi thước đo đã đúng
+#### Kết quả thật, sau khi thước đo đã đúng
 
 Hai lần ngắt giữa `write_atomic`, đo bằng cách lưu ảnh chụp của boot kế tiếp vào NVS (board tự
 boot khi có điện lại, sớm hơn lúc người đo kịp cắm cổng console):
@@ -563,7 +563,7 @@ báo. Cơ chế hai pha của §6.2.6 giữ đúng lời hứa — điều mà b
 
 ---
 
-# Bài học rút ra cho báo cáo
+## Bài học rút ra cho báo cáo
 
 **1. Hàm trả `ESP_OK` chỉ nói về phần nó kiểm soát.** `i2c_new_master_bus()` cấu hình ngoại
 vi của ESP32 và báo thành công — đúng, và vô dụng cho câu hỏi "bus dùng được chưa".
