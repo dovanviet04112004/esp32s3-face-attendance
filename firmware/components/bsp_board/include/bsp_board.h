@@ -29,7 +29,7 @@ spi_host_device_t bsp_lcd_spi_host(void);
  */
 i2c_master_bus_handle_t bsp_i2c_bus(void);
 
-/** Take the bus mutex four devices on I2C_NUM_0 contend for.
+/** Take the bus mutex four devices on I2C_NUM_0 contend for; a timeout logs the task holding it.
  *  @ctx task | blocking | takes m_i2c (KEHOACH 5.3)
  *  @ret ESP_OK | ESP_ERR_TIMEOUT
  */

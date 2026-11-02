@@ -1,11 +1,14 @@
 #include "bsp_board.h"
 
+#include <inttypes.h>
+
 #include "app_config.h"
 #include "app_err.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 static const char *TAG = "bsp_board";
 
@@ -110,8 +113,14 @@ i2c_master_bus_handle_t bsp_i2c_bus(void)
 
 esp_err_t bsp_i2c_lock(uint32_t timeout_ms)
 {
-    return xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE ? ESP_OK
-                                                                            : ESP_ERR_TIMEOUT;
+    if (xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
+        return ESP_OK;
+    }
+    // The holder's name tells a stalled device from a busy bus.
+    const TaskHandle_t holder = xSemaphoreGetMutexHolder(s_i2c_mutex);
+    ESP_LOGW(TAG, "i2c lock timed out after %" PRIu32 " ms, held by %s", timeout_ms,
+             holder != NULL ? pcTaskGetName(holder) : "nobody");
+    return ESP_ERR_TIMEOUT;
 }
 
 void bsp_i2c_unlock(void)
