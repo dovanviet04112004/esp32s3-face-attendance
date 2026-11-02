@@ -2,6 +2,8 @@
 
 #if CONFIG_APP_CONSOLE
 
+#include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app_err.h"
@@ -51,6 +53,23 @@ static const char *known_ns(const char *typed)
     return NULL;
 }
 
+static int set_number(const char *ns, const char *key, const char *value)
+{
+    char *end = NULL;
+    const unsigned long long number = strtoull(value, &end, 10);
+    if (value[0] < '0' || value[0] > '9' || *end != '\0' || number > UINT32_MAX) {
+        ESP_LOGW(TAG, "set %s/%s: the key holds a number and %s is not one", ns, key, value);
+        return 1;
+    }
+    const esp_err_t err = sys_storage_set_u32(ns, key, (uint32_t)number);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "set %s/%s: %s", ns, key, esp_err_to_name(err));
+        return 1;
+    }
+    ESP_LOGI(TAG, "set %s/%s to %" PRIu32, ns, key, (uint32_t)number);
+    return 0;
+}
+
 static int set_cmd(int argc, char **argv)
 {
     if (arg_parse(argc, argv, (void **)&s_set) != 0) {
@@ -62,6 +81,11 @@ static int set_cmd(int argc, char **argv)
         return 1;
     }
     const char *key = s_set.key->sval[0];
+    uint32_t held = 0;
+    // A string over a numeric key reads back as a type mismatch and boot reseeds it (KEHOACH 6.2.1).
+    if (sys_storage_get_u32(ns, key, &held) == ESP_OK) {
+        return set_number(ns, key, s_set.value->sval[0]);
+    }
     const unsigned len = (unsigned)strlen(s_set.value->sval[0]);
     const esp_err_t err = sys_storage_set_str(ns, key, s_set.value->sval[0]);
     if (err != ESP_OK) {
@@ -150,7 +174,7 @@ static void register_commands(void)
     s_set.end = arg_end(3);
     const esp_console_cmd_t set = {
         .command = "set",
-        .help = "Write one NVS string",
+        .help = "Write one NVS string, or a number into a key that holds one",
         .argtable = &s_set,
         .func = set_cmd,
     };
