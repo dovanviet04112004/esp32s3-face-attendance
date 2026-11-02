@@ -217,13 +217,15 @@ def _write_split_md(result: SplitResult, command: str) -> None:
         f"          {name} = {digest}" for name, digest in sorted(result.digests.items())
     )
     count_lines = " / ".join(f"{name} {count}" for name, count in sorted(result.counts.items()))
-    text = (
+    record = (
         f"Quy tac:  {result.rule}\n"
         f"Sinh bang: {command}\n"
         f"Ngay:     {date.today().isoformat()}\n"
         f"sha256:\n{digest_lines}\n"
         f"So luong: {count_lines}\n"
     )
+    title = f"# Split {result.task}/{result.out_dir.name}"
+    text = f"{title}\n\n```text\n{record}```\n"
     (result.out_dir / "SPLIT.md").write_text(text, encoding="utf-8")
 
 
