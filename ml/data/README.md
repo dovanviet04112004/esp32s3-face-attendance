@@ -44,7 +44,7 @@ Thư mục nào không sinh lại được bằng script thì nó đang nằm sa
 
 ```bash
 ml/scripts/00_fetch_raw.sh        # -> raw/
-ml/scripts/01_prepare_interim.sh  # raw/ -> interim/ -> processed/
+ml/scripts/01_prepare_interim.sh  # raw/ -> interim/ (processed/ để trống, KẾ HOẠCH §4.4.2)
 ml/scripts/02_make_splits.sh      # -> splits/
 ```
 

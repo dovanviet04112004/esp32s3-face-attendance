@@ -3,8 +3,9 @@
 Code của bên thứ ba **không có trên ESP Component Registry** — SDK của hãng, fork. Khai
 vào build bằng `EXTRA_COMPONENT_DIRS` trong `firmware/CMakeLists.txt`.
 
-Thứ có trên registry thì khai ở `main/idf_component.yml`, ESP-IDF tự kéo về
-`managed_components/` — không vendor vào đây.
+Thứ có trên registry thì khai ở `main/idf_component.yml`, hoặc ở manifest của chính component dùng
+nó (`components/ai_engine/idf_component.yml` cho esp-dl); ESP-IDF tự kéo về `managed_components/` —
+không vendor vào đây.
 
 | Thư mục | Nguồn |
 |---|---|

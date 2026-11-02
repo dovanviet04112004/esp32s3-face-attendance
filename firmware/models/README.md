@@ -19,15 +19,16 @@ make pack PORT=/dev/ttyACM0
 
 ```
 models/
-├── detection/{yunet_s8.espdl, yunet_int8.tflite, meta.json}
-├── antispoof/{minifasnet_s8.espdl, minifasnet_int8.tflite, meta.json}
-└── recognition/{mobilefacenet_s8.espdl, mobilefacenet_int8.tflite, meta.json}
+├── detection/{yunet_s8.espdl, meta.json}
+├── antispoof/{minifasnet_s8.espdl, meta.json}
+└── recognition/{mobilefacenet_s8.espdl, meta.json}
 ```
 
-Lock quyết định file nào được đóng gói. Bộ đang deploy là `.espdl` cho ESP-DL; `.tflite` dành
-cho firmware dựng với `AI_RUNTIME_TFLM` để đối chứng.
+Lock quyết định file nào được đóng gói. Bộ đang deploy là `.espdl` cho ESP-DL. Bộ `.tflite` đối
+chứng cho firmware dựng với `AI_RUNTIME_TFLM` nằm ở `ml/artifacts/device/locks/tflm/models/`, cùng
+lock riêng của nó.
 
-`meta.json` giữ `in_h`, `in_w`, `arena_hint`, `sha256`, `run_id`. `arena_hint` bằng 0 với
+`meta.json` giữ `in_h`, `in_w`, `arena_hint`, `threshold_permille`, `sha256`, `run_id`. `arena_hint` bằng 0 với
 `.espdl`, vì ESP-DL tự cấp bộ nhớ cho từng model.
 
 ## Vì sao không nhúng thành mảng C
@@ -36,5 +37,5 @@ Nhúng model vào binary thì đổi model phải build lại toàn bộ firmwar
 riêng model — mà model là thứ đổi nhiều nhất trong dự án này. Firmware mở model thẳng từ
 partition qua mmap, xem KẾ HOẠCH §6.2.2.
 
-Đổi model thì chạy `make export`: nó chép file vào đây, cập nhật `contracts/models.lock.json`
-và `meta.json` trong cùng một bước, để commit chung.
+Đổi model thì chạy `make quant-deploy BRANCH=<nhánh> ROW=<hàng>`: nó chép file vào đây,
+cập nhật `contracts/models.lock.json` và `meta.json` trong cùng một bước, để commit chung.

@@ -10,7 +10,7 @@ Nguồn sự thật duy nhất cho ba khối `ml/`, `firmware/`, `backend+fronte
 | `schema/` | 6 file JSON Schema — payload MQTT |
 | `mqtt_topics.yaml` | topic + QoS + retained + chiều + schema tương ứng |
 | `golden/` | Vector vàng: Python sinh, C kiểm |
-| `models.lock.json` | Model đang deploy: file, sha256, run_id, arena_bytes |
+| `models.lock.json` | Model đang deploy: file, sha256, run_id, arena_bytes, threshold_permille |
 
 ## Sinh code
 
