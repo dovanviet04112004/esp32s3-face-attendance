@@ -1,3 +1,6 @@
+# Split device/v1
+
+```text
 Quy tac:  khung OV5640 cua board co nhan dung, dung de cham anti-spoof tren mien thiet bi (KEHOACH 1.3, 3.7)
           moi dong: <file tuong doi voi raw/device/ov5640> <nhan>, 0 = mat that, 1 = gia
           that: live1309, p2that, s20260911a..d, spoof1309_000..006
@@ -10,3 +13,4 @@ Ngay:     2026-09-23
 sha256:
           test_device.txt = 244d40e01406016e1302719297d915f4cd858242891d0372f23886b8349c4960
 So luong: test_device.txt 125 (99 that, 26 gia)
+```

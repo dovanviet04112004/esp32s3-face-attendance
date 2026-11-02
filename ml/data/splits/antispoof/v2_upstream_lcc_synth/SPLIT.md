@@ -1,3 +1,6 @@
+# Split antispoof/v2_upstream_lcc_synth
+
+```text
 Quy tac:  CelebA-Spoof giu chia train/valid/test cua upstream (v1_upstream, khong doi); LCC-FASD giu ba split cua tac gia, training vao pool lap 5 lan, evaluation chi test; SynthASpoof test lay 2000 anh trai deu moi kenh, train lay toi da 10000 anh con lai moi kenh
 Sinh bang: python -m facepipe.data.make_split --task antispoof --seed 42
 Ngay:     2026-09-11
@@ -8,3 +11,4 @@ sha256:
           synth_test_ids.txt = 0a2ea310fa575b20238f39d15443ffda47c13238f21edd426320eae947db174f
           synth_train_ids.txt = ec655fc65496083387126af6be68d4ed2ccff4f50df1d7a59353b3af46d6219a
 So luong: lcc_test_ids.txt 7580 / lcc_train_ids.txt 8299 / lcc_val_ids.txt 2948 / synth_test_ids.txt 10000 / synth_train_ids.txt 41800
+```
