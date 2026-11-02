@@ -18,18 +18,18 @@ thực thi**.
 | Detection | WIDER FACE + nhãn RetinaFace | COCO json, 2 file | `detection/v1` | ✅ |
 | Anti-spoof | CelebA-Spoof parquet + 6 bộ khác miền | 525.864 record + LCC-FASD 18.827 + SynthASpoof 103.797 | `antispoof/v1_upstream` + `v2_upstream_lcc_synth` | ✅ |
 | Recognition | MS1MV3 RecordIO + 6 benchmark `.bin` | 518 shard webdataset | `recognition/v1_identity_disjoint` | ✅ |
-| Thiết bị (chung 3 nhánh) | — | — | `device/v1` trống | ❌ chưa có ảnh OV5640 |
+| Thiết bị (chung 3 nhánh) | `device/ov5640`, khung RGB565 thô của board | — | `device/v1`: `test_device.txt` 125 khung | ⚠ có tập chấm, chưa có `calib_*` |
 
 Tổng dung lượng `raw/` **223 GB**, nằm trên ổ `E:`, vào repo bằng symlink (§2). Chỉ
 `manifest.yaml`, `manifest.csv` và `splits/` là file thật trong git.
 
 ---
 
-## 2. Nguồn thật — 10 dataset
+## 2. Nguồn thật — 13 dataset
 
 Cột **Nguồn** là chỗ dữ liệu thật sự được lấy về. Bốn bộ anti-spoof kinh điển (OULU-NPU,
 CASIA-MFSD, Replay-Attack, MSU-MFSD) **không dùng** vì phải gửi bản cam kết ký tay và chờ
-nhiều tuần; bốn bộ khác miền ở dưới thay được *chức năng* của chúng nhưng không thay được
+nhiều tuần; sáu bộ khác miền ở dưới thay được *chức năng* của chúng nhưng không thay được
 khả năng so số trực tiếp với bảng trong bài báo gốc (KẾ HOẠCH §1.2).
 
 | Dataset | Nguồn | Trên đĩa | Vai trò |
@@ -41,9 +41,12 @@ khả năng so số trực tiếp với bảng trong bài báo gốc (KẾ HOẠ
 | UniqueData live | HF `UniqueData/anti-spoofing_Real` | 542 MB | eval khác miền — live đối chứng |
 | UniqueData replay | HF `UniqueData/anti-spoofing_replay` | 702 MB | eval khác miền — màn hình phát lại |
 | AxonData masks | HF `AxonData/face-anti-spoofing-dataset` | 5.0 GB | eval khác miền — 9 kiểu tấn công |
+| LCC-FASD | Kaggle `faber24/lcc-fasd` | 5,19 GB | train và eval khác miền (KẾ HOẠCH §1.2) |
+| SynthASpoof | Google Drive, [GitHub](https://github.com/meilfang/synthaspoof) | zip 12,36 GB | train và eval khác miền (KẾ HOẠCH §1.2) |
 | MS1MV3 | HF `gaunernst/ms1mv3-recordio` | 28 GB | train recognition — **mặc định** |
 | Glint360K | HF `gaunernst/glint360k-wds-gz` | 122 GB / 1385 shard | dự phòng khi cần thêm ID |
 | Benchmark nhận diện | HF `gaunernst/face-recognition-eval` | 424 MB | LFW · CFP-FP · AgeDB-30 · CFP-FF · CALFW · CPLFW |
+| Tên người của LFW | figshare `files/5976006`, `pairs.txt` gốc | 155 KB | ghép cặp khác người cho tỉ lệ nhận nhầm (KẾ HOẠCH §1.2) |
 
 Tổng **223 GB** trên `E:`. Glint360K đủ 1385 shard nhưng chưa dùng: MS1MV3 chạy được cả
 pipeline với 27,4 GB nên để dành Glint360K tới lúc số ID thành giới hạn đo được.
@@ -160,8 +163,9 @@ bằng mặt nạ `0x1FFFFFFF` trên trường `flag|length`.
 
 ### 3.4 Bốn bộ khác miền
 
-Tải xong, **để nguyên dạng nén**. Chúng chỉ dùng ở E6 (eval anti-spoof khác miền), giải nén
-lúc đó; giải nén sớm là chiếm chỗ mà không dùng.
+Tải về dạng nén, rồi giải nén và cắt thành shard: NUAA và AxonData ở `interim/antispoof/xdomain/`,
+hai bộ UniqueData ở `interim/antispoof/unique_pair` (`paths.yaml`). Thang lượng tử của
+nhánh chống giả đọc chúng.
 
 | Bộ | Dạng |
 |---|---|
@@ -253,9 +257,10 @@ Danh sách ID đọc từ chính các shard (`interim/recognition/identities.txt
 
 ### 4.4 `device/v1`
 
-Trống. Cần ≥2.000 ảnh chụp bằng chính OV5640 trên board (E3-T7). Khi có, `make_split` cắt
-`calib_det` / `calib_spoof` / `calib_recog` mỗi tập 100 ảnh **chỉ lấy từ khung live**, phần
-còn lại thành `test_device`.
+Có `test_device.txt`: 125 khung OV5640 có nhãn (99 thật, 26 giả), dựng tay từ `meta/*.json`
+ngày 23/09 (`SPLIT.md`). Chưa có `calib_*`: cần ≥2.000 ảnh chụp bằng chính OV5640 trên board
+(E3-T7), rồi `make_split` cắt `calib_det` / `calib_spoof` / `calib_recog` mỗi tập 100 ảnh
+**chỉ lấy từ khung live**.
 
 Đây là mắt xích đang chặn nhiều thứ nhất — xem §6.
 
@@ -281,8 +286,7 @@ Hai loại lỗi được nhắm thẳng, vì cả hai đều **hỏng im lặng
 
 | Thiếu | Chặn cái gì |
 |---|---|
-| **Ảnh OV5640 tự thu** (E3-T7, E3-T8) | E4-T6 NMSE · toàn bộ calib PTQ của cả ba nhánh · `test_device` |
-| Giải nén 4 bộ khác miền | E6 eval anti-spoof khác miền |
+| **Ảnh OV5640 tự thu, đủ cho calib** (E3-T7, E3-T8) | E4-T6 NMSE · toàn bộ calib PTQ của cả ba nhánh |
 | `processed/` | Chưa sinh; tạo lúc train từ `interim/` |
 
 Đã tải đủ nhưng chưa dùng, không tính là thiếu: Glint360K 1385 shard (MS1MV3 là mặc định)
