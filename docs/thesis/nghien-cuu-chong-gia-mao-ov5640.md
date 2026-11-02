@@ -1630,7 +1630,7 @@ Trên 85 khung OV5640 (§14), cắt bằng đúng quy tắc ô vuông của firm
 | **2,7×** | **1,0000** | **+0,468** | **0/64** |
 
 Kết luận rút ra không phải "model họ tốt hơn". Là **crop 1,0× vứt tín hiệu đi**: viền máy, tay
-cầm, mép màn hình nằm ngoài hộp mặt. §22 của measurements đã bác 2,7× vì nhánh wide train trên
+cầm, mép màn hình nằm ngoài hộp mặt. §22 của `antispoof/measurements.md` đã bác 2,7× vì nhánh wide train trên
 CelebA-Spoof học "phòng thường = giả"; lỗi ấy thuộc **dữ liệu train**, không thuộc ngữ cảnh.
 Trọng số train ở nơi khác không mang confound đó.
 

@@ -3,7 +3,7 @@
 - **Trạng thái**: Chấp nhận
 - **Ngày**: 2026-09-18
 - **Liên quan**: ADR-0003 (giữ, student thành phương án nhẹ); KẾ HOẠCH §1.1, §3 lớp 1 và lớp 2, §4.5;
-  `docs/measurements/antispoof/measurements.md` §43; `quant_ladder.md` §8; `latency.md` §11
+  `docs/measurements/antispoof/measurements.md` §43; `antispoof/quant_ladder.md` §10; `latency.md` §11
 
 ---
 
@@ -14,12 +14,12 @@ ADR-0003 đưa student width 32 distill lên `models.lock.json` vì nó giữ 62
 đòn giấy** — tờ tiền, ảnh in, thẻ bọc nhựa — trong khi bản nhập V2 `0854` chặn 15/15 lượt giấy.
 Bộ 25 khung giả dùng để nghiệm thu toàn là đòn màn hình (`spoof1309` là ảnh thẻ trên điện thoại,
 `p2gia` là điện thoại thứ hai), nên "25/25" chưa từng nói gì về giấy. Nguyên nhân của student đã
-đo ở §42.5: dấu hiệu giấy nằm dưới 3 px, ngoài trần năng lực của width 32; nới width lên 48 đã
+đo ở antispoof §42.5: dấu hiệu giấy nằm dưới 3 px, ngoài trần năng lực của width 32; nới width lên 48 đã
 nặng hơn teacher nên không có đường student nào rẻ hơn bản nhập mà chặn được giấy.
 
 Ngày 18/09 quét thêm 5 model công khai ngoài minivision và đưa **ba ứng viên** qua cùng một đường
 tối ưu — PReLU nguyên → stem tách ReLU → INT8 — rồi đo cùng thước: 87 khung board, các tập lớn,
-`bench_ai` (§43.4–43.5, `latency.md` §11).
+`bench_ai` (antispoof §43.4–43.5, `latency.md` §11).
 
 ## Quyết định
 

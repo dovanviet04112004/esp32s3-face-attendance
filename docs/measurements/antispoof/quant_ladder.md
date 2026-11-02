@@ -107,7 +107,7 @@ không suy đoán: 46 phép elementwise trên C tham chiếu chưa chắc đắt
 
 ---
 
-## 4. Arm một backbone `0107` — thang chạy lại 12/09, CLE tắt
+## 6. Arm một backbone `0107` — thang chạy lại 12/09, CLE tắt
 
 Run `20260912-0107_fd87e15_5728fa`, `best.pth` epoch 79, một backbone trên crop mặt 81×81.
 Cùng giao thức mục 2: `test_split`, 4.032/39.072 mẫu trải đều. Ba cột cuối **đo thật trên
@@ -124,7 +124,7 @@ board**, không còn 🔬: `ai_engine/test_apps/antispoof` và `test_apps/bench_
 **Ngưỡng latency vẫn trượt**: 234,0 ms so với ngân sách 60 ms của §6.4. Nhưng bản hai
 backbone là 469,7 ms, nên một backbone đã cắt đúng một nửa.
 
-## 5. Vì sao CLE bị tắt — bảng tách, 12/09
+## 7. Vì sao CLE bị tắt — bảng tách, 12/09
 
 Chạy lần đầu với Q1 đúng định nghĩa cũ (có CLE) cho kết quả tệ hẳn. Tách từng thành phần,
 cùng run, cùng split, cùng 4.032 mẫu:
@@ -141,7 +141,7 @@ cùng run, cùng split, cùng 4.032 mẫu:
 Một mình CLE gây ra toàn bộ thiệt hại; bias correction vô hại; tăng mẫu calib không cứu
 được vì calib không phải nguyên nhân. Cơ chế ở `measurements.md` §32.
 
-## 6. Hai run nhập từ minivision — thang chạy 16/09, CLE tắt
+## 8. Hai run nhập từ minivision — thang chạy 16/09, CLE tắt
 
 Kiến trúc `minifasnet_v2`, 80×80, một view 2,7×, ba lớp. Trọng số không train trên pool
 (KẾ HOẠCH §3), nên val pool ở đây đo **mức bất đồng giữa pool và model**, không đo chất lượng
@@ -169,7 +169,7 @@ tử không đổi thứ tự ở cả hai, chỉ thu khe (0,473 → 0,322 và 0
 Cả hai run đều là **A0 với trọng số nhập**, không phải arm của §3.7 cũ; bảng này dựng đường export cho
 chúng và ghi số, không chốt cấu hình lượng tử.
 
-## 7. Student width 32 distill từ trọng số nhập — 16/09, CLE tắt
+## 9. Student width 32 distill từ trọng số nhập — 16/09, CLE tắt
 
 `minifasnet_v2_se` width 32, view wide 2,7×, 81×81, ba lớp, distill từ `20260916-0728` (ADR-0003).
 Val pool ở đây **không phải thước chọn**: nhãn pool không được đọc lúc train, và §42.4 cho thấy nó
@@ -191,7 +191,7 @@ xếp hạng ngược với board. Thước là 87 khung OV5640.
 Q1 so với Q0 trên board: khe giữ nguyên 49 nấc, mặt thật thấp nhất 0,667 → 0,639, khung giả cao nhất
 0,334 → 0,328. Lượng tử không ăn biên.
 
-## 8. Hai run nhập có khối SE: V1SE của minivision và facenox — thang chạy 18/09, CLE tắt
+## 10. Hai run nhập có khối SE: V1SE của minivision và facenox — thang chạy 18/09, CLE tắt
 
 Cùng `minifasnet_v2` với `squeeze_excite: true`; V1SE dùng bảng kênh `keep: 1.8M`, facenox `1.8M_`
 với `input_size 128`, hai lớp. Cả hai qua `stem: split_prelu`, 32 lớp ReLU. Val pool không chấm
@@ -222,7 +222,7 @@ app bench lên 3072 KB mới nạp được. Q1 so với Q0 trên 87 khung: V1SE
 thứ tự), facenox **nới** 0,628 → 0,732 nhưng mặt thật thấp nhất tụt 0,295 → 0,259; trên NUAA thì
 INT8 của facenox mất mặt thật rõ (đậu 0,701 → 0,671, §43.5), V1SE gần như không (0,906 → 0,895).
 
-## 9. Q1 trên ESP-DL — 23/09 (E9-T29, KẾ HOẠCH §3.7)
+## 11. Q1 trên ESP-DL — 23/09 (E9-T29, KẾ HOẠCH §3.7)
 
 Q1 ESP-DL là PTQ ESP-PPQ `esp32s3` w8a8, layerwise equalization bật, calib KL trên 300 mẫu cùng
 nguồn Q1 TFLite (`compress/quant/ptq_espdl.py`, chặng `ESPDL=1` của `30_quantize.sh`). Chấm bằng
@@ -251,7 +251,7 @@ Trên split test của CelebA-Spoof (39.072 ảnh), `0118` ESP-DL đạt AUC 0,8
 số minivision không train trên pool này, và §43 đã chỉ ra pool ấy đo phong cách ảnh chứ không đo
 sống/giả trên OV5640, nên số này không vào quyết định.
 
-## 10. Thang bốn bậc ESP-DL trên đồ thị cuối — 14/10 (E9-T35, E9-T36, E9-T38)
+## 12. Thang bốn bậc ESP-DL trên đồ thị cuối — 14/10 (E9-T35, E9-T36, E9-T38)
 
 `make quant-ptq`, `quant-int16`, `quant-qat ALLOW_TRAIN=1`, `quant-variants` rồi `quant-choose` trên run
 `20260918-0118_c1d09c8_5d7b35` (V1SE PReLU), sau mọi bản vá tốc độ của `latency.md` §14.8–14.18. Thước là mô phỏng

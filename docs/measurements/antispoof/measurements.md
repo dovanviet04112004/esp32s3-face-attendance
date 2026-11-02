@@ -1806,7 +1806,7 @@ hỏi mở từ §22.
 ## 32. CLE phá model một backbone sau INT8 — tìm nguyên nhân, 12/09
 
 Export lần đầu theo đúng §3.7 cũ (Q1 = fold + CLE + bias) cho EER **0,1370** trong khi FP32
-là 0,0895, tức **+53%**. Bảng tách ở `quant_ladder.md` §5 chỉ đích danh **CLE**: bỏ nó ra thì
+là 0,0895, tức **+53%**. Bảng tách ở `quant_ladder.md` §7 chỉ đích danh **CLE**: bỏ nó ra thì
 INT8 còn tốt hơn FP32 (0,0860).
 
 ### 32.1 CLE không sai về hàm

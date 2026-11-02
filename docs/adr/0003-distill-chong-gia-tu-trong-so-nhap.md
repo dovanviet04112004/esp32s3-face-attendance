@@ -14,10 +14,10 @@ ADR-0002 bỏ knowledge distillation vì lý do đo được: teacher CDCN++ tra
 thì không có gì để distill". Quyết định ấy đúng với teacher ấy.
 
 Ngày 16/09 tình thế đổi. Bảy lần train student trên pool đều hỏng cùng một kiểu trên OV5640
-(§16 file nghiên cứu), trong khi trọng số MiniFASNetV2 của minivision, nhập nguyên và đọc crop
+(`nghien-cuu-chong-gia-mao-ov5640.md` §16), trong khi trọng số MiniFASNetV2 của minivision, nhập nguyên và đọc crop
 ngữ cảnh 2,7×, **giữ 62/62 mặt thật và chặn 25/25 khung giả** của chính camera này, INT8, qua đúng
-đường cắt và lượng tử của firmware (§41.7). Quét 15 model công khai khác không tìm được model
-nào tốt hơn (§41.9). Lần đầu nhánh có một teacher **tốt hơn mọi student từng train**.
+đường cắt và lượng tử của firmware (antispoof §41.7). Quét 15 model công khai khác không tìm được model
+nào tốt hơn (antispoof §41.9). Lần đầu nhánh có một teacher **tốt hơn mọi student từng train**.
 
 Cái giá của teacher ấy là kiến trúc của họ: 40,7 MMAC so với 24,6 MMAC của `minifasnet_v2_se`
 width 32, tức spoof **535 ms** trên board thay vì 234 ms (`latency.md` §9). Bộ kênh
@@ -25,7 +25,7 @@ width 32, tức spoof **535 ms** trên board thay vì 234 ms (`latency.md` §9).
 
 Nguyên nhân gốc vì sao student tự train hỏng cũng đã đo được: CelebA-Spoof dạy "ảnh studio =
 thật, ảnh chụp lại trong phòng = giả", mọi model train trên nhãn CelebA — kể cả MobileNetV3
-của OpenVINO và ViT — đều chặn oan mặt thật của OV5640 (§41.9). **Nhãn** là nguồn của vấn đề,
+của OpenVINO và ViT — đều chặn oan mặt thật của OV5640 (antispoof §41.9). **Nhãn** là nguồn của vấn đề,
 không phải ảnh, không phải kiến trúc.
 
 ## Quyết định
@@ -38,7 +38,7 @@ nguồn khác chỉ là đầu vào, teacher gán mục tiêu mềm. Vì không 
 không đi vào student, và pool càng rộng càng tốt.
 
 Chọn checkpoint bằng **KL trên val** (không phải EER pool). Nghiệm thu bằng đúng thước của
-nhánh: 87 khung OV5640 INT8 qua đường board (§41.1), các tập lớn của §41.8, latency `bench_ai`.
+nhánh: 87 khung OV5640 INT8 qua đường board (antispoof §41.1), các tập lớn của antispoof §41.8, latency `bench_ai`.
 Bảng đối chứng bắt buộc có bốn dòng cùng thước: teacher (trần), bản nhập stem tách đang nạp
 (`0854`), student distill, và student cũ train trên nhãn (`0107`).
 
@@ -76,8 +76,8 @@ của OV5640. Bản train trên nhãn cùng kiến trúc mất 51/62 (`measureme
 
 Hai điều phải đọc kèm. **Ảnh in là chỗ student thua**: teacher dìm NUAA xuống 0,000, student để 0,177;
 phép lọc thông thấp cho thấy toàn bộ chênh lệch nằm dưới 3 px, tức trần năng lực của width 32
-(§42.5). Đổi lại student **hơn ở đòn màn hình** (iPad 50,2% so với 23,8%). **Giai đoạn thêm nguồn ảnh
-in bị loại**: nó mua 11 điểm chặn ảnh in nhưng trả 18% khe board (§42.7).
+(antispoof §42.5). Đổi lại student **hơn ở đòn màn hình** (iPad 50,2% so với 23,8%). **Giai đoạn thêm nguồn ảnh
+in bị loại**: nó mua 11 điểm chặn ảnh in nhưng trả 18% khe board (antispoof §42.7).
 
 Một bước mới vào đường xuất: **căn bias**. Cộng hằng số vào logit lớp sống không đổi thứ tự nên 0/87
 khung đổi phán quyết, chỉ dịch điểm vận hành khỏi đuôi phẳng của softmax, nơi `live_min` theo phần

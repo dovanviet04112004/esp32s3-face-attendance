@@ -47,7 +47,7 @@ CFP-FP còn 0,783. Luật của §3.7 không chọn được hàng nào, nên ch
 
 ## Đánh đổi
 
-- **Phần nhanh của các nấc làm tròn không thành hiện thực ở anti-spoof và recog.** Bảng §14 đo được 251,6 ms một
+- **Phần nhanh của các nấc làm tròn không thành hiện thực ở anti-spoof và recog.** Bảng `latency.md` §14.18 đo được 251,6 ms một
   mặt; bộ chọn chạy 349,3 ms vì hai nhánh ấy không qua được cửa chất lượng với PReLU gộp.
 - **Lớp int16 của anti-spoof tốn ~16 ms** cho 0,002 AUC trên CelebA-Spoof, một mức nằm trong cỡ nhiễu của thước.
 - **Recog vẫn dưới cửa.** Ở CFP-FP (mặt nghiêng), TAR@1e-3 kém Q0 0,031; AgeDB-30 kém 0,046; LFW gần như không đổi.

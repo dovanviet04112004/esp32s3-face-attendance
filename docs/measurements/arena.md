@@ -385,7 +385,7 @@ Spoof `20260918-1050_aa7e463_e66877` (ADR-0004) thay student `1109`; số từ `
 `max(head)` lại là spoof (675 KB) thay cho recog (412 KB), nên `arena_big` trả lại đúng khoản lãi của
 §11 cộng **4.096 B** so với `0854`; phần chênh đúng cỡ các vector gộp 1×1 và vector cổng của ba khối
 SE, chưa tách từng tensor để chốt. Vẫn trong PSRAM, dưới cap `CONFIG_AI_ARENA_BIG_KB` 1536 KB. Ứng viên facenox cùng đợt cần 1.684.700 B và bị loại ở đây
-(`quant_ladder.md` §8).
+(`antispoof/quant_ladder.md` §10).
 
 ---
 
