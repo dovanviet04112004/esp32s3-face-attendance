@@ -1,6 +1,6 @@
 # ADR-0003 — Distill nhánh chống giả từ trọng số nhập, mở lại một phần ADR-0002
 
-- **Trạng thái**: Chấp nhận
+- **Trạng thái**: Chấp nhận; ADR-0004 đưa V1SE nhập lên thay student, student thành phương án nhẹ
 - **Ngày**: 2026-09-16
 - **Liên quan**: ADR-0002; KẾ HOẠCH §1.1 (bảng model), §3 lớp 2 (huấn luyện), §4.4 (cây `ml/`);
   `docs/measurements/antispoof/measurements.md` §41; `docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` §17

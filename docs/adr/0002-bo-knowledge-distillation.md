@@ -1,6 +1,6 @@
 # ADR-0002 — Bỏ knowledge distillation, train trực tiếp cả ba nhánh
 
-- **Trạng thái**: Chấp nhận
+- **Trạng thái**: Chấp nhận; ADR-0003 mở lại một phần cho nhánh chống giả
 - **Ngày**: 2026-09-09
 - **Liên quan**: KẾ HOẠCH §1.1 (bảng model), §3 lớp 2 (huấn luyện), §4.4 (cây `ml/`)
 
