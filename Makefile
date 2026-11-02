@@ -4,7 +4,7 @@ SHELL := /bin/bash
         gen check lint fmt typecheck be-typecheck fe-typecheck test ml-test ml-cov be-test be-e2e \
         data-fetch data-interim data-splits \
         train-det train-spoof train-recog trainctl quantize export golden pack eval-det eval-spoof eval-recog recog-floors recog-far detect-floors password-list \
-        idf fw-secrets fw-dev fw-bench fw-bench-tflm fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts \
+        idf fw-secrets fw-dev fw-bench fw-bench-tflm fw-prod fw-fleet fw-size flash monitor fw-log fw-console fw-mac fw-part-read fw-part-write fw-part-erase fw-app fw-app-flash fw-app-test fw-assets fw-fonts fw-sounds \
         fw-bench-ai fw-bench-ai-facts fw-bench-ai-run kiosk-runtime runtime-image runtime-score runtime-check runtime-report \
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
@@ -419,6 +419,9 @@ fw-assets: idf ## Build the assets partition image into firmware/build/assets.bi
 
 fw-fonts: ## Rasterise the kiosk UI fonts from MiSans into firmware/assets/fonts
 	$(ML_PY) firmware/assets/fonts/gen_font.py $(ARGS)
+
+fw-sounds: ## Synthesise the door beep into firmware/assets/sounds (KEHOACH 6.2.8)
+	python3 firmware/assets/sounds/gen_beep.py $(ARGS)
 
 ##@ Release (KEHOACH 7.7: CI publishes the firmware, the models go up from here, kiosks update from the dashboard)
 
