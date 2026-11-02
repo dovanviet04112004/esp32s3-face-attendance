@@ -4785,6 +4785,21 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -O2)
 
 Dùng khi cần đo nhanh giữa lúc đang gỡ lỗi. **Không dùng để chốt số cho báo cáo** — số chính thức lấy từ profile `bench`.
 
+#### 4.5.10 Khởi động — ngoại vi nào hỏng thì dừng boot
+
+**Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
+`ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
+Chia hai nhóm:
+
+| Nhóm | Thiết bị | Hỏng thì |
+|---|---|---|
+| **Sống còn** | `sys_storage`, `bsp_board`, `drv_lcd`, `ui_kiosk`, `drv_ioexp`, `drv_camera`, `drv_servo`, `svc_attendance` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
+| **Suy giảm được** | `ai_engine`, `svc_facedb`, RTC của `sys_time`, `drv_touch`, `drv_tof`, `drv_audio`, `net_wifi` | log rồi đi tiếp. Gói model không nạp được thì máy chạy mù và nói ra trên kính (§4.5.5h); riêng gói model đang chạy thử thì lùi ngăn rồi khởi động lại (A/B dưới đây). File bảng mặt không đọc được thì máy mở bảng rỗng và xin lại cả danh sách (§6.2.4); chỉ khi `svc_facedb` không dựng nổi bảng trong PSRAM thì máy mới chạy mù. RTC vắng thì giờ đợi SNTP. Cảm ứng chỉ phục vụ màn cài đặt và ghi danh, ToF chỉ đánh thức máy, loa chỉ báo mở cửa, Wi-Fi chỉ đưa bản ghi đi: mất chúng là mất tính năng, không mất máy |
+
+Đây là đúng cách `ai_engine` đã làm với ảnh model thiếu nhánh ở §6.2.2, áp cho ngoại vi.
+Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái trước khi dùng, thay vì cho rằng
+`app_main` đã bảo đảm nó có.
+
 ---
 
 ### 4.6 `backend/` — NestJS + TypeScript
@@ -4823,7 +4838,7 @@ backend/
     │   ├── scope/{scope.module.ts, scope.service.ts, viewer.ts,
     │   │          department-subtree.ts}   # ★ §9.4 — ai thấy ai; một phòng ban kéo theo cả nhánh dưới nó
     │   │   reach.ts                  # ★ §9.4 — route bàn giấy khai loại phạm vi; danh mục chung chỉ đọc khi bị giới hạn
-    │   └── csv.ts                    # ★ một bộ ghi CSV cho cả ba nơi xuất file
+    │   └── csv.ts                    # ★ một bộ ghi CSV cho mọi nơi xuất file
     ├── modules/
     │   ├── auth/     └── strategies/{jwt.strategy.ts, jwt-refresh.strategy.ts, device.strategy.ts}
     │   │                             #   throttler.storage.ts: bộ đếm hạn mức nằm ở Redis (§7.2)
@@ -4963,8 +4978,8 @@ không cache thứ gì mà mất đi là sai nghiệp vụ.
 | Queue | Job | Ai đẩy vào | Vì sao không làm đồng bộ |
 |---|---|---|---|
 | `report` | tổng hợp báo cáo tháng ra file | `reports/` khi người dùng bấm | Quét vài chục nghìn bản ghi |
-| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; mỗi lượt quét của §9.21.4 là một job lặp mang tên riêng theo lịch của nó (`contracts-ending`, `kiosk-alerts`, `documents-due`…); `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm; `notice-rescope`: xếp lại người nhận việc khi danh sách pháp nhân của một bàn giấy đổi (§9.4) | `audit/`, `devices/`, `notifications/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
-| `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
+| `notify` | gửi mail/webhook khi có sự kiện lạ; `notice-fanout`: rải tin và đẩy theo lô 1.000 người, idempotent theo `dedupKey`; mỗi lượt quét của §9.21.4 là một job lặp mang tên riêng theo lịch của nó (`contracts-ending`, `kiosk-alerts`, `documents-due`…); `notice-reconcile` mỗi giờ; `notice-cleanup` mỗi đêm; `notice-rescope`: xếp lại người nhận việc khi danh sách pháp nhân của một bàn giấy đổi (§9.4) | `notifications/` và các lượt quét của nó, `realtime/`, `auth/`, `users/`, `profile/`, `documents/` | Bên thứ ba có thể chậm hoặc chết, và chốt một kỳ ba mươi nghìn phiếu không được đợi ba mươi nghìn lần gọi nhà cung cấp đẩy (§9.9 luật 5) |
+| `people` | `leavings-due`: đóng hồ sơ đã qua ngày cuối; `leavings-now`: đóng các hồ sơ một lô cho nghỉ đã tới ngày cuối (§9.14); `faces-unused`: xoá bộ mặt của model không còn kiosk đã duyệt nào chạy (§7.5) | lịch lặp 00:05 của `employees/`; lô cho nghỉ của `employees/`; lịch lặp 02:50 của `enrollment/` | Không ai bấm lúc nửa đêm; lần lỡ được lần sau đóng bù. Một lô tới năm nghìn hồ sơ, mỗi cái cắt phiên và xoá mặt trên mọi kiosk, không vừa trong một request |
 | `timesheet` | `build` (một khoảng, theo yêu cầu) · `nightly` (00:30 `APP_TIMEZONE`, ngày hôm qua) · `rebuild` (một ngày của một người sau lượt quẹt trễ, gộp theo người–ngày) | `timesheet/`, `attendance/` | Dựng cả công ty một ngày là quét vài chục nghìn lượt quẹt (§9.8) |
 | `payroll` | `run`: tính một lượt lương của kỳ; `deliver`: gửi một phiếu lương, `jobId` theo phiếu nên gửi lại không ra hai thư | `payroll/` khi chạy kỳ và khi gửi phiếu | Một kỳ ba mươi nghìn phiếu, tính và gửi đều không vừa trong một request (§9.9) |
 | `leave` | `leave-year`: mở số dư phép năm mới cho mọi người, chuyển phần được mang sang | lịch lặp 00:05 ngày 1/1 theo `APP_TIMEZONE` của `leave/` | Không ai bấm lúc giao thừa; mở lại năm đã mở thì không ghi gì |
@@ -4977,14 +4992,14 @@ hàng đợi vì kiosk chưa gửi ảnh; OTA không cần hàng đợi vì nó 
 
 | Bảng | Cột đáng chú ý |
 |---|---|
-| `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`VIEWER`), employeeId, active |
+| `User` | id, email, passwordHash, role(`ADMIN`/`HR`/`PAYROLL`/`MANAGER`/`EMPLOYEE`/`VIEWER`, §9.4), employeeId, active |
 | `Session` | id, userId, tokenHash(unique, băm `jti`), userAgent, ip, lastSeenAt, expiresAt, revokedAt, mfaAt (lúc phiên qua bước mã, §9.4) — một dòng mỗi thiết bị (§9.23 luật 5) |
 | `UserMfa` | userId (khoá chính), secret và pendingSecret (`Bytes`, AES-256-GCM dưới `MFA_KEY`), pendingAt, enabledAt, lastStep (bước 30 s của mã đúng gần nhất), backupCodes (HMAC của mã dự phòng chưa dùng), misses, lockedUntil — §9.4. Tách khỏi `User` để không lượt đọc tài khoản nào kéo theo khoá bí mật |
 | `Employee` | id, code, fullName, department, active, embeddingVersion (model của bộ mẫu chụp gần nhất, §7.5) |
 | `FaceTemplate` | id, employeeId, embeddingVersion (model đã sinh ra mẫu: một bộ mỗi model, khoá `(employeeId, embeddingVersion, templateIdx)`, §7.5), templateIdx, embedding(`Bytes` int8[512], mã hoá lúc lưu), scale(Float), quality, capturedAt |
 | `Device` | id, serial, name, location, status(`PENDING`/`APPROVED`/`REVOKED`), tokenHash, prevTokenHash (vé trước, sống tới khi vé mới được dùng, §7.3 bước 5), tokenIssuedAt, tokenExpiresAt (vé đang giữ cấp lúc nào, hết hạn lúc nào, §7.3 bước 5), claimHash, claimFailures (mã nhận máy, §7.3), revokedAt, readmittedAt (khoảng máy nằm ngoài đội, §7.3 bước 6), fwVersion, modelVersion, rosterVersion, lastSeenAt, online, bootedAt (lúc khởi động gần nhất, từ heartbeat), rssiDbm, heapFreeBytes, heapMinFreeBytes, psramFreeBytes, pendingUplinkCount, activeSlot, bootCount, healthAt (số đo của nhịp sống gần nhất và lúc nhận nó, §4.8), otaReleaseId, otaOfferedAt (lời mời cập nhật gần nhất, §7.7), otaNextReleaseId, otaPressedAt, otaPressedById (lần bấm Cập nhật đang chạy: bước kế, lúc bấm, người bấm, §7.7), embeddingVersion (§7.5), clockSkewMs (§9.8). Cột otaNextActorId còn lại chờ lượt co (§9.22.3c), không ai đọc |
 | `DeviceEnrollment` | deviceId, employeeId, state(`ASSIGNED`/`ENROLLED`/`RETAKE`/`REVOKED`), templateIdx, sessionAt, sessionOpenedAt (phiên chụp cửa này mở, §7.5), revokedAt (lúc cặp sang `REVOKED`, §9.8), updatedAt |
-| `DeviceCommand` | cmdId(uuid), deviceId, type, payload(json), issuedBy, expiresAt, state, resultNote |
+| `DeviceCommand` | cmdId(uuid), deviceId, action, payload(json), issuedBy, expiresAt, state, resultNote |
 | `DeviceEvent` | id, deviceId, seq(unique per device, rỗng được), type, severity, employeeId, livenessScore, cmdId, message, ts |
 | `AttendanceRecord` | id, localId(unique per device), employeeId, deviceId, ts, receivedAt (giờ server nhận), direction(`IN`/`OUT`), score, livenessScore, doorOpened, capturedOffline, clockUnsynced, questionableTime (§9.8), hold(`LATE`/`CLOSED_PERIOD`) · review(`PENDING`/`ACCEPTED`/`REJECTED`) · reviewedById · reviewedAt · reviewNote (lượt chờ HR duyệt, §9.8), photoUrl |
 | `Shift` / `ShiftAssignment` | startTime, endTime, graceMinutes |
@@ -5063,7 +5078,7 @@ luồng phát hành và đúng một bản kê khai. `minFwVersion` nằm ở đ
 phát hành, không phải của thiết bị nhận.
 
 **`FaceTemplate.embedding` là dữ liệu sinh trắc: mã hoá lúc lưu, không bao giờ nằm trong DTO đọc
-thường** (§7.5). `templateIdx` đi kèm vì khoá nghiệp vụ là `(employeeId, templateIdx)`, và
+thường** (§7.5). `templateIdx` đi kèm vì khoá nghiệp vụ là `(employeeId, embeddingVersion, templateIdx)`, và
 `enroll_payload.schema.json` đã mang trường ấy sẵn.
 
 **Ba cờ của `AttendanceRecord` là lời khai của máy về hoàn cảnh, không phải trạng thái đồng bộ.**
@@ -5073,11 +5088,9 @@ nó nói **dấu thời gian của chính bản ghi ấy không dựa trên NTP*
 nên một bảng công không đánh dấu nó là một bảng công sai giờ mà không ai biết. Một cột "đã đồng
 bộ" thì ngược lại là vô nghĩa ở phía máy chủ: bản ghi nằm trong bảng nghĩa là nó đã tới.
 
-**Thiết bị lạ gặp trên broker được ghi ở `PENDING`.** §7.3 giao việc tạo dòng `Device` cho
-`POST /devices/register`, nhưng đường ấy là E13-T9; tới lúc đó một kiosk có credential vẫn phát
-lên topic của nó. Máy chủ vì thế tạo dòng ở trạng thái `PENDING` ngay lần đầu thấy — **đúng trạng
-thái §7.3 muốn cho một máy chưa ai nhận**, chỉ đến bằng cửa khác — thay vì vứt bản ghi vì khoá
-ngoại. Khi E13-T9 tồn tại thì HTTPS là cửa chính, còn cửa này là lưới an toàn.
+**Thiết bị lạ gặp trên broker bị bỏ qua.** Dòng `Device` chỉ sinh ở `POST /devices/register`
+(§7.3); gói lên từ một máy chưa `APPROVED`, kể cả máy server chưa từng thấy, bị bỏ kèm log trước
+khi tới listener nào (§7.4).
 
 **MQTT topic** (định nghĩa gốc ở `contracts/mqtt_topics.yaml`)
 
@@ -5127,9 +5140,9 @@ broker phát lại lúc `api` nối không ghi số đo, vì nó có thể cũ c
 lần khởi động thứ mấy, RAM nội trống cùng đáy, PSRAM trống, số bản ghi chờ gửi, ngăn model, giờ đo, và
 vé truy cập (§7.3 bước 5).
 
-**`modelVersion` có đường lui.** §6.2.1 giao nó cho `nvs model/version`, mà khoá ấy chỉ được
-đặt khi OTA model A/B (E13-T2) tồn tại. Chưa có thì heartbeat mang **crc32 của header ảnh
-`models_0`** — trường ấy phủ cả ba `sha256` của ba model nên nó đổi khi bất kỳ model nào đổi.
+**`modelVersion` có đường lui.** §6.2.1 giao nó cho `nvs model/version`, mà chưa đường nào
+ghi khoá ấy, nên heartbeat mang **crc32 của header ảnh ở ngăn model đang chạy**
+(`model/active_slot`) — trường ấy phủ cả ba `sha256` của ba model nên nó đổi khi bất kỳ model nào đổi.
 Một chuỗi rỗng nói dối nhiều hơn một digest: backend cần biết máy đang chạy bộ model nào, và
 câu trả lời ấy luôn có sẵn trên chính thiết bị.
 
@@ -5180,10 +5193,10 @@ có `cmdId` lẫn loại sự kiện nào cho kết quả lệnh. Đây là hợ
 hợp đồng bị mở rộng: thêm `cmdId` (tuỳ chọn) cùng hai giá trị `COMMAND_DONE` và
 `COMMAND_REJECTED` là viết nốt điều nó đã hứa. Không phá vỡ gì vì chưa có ai tiêu thụ.
 
-**`up/event` — người phát chỉ ghi nhận, `sync_task` mới nói.** Bốn nơi trong firmware đã phát
-hiện đúng những tình huống hợp đồng liệt kê, và cả bốn đều **không được phép chờ mạng**:
-`ai_task` mất khung (`CAMERA_FAULT`), `tof_task` đọc lỗi khác timeout (`TOF_FAULT`),
-`attend_task` thấy `SPOOF`/`UNKNOWN`, và đường ghi log hỏng (`STORAGE_FAULT`). Nên chúng bỏ một
+**`up/event` — người phát chỉ ghi nhận, `sync_task` mới nói.** Nơi phát hiện những tình huống
+hợp đồng liệt kê đều **không được phép chờ mạng**: `ai_task` mất khung (`CAMERA_FAULT`) hoặc thấy
+`SPOOF`/`UNKNOWN`, `tof_task` đọc lỗi khác timeout (`TOF_FAULT`), đường ghi log hỏng
+(`STORAGE_FAULT`), cùng các sự kiện của `sync_task`, `ota_task` và `ui_task` (§5.3). Nên chúng bỏ một
 bản ghi 88 B vào `q_event` rồi đi tiếp; `sync_task` gắn `deviceId` với `ts` và phát.
 
 **`BOOTED` nói vì sao máy vừa khởi động.** `message` mang số lần khởi động cùng lý do
@@ -5212,8 +5225,8 @@ sớm thì hàng đợi không bao giờ đầy vì một sự thật duy nhất
 |---|---|---|---|
 | Access (web) | 15 phút | memory ở frontend | sub, role, sid, employeeId, mfa (đã qua bước mã, §9.4) |
 | Vé chờ bước mã (web) | `MFA_CHALLENGE_MINUTES` (10 phút) | memory của trang đăng nhập | sub; ký bằng khoá con của `MFA_KEY`, nên không cửa nào nhận nó làm vé access (§9.4) |
-| Refresh (web) | 7 ngày | cookie `httpOnly; Secure; SameSite=None` trên domain API | sub, jti (hash lưu DB để revoke) |
-| Device token (kiosk) | 90 ngày, xoay vòng | NVS mã hoá trên ESP32 | deviceId, serial, jti (hai vé cấp trong cùng một giây vẫn khác băm, §7.3 bước 5) |
+| Refresh (web) | 7 ngày | cookie `httpOnly; Secure; SameSite=Strict` trên domain API | sub, jti (hash lưu DB để revoke) |
+| Device token (kiosk) | 90 ngày, xoay vòng | NVS trên ESP32, chưa mã hoá tới khi xong E13-T3 | deviceId, serial, jti (hai vé cấp trong cùng một giây vẫn khác băm, §7.3 bước 5) |
 
 ### 4.7 `frontend/` — Next.js trên Vercel
 
@@ -5445,7 +5458,7 @@ băm của bản build, nên mỗi lần build lại là một danh sách mới 
 **Không cache `POST`.** Một đơn gửi lúc mất mạng phải **xếp hàng và nói rõ là đang chờ**
 (§9.21.3), chứ không được lặng lẽ trả về một phản hồi cũ làm người gửi tưởng đã xong.
 
-**Mã lỗi thành câu ở đúng một chỗ.** §3.1 luật 2 nói backend phát mã chứ không phát câu; hệ
+**Mã lỗi thành câu ở đúng một chỗ.** CLAUDE.md §3.1 luật 2 nói backend phát mã chứ không phát câu; hệ
 quả là frontend phải có chỗ đổi mã thành câu, và chỗ ấy là `lib/fault.ts` cùng nhánh `errors`
 của catalogue. Trước khi có nó, biểu mẫu đơn từ phải **dò chuỗi tiếng Anh** trong `message` để
 đoán chuyện gì xảy ra — đổi một chữ trong câu lỗi là hỏng một nhánh xử lý mà không ai biết, và
@@ -5500,7 +5513,7 @@ giọng theo thuộc tính ấy.
 **`vi.json` là nguồn kiểu, `en.json` là bản phải theo.** `types/messages.d.ts` khai
 `Messages = typeof vi.json` để gọi sai khoá là lỗi ngay tại chỗ gọi; còn việc `en.json` có đủ
 khoá hay không thì `i18n/request.ts` chốt bằng một phép so tập khoá hai chiều — thiếu một khoá
-hoặc thừa một khoá đều không biên dịch được, và thông báo lỗi gọi thẳng tên khoá (§3.1 luật 1).
+hoặc thừa một khoá đều không biên dịch được, và thông báo lỗi gọi thẳng tên khoá (CLAUDE.md §3.1 luật 1).
 
 **`npm run typecheck` xoá `tsconfig.tsbuildinfo` trước khi chạy, và đó không phải thói quen
 thừa.** `incremental` của TypeScript **không** theo dõi nội dung file `.json`, nên lượt chạy
@@ -5550,7 +5563,7 @@ CI **không** nằm ở đây — workflow ở `/.github/workflows/`, vì GitHub
 | `postgres` | `kiosk-backup:local` — postgres:16-alpine cộng `age`, `zstd`, `rclone`, build từ `backup/` | 5432 (nội bộ) | volume `pgdata`. `archive_command` chạy **trong chính container này, dưới user `postgres`**, nên nó phải có `age` và `zstd`, và phải ghi được `backups/wal/`. Volume `backups` mount ra thuộc `root`, nên entrypoint là `pg-start.sh`: giao `wal/` cho `postgres` rồi mới gọi entrypoint gốc. Thiếu một trong ba thứ thì mọi segment đẩy hỏng, postgres giữ lại hết và đĩa đầy dần — đo 24/09: hỏng quyền 1.759 lần trong 9,5 giờ, `pg_wal` lên 1,1 GB. `pg_hba.conf` nằm trong repo và mở đúng một cửa thêm: kết nối sao chép có mật khẩu từ mạng compose, cho bản gốc của `backup` |
 | `redis` | redis:7-alpine | 6379 (nội bộ) | BullMQ |
 | `emqx` | emqx/emqx:6.3.1 | 8883, 18083 **nội bộ** | auth hai tầng: bảng nội bộ cho `svc-*`, rồi hỏi `api` qua HTTP cho kiosk; ACL là file theo username (§7.4); dashboard không ra ngoài |
-| `minio` (tùy chọn) | minio/minio | 9000 | ảnh chấm công |
+| `minio` (tùy chọn) | quay.io/minio/minio | 9000 (nội bộ) | để dành cho ảnh chấm công, chưa chứa gì |
 | `backup` | `kiosk-backup:local`, chạy cron | — | mỗi đêm: hai bản logic, một bản gốc vật lý, dọn chuỗi quá hạn, ghi `ops.backup_run` (§9.22.2); mỗi 5 phút: chép file mới sang kho ngoài máy (luật 3) |
 
 Frontend **không nằm trong Docker** — deploy thẳng lên Vercel, và chạy dưới **`app.<domain>`**
@@ -5746,7 +5759,7 @@ EMQX. Chỗ quyết định nằm ở **§7.2**: device token là JWT xoay vòng
 chặn mỗi kiosk trong đúng `kiosk/{chính nó}/#`. Với mosquitto, cả hai thứ ấy sống trong file
 `passwd` và `acl`, nên mỗi lần xoay token là backend phải ghi lại file rồi bắt broker nạp lại —
 một đường điều khiển thứ hai nằm ngoài backend, trong khi backend mới là nguồn sự thật của
-token. EMQX hỏi thẳng `api` qua HTTP cho cả auth lẫn ACL, nên xoay token **không đụng tới
+token. EMQX hỏi thẳng `api` qua HTTP để chấm vé, còn ACL là file theo username (§7.4), nên xoay token **không đụng tới
 broker**. Đổi lại 382 MB RAM trên VPS và một cổng dashboard `18083` **bắt buộc không được ra
 ngoài** — traefik chỉ cho nó qua sau xác thực, hoặc không map ra ngoài Docker network.
 
@@ -5857,8 +5870,8 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 | Core | Giao cho | Vì sao |
 |---|---|---|
-| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lần `Invoke()` chiếm CPU liên tục **209 ms (detect), 470 ms (spoof), 1.074 ms (recog)** — đo ở `docs/measurements/latency.md`; 🔬 số spoof đo với hai backbone, đo lại khi bản một backbone (§1.1) lên board. Để chung với LVGL thì UI đứng hình hơn một giây, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
-| **Core 0 (PRO_CPU)** | Wi-Fi/lwIP (hệ thống) + camera + LVGL + touch + audio + ToF + MQTT + sync | Toàn bộ là việc ngắn, phần lớn do DMA/ISR gánh; CPU chỉ điều phối |
+| **Core 1 (APP_CPU)** | **CHỈ `ai_task`** | Một lượt model chiếm CPU liên tục **33 ms (detect), 73 ms (spoof), 246 ms (recog)** trên ESP-DL (`runtime_compare.md`). Để chung với `ui_task`/`cam_task` thì UI đứng hình cả phần tư giây mỗi lượt nhận diện, để chung Wi-Fi thì rớt gói. Độc chiếm 1 core là cách duy nhất giữ UI mượt trong lúc AI chạy |
+| **Core 0 (PRO_CPU)** | Wi-Fi/lwIP (hệ thống) + camera + UI (`ui_kiosk`) + touch + audio + ToF + MQTT + sync | Toàn bộ là việc ngắn, phần lớn do DMA/ISR gánh; CPU chỉ điều phối |
 
 **`ai_task` phải tự nuôi watchdog, và nhường một tick.** `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1` bật và timeout 5 giây, mà detect chạy **mỗi frame** nên core 1 bận liên tục và IDLE1 không bao giờ tới lượt. Đã thấy watchdog bắn thật khi chạy invoke liên tiếp trong `bench_ai`. Hai việc khác nhau, phải làm cả hai:
 
@@ -5867,7 +5880,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 
 **Core 1 bão hoà, đừng trông vào chỗ trống của nó.** Camera ra một frame mỗi 70,5 ms còn detect tốn 209 ms, nên AI xử lý được 1 trong 3 frame và không có lúc nào rảnh. Ý định cũ "chuyển `mqtt_task` + `sync_task` sang core 1 vì chúng chỉ chạy khi AI nghỉ" vì thế không dùng được: AI không nghỉ. Core 0 quá tải thì phải giảm việc của core 0 hoặc giảm tần suất chạy detect, không phải đẩy sang core 1.
 
-**Preview chạy song song lấy mất 16,6% của AI.** Core 0 đẩy frame camera và heap LVGL qua PSRAM (~8,7 MB/s), core 1 quét `arena_big` cũng qua PSRAM. Đo với tải đúng bằng lưu lượng đó: một khuôn mặt đi từ 1.758 ms lên **2.050 ms**, và cả ba nhánh chậm đều nhau 16,0–16,7%. **Kể cả detect, dù arena của nó nằm ở SRAM nội** — trọng số vẫn đọc từ flash qua mmap, mà flash và PSRAM dùng chung MSPI lẫn cache dữ liệu. Nên đặt arena ở SRAM **không** miễn nhiễm với tranh chấp bus; muốn giảm khoản 16,6% này thì phải giảm lưu lượng của core 0, không phải chuyển arena.
+**Preview chạy song song lấy mất 16,6% của AI.** Core 0 đẩy frame camera và overlay của `ui_kiosk` qua PSRAM (~8,7 MB/s), core 1 quét `arena_big` cũng qua PSRAM. Đo với tải đúng bằng lưu lượng đó: một khuôn mặt đi từ 1.758 ms lên **2.050 ms**, và cả ba nhánh chậm đều nhau 16,0–16,7%. **Kể cả detect, dù arena của nó nằm ở SRAM nội** — trọng số vẫn đọc từ flash qua mmap, mà flash và PSRAM dùng chung MSPI lẫn cache dữ liệu. Nên đặt arena ở SRAM **không** miễn nhiễm với tranh chấp bus; muốn giảm khoản 16,6% này thì phải giảm lưu lượng của core 0, không phải chuyển arena.
 
 ### 5.2 Bảng task
 
@@ -5879,7 +5892,7 @@ và ở `metrics.json` của từng run, không viết thẳng vào code.
 | `touch_task` | `drv_touch` | 0 | 5 | 3 KB | ngắt INT GPIO14; poll 40 ms chỉ khi đang có ngón tay | Đọc GT911 → ô `s_touch` của `ui_kiosk` (§5.3). Không ai chạm thì không có giao dịch I2C nào ngoài một lượt đọc an toàn mỗi giây, phòng ngắt lỡ |
 | **`ai_task`** | `svc_vision` | **1** | 5 | 8 KB | chờ `q_frame_ai` | mỗi khung một `svc_vision_step()`: detect, và khi mặt đã ổn định thì spoof → recog → tra bảng ngay trong bước đó (§4.5.5d); kết quả khác `NONE` → `q_result`; `esp_task_wdt_reset()` sau mỗi step (§5.1). Máy nghỉ, màn Cập nhật hay một màn phủ kín đang mở thì model nghỉ, khung trả thẳng về pool (§5.4) |
 | `ui_task` | `ui_kiosk` | 0 | 4 | 4 KB | tick 20 ms | Chạy `ScreenManager`, dựng ảnh overlay cho `cam_task`, đọc điểm chạm ở `s_touch`, đọc `eg_system`. **Không cầm panel**: `cam_task` vẽ mọi màn, kể cả màn phủ kín (§4.5.5h) |
-| `attend_task` | `attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
+| `attend_task` | `svc_attendance` | 0 | 4 | 4 KB | chờ `q_result` | State machine, chống trùng, ghi LittleFS, mở cửa, đẩy `q_audio` + `q_uplink` |
 | `mqtt_task` | `net_mqtt` | 0 | 3 | 6 KB **ở PSRAM** | esp-mqtt tự tạo | pub/sub, TLS |
 | `ota_task` | `net_ota`, `net_provision` | 0 | 3 | 8 KB | lệnh `down/ota`; bit `NEED_TICKET`; bit `BROKER_REFUSED`; bit `RENEW_TICKET`; mốc đổi vé | **Giữ phiên HTTPS duy nhất của máy**: tải firmware / models, verify sha256, ghi partition; xin vé khi chưa có, đổi vé khi sắp hết hạn, và hỏi lại vé khi broker từ chối (§7.3). Cắt broker trước mỗi phiên |
 | `sync_task` | `svc_sync` | 0 | 2 | 5 KB | 5 s hoặc khi `q_uplink` có dữ liệu | Đẩy bản ghi offline lên MQTT, chờ ack, đẩy con trỏ; **phát `up/heartbeat` mỗi `GEN_TOPIC_HEARTBEAT_INTERVAL_S`**; áp lệnh của `q_cmd` và `q_roster`, phát sự kiện của `q_event` |
@@ -5945,12 +5958,12 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 
 | `q_result` | Queue, depth 4, `svc_vision_result_t` | 4 × 156 B | `ai_task` | `attend_task` | Tách hẳn tính toán khỏi nghiệp vụ |
 | `s_touch` | **`std::atomic<int32_t>`** trong `ui_kiosk`, không phải queue | 4 B | `touch_task` | `ui_task` | Điểm chạm là **mức, không phải chuỗi sự kiện**: `ui_task` chỉ cần biết ngón tay *đang* ở đâu tại mỗi nhịp 20 ms. Hàng đợi ở đây phát lại những điểm đã cũ và làm nút bấm trễ theo độ sâu hàng đợi. Một người ghi, một người đọc, `release`/`acquire` — không khoá, không mất, không cũ. Ngón nhấc lên lưu `-1` và `ui_task` dựng lại cú thả: tại chỗ ngón đặt xuống nếu ngón chưa trượt quá `kTapSlopPx`, còn trượt xa hơn là kéo, chỉ thanh trượt nhận (§4.5.5h) |
-| `s_verdict` | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
+| `s_offer` (+ `s_offer_lock`) | **`portMUX_TYPE` + một `ui_kiosk_verdict_t`** trong `ui_kiosk`, không phải queue | 44 B | `attend_task` | `ui_task` | Phán quyết cũng là **mức**: màn chỉ cần câu mới nhất, và mỗi nhịp 20 ms so số thứ tự để biết có câu mới. Nhưng nó dài hơn một từ máy (loại, track, mã, tên), nên một atomic không chở hết, còn chép rời thì tên của người này đi với mã của người kia. Chép dưới spinlock: vài chục byte, không gọi gì bên trong |
 | `q_audio` | Queue, depth 4, `app_sound_t` | 4 × 4 B | `attend_task` | `audio_task` | Phát âm không được chặn nghiệp vụ; chỉ lượt mở cửa lên tiếng (§6.2.8) |
 | `q_uplink` | Queue, depth 16, `storage_attend_record_t` | 16 × 48 B | `attend_task` | `sync_task` | **Chỉ là lời nhắc, không phải hàng đợi thật**: bản ghi đã nằm trên LittleFS kèm con trỏ trước khi chạm vào đây (§6.2.6), nên đầy là chuyện bình thường chứ không phải lỗi — nhất là khi `sync_task` chưa tồn tại. Vì vậy chỉ log **một lần** ở cạnh đầy, không log mỗi bản ghi |
 | `q_cmd` | Queue, depth 4, `device_command_t` | 4 × 160 B | task của esp-mqtt | `sync_task` | `on_broker_message` chạy trên task của esp-mqtt và header của `net_mqtt` cấm chặn lâu ở đó, mà `OPEN_DOOR` giữ cửa 3 s còn `REBOOT` thì không trả về. Nên callback chỉ **phân tích** payload rồi bỏ vào đây. Đầy thì **rơi lệnh và ghi log**: chờ ở đó là chặn cả đường MQTT, kể cả `attendance` đang lên |
-| `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
-| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 88 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
+| `q_roster` | Queue, **depth 1072**, lệnh roster 576 B, bộ đệm ở PSRAM | 1072 × 576 B = 603 KB PSRAM | task của esp-mqtt (chờ 3 s); `ui_task` báo mẫu vừa chụp (200 ms); `ota_task` xoá bảng khi vé chết (2 s) | `sync_task` | Sâu bằng một lượt đồng bộ lại trọn vẹn: 1.000 mẫu (`CONFIG_FACEDB_MAX_RECORDS`) cộng 64 `ASSIGN` cộng 8 chỗ dư. Rơi một lệnh ở đây là một khe hở (§9.23), nên đầy thì bên gửi **chờ, có hạn 3 s** — dài hơn một lần ghi bảng mặt (1,8–2,3 s), ngắn hơn 5 s chờ PUBACK của `sync_task`, vì lúc chờ task của esp-mqtt không xử lý được PUBACK nào |
+| `q_event` | Queue, depth 8, `app_event_t` | 8 × 88 B | `ai_task`, `tof_task`, `attend_task`, `sync_task`, `ota_task`, `ui_task` | `sync_task` | Người phát sự kiện **không được publish**: `net_mqtt_publish` ở QoS 1 chờ PUBACK, mà `ai_task` đứng lại chờ mạng là mất khung. Item là bản rút gọn 88 B chứ không phải `device_event_t` 336 B — người phát biết **lỗi gì**, `sync_task` mới biết `deviceId` với giờ |
 | `q_ota` | Queue, depth 1, `ota_manifest_t` | 1 × 1.856 B | task của esp-mqtt | `ota_task` | Cùng lý do `q_cmd`: callback chỉ phân tích rồi bỏ vào đây, vì tải một ảnh firmware mất hàng chục giây và chặn ở đó là chặn cả đường MQTT. **Sâu đúng 1**: hai bản kê khai cùng lúc thì bản thứ hai là thừa — máy chỉ cài được một ảnh, và bản mới hơn sẽ được phát lại. Đầy thì rơi và ghi log |
 | `q_presence` | Queue, depth 2, `app_presence_t` | 2 × 4 B | `tof_task` | `attend_task` | Máy trạng thái cần **cạnh**, không cần khoảng cách. Depth 2 đủ cho một lần vào và một lần ra chưa kịp xử lý. Cạnh rơi thì **phải log**: mất một `PresenceOff` là máy nằm lại ở `Detecting` cho tới khi có phán quyết thị giác, và im lặng thì không ai lần ra được |
 | **`m_i2c`** | Mutex | — | GT911, VL53L1X, PCF8574, DS3231 | — | **Bắt buộc** — 4 thiết bị 1 bus, 3 task khác nhau truy cập |
@@ -5959,13 +5972,13 @@ Overlay vì thế không tốn thêm một byte nào trên SPI và không tốn 
 | **`m_littlefs`** | Mutex, chờ 5 s | — | mọi task gọi `sys_storage`, cho cả LittleFS lẫn NVS | — | LittleFS không thread-safe mặc định |
 | `s_send_lock` | Mutex, nội bộ `net_mqtt` | — | người publish | — | Mỗi lúc một lượt publish QoS 1 cộng chờ PUBACK |
 | `s_acked` | Binary semaphore, nội bộ `net_mqtt` | — | handler sự kiện của esp-mqtt | người publish | PUBACK đã về. Báo hiệu giữa hai task, không làm khoá |
-| `m_door` | Mutex | — | `attend_task`, task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
+| `m_door` | Mutex | — | `attend_task`, `sync_task` (lệnh `OPEN_DOOR`), task của `esp_timer` | — | `open()` và callback tự đóng cùng đụng trạng thái tay servo (§4.5.5e). Khoá lá: không lấy khoá nào khác bên trong |
 | `s_bounce_free` | Counting semaphore, **2 suất** | — | callback `esp_lcd` | `drv_lcd` | Đệm bounce được trả lại thì mới nạp lượt sau. Có hai đệm nên phải đếm được hai suất: binary chỉ giữ được một, đệm rỗi thứ hai sẽ nằm không. Callback **trả** cờ yield cho `esp_lcd` tự nhường, không tự gọi `portYIELD_FROM_ISR` |
-| `s_tof_int` | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
+| `s_ready` (nội bộ `drv_tof`) | Binary semaphore | — | ISR GPIO3 | `tof_task` | Một lần đo xong là một lần đánh thức, không có suất để dồn |
 | `s_report` | Binary semaphore, nội bộ `drv_touch` | — | ISR GPIO14 | `touch_task` | GT911 có điểm chạm; cùng lý do `s_tof_int` |
 | `s_published` | Binary semaphore, nội bộ `ui_kiosk` | — | `ui_task` | `cam_task` | Màn phủ kín: `cam_task` chờ overlay mới tối đa một chu kỳ khung rồi mới vẽ (§5.2) |
 | `eg_system` | EventGroup | 4 B | mọi task | `ui_task`, `sync_task`, `ota_task` | Bit: `WIFI_OK` `MQTT_OK` `TIME_OK` `DB_LOADED` `AI_READY` `OTA_RUNNING` `PRESENT` `NEED_TICKET` `BROKER_REFUSED` `RENEW_TICKET`. Thay cho 10 biến cờ rời rạc. `BROKER_REFUSED` do callback của esp-mqtt giương khi CONNACK từ chối, `ota_task` hạ khi đã hỏi `api` xong. `RENEW_TICKET` do lệnh `ROTATE_TOKEN` giương, `ota_task` hạ khi đã có vé mới |
-| `eg_wifi` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L3 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
+| `s_state` | EventGroup, nội bộ `net_wifi` | 4 B | handler sự kiện Wi-Fi | `net_wifi_wait_connected()` | `net_wifi` ở L3 không được phụ thuộc lên `app_wiring` ở L7 (§4.5.4), nên trạng thái link phải có chỗ đứng ngay trong component. `net_task` là nơi duy nhất bắc bit này sang `WIFI_OK` của `eg_system` |
 
 **Đường của `EVT_PRESENCE_ON/OFF`.** `drv_tof` chỉ trả khoảng cách (§2.3D), nên `tof_task` là
 chỗ biến khoảng cách thành hai cạnh: dưới `vision.present_mm` là có người, trên ngưỡng đó cộng
@@ -5997,17 +6010,17 @@ Người ghi khác chờ ở cửa `m_facedb_io` tới 4 s; `ai_task` thì khôn
 
 ### 5.4 Các mức nghỉ và đường đánh thức
 
-Ý đồ này trước nay nằm rải rác — §2.3D chọn GPIO3 cho ngắt VL53L1X **vì nó là RTC GPIO, dùng
+Ý đồ này rải ở ba mục: §2.3D chọn GPIO3 cho ngắt VL53L1X **vì nó là RTC GPIO, dùng
 được làm nguồn đánh thức**; §2.6 bỏ luôn chân SQW của DS3231 với lý do "đánh thức đã có ngắt
-VL53L1X"; §3 lớp 5 đòi "ToF không thấy người → không chạy model nào, tiết kiệm ~70%". Không mục
-nào đặc tả **máy nghỉ thế nào**, nên mục này làm việc đó.
+VL53L1X"; §3 lớp 5 đòi "ToF không thấy người → không chạy model nào, tiết kiệm ~70%". Mục này
+đặc tả **máy nghỉ thế nào**.
 
 **Vì sao đáng làm.** Bảng §2.5 lúc rảnh, chưa tính loa và servo: ESP32-S3 ~100 mA, OV5640 đang
 stream **120 mA**, LCD cộng đèn nền ~100 mA, VL53L1X 20 mA, GT911 5 mA — tổng ~345 mA. Tắt mỗi
 đèn nền là cắt được chưa tới một phần ba. Hai khoản còn lại, **camera và CPU**, mới là phần
 §3 lớp 5 nhắm tới.
 
-**Một mốc thời gian, hai ngưỡng, ba mức.** Mốc là `esp_timer_get_time()` — đơn điệu, vì SNTP
+**Một mốc thời gian, một ngưỡng, hai mức.** Mốc là `esp_timer_get_time()` — đơn điệu, vì SNTP
 chỉnh đồng hồ tường và một đồng hồ bị chỉnh từng làm màn nháy. Mọi nguồn đánh thức chỉ làm đúng
 một việc: ghi lại mốc ấy.
 
@@ -6016,12 +6029,12 @@ một việc: ghi lại mốc ấy.
 | **Thức** | vừa có nguồn đánh thức, hoặc màn phủ kín đang mở, hoặc đang lấy mẫu đăng ký | — | 0 |
 | **Nghỉ** | **60 s** không nguồn nào | `ai_task` bỏ `svc_vision_step`, xoá hộp mặt trên kính và báo `NO_FACE` một lần; thêm: đèn nền tắt, **ST7796 vào `SLPIN`**, **OV5640 vào standby mềm**, `cam_task` thôi lấy khung, `touch_task` chỉ còn chờ ngắt INT, `ui_task` giãn 20 → 200 ms, `attend_task` thôi dựng trang cài đặt | ~100 mA đèn + ~120 mA camera + phần bộ điều khiển panel và số lần đánh thức CPU |
 
-**Đúng hai mức, không ba.** Bản đầu cho model nghỉ sớm ở 4 giây rồi mới tắt màn ở phút thứ nhất,
-và khoảng giữa ấy là một vùng chết: màn sáng, preview chạy, người dùng thấy một cái máy đang
+**Đúng hai mức, không ba.** Cho model nghỉ sớm ở 4 giây rồi mới tắt màn ở phút thứ nhất thì
+khoảng giữa ấy là một vùng chết: màn sáng, preview chạy, người dùng thấy một cái máy đang
 sống, mà **không model nào nhìn khung hình**. Tệ hơn, model đã ngủ thì nó không thấy được mặt
 nữa, nên nguồn "mặt giữ thức" mất tác dụng và việc chấm công quay về phụ thuộc mỗi ToF — đúng
 cái §4.5.5f cấm. Đổi lại chỉ được **CPU của core 1**, khoản nhỏ nhất trong ba, trong khi camera
-120 mA và đèn nền 100 mA vẫn bật suốt vùng chết ấy. Không đáng, nên bỏ: **màn sáng thì máy làm
+120 mA và đèn nền 100 mA vẫn bật suốt vùng chết ấy. Không đáng, nên: **màn sáng thì máy làm
 việc đầy đủ, màn tắt thì mọi thứ nghỉ cùng lúc.**
 
 Ngưỡng nghỉ là **một phút** chứ không phải hai chục giây: người đứng đọc màn hình, quay đi lấy thẻ
@@ -6059,11 +6072,10 @@ thức mãi, và chấm công đứng theo nó.
 đánh thức là vòng tự nuôi: bộ dò còn báo thấy mặt thì máy không bao giờ nghỉ, đúng hay sai cũng
 vậy. Việc phát hiện có người là của cảm biến khoảng cách và của ngón tay, không phải của model.
 
-**Bộ dò không được giữ thức, và đây là số đo nói ra điều đó.** Ý tưởng cho khuôn mặt gia hạn
-mốc nghỉ đã thử và đã bỏ trong cùng ngày 18/09. Bản đầu nhận mọi ứng viên: 92 giây không ai đứng
-trước máy, ToF không ra một dòng `presence on`, mà kiosk không hề nghỉ vì bộ dò nhấp nháy ra ứng
-viên `FACE_SMALL` và `FACE_OUT_OF_FRAME`. Bản sau siết lại, chỉ nhận khuôn mặt qua cổng
-`face_min_px`: **80 giây, đúng một dòng `face in` và không bao giờ `face out`** — bộ dò bám một
+**Bộ dò không được giữ thức, và đây là số đo nói ra điều đó.** Đo 18/09 với khuôn mặt
+được gia hạn mốc nghỉ. Nhận mọi ứng viên thì 92 giây không ai đứng trước máy, ToF không ra một
+dòng `presence on`, mà kiosk không hề nghỉ vì bộ dò nhấp nháy ra ứng viên `FACE_SMALL` và
+`FACE_OUT_OF_FRAME`. Chỉ nhận khuôn mặt qua cổng `face_min_px` thì **80 giây, đúng một dòng `face in` và không bao giờ `face out`** — bộ dò bám một
 vật trong khung đủ lớn để qua cổng và giữ máy thức liên tục. Kết luận: ở bố trí này camera
 **không phân biệt được người với vật giống khuôn mặt** đủ tin để đem gác nguồn điện, còn cảm
 biến khoảng cách thì có. Nên danh sách nguồn ở trên là danh sách đầy đủ, không có ngoại lệ cho
@@ -6153,8 +6165,8 @@ USB bảng mới, cả hai slot app và slot model.
 | `nvs` | Wi-Fi credential, device JWT, cấu hình, số serial — bố cục namespace ở §6.2.1 | `nvs_flash` |
 | `nvs_keys` | Khoá AES để mã hoá `nvs`. Chỉ có tác dụng khi bật Flash Encryption | `nvs_flash_secure_init` |
 | `models_0` / `models_1` | Header (magic, version, offset, sha256) + 3 file INT8 của một runtime: `.espdl` 2.160 KB hoặc `.tflite` 1.481 KB | `esp_partition_mmap` → `const void*`, **0 byte RAM**; ESP-DL chép trọng số từ đó sang PSRAM lúc nạp |
-| `assets` | Font tiếng Việt, icon LVGL, file WAV thông báo | SPIFFS read-only |
-| `storage` | `db/faces.bin` (embedding), `log/attend.NNN` (append-only), `cfg/`, `tmp/` — bố cục ở §6.2.3 | LittleFS (chống mất điện tốt hơn SPIFFS) |
+| `assets` | file WAV thông báo (`snd/ok.wav`); font biên dịch thẳng vào app (§6.2.8) | SPIFFS read-only |
+| `storage` | `db/faces.bin` (embedding), `log/attend.NNN` (append-only), `tmp/` — bố cục ở §6.2.3 | LittleFS (chống mất điện tốt hơn SPIFFS) |
 
 ### 6.2 Bố cục dữ liệu trên thiết bị
 
@@ -6326,19 +6338,6 @@ runtime là đổi model nhận diện, nên bảng mặt mang nhãn model khác
 TFLM thì máy chưa nhận ra ai cho tới khi lấy mặt lại, về ESP-DL thì server gửi lại bộ mẫu của model
 ESP-DL.
 
-**Không phải ngoại vi nào hỏng cũng được chặn boot.** `app_main.c` khởi tạo tuần tự, nhưng
-`ESP_ERROR_CHECK` cho **mọi** lời gọi nghĩa là một con hỏng thì cả máy chấm công không lên.
-Chia hai nhóm:
-
-| Nhóm | Thiết bị | Hỏng thì |
-|---|---|---|
-| **Sống còn** | `sys_storage`, `bsp_board`, `drv_lcd`, `ui_kiosk`, `drv_ioexp`, `drv_camera`, `drv_servo`, `svc_attendance` | dừng boot — không có chúng thì không chấm công được, cũng không báo được cho người dùng biết vì sao |
-| **Suy giảm được** | `ai_engine`, `svc_facedb`, RTC của `sys_time`, `drv_touch`, `drv_tof`, `drv_audio`, `net_wifi` | log rồi đi tiếp. Gói model không nạp được thì máy chạy mù và nói ra trên kính (§4.5.5h); riêng gói model đang chạy thử thì lùi ngăn rồi khởi động lại (A/B dưới đây). File bảng mặt không đọc được thì máy mở bảng rỗng và xin lại cả danh sách (§6.2.4); chỉ khi `svc_facedb` không dựng nổi bảng trong PSRAM thì máy mới chạy mù. RTC vắng thì giờ đợi SNTP. Cảm ứng chỉ phục vụ màn cài đặt và ghi danh, ToF chỉ đánh thức máy, loa chỉ báo mở cửa, Wi-Fi chỉ đưa bản ghi đi: mất chúng là mất tính năng, không mất máy |
-
-Đây là đúng cách `ai_engine` đã làm với ảnh model thiếu nhánh ở §6.2.2, áp cho ngoại vi.
-Thiết bị suy giảm được thì tầng trên phải hỏi trạng thái trước khi dùng, thay vì cho rằng
-`app_main` đã bảo đảm nó có.
-
 **A/B model**: `nvs:model/active_slot` quyết định dùng partition nào. OTA ghi vào slot *không* active → verify sha256 → đổi `active_slot` → reboot. Nếu boot sau đó lỗi (`ai_engine_init` fail) thì `app_main` trả `active_slot` về giá trị cũ và reboot lại. Rollback model độc lập với rollback firmware.
 
 **`fwVersion` phải so sánh được, nên nó là `MAJOR.MINOR.PATCH`.** Không đặt `PROJECT_VER`
@@ -6363,15 +6362,13 @@ mang số hiệu có thứ tự.
 /lfs
 ├── db/
 │   ├── faces.bin          # bảng embedding, bản ghi cố định 576 B
-│   ├── faces.tmp          # chỉ tồn tại giữa chừng khi ghi 2 pha
-│   └── faces.bak          # bản ngay trước, để cứu khi faces.bin hỏng
+│   ├── faces.bin.tmp      # chỉ tồn tại giữa chừng khi ghi 2 pha
+│   └── faces.bin.bak      # bản ngay trước, để cứu khi faces.bin hỏng
 ├── log/
 │   ├── attend.000         # append-only, xoay vòng khi > 256 KB
 │   ├── attend.001
 │   ├── cursor.bin         # đã đồng bộ tới file nào, offset nào
 │   └── boot.bin           # bản thứ hai của sys/boot_count, nửa cao của local_id
-├── cfg/
-│   └── ui.json            # cấu hình không nhạy cảm, sửa được từ màn hình
 └── tmp/                   # ảnh crop tạm cho enroll — XOÁ SẠCH mỗi lần boot
 ```
 
@@ -6457,7 +6454,7 @@ luật của đoạn dưới.
 
 **Bảng trên flash không đọc được thì máy mở bảng rỗng và xin lại cả danh sách, không chạy mù.**
 Ba ca dẫn tới đây: `format_ver` của một firmware mới hơn (ca vừa nói), cả `faces.bin` lẫn
-`faces.bak` hỏng kiểm tra, và file lớn hơn sức chứa của bản build đang chạy. `svc_facedb` vẫn mở
+`faces.bin.bak` hỏng kiểm tra, và file lớn hơn sức chứa của bản build đang chạy. `svc_facedb` vẫn mở
 với bảng rỗng và nói lý do; máy đặt `device/roster_ver` về 0 **trước** mọi việc khác, như ca tag
 lệch ở bảng trên, phát `STORAGE_FAULT` rồi chạy tiếp. Heartbeat khai 0 nên máy chủ đồng bộ lại cả
 danh sách (§9.23), và cổng số phiên bản ở đó giữ mọi lệnh đếm tăng cho tới lượt `REPLACE_ALL`, nên
@@ -6583,7 +6580,7 @@ ack. Không component nào ngoài `sys_storage` biết log gồm mấy file.
 
 | Việc | Cách ghi | Mất điện giữa chừng thì sao |
 |---|---|---|
-| Sửa `faces.bin` | Ghi `faces.tmp` → `lfs_file_sync` → rename `faces.bin`→`faces.bak` → rename `faces.tmp`→`faces.bin` | `faces.bin` hoặc còn nguyên bản cũ, hoặc đã là bản mới. Không bao giờ nửa vời. Boot sau đọc `faces.bin`; CRC sai thì rơi về `faces.bak` |
+| Sửa `faces.bin` | Ghi `faces.bin.tmp` → `lfs_file_sync` → rename `faces.bin`→`faces.bin.bak` → rename `faces.bin.tmp`→`faces.bin` | `faces.bin` hoặc còn nguyên bản cũ, hoặc đã là bản mới. Không bao giờ nửa vời. Boot sau đọc `faces.bin`; CRC sai thì rơi về `faces.bin.bak` |
 | Thêm bản ghi chấm công | `lfs_file_write` + **`lfs_file_sync` ngay sau mỗi bản ghi**. Lần ghi sau **cắt cái đuôi dở** về mốc 32 + k×48 trước khi ghi tiếp | Bản ghi cuối dở dang bị cắt, các bản ghi trước còn nguyên. Không cắt thì n byte lẻ đó đẩy lệch mọi bản ghi ghi sau nó và cả file đọc ra sai |
 | Cập nhật `cursor.bin` | Ghi **SAU KHI** broker trả ack QoS 1, bằng đường hai pha của `faces.bin` | Gửi lại bản ghi đã gửi → server khử trùng bằng `local_id`. Đây là at-least-once, đúng ý đồ — thà trùng còn hơn mất |
 | Cập nhật `boot.bin` | Ghi NVS `sys/boot_count` trước, rồi `boot.bin` bằng đường hai pha của `faces.bin` | `boot.bin` còn số cũ, nhỏ hơn đúng một; lần khởi động sau lấy số lớn hơn của hai bản nên vẫn tăng |
@@ -6646,7 +6643,7 @@ Ba hệ quả bắt buộc:
 
 Mount **read-only**, không bao giờ ghi lúc chạy → dùng SPIFFS là đủ, nhẹ hơn LittleFS. Cập nhật bằng cách ghi đè cả partition qua OTA. Ảnh do `assets/build_assets.py` dựng bằng `spiffsgen.py` của IDF; script giữ **bảng ánh xạ** từ tên file nguồn sang tên trên thiết bị, nên đổi file âm thanh không phải sửa một dòng firmware nào.
 
-**Máy chỉ lên tiếng khi nó mở cửa.** Bảng ban đầu có bốn tiếng `ok / denied / spoof / enroll`; giờ chỉ còn `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
+**Máy chỉ lên tiếng khi nó mở cửa.** `app_sound_t` có bốn tiếng `ok / denied / spoof / enroll`, nhưng máy chỉ mang và chỉ phát `ok.wav`. Một lần từ chối đã hiện chữ và đổi màu khung ngắm ngay trước mặt người đứng đó (§4.5.5h.1), còn phát tiếng cho nó thì **thông báo cái trượt của người ta ra cả phòng** — kiosk đặt ở cửa, người xung quanh nghe được. Tiếng nói "xong rồi, đi được" là thứ duy nhất người dùng cần nghe mà không phải nhìn màn. `attend_task` vì thế chỉ đẩy `APP_SOUND_OK` vào `q_audio`, và bảng `app_sound_t` giữ nguyên bốn giá trị để không phá hợp đồng của `app_events.h`.
 
 Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch thẳng vào ảnh firmware (`assets/fonts/kiosk_ui_{15,20,24,28}.c`, §4.5.5h), vì chúng phải vẽ được trước khi mount xong bất cứ thứ gì.
 
@@ -6655,16 +6652,15 @@ Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch th
 | Dữ liệu | Kích thước | Vùng | Cách cấp phát | Vì sao |
 |---|---|---|---|---|
 | Camera FB ×4 (480×320 RGB565) | 4 × 300 KB = 1.200 KB | **PSRAM** | `fb_location = CAMERA_FB_IN_PSRAM`, `fb_count = 4`, `grab_mode = CAMERA_GRAB_LATEST` | Quá lớn cho SRAM. Một cấu hình cho cả preview và AI (§2.1), nên không có buffer riêng cho nhánh AI. **Cần 4 chứ không phải 3**: `ai_task` giữ một khung tới 2 giây và `cam_task` giữ một khung suốt lúc vẽ, nên với 3 khung cảm biến không còn chỗ để lấp khung kế tiếp và chu kỳ thành *lấp + xử lý* thay vì `max(lấp, xử lý)` — đo 11/09: preview **8,1 fps** với 3 khung, **14,18 fps** với 4, cùng phòng cùng bản (`docs/measurements/latency.md` §6) |
-| LCD frame buffer 320×480 RGB565 | 300 KB | **PSRAM** | `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` | |
 | LCD bounce buffer (2 × 20 dòng) | 2 × 12.800 B = **25.600 B** | **SRAM (DMA)** | `MALLOC_CAP_DMA \| MALLOC_CAP_INTERNAL` | SPI DMA đọc trực tiếp từ PSRAM bị giới hạn → bắt buộc bounce qua RAM nội. Hai đệm chứ không một: nạp lại cái đang chờ truyền là thứ vẽ ra sọc dọc (E7-T5). **20 dòng chốt 23/09** để trả RAM nội cho ESP-DL, trên bảng đo 19/09 — xem luật ngay dưới §6.4 |
 | **`arena_fast`** (TFLM) — detect một mình @160×120 | **189.628 B** đo thật | **PSRAM** | `heap_caps_aligned_alloc(16, n, MALLOC_CAP_SPIRAM)` | Không nhánh nào nằm vừa SRAM nội (§6.4); `ai_engine` cấp theo `arena_hint` rồi làm tròn lên bội KB |
 | **`arena_big`** (TFLM) — anti-spoof @80×80 và recognition @113×113 **chung một `MicroAllocator`** | **748.524 B** đo thật 18/09 (V1SE nhập); 422.764 B với student width 32 | **PSRAM** | như trên | `Σ tail + max(head)` theo §3.8, không phải tổng hai arena. Bản hai backbone từng chiếm 823.148 B |
 | Trọng số 3 model | TFLM `.tflite` ≈ 1.480 KB (158 + 602 + 720, đo thật) · ESP-DL `.espdl` ≈ 2.160 KB (224 + 551 + 1.386) | TFLM: **flash mmap**. ESP-DL: **PSRAM**, chép từ mmap lúc nạp cho nhánh bật `AI_WEIGHTS_PSRAM_*` (mặc định cả ba) | `esp_partition_mmap`; ESP-DL cấp bản chép bằng chính bộ nạp của nó (`param_copy`) | Mmap không tốn RAM và chỉ đọc. Bản chép đổi PSRAM lấy đường octal 8 bit thay cho flash QIO 4 bit — đo 23/09 nhanh hơn 3–25% tuỳ model — nhưng một phép ghi lố heap sẽ âm thầm sửa trọng số thay vì crash tại chỗ |
 | Ảnh crop recog / spoof (tensor đầu vào) | 113×113×3 hoặc 112×112×3 · 80×80×3 int8 | **PSRAM** | nằm trong arena TFLM hoặc bộ nhớ của `dl::Model` | Hậu xử lý ghi thẳng vào tensor đầu vào của graph, không qua buffer trung gian |
 | **Bộ nhớ riêng của ESP-DL** — tensor, module, tên | **3.281 KB** với trọng số đã chép, đo 23/09 trên bộ deploy (349 + 792 + 2.140 KB; `measurements/latency.md` §13.6) | **PSRAM**; object nhỏ dựng trong guard `heap_caps_malloc_extmem_enable(0)` | `dl::Model`, `max_internal_size = 0` | Thay chỗ hai arena TFLM (917 KB đo cùng bench). Để trong RAM nội thì mỗi model ăn 25–41 KB (§6.4) |
-| Bảng embedding (500 người × 512 chiều) | 1 MB nếu float32 — **256 KB nếu int8** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM. **Khuyến nghị int8 + scale**, mất < 0.3% accuracy |
+| Bảng embedding (1.000 bản ghi × 576 B, int8 + scale) | **576 KB** | **PSRAM** (cache) + `storage` (bản gốc) | `MALLOC_CAP_SPIRAM` | Cosine search quét toàn bảng → phải ở RAM |
 | Log chấm công offline | tới 4 MB | **Flash LittleFS** | append-only | Chịu được mất điện |
-| Cert TLS + device JWT | ~4 KB | **NVS mã hoá** | `nvs_flash` + NVS encryption | |
+| Device JWT và các khoá của `device` | ~4 KB | **NVS**, chưa mã hoá tới khi xong E13-T3 | `nvs_flash` | CA của broker nhúng trong firmware (§7.3) |
 | Cover map của `ui_kiosk` | 2 × 320×480 = 307.200 B: hai ô luân phiên, một ô trên kính và một ô đang vẽ | **PSRAM** | `heap_caps_malloc` | 1 byte mỗi pixel: 4 bit chỉ số bảng màu (0 để lọt video) + 4 bit độ phủ (§4.5.5h) |
 | Wi-Fi + lwIP buffer | ~55 KB | **SRAM (bắt buộc)** | IDF tự quản | Không thể để PSRAM |
 | Stack 10 task | ~53 KB | **SRAM (bắt buộc)** | FreeRTOS | |
@@ -6673,7 +6669,7 @@ Font không nằm ở đây: bốn bảng chữ 4bpp của kiosk biên dịch th
 
 | Mục | Ước tính |
 |---|---|
-| `.data` + `.bss` firmware (LVGL, TFLM, driver) | ~70 KB |
+| `.data` + `.bss` firmware (ESP-DL, driver) | ~70 KB |
 | Wi-Fi + lwIP (BT tắt) | ~55 KB |
 | Stack 10 task | ~53 KB |
 | LCD bounce + DMA descriptor | **~27 KB** |
@@ -6767,9 +6763,9 @@ Hệ chi **260 KB** cho năm dòng chưa tính, sát con số ước 267 KB. Đ�
 nên không có chỗ nào rò. Hai khoản **chưa** trả đồng nào: LVGL chưa tồn tại, và lượt đo ấy
 Wi-Fi không vào được mạng nên chưa có phiên TCP lẫn 30 KB bắt tay TLS.
 
-Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền mạch lớn nhất: 32 KB**. Đệm vẽ
-LVGL xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
-PSRAM; heap LVGL vì thế nằm ở PSRAM, nơi còn 5,8 MB.
+Con số phải mang sang E10-T1 không phải 71 KB mà là **mảnh liền mạch lớn nhất: 32 KB**. Một đệm
+vẽ xin quá mức đó ở RAM nội sẽ trượt dù tổng còn trống, đúng cơ chế đã hạ `arena_fast` xuống
+PSRAM; cover map của `ui_kiosk` vì thế nằm ở PSRAM, nơi còn 5,8 MB.
 
 **Đo lại 18/09 khi hai khoản kia đã trả** (`arena.md` §13): giao diện tám màn hình, `audio_task`
 và một phiên Wi-Fi vào mạng thật đều đã lên.
@@ -6845,16 +6841,18 @@ vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được 
 ### 7.1 Luồng dữ liệu tổng thể
 
 ```
-┌──────────────────────── KIOSK (ESP32-S3) ────────────────────────┐
-│ VL53L1X ─wake─► OV5640 ─► [quality gate] ─► YuNet INT8            │
+┌──────────────────────── KIOSK (ESP32-S3) ─────────────────────────┐
+│ VL53L1X ─wake─► OV5640 ─► [quality gate] ─► YuNet INT8 (160×120)  │
 │                                    │  box + 5 landmark            │
 │                                    ▼                              │
-│                            affine align 113×113                   │
+│                 crop vuông 2,7× quanh hộp mặt, cắt từ khung gốc   │
 │                                    ▼                              │
-│                        MiniFASNetV2-SE INT8 (81×81)               │
+│                        MiniFASNetV1SE INT8 (80×80)                │
 │                            live? ──No──► LCD "Giả mạo" + log      │
 │                                    ▼ Yes                          │
-│                        MobileFaceNet INT8 → embedding 512-D       │
+│                     affine align 112×112 theo 5 landmark          │
+│                                    ▼                              │
+│                    MobileFaceNet-ECA INT8 → embedding 512-D       │
 │                                    ▼                              │
 │                     cosine vs face_db  →  id + score              │
 │                                    ▼                              │
@@ -6867,9 +6865,9 @@ vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được 
 ┌──────────────── VPS — Docker Compose ────────────────┐
 │ traefik ─┬─► NestJS API ─┬─► PostgreSQL              │
 │          │               ├─► Redis + BullMQ          │
-│          │               └─► MinIO (ảnh)             │
-│          └─► EMQX (MQTTS, auth+ACL hỏi API)          │
-└──────────────────────┬────────────────────────────────┘
+│          │               └─► MinIO (chưa dùng)       │
+│          └─► EMQX (MQTTS, auth hỏi API, ACL file)    │
+└──────────────────────┬───────────────────────────────┘
                        │ HTTPS + WebSocket
                        ▼
               Next.js trên Vercel (dashboard)
@@ -6880,7 +6878,7 @@ vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được 
 | Hạng mục | Cách làm |
 |---|---|
 | Kiosk ↔ broker | MQTTS 8883, cert CA nhúng trong firmware; username là `deviceId`, password là JWT riêng của máy; EMQX hỏi `api` qua HTTP để chấm auth, ACL file chỉ cho máy ghi `kiosk/{chính nó}/up/#` và đọc `kiosk/{chính nó}/down/#` (§7.4) |
-| Device token | JWT 90 ngày lưu **NVS encrypted**; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
+| Device token | JWT 90 ngày lưu NVS, **chưa mã hoá** tới khi xong E13-T3; kiosk tự đổi qua `POST /devices/me/token` khi còn 7 ngày, vé cũ sống tới khi vé mới được dùng (§7.3 bước 5) |
 | Web ↔ API | Access JWT 15 phút (memory) + refresh httpOnly cookie 7 ngày, có bảng revoke. Đăng xuất một máy cắt luôn vé access và ổ cắm realtime của đúng phiên ấy, không chờ vé hết hạn (§9.23). Lượt gia hạn không mang cookie refresh nhận `204` không thân chứ không phải `401`: chưa đăng nhập là trạng thái thường của người mới mở trang, không phải lỗi, nên console của họ sạch; cookie có mà sai, hết hạn hay đã thu hồi thì vẫn `401`. Mọi vé ký bằng HS256 và mọi chỗ kiểm vé chỉ nhận HS256, ghim ở `JWT_ALGORITHM` |
 | Mật khẩu | scrypt N=2^14, r=8, p=5: 16 MiB mỗi lần băm, mức OWASP xếp ngang N=2^17, p=1 mà không đòi 128 MiB RAM cho mỗi lượt đăng nhập đang chạy. Tham số ghi ngay trong chuỗi băm, nên băm cũ vẫn kiểm được và được băm lại ở lần đăng nhập đúng kế tiếp. Đặt hay đổi mật khẩu gửi thư báo cho chủ tài khoản (§9.4) |
 | Xác minh hai bước | Vai thuộc `MFA_ROLES` (mặc định `ADMIN`, `HR`, `PAYROLL`) đưa thêm mã TOTP sáu số sau mật khẩu, và chưa qua bước ấy thì không có vé nào. Khoá bí mật mã hoá AES-256-GCM dưới `MFA_KEY`; một mã không dùng lại được; mười mã dự phòng, mỗi mã một lần; sai năm lần thì bước mã khoá 15 phút và chủ tài khoản nhận thư; `ADMIN` đặt lại cho người khác, có audit (§9.4). `MFA_ROLES` khác rỗng mà thiếu `MFA_KEY` thì `api` không khởi động |
@@ -6888,7 +6886,7 @@ vốn đã ở PSRAM) ở lại RAM nội: dời chúng sang PSRAM đo được 
 | Dashboard EMQX | Cổng `18083` **không map ra ngoài**; muốn xem thì qua traefik có xác thực, và đổi mật khẩu mặc định `admin/public` ngay lần chạy đầu. `api` gọi REST của nó trong mạng compose để đá phiên máy bị thu hồi (§7.4) |
 | Flash | Bật **Flash Encryption** + **Secure Boot v2** ở bản production |
 | OTA | Verify sha256; chỉ tải từ đúng gốc API của máy (§7.7); chữ ký bản kê khai đi cùng Secure Boot (E13-T3); rollback tự động nếu boot lỗi (`esp_ota_mark_app_valid_cancel_rollback`) |
-| Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Ảnh chấm công lưu server có TTL |
+| Dữ liệu sinh trắc | Chỉ lưu **embedding**, không lưu ảnh gốc trên kiosk. Kiosk chưa gửi ảnh chấm công, nên server không lưu ảnh nào |
 | Rate limit | Ba lớp, đoạn *Chống spam* dưới bảng. Traefik chặn lũ theo IP trước Node; `api` có một hạn mức chung cho **mọi** route theo tài khoản, hạn mức chặt hơn cho việc nặng và cho ô tìm, và hạn mức riêng cho cửa nhận mật khẩu, quên mật khẩu, đăng ký kiosk, đếm ở Redis; sai mật khẩu nhiều lần thì khoá chính tài khoản ấy bất kể IP, và khoá IP đã sai quá nhiều lần |
 | Server tự tải URL | Endpoint web-push là URL người dùng đưa, nên đó là đường SSRF. Bản phát hành **không** đến bằng URL: file đi bằng thân request từ bên có token (§7.7), nên đường ấy không còn. Endpoint web-push chỉ nhận host của các dịch vụ push đã biết (FCM, Mozilla, Apple, Windows), và một endpoint đã thuộc tài khoản khác thì không đổi chủ |
 | File xuất cho Excel | Ô bắt đầu bằng `=`, `+`, `-`, `@`, tab hay CR là chữ, không phải công thức: `.csv` thêm `'` đằng trước, `.xlsx` ghi mọi ô thành ô chuỗi. Thiếu nó thì một số điện thoại nhân viên tự khai thành công thức chạy trên máy HR |
@@ -7116,9 +7114,9 @@ máy `APPROVED` mà **chưa có** `tokenHash` là máy vừa được admin bấ
 giống hệt nhau và máy chủ buộc phải đoán.
 
 **`deviceId` quay lại sau factory reset là chuyện bình thường, không phải lỗi.** Nút BOOT giữ 5 s
-(§2) xoá `wifi`, `device` và bảng khuôn mặt, nhưng eFuse thì không xoá được, nên máy trở lại
-bước 3 với **đúng cái tên cũ**. Máy chủ vì thế phải cho một `deviceId` đã biết đăng ký lại, đánh
-dấu bản ghi cũ là đã thu hồi và đòi duyệt lại từ đầu. Bản ghi chấm công cũ giữ nguyên `deviceId`
+(§2) — **chưa có trong firmware**, mới có ở hai test app — sẽ xoá `wifi`, `device` và bảng khuôn mặt, nhưng eFuse thì không xoá được, nên máy trở lại
+bước 3 với **đúng cái tên cũ**. Máy chủ vì thế phải cho một `deviceId` đã biết đăng ký lại, đưa
+bản ghi cũ về `PENDING` (xoá vé) và đòi duyệt lại từ đầu. Bản ghi chấm công cũ giữ nguyên `deviceId`
 ấy và nằm trong lịch sử của chính thiết bị đó.
 
 **Token bootstrap là mắt xích yếu nhất, và ghi ra đây để không ai tưởng nó mạnh.** Nó dùng chung
@@ -7257,85 +7255,6 @@ lúc biên dịch để nhúng, nên bản sao ấy nằm trong cây firmware v�
 cùng cặp khoá máy chủ thì không rời `deploy/emqx/certs/`.
 
 
-### 7.6 Đổi Wi-Fi trên màn hình, không qua dây
-
-**Console USB là công cụ bàn thí nghiệm, không phải sản phẩm.** `set wifi ssid` đổi được mạng mà
-không phải nạp lại firmware, và điều đó đúng — nhưng nó đòi cắm cáp vào một máy tính có ESP-IDF.
-Kiosk treo trên tường trong phòng khác thì không ai làm được thao tác ấy, và đó là lúc cần đổi
-mạng nhất: công ty đổi router, đổi mật khẩu, dọn sang phòng mới.
-
-Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm, và chủ repo chốt 09/10 là làm **trọn**
-như điện thoại: quét, liệt kê, chạm chọn, gõ mật khẩu, kết nối; nhớ những mạng đã vào được và tự nối
-lại; chạm mạng đang nối thì xem thông tin của nó; quên một mạng. Đây là bàn phím duy nhất của kiosk.
-Mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên bàn phím có bốn bộ ký tự: thường, hoa, số với
-ký hiệu hay gặp, và bộ ký hiệu thứ hai cho `. , / % = [ ]` cùng phần còn lại của bàn phím ASCII.
-Ô mật khẩu dài hơn ô thì hiện phần **cuối**, vì đó là chỗ người gõ đang nhìn.
-
-**Nó vào từ Cài đặt, không từ menu gốc** (§4.5.5h.4): Wi-Fi là thuộc tính của máy, không phải
-một việc người vận hành mở máy ra để làm.
-
-**Cường độ sóng vẽ bằng vạch, không bằng số.** `-67` là đơn vị của người làm radio; bốn vạch cao
-dần là thứ mọi người đã đọc được sẵn từ điện thoại. Ngưỡng chia vạch là chuyện **hiển thị**, không
-phải ngưỡng nghiệp vụ, nên nó không sinh khoá nào cho §4.9. Mạng có khoá mang thêm hình ổ khoá. Số
-dBm chỉ hiện ở trang thông tin, cho người đang dò chỗ đặt máy.
-
-**Thứ tự như điện thoại.** Mạng đang nối đứng đầu, rồi các mạng đã lưu, rồi các mạng khác theo
-cường độ sóng. Nhiều điểm phát cùng một tên gộp thành một dòng mang sóng mạnh nhất. Dòng cuối là
-**Mạng đã lưu**, mở danh sách năm mạng máy đang nhớ.
-
-**Mở lại màn là thấy ngay danh sách lần quét trước**, kèm một dòng nhỏ "Đang quét…" trong lúc lượt
-mới chạy. Chỉ lần mở đầu tiên kể từ khởi động, khi chưa có lần quét nào, mới hiện "Đang tìm mạng…"
-thay cho danh sách.
-
-**Danh sách tự làm mới trong lúc đang mở, kể cả khi đang nối.** Màn này xin quét lại mỗi
-`WIFI_RESCAN_MS` (15 s) chừng nào nó còn hiện danh sách. Một lượt quét kéo radio khỏi kênh của nó
-vài giây nên MQTT có thể chập chờn trong lúc ấy; chủ repo chốt 09/10 nhận cái giá đó, vì màn chỉ
-mở khi có người đứng chỉnh mạng, và hàng đợi offline giữ mọi lượt chấm công (§6.2.6). Quét dừng
-khi người dùng đang gõ mật khẩu, đang nối, hay đang xem trang thông tin.
-
-**Danh sách không đổi chỗ dưới ngón tay.** Kết quả quét mới chỉ thay danh sách khi không có ngón
-tay nào đang đặt trên màn và không có lượt nối nào đang chạy; mạng được chọn giữ theo **tên**, không
-theo số dòng, nên một lượt quét tới giữa lúc gõ mật khẩu không đổi được mạng sẽ nối.
-
-**Nhớ năm mạng** (`wifi/saved`, §6.2.1), mạng dùng gần nhất trước. Nối được một mạng thì nó lên đầu
-danh sách; mạng thứ sáu, cũ nhất, rơi ra. Chạm một mạng đã lưu mà chưa nối là nối luôn, không hỏi
-lại mật khẩu, và mật khẩu ấy không bao giờ rời `net_wifi` để làm việc đó (§4.5.4). Đến E13-T3, mật
-khẩu nằm trong NVS chưa mã hoá như mọi bí mật khác của máy.
-
-**Chỉ ghi NVS khi mạng thật sự trả lời.** `net_wifi_join` đặt cấu hình, gọi `esp_wifi_connect`,
-chờ tới `WIFI_JOIN_WAIT_MS`, và **chỉ khi vào được** mới ghi mạng ấy vào danh sách. Ghi trước rồi
-mới thử là cách một lỗi gõ mật khẩu khoá kiosk khỏi đúng cái mạng nó vẫn đang dùng được — sau lần
-khởi động kế tiếp thì không còn đường nào vào nữa.
-
-**Không nối được thì nói đúng lý do.** Lý do lấy từ sự kiện ngắt của radio: sai mật khẩu (xác thực
-hỏng, bắt tay bốn bước hết giờ), không thấy mạng, hay hết giờ chờ. Ba câu khác nhau, vì "Sai mật
-khẩu" cho một mạng ngoài tầm là bảo người ta gõ lại một mật khẩu vốn đúng.
-
-**Tự nối lại mạng đã lưu mạnh nhất.** Lúc khởi động máy nối ngay mạng dùng gần nhất. Mất mạng thì
-nó thử lại mạng ấy, giãn dần như trước; hỏng ba lần liền thì nó quét một lượt **không chặn**, bắt
-kết quả trong sự kiện quét xong, và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy. Quét không
-chặn là bắt buộc: lần thử lại chạy trên bộ hẹn giờ của `esp_timer`, chặn ở đó vài giây là chặn mọi
-bộ hẹn giờ khác của máy.
-
-**Trang thông tin của một mạng.** Chạm mạng đang nối, hay một dòng trong **Mạng đã lưu**, mở trang
-của mạng ấy: cường độ sóng (vạch kèm dBm), địa chỉ IP, kiểu bảo mật, và nút **Quên mạng**. Quên là
-xoá mạng ấy khỏi danh sách cùng mật khẩu của nó, nên nó đi bằng hai lần chạm: lần đầu nút đổi thành
-"Chạm lại để quên", chạm chỗ khác thì thôi. Quên mạng đang nối thì máy ngắt ngay, quét một lượt
-không chặn và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy; không còn mạng nào thì máy đứng ở
-trạng thái chưa nối, chấm công vẫn ghi offline. Chủ repo chốt 09/10 cho quên cả mạng đang nối dù menu không khoá (§7.5): ai đứng trước máy
-cũng làm được kiosk mất mạng tới khi có người gõ lại mật khẩu.
-
-**Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây
-và thả link trong lúc quét; đặt nó trên task vẽ màn hình là **màn hình đứng hình** đúng lúc người
-dùng vừa bấm. `ui_kiosk` chỉ giương cờ xin quét, xin nối, xin quên; `sync_task` làm rồi trả kết quả
-về — cùng đường mà `People` đã dùng cho danh sách người.
-
-**Hai kiểu struct cho một danh sách mạng, có chủ ý.** `net_wifi_ap_t` là của radio,
-`ui_kiosk_ap_t` là của màn hình; tầng nối dây chuyển đổi. Cho `ui_kiosk` (L6) gọi thẳng
-`net_wifi` (L3) thì màn hình biết về sóng radio, và §4.5.4 dựng ra để chặn đúng chuyện đó.
-
----
-
 ### 7.5 Vòng đời nhân viên — server giữ danh tính, máy giữ khuôn mặt
 
 **Kiosk không bao giờ tự đặt `employee_id`.** Hai lần thử đều hỏng.
@@ -7359,7 +7278,7 @@ năm; một template khuôn mặt tồn tại trên **một máy cụ thể** v�
 |---|---|---|
 | Nhân viên tồn tại, tên, mã nhân sự | **server** | `employeeId` do server cấp |
 | Khuôn mặt đã có trên máy nào chưa | **server**, một dòng cho mỗi cặp | `(employeeId, deviceId)` |
-| Template thật | máy, và bản sao ở server | `(employeeId, templateIdx)` |
+| Template thật | máy, và bản sao ở server | `(employeeId, embeddingVersion, templateIdx)` |
 
 **Trạng thái "đã thêm" phải theo từng máy, không phải một cờ.** Một fleet 5 kiosk thì "đã thêm"
 không trả lời được câu "thêm ở đâu". Dựng nó thành cờ boolean là thứ sẽ phải đập đi ngay khi
@@ -7547,10 +7466,88 @@ lành. Đây đúng hình dạng con trỏ `cursor.bin` của §6.2.5, chỉ ch�
 kèm embedding; máy hiện thành danh sách chờ, người vận hành bấm chọn rồi chụp. `REVOKE` rút lại
 khi phân công đổi. Nhờ vậy id **luôn do server cấp**.
 
-**Thứ tự làm, vì không phải phần nào cũng đợi được backend.** Chuyển tải làm trước: máy áp được
-`UPSERT` với `DELETE_EMPLOYEE` từ `down/enroll`, khai `rosterVersion` trong heartbeat, và báo
-lên `up/enroll` sau mỗi lần đăng ký tại chỗ. `ASSIGN` cần một màn hình danh sách chờ (E10-T1),
-`DELETE` một template và `REPLACE_ALL` cần `svc_facedb` mọc thêm API — ba thứ ấy đi sau.
+**Máy áp đủ sáu lệnh của `down/enroll`**: `UPSERT`, `DELETE_EMPLOYEE`, `DELETE` một template,
+`REPLACE_ALL`, `ASSIGN` và `REVOKE`; nó khai `rosterVersion` trong heartbeat và báo lên
+`up/enroll` sau mỗi lần đăng ký tại chỗ.
+
+### 7.6 Đổi Wi-Fi trên màn hình, không qua dây
+
+**Console USB là công cụ bàn thí nghiệm, không phải sản phẩm.** `set wifi ssid` đổi được mạng mà
+không phải nạp lại firmware, và điều đó đúng — nhưng nó đòi cắm cáp vào một máy tính có ESP-IDF.
+Kiosk treo trên tường trong phòng khác thì không ai làm được thao tác ấy, và đó là lúc cần đổi
+mạng nhất: công ty đổi router, đổi mật khẩu, dọn sang phòng mới.
+
+Màn hình **Wi-Fi** làm đúng việc một chiếc điện thoại làm, và chủ repo chốt 09/10 là làm **trọn**
+như điện thoại: quét, liệt kê, chạm chọn, gõ mật khẩu, kết nối; nhớ những mạng đã vào được và tự nối
+lại; chạm mạng đang nối thì xem thông tin của nó; quên một mạng. Đây là bàn phím duy nhất của kiosk.
+Mật khẩu Wi-Fi cần cả hoa, thường, số và ký hiệu, nên bàn phím có bốn bộ ký tự: thường, hoa, số với
+ký hiệu hay gặp, và bộ ký hiệu thứ hai cho `. , / % = [ ]` cùng phần còn lại của bàn phím ASCII.
+Ô mật khẩu dài hơn ô thì hiện phần **cuối**, vì đó là chỗ người gõ đang nhìn.
+
+**Nó vào từ Cài đặt, không từ menu gốc** (§4.5.5h.4): Wi-Fi là thuộc tính của máy, không phải
+một việc người vận hành mở máy ra để làm.
+
+**Cường độ sóng vẽ bằng vạch, không bằng số.** `-67` là đơn vị của người làm radio; bốn vạch cao
+dần là thứ mọi người đã đọc được sẵn từ điện thoại. Ngưỡng chia vạch là chuyện **hiển thị**, không
+phải ngưỡng nghiệp vụ, nên nó không sinh khoá nào cho §4.9. Mạng có khoá mang thêm hình ổ khoá. Số
+dBm chỉ hiện ở trang thông tin, cho người đang dò chỗ đặt máy.
+
+**Thứ tự như điện thoại.** Mạng đang nối đứng đầu, rồi các mạng đã lưu, rồi các mạng khác theo
+cường độ sóng. Nhiều điểm phát cùng một tên gộp thành một dòng mang sóng mạnh nhất. Dòng cuối là
+**Mạng đã lưu**, mở danh sách năm mạng máy đang nhớ.
+
+**Mở lại màn là thấy ngay danh sách lần quét trước**, kèm một dòng nhỏ "Đang quét…" trong lúc lượt
+mới chạy. Chỉ lần mở đầu tiên kể từ khởi động, khi chưa có lần quét nào, mới hiện "Đang tìm mạng…"
+thay cho danh sách.
+
+**Danh sách tự làm mới trong lúc đang mở, kể cả khi đang nối.** Màn này xin quét lại mỗi
+`kRescanMs` (15 s) chừng nào nó còn hiện danh sách. Một lượt quét kéo radio khỏi kênh của nó
+vài giây nên MQTT có thể chập chờn trong lúc ấy; chủ repo chốt 09/10 nhận cái giá đó, vì màn chỉ
+mở khi có người đứng chỉnh mạng, và hàng đợi offline giữ mọi lượt chấm công (§6.2.6). Quét dừng
+khi người dùng đang gõ mật khẩu, đang nối, hay đang xem trang thông tin.
+
+**Danh sách không đổi chỗ dưới ngón tay.** Kết quả quét mới chỉ thay danh sách khi không có ngón
+tay nào đang đặt trên màn và không có lượt nối nào đang chạy; mạng được chọn giữ theo **tên**, không
+theo số dòng, nên một lượt quét tới giữa lúc gõ mật khẩu không đổi được mạng sẽ nối.
+
+**Nhớ năm mạng** (`wifi/saved`, §6.2.1), mạng dùng gần nhất trước. Nối được một mạng thì nó lên đầu
+danh sách; mạng thứ sáu, cũ nhất, rơi ra. Chạm một mạng đã lưu mà chưa nối là nối luôn, không hỏi
+lại mật khẩu, và mật khẩu ấy không bao giờ rời `net_wifi` để làm việc đó (§4.5.4). Đến E13-T3, mật
+khẩu nằm trong NVS chưa mã hoá như mọi bí mật khác của máy.
+
+**Chỉ ghi NVS khi mạng thật sự trả lời.** `net_wifi_join` đặt cấu hình, gọi `esp_wifi_connect`,
+chờ tới `WIFI_JOIN_WAIT_MS`, và **chỉ khi vào được** mới ghi mạng ấy vào danh sách. Ghi trước rồi
+mới thử là cách một lỗi gõ mật khẩu khoá kiosk khỏi đúng cái mạng nó vẫn đang dùng được — sau lần
+khởi động kế tiếp thì không còn đường nào vào nữa.
+
+**Không nối được thì nói đúng lý do.** Lý do lấy từ sự kiện ngắt của radio: sai mật khẩu (xác thực
+hỏng, bắt tay bốn bước hết giờ), không thấy mạng, hay hết giờ chờ. Ba câu khác nhau, vì "Sai mật
+khẩu" cho một mạng ngoài tầm là bảo người ta gõ lại một mật khẩu vốn đúng.
+
+**Tự nối lại mạng đã lưu mạnh nhất.** Lúc khởi động máy nối ngay mạng dùng gần nhất. Mất mạng thì
+nó thử lại mạng ấy, giãn dần như trước; hỏng ba lần liền thì nó quét một lượt **không chặn**, bắt
+kết quả trong sự kiện quét xong, và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy. Quét không
+chặn là bắt buộc: lần thử lại chạy trên bộ hẹn giờ của `esp_timer`, chặn ở đó vài giây là chặn mọi
+bộ hẹn giờ khác của máy.
+
+**Trang thông tin của một mạng.** Chạm mạng đang nối, hay một dòng trong **Mạng đã lưu**, mở trang
+của mạng ấy: cường độ sóng (vạch kèm dBm), địa chỉ IP, kiểu bảo mật, và nút **Quên mạng**. Quên là
+xoá mạng ấy khỏi danh sách cùng mật khẩu của nó, nên nó đi bằng hai lần chạm: lần đầu nút đổi thành
+"Chạm lại để quên", chạm chỗ khác thì thôi. Quên mạng đang nối thì máy ngắt ngay, quét một lượt
+không chặn và nối mạng đã lưu có sóng mạnh nhất đang nghe thấy; không còn mạng nào thì máy đứng ở
+trạng thái chưa nối, chấm công vẫn ghi offline. Chủ repo chốt 09/10 cho quên cả mạng đang nối dù menu không khoá (§7.5): ai đứng trước máy
+cũng làm được kiosk mất mạng tới khi có người gõ lại mật khẩu.
+
+**Quét chạy ở `sync_task`, không ở `ui_task`.** `esp_wifi_scan_start(NULL, true)` chặn 2–4 giây
+và thả link trong lúc quét; đặt nó trên task vẽ màn hình là **màn hình đứng hình** đúng lúc người
+dùng vừa bấm. `ui_kiosk` chỉ giương cờ xin quét, xin nối, xin quên; `sync_task` làm rồi trả kết quả
+về — cùng đường mà `People` đã dùng cho danh sách người.
+
+**Hai kiểu struct cho một danh sách mạng, có chủ ý.** `net_wifi_ap_t` là của radio,
+`ui_kiosk_ap_t` là của màn hình; tầng nối dây chuyển đổi. Cho `ui_kiosk` (L6) gọi thẳng
+`net_wifi` (L3) thì màn hình biết về sóng radio, và §4.5.4 dựng ra để chặn đúng chuyện đó.
+
+---
 
 ### 7.7 Phát hành và cập nhật — máy đưa bản lên, người chỉ bấm
 
@@ -7770,7 +7767,7 @@ cách lùi về bản cũ của bootloader chỉ chạy khi máy khởi động 
 
 ## 8. Thứ tự thực hiện
 
-Backlog đầy đủ ở **`docs/TASKS.md`**: 14 epic, hơn 120 task, mỗi task có điều kiện "xong khi" đo được và task chặn nó.
+Backlog đầy đủ ở **`docs/TASKS.md`**: 27 epic, hơn 400 task, mỗi task có điều kiện "xong khi" đo được và task chặn nó.
 
 Đường đi lớn: nền repo → `ml/core` → dữ liệu → **detection** → recognition → anti-spoof → firmware nền → nạp và đo trên board → vòng tối ưu nếu cần → UI và chấm công → backend → frontend → bảo mật và OTA → báo cáo.
 
