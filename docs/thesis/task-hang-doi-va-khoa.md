@@ -87,7 +87,7 @@ khả năng nó mới chạy detect; spoof và recog có thể đi sâu hơn �
 | `Tmr Svc` | FreeRTOS | — | 1 | 2.048 | 1.452 | Timer của FreeRTOS; dự án không dùng |
 | `ipc0`, `ipc1` | IDF | 0, 1 | 24 | 1.280 mỗi cái | 444, 500 | Chạy một hàm trên lõi kia, vd. lúc ghi flash phải dừng lõi còn lại |
 | `IDLE0`, `IDLE1` | FreeRTOS | 0, 1 | 0 | 1.536 mỗi cái | 796, 788 | Idle: dọn task đã xoá; watchdog canh cả hai |
-| console REPL | `app_console` | tự do | 2 | 8.192 | — | Nạp NVS qua USB và lệnh `heap`; có ở `dev` và `bench`, kể cả bản `fleet` dựng từ `bench`; `prod` tắt |
+| console REPL | `app_console` | tự do | 2 | 8.192 | — | Nạp NVS qua USB và lệnh `heap`; có ở `dev` và `bench`; `prod` tắt, và bản `fleet` dựng từ `prod` nên cũng không có |
 | `main` | IDF | 0 | 1 | 3.584 | — | Chạy `app_boot`, khởi các task rồi return; IDF xoá nó và trả lại stack |
 
 `ipc0` là task mỏng nhất cả hệ. Đây là cỡ IDF tự đặt (`CONFIG_ESP_IPC_TASK_STACK_SIZE`), không

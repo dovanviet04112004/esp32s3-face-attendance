@@ -155,7 +155,7 @@ hoạch tham lam (`greedy_memory_planner.cc`), nhưng xếp bên trong arena fir
 TFLM đọc tại chỗ từ flash, tốn 0 byte RAM.
 
 ESP-DL không nhận arena từ ngoài. Mỗi model giữ khối riêng nên bộ nhớ cộng dồn: 187,5 + 568,8 + 820,8
-= 1.577 KB cho tensor. Bù lại, trên cùng ba model, ESP-DL nhanh hơn TFLM 5,4 lần (`latency.md` §13.1).
+= 1.577 KB cho tensor. Bù lại, trên ba model đang deploy, ESP-DL nhanh hơn TFLM + esp-nn 10,5 lần (`runtime_compare.md`).
 
 ---
 
