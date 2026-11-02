@@ -30,8 +30,8 @@
 | Nhánh | Model | Link code / weight | Thông số | License |
 |---|---|---|---|---|
 | **Detect** | **YuNet (yunet_n)** | Train: [ShiqiYu/libfacedetection.train](https://github.com/ShiqiYu/libfacedetection.train) · ONNX + INT8 tham chiếu: [opencv_zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) | **75.856 params**; WIDER FACE val Easy/Med/Hard **0.884 / 0.866 / 0.750** đo ở **độ phân giải gốc**, không phải ở 160×120 của dự án này (§3 lớp 2); ra box **+ 5 landmark** | **MIT** |
-| **Anti-spoof** | **MiniFASNetV1SE** của minivision, nhập nguyên trọng số, ba khối SE giữ Sigmoid, đọc crop ngữ cảnh 2,7× (ADR-0004). Trên **ESP-DL** chạy bản **PReLU nguyên** (run `0118`), vì ESP-DL có kernel PReLU; trên **TFLM** chạy bản `conv1` PReLU viết thành stem tách hai nhánh ReLU (run `1050`), giữ làm đối chứng (ADR-0005) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `4_0_0_80x80_MiniFASNetV1SE.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **431.958 params**, 42,7 MMAC @80×80; spoof **85 ms** trên board với ESP-DL, **581 ms** với TFLM; student distill width 32 (ADR-0003) 262.875 params, 234 ms trên TFLM, giữ làm phương án nhẹ | Apache-2.0 (code và weight upstream) |
-| **Recognition** | **MobileFaceNet-ECA**, nhập nguyên trọng số `mobilefacenet_arcface_ms1m` của FRBench (ArcFace, train trên MS1M), chạy trên **ESP-DL** (ADR-0005). Trên **TFLM** chạy MobileFaceNet width 32 tự train (run `1750`), giữ làm đối chứng | Trọng số: bản phát hành `weights-v1.0.0` của [HKU-TASR/FRBench](https://github.com/HKU-TASR/FRBench), sha256 bắt đầu `0a6c62d8ae6ce2d4`. Kiến trúc theo `backbone/mobilefacenet.py` của [cavaface](https://github.com/cavalleria/cavaface) mà FRBench dùng lại | **1,20M params**, 112×112, embedding 512-D; INT8 ESP-DL mô phỏng trên host đạt LFW 0,9958, CFP-FP 0,9440, AgeDB 0,9565 (§3 lớp 2); latency trên board 🔬 | Research-only ⚠️ (code MIT, trọng số train trên MS1M) |
+| **Anti-spoof** | **MiniFASNetV1SE** của minivision, nhập nguyên trọng số, ba khối SE giữ Sigmoid, đọc crop ngữ cảnh 2,7× (ADR-0004). Trên **ESP-DL** chạy bản **PReLU nguyên** (run `0118`), vì ESP-DL có kernel PReLU; trên **TFLM** chạy Q1 `.tflite` của cùng run `0118` (PReLU nguyên), giữ làm đối chứng (ADR-0005, E9-T51) | [minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing) — trọng số `4_0_0_80x80_MiniFASNetV1SE.pth`, kiến trúc ở `src/model_lib/MiniFASNet.py` | **431.958 params**, 42,7 MMAC @80×80; spoof **73 ms** trên board với ESP-DL (hàng `int16_top1`, ADR-0006), **780 ms** với TFLM (`runtime_compare.md`); student distill width 32 (ADR-0003) 262.875 params, 234 ms trên TFLM, giữ làm phương án nhẹ | Apache-2.0 (code và weight upstream) |
+| **Recognition** | **MobileFaceNet-ECA**, nhập nguyên trọng số `mobilefacenet_arcface_ms1m` của FRBench (ArcFace, train trên MS1M), chạy trên **ESP-DL** (ADR-0005). Trên **TFLM** chạy Q1 `.tflite` của cùng run `2106`, giữ làm đối chứng (E9-T51) | Trọng số: bản phát hành `weights-v1.0.0` của [HKU-TASR/FRBench](https://github.com/HKU-TASR/FRBench), sha256 bắt đầu `0a6c62d8ae6ce2d4`. Kiến trúc theo `backbone/mobilefacenet.py` của [cavaface](https://github.com/cavalleria/cavaface) mà FRBench dùng lại | **1,20M params**, 112×112, embedding 512-D; INT8 ESP-DL (hàng `qat`, ADR-0006) mô phỏng trên host đạt LFW 0,9962, CFP-FP 0,9459, AgeDB 0,9623; 246 ms trên board (`runtime_compare.md`) | Research-only ⚠️ (code MIT, trọng số train trên MS1M) |
 
 **Hai ràng buộc thiết kế quyết định bộ 3 này:**
 > **Landmark chỉ có ở `train`.** Bộ `retinaface_gt_v1.1` không gán landmark cho `val`, nên
@@ -43,14 +43,14 @@
   đọc crop 2,7× đúng như lúc nó được train; student tự train `minifasnet_v2_se` đọc **crop mặt
   1,0×** vì lý do ở phần còn lại của đoạn này, và `kFaceScale` đi theo model đang nạp (§3).
   Bản tham chiếu minivision dùng hai
-  backbone (1,0× và 2,7×) rồi ghép, và kế hoạch đã đi theo cho tới 11/09. Đo trên 111 khung
+  backbone (1,0× và 2,7×) rồi ghép; student không ghép, vì đo trên 111 khung
   camera (`measurements/antispoof` §22) thì nhánh 2,7× **phân loại căn phòng thay cho khuôn
   mặt**: CelebA-Spoof để mặt thật trong ảnh sự kiện studio và mặt giả trong phòng thường,
   nên nhánh ngữ cảnh học đúng cái đó và phủ quyết mặt thật đứng trước cửa gỗ — 0,98 khi
   chỉ nhìn mặt, 0,20 khi thấy cả nền, và ghép mặt sang nền khác là đổi kết luận theo cả
   hai chiều. Bỏ nhánh wide thì model chỉ còn đọc được kết cấu da và moiré, đúng thứ định
   nghĩa bài toán, và suy luận còn **một lượt** mỗi mặt. Giá phải trả là mất cách bắt mép
-  giấy hay viền màn hình nằm ngoài mặt: một phép đo cũ cho thấy bịt nhánh wide đẩy điểm
+  giấy hay viền màn hình nằm ngoài mặt: bịt nhánh wide đẩy điểm
   một tập ảnh thẻ từ 0,0035 lên 0,3195 (vẫn dưới ngưỡng), nên **APCER là điều kiện nghiệm
   thu bắt buộc** của nhánh này, ngang hàng BPCER.
 
@@ -58,16 +58,16 @@
 
 | Nhánh | TFLM `.tflite` (đối chứng) | ESP-DL `.espdl` (deploy) |
 |---|---|---|
-| Detect (YuNet `1616`) | 158 KB | 224 KB |
-| Anti-spoof (V1SE nhập) | 603 KB, stem tách `1050` | 551 KB, PReLU nguyên `0118` |
-| Recognition | 720 KB, MobileFaceNet w32 `1750` | 1.386 KB, MobileFaceNet-ECA FRBench |
-| **Tổng** | **1.481 KB** | **2.160 KB** trong **2,25 MB** (§6.1) |
+| Detect (YuNet `1616`) | 159 KB | 193 KB, hàng `mse+clip_as_relu` |
+| Anti-spoof (V1SE nhập `0118`) | 617 KB | 577 KB, hàng `int16_top1` |
+| Recognition (MobileFaceNet-ECA `2106`) | 1.503 KB | 1.346 KB, hàng `qat` |
+| **Tổng** | **2.279 KB** | **2.116 KB** trong **2,25 MB** (§6.1) |
 
-File `.espdl` lớn hơn cùng model ở `.tflite` vì hai lẽ: nó mang theo một cặp vector kiểm thử
-(đầu vào + đầu ra) để `model->test()` so trên chip, và trọng số conv được đệm lên bội 16 kênh
-theo bố cục N16HWC16 của kernel ESP-DL. Recog nặng gấp đôi vì là mạng khác hẳn: width 64
-cộng 15 khối ECA, so với width 32. Số của bộ ESP-DL đo trên file `30_quantize.sh` xuất ra; bản
-recog của trial nặng hơn 30 KB vì còn mang 15 op `Expand` kèm cặp lượng tử/giải lượng tử.
+File `.espdl` mang thêm hai thứ `.tflite` không có: một cặp vector kiểm thử (đầu vào + đầu ra)
+để `model->test()` so trên chip, và trọng số conv đệm lên bội 16 kênh theo bố cục N16HWC16 của
+kernel ESP-DL. Với detect, hai khoản ấy làm `.espdl` lớn hơn `.tflite` của cùng run; với spoof và
+recog thì `.espdl` vẫn nhỏ hơn. Recog nặng nhất vì là mạng lớn nhất: width 64 cộng 15 khối ECA.
+Số của bộ ESP-DL đo trên đúng file `make quant-deploy` khoá vào lock (hàng của ADR-0006).
 
 ### 1.2 Dữ liệu train — từng model
 
@@ -105,7 +105,7 @@ Nhãn thật sự có bao nhiêu, đo trên file chứ không lấy từ tài li
 | AxonData face-anti-spoofing | HF `AxonData/face-anti-spoofing-dataset` | 4.94 GB | test khác miền — video, có **mặt nạ latex 3D** |
 | LCC-FASD | Bản Kaggle [`faber24/lcc-fasd`](https://www.kaggle.com/datasets/faber24/lcc-fasd), script `00_fetch_raw.sh` tải bằng token Kaggle khai trong `ml/.env`, không form; [bài báo gốc](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf) (ID R&D 2019) không vào được — **đã tải 11/09/2026** | 5,19 GB, 18.827 PNG: training 1.223 thật / 7.076 giả, development 405 / 2.543, evaluation 314 / 7.266; bố cục `LCC_FASD/LCC_FASD_{training,development,evaluation}/{real,spoof}/` | **hai vai**: split `training` (8.299 ảnh) **trộn vào train** từ arm 11/09, **một lần**, vì đây là bộ duy nhất có thật và giả **chụp lại bằng điện thoại trong cùng loại phòng thường** — đúng thứ CelebA-Spoof thiếu (§3, cảnh làm đường tắt). Không nhân bản: model đã đạt **AUC 1,0000** trên chính bộ này (số đo 40.4), nên mỗi lần lặp thêm là một lần tiêu sức vào ca đã thắng, trong khi kênh chưa giải được chỉ có 2% pool (số đo 40.6); giữ đúng một lần để miền ấy không bị quên; split `evaluation` (7.580 ảnh) là test khác miền, không bao giờ train; `development` (2.948 ảnh) đi vào **val** cùng 10 shard CelebA, để ngưỡng khớp trên hai miền chứ không một. **Không phải identity-disjoint**: `training` và `development` trùng 12 người, `evaluation` ẩn danh nên không kiểm được (`DU_LIEU` §4.2b), nên số trên `evaluation` của arm có trộn phải ghi kèm cảnh báo. Ảnh đã được tác giả cắt sẵn quanh mặt, nên crop 1,0× của detector nằm trong ảnh cắt đó |
 | SynthASpoof | Google Drive **công khai** (`SynthASpoof.zip`, id ghi trong manifest, script `00_fetch_raw.sh` tải bằng gdown), [GitHub](https://github.com/meilfang/synthaspoof) — **đã tải 11/09/2026** | zip 12,36 GB, 103.797 PNG 256×256 đã cắt mặt: 25.000 thật tổng hợp (`BonaFide`) + 78.797 tấn công (`PAs/`: in 3.800, phát lại Samsung 24.999, iPad 24.998, webcam 25.000) | **hai vai**, tách theo ảnh và **giữ từng kênh là một nguồn riêng ở cả hai nhánh**: **test** lấy 2.000 ảnh trải đều mỗi kênh (10.000, đọc APCER theo thiết bị chụp lại); **train** lấy phần còn lại với **hạn mức đặt theo độ khó đã đo** (số đo 40.5) — `iPad_ReplayAttack` là kênh duy nhất model chưa giải (AUC 0,8729, trung vị tấn công 0,809, cùng hạng với đòn thật của board) nên lấy tối đa, còn `Samsung`, `webcam`, `print` đã ở 0,97–0,98 nên chỉ giữ mức đủ để không quên. **Gộp bốn kênh thành một nguồn là sai**: `train_split` khi đó không nâng được iPad mà không nâng kèm ba kênh dễ, và đó chính là cách kênh khó tụt xuống 2% pool (số đo 40.6). Mặt thật là ảnh sinh, nên bộ này không thay được ảnh thật của camera — bài báo gốc cũng train trên nó và test trên bộ thật. CC BY-NC-SA 4.0, chỉ nghiên cứu, không sản phẩm |
-| MS1MV3 — mượn từ nhánh recognition | HF `gaunernst/ms1mv3-recordio`, đã cắt sẵn ở `interim/recognition/ms1mv3_shards` cho §1.2 nhánh nhận diện | 28 GB, 518 shard, **93.431 danh tính**, ≈ 5,2 triệu ảnh mặt căn chỉnh 112×112 | **train, chỉ phía thật** từ arm 14/09. Lý do là một phép đo, không phải thiếu số lượng: trên khung OV5640 chụp dưới đèn huỳnh quang, **không đặc trưng màu nào tách nổi mặt thật khỏi ảnh giả** — `chroma_hp` 0,5397, `sat_mean` **0,3889 tức đảo chiều** (số đo 40.8), trong khi cùng model ở phòng khớp sáng đạt 0,9932. Phía thật của pool quá hẹp nên độ bão hoà **tách được hai lớp ngay trong tập train**, và model học đúng lối tắt đó. Lấy **một ảnh mỗi danh tính**, rải bước nhảy qua shard, cỡ 20.000 ảnh: mục tiêu là **bề rộng người và ánh sáng**, không phải số lượng. Khi phía thật trải khắp dải bão hoà thì đại lượng ấy hết tách được hai lớp, và mạng buộc bỏ trục đó — dữ liệu làm việc mà nới augment không làm được (§39 đã bác đường nới augment). **Giữ dưới mức các nguồn ghép cặp**: đổ ồ ạt một nguồn vào một lớp là dựng lại đúng confound §22.3, lần này thành "ảnh web = thật". Ảnh web nên một phần nhỏ có thể tự nó là bản chụp lại; với 93.431 danh tính thì đó là nhiễu nhãn, không phải thiên lệch |
+| MS1MV3 — mượn từ nhánh recognition | HF `gaunernst/ms1mv3-recordio`, đã cắt sẵn ở `interim/recognition/ms1mv3_shards` cho §1.2 nhánh nhận diện | 28 GB, 518 shard, **93.431 danh tính**, ≈ 5,2 triệu ảnh mặt căn chỉnh 112×112 | **train, chỉ phía thật** từ arm 14/09. Lý do là một phép đo, không phải thiếu số lượng: trên khung OV5640 chụp dưới đèn huỳnh quang, **không đặc trưng màu nào tách nổi mặt thật khỏi ảnh giả** — `chroma_hp` 0,5397, `sat_mean` **0,3889 tức đảo chiều** (số đo 40.8), trong khi cùng model ở phòng khớp sáng đạt 0,9932. Phía thật của pool quá hẹp nên độ bão hoà **tách được hai lớp ngay trong tập train**, và model học đúng lối tắt đó. Lấy **một ảnh mỗi danh tính**, rải bước nhảy qua shard, cỡ 20.000 ảnh: mục tiêu là **bề rộng người và ánh sáng**, không phải số lượng. Khi phía thật trải khắp dải bão hoà thì đại lượng ấy hết tách được hai lớp, và mạng buộc bỏ trục đó — dữ liệu làm việc mà nới augment không làm được (`measurements/antispoof` §39 đã bác đường nới augment). **Giữ dưới mức các nguồn ghép cặp**: đổ ồ ạt một nguồn vào một lớp là dựng lại đúng confound của `measurements/antispoof` §22.3, lần này thành "ảnh web = thật". Ảnh web nên một phần nhỏ có thể tự nó là bản chụp lại; với 93.431 danh tính thì đó là nhiễu nhãn, không phải thiên lệch |
 | Tập spoof tự thu | tự thu bằng OV5640 | vài chục clip ngắn, phủ **điều kiện** (phòng, giờ, người, vật liệu tấn công) — không cần nhiều | **kiểm chất lượng cuối**, không bao giờ train |
 
 > **Không dùng OULU-NPU, CASIA-MFSD, Replay-Attack, MSU-MFSD.** Cả bốn bắt gửi bản cam kết
@@ -149,7 +149,7 @@ MS1MV3 là mặc định chứ không phải phương án dự phòng: bản `re
 định dạng `recordio_to_wds.py` đọc được, nên chạy được toàn bộ pipeline sớm hơn nhiều.
 Glint360K để dành khi số ID trở thành giới hạn thật, đo được chứ không phỏng đoán.
 
-MS1MV3 là dữ liệu của các run recog **tự train** — trong đó có bản w32 `1750` chạy trên TFLM.
+MS1MV3 là dữ liệu của các run recog **tự train** — trong đó có bản w32 `1750`, đối chứng TFLM trước E9-T51.
 Trọng số recog chạy trên ESP-DL thì **không** train trên dữ liệu của dự án: FRBench train chúng
 trên MS1M bằng ArcFace, và dự án nhập nguyên (§3 lớp 2). LFW · CFP-FP · AgeDB-30 vẫn là thước
 đo chung cho cả hai, nên hai bản so được với nhau trên cùng bộ số.
@@ -163,13 +163,13 @@ mọi cặp hai người khác nhau trong 4.281 người của bộ ấy đều 
 
 | Dữ liệu | Vai trò |
 |---|---|
-| Ảnh OV5640 tự thu (≥2.000, đủ dải sáng và khoảng cách) | validate cuối + calibrate INT8 |
+| Ảnh OV5640 tự thu (≥2.000, đủ dải sáng và khoảng cách) | validate cuối (`test_device`); calib INT8 khi đủ ảnh (E3-T7), tới lúc ấy PTQ hiệu chuẩn trên 300 ảnh val của từng nhánh |
 
 ### 1.3 Quy tắc chia dữ liệu
 
 - **Identity-disjoint** cho recognition: một người không được xuất hiện ở cả train và val/test.
 - Anti-spoof **giữ nguyên chia train/valid/test của upstream**. Mirror CelebA-Spoof không mang nhãn identity nên không tự kiểm identity-disjoint được; chia lại là phá luôn sự tách của giao thức gốc mà không có gì thay thế.
-- Ảnh OV5640 tự thu tách 2 phần **không giao nhau**: `calib/` (300 ảnh, dùng cho PTQ) và `test_device/` (validate cuối).
+- Ảnh OV5640 tự thu tách 2 phần **không giao nhau**: `calib/` (300 ảnh, dùng cho PTQ khi đủ ảnh, E3-T7) và `test_device/` (validate cuối, đã có 125 khung). Chưa có `calib/` thì PTQ hiệu chuẩn trên 300 ảnh val của từng nhánh.
 - Calib chỉ lấy từ **ảnh live**; một khung spoof lọt vào tập PTQ sẽ kéo dải activation về phía tấn công.
 - Tập đo landmark cắt từ `train` của detect, không giao với phần đem train (§1.2).
 - File split lưu `.txt` và **commit vào git** (`ml/data/splits/`, bố cục ở §4.4.2) — kèm `SPLIT.md` ghi seed và sha256 để tái lập kết quả.
@@ -223,7 +223,7 @@ thứ hai để chia tải, và cũng không có chân nào để cắm nhầm.
 
 🔬 **Bề ngang module ≈ 28 mm**, tức mép board chạy sát ngoài hai hàng chân chừng 1,3 mm. Chưa
 đo bằng thước, chỉ nhìn module. Con số này quyết định chỗ trống hai bên devkit trên board đế,
-nên vẽ rộng quá thì mất chỗ thật: bản đầu vẽ 32 mm và con tụ `C4` của màn không còn khe để lọt.
+nên vẽ rộng quá thì mất chỗ thật: vẽ 32 mm thì con tụ `C4` của màn không còn khe để lọt.
 Chiều dài vẫn cố ý vẽ dư vì đầu USB và cụm camera nhô ra.
 
 **Tên chân in ra phía ngoài hai hàng, không in vào giữa.** Khoảng giữa hai hàng chính là chỗ
@@ -266,7 +266,7 @@ dùng chung một cấu hình, vì model học phân bố nào thì lúc chạy 
 | Frame buffer | 4, ở PSRAM, `CAMERA_GRAB_LATEST` | preview giữ một khung qua lúc blit, `ai_task` giữ một khung tới 2 s; cái thứ tư để sensor không phải chờ khung được trả (§6.3) |
 | `vflip` / `hmirror` | 1 / 1 | module gắn lens phía trên đầu nối nên khung ra ngược; gương là thứ người dùng chờ đợi ở kiosk |
 | Phơi sáng | **thủ công, đo vùng giữa khung** | xem dưới |
-| Gain | cố định 8 | gain cao đẻ nhiễu hạt, mà nhiễu hạt chính là thứ nhánh anti-spoof đọc nhầm thành kết cấu da |
+| Gain | bắt đầu 1×, `drv_camera_expose()` chỉnh trong 1×–4× để bù phần lẻ của phơi sáng | gain cao đẻ nhiễu hạt, mà nhiễu hạt chính là thứ nhánh anti-spoof đọc nhầm thành kết cấu da |
 | Lọc vằn 50 Hz | `0x3C01` bit 7 = tay, `0x3C00` bit 2 = 50 Hz | tên bit lấy từ driver OV5640 của nhân Linux; ghi xong **đọc ngược lại**, lệch là `drv_camera_init` trả lỗi |
 
 **Phơi sáng nằm thượng nguồn của ngưỡng anti-spoof, nên nó là quyết định kiến trúc chứ
@@ -278,7 +278,7 @@ hai chiều: nó cũng làm màn hình điện thoại cháy trắng.
 
 Cách cài: **tắt AE/AGC của sensor**, rồi `drv_camera_expose()` tự đo. Mỗi khung nó lấy mẫu
 thưa một phần tư giữa khung, quy kênh lục ra độ sáng, và lái `set_aec_value` về mức mục
-tiêu. Toàn bộ đi qua API có tên của `esp32-camera`, không gõ thẳng thanh ghi nào.
+tiêu. Phơi sáng đi qua `set_aec_value` của `esp32-camera`; gain ghi thẳng `0x350A`/`0x350B` vì `set_agc_gain` chỉ nhận bậc nguyên.
 
 Vòng lặp phải **giảm chấn**: sensor mất một tới hai khung mới áp dụng giá trị mới, nên đo
 mỗi khung rồi chỉnh ngay là đọc phải khung cũ và ảnh nhấp nháy sáng tối. Mỗi lần chỉnh đi
@@ -345,7 +345,7 @@ không phải `N15…N0` — con số đọc ra là **N/2**. Vậy dải `0…24
 là bộ đếm **`0…483`** đọc ở nửa độ phân giải, và **484 = 480 + VFP 2 + VBP 2** đúng bằng tổng số
 dòng một khung khi `BPC (0xB5)` để mặc định. Ba số đo tự khớp: 41,6 ms ÷ 242 nấc = 172 µs mỗi
 nấc, mỗi nấc 2 dòng thật → 86 µs mỗi dòng, 484 × 86 µs = 41,6 ms = **24,0 Hz**, đúng con số
-`FRMCTR1 = 0x81 0x1F` tính ra từ công thức §9.3.2. Khoá pha **không sai** vì nó chỉ cần vị trí
+`FRMCTR1 = 0x81 0x1F` tính ra từ công thức ở datasheet ST7796S §9.3.2. Khoá pha **không sai** vì nó chỉ cần vị trí
 tương đối và đơn điệu; nhưng ai đọc `SCANLINE_UNITS` mà tưởng panel có 242 dòng thì sai gấp đôi.
 
 **Thứ tự chân trên header**, đọc dọc hàng 14 chân:
@@ -559,14 +559,13 @@ hỏng; trần nhịp cập nhật tụt về đúng nhịp blit ~14 lần/giây
 màn phủ kín không có khung camera nào để chờ, nên `cam_task` vẽ nó ngay khi `ui_kiosk` publish
 một overlay mới (§4.5.5h), và trần của nó là thời gian vẽ một lượt chứ không phải nhịp camera.
 
-**Soát cùng lượt tìm ra bốn chỗ nữa cùng loại.** `rest_level()` hỏi "màn có phủ kín không" bằng
-cách đọc thẳng trường `opaque` **trong khoang overlay**, và nó được gọi từ bốn task khác không
-hề giữ chỗ. Câu hỏi ấy giờ trả lời bằng một cờ riêng do `publish()` đặt, nên không task nào phải
-chạm vào bộ nhớ khoang để biết. Cùng nguyên tắc: **thứ nhiều task cùng hỏi thì đừng để nó nằm
+**"Màn có phủ kín không" là một cờ riêng, không phải một trường trong khoang.** Bốn task không
+giữ chỗ gọi `rest_level()`, nên nó đọc cờ do `publish()` đặt chứ không đọc trường `opaque`
+**trong khoang overlay**, và không task nào phải chạm vào bộ nhớ khoang để biết. Cùng nguyên tắc: **thứ nhiều task cùng hỏi thì đừng để nó nằm
 trong vùng nhớ đang được ghi lại.**
 
-Nghiệm thu 19/09 sau khi sửa: **490 lần chạm trải khắp preview, `Menu` và `Cài đặt`, 0/840 khung
-hỏng** (trước là 23,6 %), fps 12,9–14,2 không đổi, không dòng lỗi nào.
+Nghiệm thu 19/09: **490 lần chạm trải khắp preview, `Menu` và `Cài đặt`, 0/840 khung
+hỏng** (không giữ chỗ thì 23,6 %), fps 12,9–14,2 không đổi, không dòng lỗi nào.
 
 **Đọc thanh ghi qua `esp_lcd` cần một điều `esp_lcd` không nói ra.** Sau mỗi giao dịch của
 nó, `esp_lcd_panel_io_spi` **tắt driver ngõ ra của chân DC** (`post_cb` gọi
@@ -635,7 +634,7 @@ thế **không có bằng chứng**, và đường "cấp nguồn riêng" cũng 
 Hai con số nữa chốt lại vùng đã loại. **Thư viện `esp_lcd_st7796` không ghi `0xB1`** — bảng khởi
 tạo của nó chỉ có `0xf0/0xb4/0xb7/0xe8/0xc1/0xc2/0xc5/0xe0/0xe1`. Nên phép thử "bỏ lệnh `0xB1`"
 đúng là thả panel về mặc định **60,1 Hz** thật, không phải âm tính giả; nhịp quét vô can. Và
-`PWR1 (0xC0)` mặc định `0x80` đọc theo bảng bit §9.3.9 là `AVDDS = 2` → **AVDD 6,60 V**, trong
+`PWR1 (0xC0)` mặc định `0x80` đọc theo bảng bit ở datasheet ST7796S §9.3.9 là `AVDDS = 2` → **AVDD 6,60 V**, trong
 khi `GVDD = 3,85 + 1,50 = 5,35 V`, tức còn **1,25 V** biên — không phải sát trần. Nấc duy nhất
 còn lại là `AVDDS = 3` → 6,80 V, mua thêm 0,2 V.
 
@@ -865,7 +864,7 @@ lệch thật ở 0,25 / 0,35 / 0,42 m rồi chốt.
 **Ngưỡng "có người" không nằm ở đây.** Nó là ngưỡng nghiệp vụ, nên theo §4.9 nó ở **NVS
 trên kiosk và đổi được bằng `SET_CONFIG`** — khoá `vision.present_mm` của §6.2.1. `drv_tof`
 chỉ trả khoảng cách, không tự quyết định có người hay không; việc biến khoảng cách thành
-`EVT_PRESENCE_ON/OFF` là của `tof_task`, và §5.3 khai đường truyền của hai event đó.
+`APP_PRESENCE_ON/OFF` (`app_presence_t`) là của `tof_task`, và §5.3 khai đường truyền của hai event đó.
 
 #### E. Âm thanh MAX98357A (I²S) + loa 4Ω/3W
 
@@ -918,7 +917,7 @@ hàn cả ba xuống GND **trên module**, board đế không có đường đ�
 |---|---|
 | A0 / A1 / A2 | hàn xuống GND **trên module** → địa chỉ `0x20` |
 | SDA / SCL | GPIO1 / GPIO2 |
-| INT | không dùng (poll trong `io_task`) |
+| INT | không dùng: mọi chân PCF8574 đang dùng đều là ngõ ra, không task nào đọc nó |
 | **P0** | GT911_RST |
 | **P1** | VL53L1X_XSHUT |
 | P2 | dự phòng |
@@ -1000,7 +999,7 @@ khung MAX98357A đúng một khoảng. Con số 7,3 không chọn cho đẹp mà
 sang trái 1,46 mm và cả cụm bên phải sang phải 1,85 mm — chia đôi đơn thuần thì ra 6,38 mm và
 con tụ chỉ còn hở 0,04 mm mỗi bên.
 
-**Board đế có lỗ bắt của riêng nó — `H5`…`H9`, năm lỗ M3.** Bốn lỗ `H1`…`H4` giữ *tấm màn vào
+**Board đế có lỗ bắt của riêng nó — `H5`…`H8`, bốn lỗ M3.** Bốn lỗ `H1`…`H4` giữ *tấm màn vào
 board*, không giữ *board vào cái gì*. Thiếu chúng thì cả cụm màn cộng board treo lơ lửng trong
 vỏ, mà hai con domino lại là chỗ người ta vặn vít siết dây vào — lực đó phải có chỗ truyền xuống.
 
@@ -1165,7 +1164,7 @@ của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A
 **Router giữ khe rộng hơn mức netclass đòi.** Netclass vẫn là 0,2 mm cho tín hiệu và 0,3 mm cho
 nguồn — DRC chấm theo đúng đó — nhưng router đi với 0,25 và 0,35, nên nó tự tránh những lối chỉ
 vừa khít. Kết quả: khe đồng hẹp nhất toàn board **0,255 mm** thay vì 0,215, không còn cặp nào dưới
-0,25 mm, và lại còn **ít via hơn** (46 thay vì 53) vì đường đi đơn giản hơn. Đi sát đúng mức tối
+0,25 mm, và đường đi đơn giản hơn nên cũng ít via hơn; bản hiện tại có 49 via (§2.5). Đi sát đúng mức tối
 thiểu thì DRC vẫn qua, nhưng không còn chỗ nào cho sai số ăn mòn của xưởng.
 
 **Ba dây I²S giữ xa nhau và giữ xa I²C, vì board không có mặt đất.** Đồng mặt sau là những nhánh
@@ -1306,7 +1305,7 @@ Xếp theo đúng thứ tự thực hiện.
 | Kiểm tra op của runtime **trước khi train** | **TFLM:** ESP-NN chỉ tăng tốc `CONV_2D`, `DEPTHWISE_CONV_2D`, `FULLY_CONNECTED`, `ADD`, `MUL`, `AVG/MAX_POOL`, `SOFTMAX`. Op ngoài danh sách → rơi về kernel C tham chiếu, chậm 10–40×. **ESP-DL:** không có kernel tham chiếu để rơi về — op nào không đăng ký trong `dl_module_creator.hpp` thì `dl::Model` **bỏ dở lúc nạp** và model không có tensor ra. `Expand` là một op như vậy (§3 lớp 2, recog). `export/espdl_op_check.py` đối chiếu từng file `.espdl` với danh sách đó | cả 3 |
 | Tránh op không có kernel | `RESIZE_BILINEAR` động, `TRANSPOSE_CONV`, `GATHER`, `ARGMAX` → chuyển ra hậu xử lý viết tay bằng C | detect (NMS, decode anchor) |
 | Số kênh về bội số 8/16 | ESP-NN SIMD nạp 16 byte/lần; kênh lẻ = padding phí | cả 3 |
-| Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **80×80** (V1SE nhập) · recog **113×113** trên TFLM, **112×112** trên ESP-DL | cả 3 |
+| Giảm độ phân giải đầu vào | detect **160×120** · anti-spoof **80×80** (V1SE nhập) · recog **112×112** ở cả hai runtime (w32 tự train `1750` đọc 113×113) | cả 3 |
 | Cho feature map lẻ ở mỗi lần stride-2 | Hết `PAD` — xem dưới | cả 3 |
 | Gộp kênh bằng `AvgPool2d` cỡ cố định | `AdaptiveAvgPool2d(1)` xuất ra `MEAN`, **không có kernel esp-nn**; cỡ cố định ra `AVERAGE_POOL_2D`, có | khối SE |
 | Width multiplier thay vì pruning | Scale kênh 0.75× / 0.5× rồi train lại từ đầu — ổn định hơn prune sau | cả 3 |
@@ -1328,7 +1327,7 @@ thế giữ đúng **112×112** của trọng số gốc: đổi sang 113 là đ
 đổi trọng số đã học. `align.cpp` và `align.py` đều lấy cạnh ảnh từ chính model — từ graph ở
 firmware, từ `model.input_hw` ở Python — nên cùng một code dựng được cả 112 lẫn 113.
 
-Anti-spoof theo cùng quy tắc: **80 → 81**, chuỗi thành 41 → 21 → 11 → 6, và 8 `PAD` (4 mỗi backbone) biến mất. Kernel khép sổ 5×5 → 6×6. `preproc.cpp` cắt ra 81×81.
+Anti-spoof theo cùng quy tắc: **80 → 81**, chuỗi thành 41 → 21 → 11 → 6, và 8 `PAD` (4 mỗi backbone) biến mất. Kernel khép sổ 5×5 → 6×6. `preproc.cpp` cắt theo cạnh đầu vào của graph: 81×81 với student, 80×80 với V1SE đang deploy.
 
 **Khối SE phải gộp kênh bằng `AvgPool2d` cỡ cố định.** `nn.AdaptiveAvgPool2d(1)` xuất ra `GlobalAveragePool` rồi thành `MEAN`, mà `MEAN` không có kernel esp-nn — 20 khối SE của anti-spoof tốn 217 ms vì đúng chỗ này. Khai cỡ cửa sổ bằng số thì ra `AVERAGE_POOL_2D`, có kernel. Cái giá là mỗi khối SE phải biết feature map của nó rộng bao nhiêu, tức phải suy từ kích thước đầu vào chứ không để mạng tự co giãn.
 
@@ -1340,23 +1339,23 @@ Anti-spoof theo cùng quy tắc: **80 → 81**, chuỗi thành 41 → 21 → 11 
 | `ReLU` | 0 | ✅ thuần nhất dương | không chặn trên |
 | `ReLU6` | 0 | ❌ trần cố định phá tính thuần nhất | chặn ở 6 |
 
-Mặc định là `ReLU6` vì dải bị chặn giúp INT8; nhưng nhánh nào cần CLE thì `ReLU` là lựa chọn duy nhất không mất tốc độ. Khai bằng `model.params.activation` ở config nhánh, để so được bằng số thay vì tranh luận. **Trên TFLM, `PReLU` không được dùng ở bất kỳ nhánh nào** — nó tốn 42,3% thời gian của cả pipeline, đo ở `docs/measurements/latency.md`. **Trên ESP-DL thì ngược lại**: `PRelu` là một module có kernel, V1SE PReLU nguyên chạy 85,0 ms so với 81,8 ms của bản stem tách (trial 23/09), nên không có lý do gì để viết lại hàm kích hoạt của trọng số nhập.
+Mặc định là `ReLU6` vì dải bị chặn giúp INT8; nhưng nhánh nào cần CLE thì `ReLU` là lựa chọn duy nhất không mất tốc độ. Khai bằng `model.params.activation` ở config nhánh, để so được bằng số thay vì tranh luận. **Trên TFLM, run tự train không dùng `PReLU`** — nó tốn 42,3% thời gian của cả pipeline, đo ở `docs/measurements/latency.md`; bộ đối chứng TFLM của E9-T51 vẫn giữ PReLU của `0118` và `2106` để so đúng model đang deploy. **Trên ESP-DL thì ngược lại**: `PRelu` là một module có kernel, V1SE PReLU nguyên chạy 85,0 ms so với 81,8 ms của bản stem tách (trial 23/09), nên không có lý do gì để viết lại hàm kích hoạt của trọng số nhập.
 
 Từng nhánh chọn gì:
 
 | Nhánh | TFLM (đối chứng) | ESP-DL (deploy) | Vì sao |
 |---|---|---|---|
 | detection | `ReLU6` viết cứng trong `blocks.py` | cùng model | Không chạy CLE, dải chặn có lợi cho INT8 |
-| anti-spoof | `ReLU` qua config, `conv1` giữ PReLU dưới dạng **stem tách** hai nhánh ReLU + ADD | **PReLU nguyên** của trọng số gốc | TFLM: **không chạy CLE** — đo 12/09 cho thấy nó làm EER sau INT8 tăng 53% (`measurements/antispoof` §32). Khối SE giữ **Sigmoid** gốc ở cả hai runtime. ESP-DL: PReLU nguyên giữ 61/62 mặt thật trên 87 khung OV5640 so với 59/62 của FP32 cùng hàm (trial 23/09); student tự train dùng `HardSigmoid` `ReLU6(x+3)/6` |
-| recognition | `ReLU` qua config, w32 tự train | **PReLU** của MobileFaceNet-ECA nhập | TFLM: chạy CLE — `ReLU6` chỉ giữ được 15/48 cặp conv, `ReLU` giữ đủ 48/48. ESP-DL: hàm kích hoạt đi theo trọng số nhập |
+| anti-spoof | **PReLU nguyên** của `0118` (Q1, E9-T51) | **PReLU nguyên** của trọng số gốc | TFLM: **không chạy CLE** — đo 12/09 cho thấy nó làm EER sau INT8 tăng 53% (`measurements/antispoof` §32). Khối SE giữ **Sigmoid** gốc ở cả hai runtime. ESP-DL: PReLU nguyên giữ 61/62 mặt thật trên 87 khung OV5640 so với 59/62 của FP32 cùng hàm (trial 23/09); student tự train dùng `HardSigmoid` `ReLU6(x+3)/6` |
+| recognition | **PReLU** của MobileFaceNet-ECA `2106` (Q1, E9-T51) | **PReLU** của MobileFaceNet-ECA nhập | w32 `1750` tự train, đối chứng TFLM trước E9-T51: CLE giữ được 15/48 cặp conv với `ReLU6`, 48/48 với `ReLU`. ESP-DL: hàm kích hoạt đi theo trọng số nhập |
 
 ### Lớp 2 — Huấn luyện
 
 **Detect và recognition train từ khởi tạo ngẫu nhiên trên nhãn thật, không có teacher**
-(`docs/adr/0002-bo-knowledge-distillation.md`) — đó là các run chạy trên TFLM. **Recog chạy trên
+(`docs/adr/0002-bo-knowledge-distillation.md`) — detect `1616` chạy trên cả hai runtime, còn recog tự train không chạy trên runtime nào. **Recog chạy trên
 ESP-DL nhập trọng số FRBench** (mục cuối của lớp này): cùng 1,20M tham số, bản train đủ số epoch
 của FRBench hơn bản w64 tự train 10 epoch ở AgeDB TAR@1e-3 **0,841 so với 0,599** sau INT8, và
-hơn bản w32 đang chạy trên TFLM ở mọi bộ. **Nhánh chống giả distill từ trọng số nhập**
+hơn bản w32 `1750` (đối chứng TFLM trước E9-T51) ở mọi bộ. **Nhánh chống giả distill từ trọng số nhập**
 (`docs/adr/0003-distill-chong-gia-tu-trong-so-nhap.md`): mọi student train trên nhãn pool đều
 chặn oan mặt thật của OV5640 vì nhãn CelebA-Spoof dạy phong cách ảnh, còn trọng số minivision
 giữ trọn 62/62; teacher ấy tốt hơn mọi student nên có thứ để distill, và không dùng nhãn thì
@@ -1366,7 +1365,7 @@ confound không đi theo.
 |---|---|
 | **Task loss của từng nhánh** | Detect: cls + box + landmark trên prior dương. Anti-spoof: BCE hai lớp trên cặp crop. Recognition: ArcFace trên nhãn danh tính |
 | **Quantization-friendly training** | Weight decay trên weight conv, clip activation, triệt outlier → phân bố hẹp, INT8 mất ít |
-| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`. Dải nén và phơi sáng từ `measurements/antispoof` §3, §9, §12; **dải nhiễu từ §24**: khung RGB565 thô ở gain 4× trần đo ra σ ≈ 3 trên thang 8 bit ở độ phân giải cảm biến, còn **σ 2,2–2,9 sau khi trung bình vùng về 81 px** như board làm, gần như không phụ thuộc mức sáng; nên `PHOTON_RANGE (8000, 16000)` và `READ_SIGMA_RANGE (1,5; 3,0)`, cho σ 1,7–3,2 ở mức 30 và 2,4–4,0 ở mức 230; dải cũ `(60, 600)` sinh σ 7–23, nặng hơn camera một bậc |
+| **Augment mô phỏng OV5640** | Nhiễu Poisson-Gaussian, nén lại JPEG chất lượng 30–95, sai lệch cân bằng trắng, vignette, motion blur, ánh sáng ngược, phơi sáng. Mỗi nhóm một cổng `p=0,5`. Dải nén và phơi sáng từ `measurements/antispoof` §3, §9, §12; **dải nhiễu từ `measurements/antispoof` §24**: khung RGB565 thô ở gain 4× trần đo ra σ ≈ 3 trên thang 8 bit ở độ phân giải cảm biến, còn **σ 2,2–2,9 sau khi trung bình vùng về 81 px** như board làm, gần như không phụ thuộc mức sáng; nên `PHOTON_RANGE (8000, 16000)` và `READ_SIGMA_RANGE (1,5; 3,0)`, cho σ 1,7–3,2 ở mức 30 và 2,4–4,0 ở mức 230; dải cũ `(60, 600)` sinh σ 7–23, nặng hơn camera một bậc |
 | **Anti-spoof: augment cắt crop** | Với `p = 0,15` cắt crop mặt về một tỉ lệ trong `[0.7, 1.0]` rồi dựng lại, **rút cùng một phân bố cho cả hai lớp**. Bắt buộc, xem mục dưới |
 
 #### Công thức lấy mẫu của detect phải khớp kích thước đầu vào
@@ -1596,12 +1595,12 @@ và chỉ tốn thêm 46 ms cho ba khối SE (`measurements/antispoof` §43.4–
 V2 lúc nhập lần đầu; phép tách stem, gấp tiền xử lý và bộ op áp y nguyên cho V1SE, thêm `LOGISTIC`
 ×3 và `MEAN` ×3 của SE.
 
-**Vì sao 2,7× đúng với model này mà sai với model train trên CelebA (§22).** §22 đo model
+**Vì sao 2,7× đúng với model này mà sai với model train trên CelebA (`measurements/antispoof` §22).** Mục ấy đo model
 train trên CelebA-Spoof, nơi mặt thật là ảnh sự kiện studio còn mặt giả là người cầm ảnh
 trong phòng thường: "phòng thường" trở thành nhãn, và view ngữ cảnh học đúng đường tắt ấy.
 Kết luận đó là về **dữ liệu train**, không phải về ngữ cảnh. Trọng số minivision train trên
 bộ riêng không mang confound này. Đo trên 85 khung OV5640 (64 thật, 21 giả, 6 phiên, gồm cả
-nền cửa gỗ của §22), cắt bằng chính `fitted()` của firmware ở 2,7× và lấy mẫu lại trung bình
+nền cửa gỗ của `measurements/antispoof` §22), cắt bằng chính `fitted()` của firmware ở 2,7× và lấy mẫu lại trung bình
 vùng như board:
 
 | kích hoạt | AUC | p5 thật − p95 giả | bắt giả ở 3 thật bị chặn | thật bị loại khi chặn hết giả |
@@ -1644,7 +1643,7 @@ Cờ `activation` cho ra hai run; latency và số đo INT8 trên board quyết 
 `models.lock.json`. Nếu ReLU giữ 3 mặt thật bị loại sau INT8 thì fine-tune ngắn từ chính
 run ấy là bước kế tiếp, không phải train lại từ đầu.
 
-**Ràng buộc §22 vẫn đứng nguyên cho `minifasnet_v2_se`**: model đó train trên pool này và
+**Ràng buộc của `measurements/antispoof` §22 vẫn đứng nguyên cho `minifasnet_v2_se`**: model đó train trên pool này và
 vẫn đọc 1,0×. Hai model, hai crop, cùng một `fitted()`; `kFaceScale` trong `preproc.cpp` đi theo
 model đang nạp.
 
@@ -1751,7 +1750,7 @@ mất bão hoà. Đây là dấu hiệu nhánh tight phải dựa vào ở độ
 **Chuỗi augment bóp dấu hiệu ấy, nhưng nới nó ra thì hỏng.** `photometric` đổi `contrast`
 trong 0,50–1,50 và cân bằng trắng từng kênh trong 0,86–1,16; đo trên 2.000 bản ghi val, AUC
 của `sat_mean` tụt **0,8609 → 0,7185** sau augment. Thu hẹp hai dải ấy đã **chạy thử và bị
-bác** (§39): AUC rơi ở **cả ba miền**, riêng `phone_eval` sập 0,9838 → 0,5353 với hai phần ba
+bác** (`measurements/antispoof` §39): AUC rơi ở **cả ba miền**, riêng `phone_eval` sập 0,9838 → 0,5353 với hai phần ba
 nhóm mặt thật không qua nổi ngưỡng nào — dải rộng ấy **đang mua sự bền vững** chứ không chôn
 dấu hiệu. Đường còn lại là **kênh sắc độ thứ tư**: ngoài R, G, B thì đầu vào mang thêm
 `S = (max − min) / max` tính trên từng điểm, **sau** toàn bộ augment — model ở suy luận cũng
@@ -1760,11 +1759,11 @@ tích chập **không tự tính được** `max` và `min` trên trục kênh: 
 kênh, còn conv thì tuyến tính rồi mới ReLU, nên đại lượng này phải được **đưa vào**, không
 phải được **hy vọng học ra**. Giá: `stem` nhận 4 kênh thay vì 3, tức thêm đúng một hàng trọng
 số ở lớp đầu — arena không đổi, 234 ms không đổi, 81×81 không đổi; `ai_engine/src/antispoof/
-preproc.cpp` ghi thêm một kênh vào tensor đầu vào cùng lúc nó ghi ba kênh kia. §39 bác việc
+preproc.cpp` ghi thêm một kênh vào tensor đầu vào cùng lúc nó ghi ba kênh kia. `measurements/antispoof` §39 bác việc
 **nới lỏng augment**, không nói gì về việc **đưa thẳng đại lượng vào**, nên đây là hai phép
 thử khác nhau. **Không** chốt độ
 bão hoà thành cổng cứng: trên OV5640 hai lớp chồng ở 0,282–0,413 và biên chỉ 1,7%, nên cổng
-ấy chặn đúng một tấm ảnh chứ không chặn được một loại tấn công (§38.3).
+ấy chặn đúng một tấm ảnh chứ không chặn được một loại tấn công (`measurements/antispoof` §38.3).
 
 Đo trên checkpoint chưa có augment quang học, làm tối và bẹt tương phản chính những
 khung nó đang chấm đúng:
@@ -1837,7 +1836,7 @@ trắng lên chính khuôn mặt. Số đo khớp với chẩn đoán: bão hoà
 lên mặt.
 
 **Phơi sáng và tương phản thì giữ, dù cũng âm.** Đổi lấy độ phủ ở đây là mở lại một lỗi đã đo:
-làm tối 15% kéo một khuôn mặt thật từ 0,9999 xuống **0,026**, và §39 đã đo rằng thu hẹp dải làm
+làm tối 15% kéo một khuôn mặt thật từ 0,9999 xuống **0,026**, và `measurements/antispoof` §39 đã đo rằng thu hẹp dải làm
 AUC rơi ở **cả ba miền**. `vignette` thì tối bốn góc và nhân đúng 1,0 ở giữa khung — nơi khuôn
 mặt nằm — nên nó không thay được `backlight`, mà cũng không cần thay.
 
@@ -1869,6 +1868,40 @@ trên cả pool, còn bản đồ nhị phân thì không cần gì.
 | Tham số thêm trên board | **0** — đầu phụ bỏ lúc xuất, `head_dw` trở đi không đổi một byte |
 | Arena, latency, 81×81 | không đổi |
 
+
+**Nghiệm thu, chốt trước khi train** — 21 khung tấn công + 64 khung mặt thật của OV5640, giữ
+hoàn toàn ngoài tập huấn luyện. Đạt khi **ACER dưới 0,1425** *và* số khung mặt thật bị chặn
+**không vượt 2/64**. Thiếu một trong hai là trượt.
+
+**Kết quả 14/09, 90 epoch, cùng pool với bản không có đầu phụ:**
+
+| Model | AUC | ACER | Giả lọt ≤5% | Thật bị chặn |
+|---|---|---|---|---|
+| chroma 13/09 | **0,8668** | **0,1425** | 23,8% | **2/64** |
+| cùng pool, không đầu phụ | 0,8512 | 0,1964 | 66,7% | 15/64 |
+| **có đầu phụ 6×6** | 0,7552 | 0,2675 | 52,4% | 14/64 |
+
+**Trượt cả hai vế**, và kém hơn chính bản đối chứng cùng pool: AUC −0,096, ACER +0,071. Chỉ
+nhỉnh hơn ở tỉ lệ giả lọt. Đầu phụ vì thế **bị bác**, và repo không giữ
+mã của nó.
+
+**Nhưng phép đo này lại trả về thứ giá trị hơn kết quả của nó.** Chấm lại chính run ấy ở giữa
+lịch train:
+
+| | epoch 45 | epoch 90 |
+|---|---|---|
+| val EER — thước đo gián tiếp | 0,1934 | **0,1624** ↓ tốt lên |
+| AUC trên OV5640 | **0,8616** | 0,7552 ↓ tệ đi |
+
+**Trong cùng một lần train**, proxy đi lên đều trong khi thiết bị đi xuống. Hiện tượng "proxy
+tăng thì thiết bị giảm" trước đó chỉ thấy khi so **giữa hai run**; đây là lần đầu nó lộ ra
+**bên trong một run**, tức nó không phải hệ quả của việc đổi pool hay đổi siêu tham số. Càng
+train lâu, model càng khớp phân bố pool và càng lệch khỏi camera thật.
+
+Hệ quả cho mọi arm về sau: **vấn đề không nằm ở kiến trúc hay hàm mục tiêu.** Pool và camera là
+hai phân bố khác nhau, và không một đích giám sát nào sửa được điều đó từ phía pool. Trước khi
+đề xuất arm tiếp theo, đọc `docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` — mười ba hướng đã
+đóng bằng số đo, và cái duy nhất còn mở đều cần khung ảnh tấn công thật từ chính OV5640.
 
 #### Đích giám sát bản đồ độ sâu 21×21
 
@@ -1915,13 +1948,13 @@ có thể** lách bằng phong cách — thấy phong cách pool-live thì xuấ
 pool-spoof thì xuất 0. Thứ ngăn nó là phía mặt thật: 441 ô phải khớp một hình khối **cụ thể,
 đổi theo từng ảnh**, không đoán bừa được. Đó là ép gián tiếp, không phải khoá chặt.
 
-**Kết quả: làm tệ đi, không dùng** (file nghiên cứu §16.6). Hai run cùng 36 shard CelebA, cùng
+**Kết quả: làm tệ đi, không dùng** (`nghien-cuu-chong-gia-mao-ov5640.md` §16.6). Hai run cùng 36 shard CelebA, cùng
 5 epoch, cùng seed, chỉ khác `depth_weight`: ở epoch 3 bản có độ sâu loại oan 10 mặt thật,
 đối chứng loại 6, và đối chứng thắng trên mọi thước. Đầu phụ có học — mất mát của nó tụt từ
 0,3334, đúng nghiệm "đoán phẳng hết", xuống 0,2438 rồi chững — nhưng thân model không dùng tới.
 Vì thế repo không giữ bộ sinh nhãn độ sâu.
 
-#### SSDG: ép mặt thật giống nhau giữa các miền, thả cho tấn công tách ra
+#### SSDG — ép mặt thật giống nhau giữa các miền: đã chạy, đã đo, **bị bác**
 
 Ba mảnh, tất cả chỉ sống lúc train và **biến mất khi xuất**: eval trả về đúng một tensor logit
 như cũ, nên đồ thị INT8, arena và 81×81 không đổi một byte. Giá lúc train là **1.161 tham số**
@@ -1936,65 +1969,22 @@ như cũ, nên đồ thị INT8, arena và 81×81 không đổi một byte. Giá
    các kiểu tấn công ra xa nhau, và vẫn tách thật khỏi giả.
 3. Đặc trưng chuẩn hoá về độ dài đơn vị trước khi tính khoảng cách.
 
-**Nhưng nó chỉ chạy được nếu một batch mang nhiều miền, và ban đầu thì không.** Đo 14/09: mỗi
-worker đọc **hết shard này mới sang shard khác**, mà một thư mục shard là một miền, nên batch
-mang **1–2 miền** — đầu đối kháng không có gì để phân biệt và triplet không có cặp khác miền
-nào. Bộ đệm xáo 2.048 mẫu không cứu được vì nó chỉ trộn quanh một ranh giới shard.
+**Nó chỉ chạy được nếu một batch mang nhiều miền.** Một thư mục shard là một miền, nên worker
+đọc **hết shard này mới sang shard khác** thì batch chỉ mang **1–2 miền** (đo 14/09): đầu đối
+kháng không có gì để phân biệt và triplet không có cặp khác miền nào. Bộ đệm xáo 2.048 mẫu
+không cứu được vì nó chỉ trộn quanh một ranh giới shard.
 
-Sửa: đọc **xen kẽ 12 shard cùng lúc**, và chọn shard mở tiếp **theo miền chưa có mặt** chứ
-không theo thứ tự — vì `unique_live`/`unique_replay` lặp năm lần trong split nên chọn theo thứ
-tự sẽ để chúng chiếm trọn cửa sổ. Sau khi sửa: **2–6 miền mỗi batch**, không còn batch một miền.
+Nên loader của nhánh đọc **xen kẽ 12 shard cùng lúc**, và chọn shard mở tiếp **theo miền chưa có
+mặt** chứ không theo thứ tự — vì `unique_live`/`unique_replay` lặp năm lần trong split nên chọn
+theo thứ tự sẽ để chúng chiếm trọn cửa sổ. Đo được **2–6 miền mỗi batch**, không batch nào một
+miền. Loader ấy vẫn là loader của nhánh (`tasks/antispoof/data.py`).
 
-Số miền **đếm từ chính split** lúc dựng model, không gõ vào config — đổi pool mà quên sửa thì
-đầu phân biệt sẽ lệch kích thước trong im lặng.
-
-**Cảnh báo giữ nguyên:** độ lệch đã đo được nằm giữa **pool và camera**, mà SSDG chỉ san phẳng
-chênh lệch **giữa các miền có trong pool** — OV5640 không phải một trong số đó. Và phía mặt
-thật chỉ có **4 trong 9** thư mục, nên đầu đối kháng thường chỉ thấy 2 miền mỗi batch. Đây là
-một phép thử có cơ sở, không phải một lời giải đã biết trước.
-
-**Bản ghi cũ về SSDG như bước hai:** Ý định ban đầu là làm sau nếu bước một đạt; bước một
-trượt, nên nó không được kích hoạt. Giữ lại đây vì nó nhắm đúng chế độ hỏng vừa đo được: ép đặc
-trưng **mặt thật** không phân biệt được giữa các miền, còn **tấn công** thì cho tách theo miền —
-tức tối ưu thẳng cho một miền chưa từng thấy. Nhãn miền đã có sẵn trên shard từ `xdomain_crop.py`
-(`synth_ipad`, `synth_samsung`, `unique_replay`…) nên không phải gắn lại. Giá: thêm lớp đảo
-gradient và bộ lấy mẫu triplet bất đối xứng. ⚠️ Nhưng số đo ở trên cho thấy độ lệch nằm giữa
-**pool và camera**, mà SSDG chỉ san phẳng được chênh lệch **giữa các miền có trong pool** —
-OV5640 không phải một trong số đó. Nên đừng chạy nó như bước kế tiếp mặc định.
-
-**Nghiệm thu, chốt trước khi train** — 21 khung tấn công + 64 khung mặt thật của OV5640, giữ
-hoàn toàn ngoài tập huấn luyện. Đạt khi **ACER dưới 0,1425** *và* số khung mặt thật bị chặn
-**không vượt 2/64**. Thiếu một trong hai là trượt.
-
-**Kết quả 14/09, 90 epoch, cùng pool với bản không có đầu phụ:**
-
-| Model | AUC | ACER | Giả lọt ≤5% | Thật bị chặn |
-|---|---|---|---|---|
-| chroma 13/09 | **0,8668** | **0,1425** | 23,8% | **2/64** |
-| cùng pool, không đầu phụ | 0,8512 | 0,1964 | 66,7% | 15/64 |
-| **có đầu phụ 6×6** | 0,7552 | 0,2675 | 52,4% | 14/64 |
-
-**Trượt cả hai vế**, và kém hơn chính bản đối chứng cùng pool: AUC −0,096, ACER +0,071. Chỉ
-nhỉnh hơn ở tỉ lệ giả lọt. Đầu phụ vì thế **tắt mặc định**; mã giữ lại sau cờ
-`patch_supervision` vì nó không tốn gì khi tắt, và vì số đo phải tái lập được.
-
-**Nhưng phép đo này lại trả về thứ giá trị hơn kết quả của nó.** Chấm lại chính run ấy ở giữa
-lịch train:
-
-| | epoch 45 | epoch 90 |
-|---|---|---|
-| val EER — thước đo gián tiếp | 0,1934 | **0,1624** ↓ tốt lên |
-| AUC trên OV5640 | **0,8616** | 0,7552 ↓ tệ đi |
-
-**Trong cùng một lần train**, proxy đi lên đều trong khi thiết bị đi xuống. Hiện tượng "proxy
-tăng thì thiết bị giảm" trước đó chỉ thấy khi so **giữa hai run**; đây là lần đầu nó lộ ra
-**bên trong một run**, tức nó không phải hệ quả của việc đổi pool hay đổi siêu tham số. Càng
-train lâu, model càng khớp phân bố pool và càng lệch khỏi camera thật.
-
-Hệ quả cho mọi arm về sau: **vấn đề không nằm ở kiến trúc hay hàm mục tiêu.** Pool và camera là
-hai phân bố khác nhau, và không một đích giám sát nào sửa được điều đó từ phía pool. Trước khi
-đề xuất arm tiếp theo, đọc `docs/thesis/nghien-cuu-chong-gia-mao-ov5640.md` — mười ba hướng đã
-đóng bằng số đo, và cái duy nhất còn mở đều cần khung ảnh tấn công thật từ chính OV5640.
+**Kết quả: trượt nặng.** Run 90 epoch chỉ đổi một biến là SSDG ra AUC 0,5938, ACER 0,2615
+(`nghien-cuu-chong-gia-mao-ov5640.md` §12.2), thấp hơn chính pool ấy khi không có nó 0,257 AUC.
+Lý do nằm sẵn trong số đo: độ lệch nằm giữa **pool và camera**, mà SSDG chỉ san phẳng chênh
+lệch **giữa các miền có trong pool** — OV5640 không phải một trong số đó — và phía mặt thật chỉ
+có **4 trong 9** thư mục, nên đầu đối kháng thường chỉ thấy 2 miền mỗi batch. Repo không giữ mã
+SSDG.
 
 #### Model sống bằng dải mắt–mũi, nên che chỗ đó là hỏng — và đó là ràng buộc hai chiều
 
@@ -2182,7 +2172,7 @@ ghi kèm hàng PTQ của ESP-DL trong thang để có một cặp cùng cách l�
   stack), độ chính xác, so khớp. Ghi ảnh model TFLM lên board thì `make board-save STORAGE=1`
   trước, `board-restore` sau.
 
-Bộ cũ đo 23/09 (TFLM chạy `1616` / `1050` / `1750`): một lượt 1.271 ms với TFLM, 228 ms với ESP-DL
+Bộ đối chứng trước E9-T51 (`1616` / `1050` / `1750`), đo 23/09: một lượt 1.271 ms với TFLM, 228 ms với ESP-DL
 cùng model (`latency.md` §13).
 
 | Kỹ thuật | TFLM + esp-nn (đối chứng) | ESP-DL (deploy) |
@@ -2193,6 +2183,11 @@ cùng model (`latency.md` §13).
 | **Trọng số** | Đọc thẳng từ flash mmap, **0 byte RAM**. Bản chép PSRAM cho TFLM là E9-T28, chưa có | Nhận con trỏ vào chính mmap ấy (`MODEL_LOCATION_IN_FLASH_RODATA`) rồi **chép sang PSRAM** lúc nạp (`param_copy`), từng nhánh bật/tắt bằng `AI_WEIGHTS_PSRAM_*`, mặc định bật: đo 23/09 chép nhanh hơn ở cả năm model thử, 3% ở detect tới 25% ở recog w64 |
 | **Chọn op** | **`MicroMutableOpResolver` riêng từng model** — chỉ đăng ký đúng op cần, giảm vài chục KB flash so với `AllOpsResolver` | Thư viện đăng ký sẵn mọi module, **858 KB flash** khi link; không có cách tỉa mà không sửa code Espressif (CLAUDE.md §6 cấm). Đó là lý do slot OTA lên 2,75 MB (§6.1) |
 | **Kiểm model trên chip** | Parity hậu xử lý qua `contracts/golden/` | Thêm bản dò (§3.7): `model->test()` trên đồ thị và các bản cắt, mẫu thử là một khung OV5640 thật, rồi đồ thị trên nhiều khung thật. Chip phải khớp mô phỏng **từng bit** ở tensor int8 — `Model::test()` so int8 với sai số 5e-5 — và lệch tối đa một bước ở tensor int16. `components/ai_engine/test_apps/probe` chạy nó; `test_apps/bench_ai` vẫn chạy `model->test()` cho mọi entry của ảnh sản phẩm |
+
+Bốn kỹ thuật chung cho cả hai runtime:
+
+| Kỹ thuật | Cách làm |
+|---|---|
 | Cấu hình sdkconfig | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB` · `CONFIG_ESP32S3_DATA_CACHE_64KB` · `CONFIG_SPIRAM_SPEED_80M` · `CONFIG_SPIRAM_MODE_OCT` · `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240` · `CONFIG_COMPILER_OPTIMIZATION_PERF` |
 | Hot path vào IRAM | Hàm hậu xử lý (NMS, affine warp) đặt `IRAM_ATTR` nếu profiler chỉ ra nghẽn |
 | Chạy tuần tự + early exit | Không dấu hiệu nào của người trong **một phút** → **model, camera và màn nghỉ cùng lúc**. Hai mức nghỉ và danh sách nguồn đánh thức ở **§5.4**. Detect không thấy mặt → **dừng**, không chạy spoof/recog. Spoof fail → không chạy recog. Tiết kiệm ~70% năng lượng |
@@ -2207,7 +2202,7 @@ cùng model (`latency.md` §13).
 | Latency từng **op** | TFLM: `tflite::MicroProfiler` — chỉ ra op nào không có kernel ESP-NN. ESP-DL: `dl::Model::profile_module()`. Cả hai chỉ bật khi `AI_PROFILING` |
 | RAM đỉnh toàn hệ | `heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)` + `MALLOC_CAP_SPIRAM` |
 | Watermark stack từng task | `uxTaskGetStackHighWaterMark()` — chỉnh lại stack cho khít |
-| Accuracy trên thiết bị | Firmware chế độ `bench`: đọc ảnh từ LittleFS → chạy pipeline → trả kết quả qua UART/HTTP cho `ml/bench/device_client.py` so với ground truth |
+| Accuracy trên thiết bị | Firmware chế độ `bench`: đọc ảnh từ LittleFS → chạy pipeline → kéo khung OV5640 về bằng `ml/bench/device_client.py`, chấm trên host bằng mô phỏng ESP-PPQ của đúng file INT8 (bản dò giữ khớp chip từng bit, §3.7) |
 | Nhiệt độ + dòng | Đo dòng thật lúc Wi-Fi TX + AI + loa cùng lúc |
 
 ### 3.7 Thang lượng tử hoá và quy trình đưa model lên chip
@@ -2401,7 +2396,7 @@ cho detection, crop 2,7× cho antispoof, căn 5 điểm cho recognition) và `sc
 nằm ở `compress/quant/ladder.py`; bản dò ở `compress/quant/probe.py`.
 
 Cấu hình thang ở `configs/common/quant.yaml`: khối mặc định, hàng `timing`, và một khối mỗi nhánh (ghi
-đè bậc, những gì thang đem ra thử, `esp_ppq_patches`, `probe`, hàng đã chọn). Run là bất biến (§4.4),
+đè bậc, những gì thang đem ra thử, `esp_ppq_patches`, `probe`; hàng đã chọn ghi ở `contracts/models.lock.json` và ADR của nhánh, khoá `chosen` để trống). Run là bất biến (§4.4),
 nên thang không đọc mục `quant` của run.
 
 Mỗi hàng ghi một dòng vào `docs/measurements/<nhánh>/quant_ladder.md`:
@@ -2442,7 +2437,7 @@ Tail nhỏ hơn head nhiều — cỡ vài chục KB mỗi model (metadata theo 
 | Arena | Ở đâu | Dùng cho | Kích thước |
 |---|---|---|---|
 | `arena_fast` | **PSRAM**, align 16 B; `AI_ARENA_FAST_INTERNAL` đổi sang SRAM nội | **detect một mình**, `MicroAllocator` riêng | `tail_det + head_det` = **189.628 B** đo thật |
-| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **748.524 B** đo thật 18/09 với V1SE nhập (spoof chiếm 675 KB, recog 412 KB); student width 32 chỉ cần 422.764 B, bản hai backbone từng chiếm 823.148 B |
+| `arena_big` | **PSRAM**, align 16 B | **anti-spoof + recognition**, dùng chung 1 `MicroAllocator` | `Σ tail + max(head)` = **995.196 B** trên cặp `0118` + `2106` của bộ đối chứng TFLM (E9-T51); cặp `1050` + `1750` ngày 18/09 cần 748.524 B, student width 32 chỉ cần 422.764 B, bản hai backbone từng chiếm 823.148 B |
 
 Vẫn là hai arena dù cùng ở PSRAM: `arena_big` gộp được vì spoof và recog chạy nối nhau **sau khi** detect xong, nên `head` của chúng chồng lên nhau an toàn. detect chạy mỗi frame, không chia `head` với ai.
 
@@ -2645,7 +2640,7 @@ contracts/
 │   ├── detection/{decode/, nms/}         #   case_000.gold, case_001.gold, ... trong mỗi thư mục
 │   ├── antispoof/{preproc/}
 │   └── recognition/{align/, l2norm/, cosine/}
-├── models.lock.json                     # model đang deploy: name, version, sha256, run_id
+├── models.lock.json                     # model đang deploy: file, sha256, run_id, arena_bytes, threshold_permille
 └── README.md
 ```
 
@@ -2678,16 +2673,16 @@ lúc chạy; hàm với macro độ dài biến nó thành lỗi lúc biên dị
 
 `golden/` giải bài toán "hậu xử lý Python phải khớp 1:1 với C": mỗi nhánh có `postproc/emit_golden.py` xuất tensor đầu vào cộng kết quả mong đợi, `firmware/test_apps/parity` đọc **chính file đó** và so sánh trên board. Lệch ở decode anchor / NMS / affine warp lộ ra ngay, không phải mò lúc tích hợp.
 
-**Định dạng là `.gold`, một khối nhị phân phẳng little-endian, không phải `.npz`.** `.npz` là file zip: đọc nó trên MCU cần một trình phân tích zip cộng npy dài hơn chính phép kiểm, mà không kiểm thêm được gì. Khuôn: magic `GOLD`, `version` u32, `count` u32, rồi mỗi tensor một bản ghi — tên 32 B nul-đệm, `dtype` u32 (0 `f32`, 1 `i8`, 2 `i32`, 3 `u8`, 4 `u16` — khung camera là RGB565), `ndim` u32, `dims` 4×u32, `nbytes` u32, dữ liệu đệm lên bội 4 B. `ml/export/emit_golden.py` giữ **đúng khuôn này** — hàm ghi và hàm đọc — còn ba `postproc/emit_golden.py` chỉ dựng ca kiểm của nhánh mình; một khuôn một chỗ, ba nhánh vẫn độc lập theo §4.5.
+**Định dạng là `.gold`, một khối nhị phân phẳng little-endian, không phải `.npz`.** `.npz` là file zip: đọc nó trên MCU cần một trình phân tích zip cộng npy dài hơn chính phép kiểm, mà không kiểm thêm được gì. Khuôn: magic `GOLD`, `version` u32, `count` u32, rồi mỗi tensor một bản ghi — tên 32 B nul-đệm, `dtype` u32 (0 `f32`, 1 `i8`, 2 `i32`, 3 `u8`, 4 `u16` — khung camera là RGB565), `ndim` u32, `dims` 4×u32, `nbytes` u32, dữ liệu đệm lên bội 4 B. `ml/src/facepipe/export/emit_golden.py` giữ **đúng khuôn này** — hàm ghi và hàm đọc — còn ba `postproc/emit_golden.py` chỉ dựng ca kiểm của nhánh mình; một khuôn một chỗ, ba nhánh vẫn độc lập theo §4.5.
 
 `test_apps/parity` nướng cả cây `contracts/golden/` vào partition `storage` bằng `littlefs_create_partition_image(... FLASH_IN_PROJECT)`, nên board mở chúng qua `/lfs` như file thường và không cần đường truyền riêng nào.
 
 `models.lock.json` (bộ ESP-DL đang deploy; `arena_bytes` chỉ khác 0 với một `.tflite` của TFLM, §3.8):
 ```json
 {
-  "detection":   { "file": "yunet_s8.espdl",         "sha256": "631b...", "run_id": "detection/20260831-1616_cc931df_36fbea",   "arena_bytes": 0 },
-  "antispoof":   { "file": "minifasnet_s8.espdl",    "sha256": "7968...", "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35",   "arena_bytes": 0 },
-  "recognition": { "file": "mobilefacenet_s8.espdl", "sha256": "0191...", "run_id": "recognition/20260923-2106_59828c4_9a6954", "arena_bytes": 0 }
+  "detection":   { "file": "yunet_s8.espdl",         "sha256": "6832...", "run_id": "detection/20260831-1616_cc931df_36fbea",   "arena_bytes": 0, "threshold_permille": 350 },
+  "antispoof":   { "file": "minifasnet_s8.espdl",    "sha256": "ed94...", "run_id": "antispoof/20260918-0118_c1d09c8_5d7b35",   "arena_bytes": 0, "threshold_permille": 500 },
+  "recognition": { "file": "mobilefacenet_s8.espdl", "sha256": "5af1...", "run_id": "recognition/20260923-2106_59828c4_9a6954", "arena_bytes": 0, "threshold_permille": 450 }
 }
 ```
 
@@ -2702,7 +2697,7 @@ lúc chạy; hàm với macro độ dài biến nó thành lỗi lúc biên dị
 | Dữ liệu thô | dataset tải về | ❌ gitignore — mô tả trong `manifest.yaml` |
 | Cấu hình công cụ AI agent | `CLAUDE.md`, `.claude/`, `.cursor/` | ❌ gitignore — chỉ tồn tại ở máy local |
 
-Bốn thứ **bắt buộc commit** dù là dữ liệu hoặc code sinh tự động: `contracts/golden/` (vài trăm KB), `ml/data/splits/`, `contracts/models.lock.json`, và toàn bộ code sinh từ `contracts/`. Mất chúng là mất khả năng tái lập, hoặc mất chốt chặn giữ ba khối khớp nhau.
+Bốn thứ **bắt buộc commit** dù là dữ liệu hoặc code sinh tự động: `contracts/golden/` (~1,2 MB), `ml/data/splits/`, `contracts/models.lock.json`, và toàn bộ code sinh từ `contracts/`. Mất chúng là mất khả năng tái lập, hoặc mất chốt chặn giữ ba khối khớp nhau.
 
 ---
 
@@ -2718,7 +2713,7 @@ Dataset hàng trăm GB không nằm trong repo. `ml/data/` là **thư mục dữ
 |---|---|---|
 | `raw/` | Đúng như lúc tải về | **Read-only.** Không script nào được ghi vào đây |
 | `interim/` | Đã giải nén / đổi định dạng (`.rec` → shard jpg, WIDER → COCO json) | Sinh lại được từ `raw/` bằng 1 lệnh |
-| `processed/` | Sẵn sàng nạp DataLoader (crop align 112×112, webdataset shard) | Sinh lại được từ `interim/` bằng 1 lệnh |
+| `processed/` | Để trống: ba nhánh nạp thẳng shard ở `interim/`, crop và căn mặt đã nằm sẵn trong shard | — |
 
 Nếu một thư mục không sinh lại được bằng script thì nó đang nằm sai tầng.
 
@@ -2880,7 +2875,7 @@ ml/data/                                      # gitignore, trừ 3 loại file �
 │   ├── antispoof/v2_upstream_lcc_synth/{lcc_{train,val,test}_ids.txt, synth_{train,test}_ids.txt, SPLIT.md}
 │   │                                             #   hai bộ trộn thêm từ 11/09 (§1.2); tên ảnh chọn đúng luật của xdomain_crop.py
 │   ├── recognition/v1_identity_disjoint/{train_ids.txt, val_ids.txt, SPLIT.md}
-│   └── device/v1/{calib_det.txt, calib_spoof.txt, calib_recog.txt, test_device.txt, SPLIT.md}
+│   └── device/v1/{test_device.txt, SPLIT.md}   # calib_{det,spoof,recog}.txt khi đủ ảnh (E3-T7)
 │
 └── cache/                                    # LMDB/npy cache của DataLoader — xoá lúc nào cũng được
 ```
@@ -3248,7 +3243,7 @@ hàm `extern` cho I2C và delay (`VL53L1_WrByte`, `RdByte`, `WrWord`, `RdWord`, 
 File mẫu đó **không được vendor**: hiện thực thật phải đi qua `bsp_i2c_bus()` và
 `bsp_i2c_lock()` (§5.3) vì bus I2C có bốn thiết bị, nên nó là code mình viết và nằm ở
 `components/drv_tof/src/`. Vendor cả file của ST thì trùng ký hiệu lúc link, mà sửa nó tại
-chỗ thì vi phạm §2.10. Bỏ đúng một file khỏi bản vendor và ghi vào `UPSTREAM.md` là cách
+chỗ thì vi phạm CLAUDE.md §2.10. Bỏ đúng một file khỏi bản vendor và ghi vào `UPSTREAM.md` là cách
 duy nhất giữ được cả hai luật, nên `patches/` để rỗng.
 
 Cũng vì lý do đó mà **không dùng component trên registry**: cả ba bản có sẵn
@@ -3356,10 +3351,10 @@ components/svc_facedb/
 │   └── svc_facedb.h        # ★ CÔNG KHAI. extern "C", chỉ POD + handle mờ
 ├── priv_include/
 │   └── facedb_internal.hpp # nội bộ, component khác KHÔNG thấy
-├── src/{facedb.cpp, embedding_index.cpp, persist.cpp, dot_s8_esp32s3.S}
+├── src/{facedb.cpp, embedding_index.cpp, persist.cpp, svc_facedb.cpp, dot_s8_esp32s3.S}
 ├── test_apps/              # ★ chuẩn ESP-IDF: test app nằm TRONG component
 │   └── facedb/{main/test_facedb.c, main/test_facedb_load.cpp, CMakeLists.txt, pytest_facedb.py}
-├── Kconfig                 # tuỳ chọn hiện trong menuconfig (vd. FACEDB_MAX_PERSON)
+├── Kconfig                 # tuỳ chọn hiện trong menuconfig (vd. FACEDB_MAX_RECORDS)
 └── README.md               # chỉ khi có điều header, Kconfig và KẾ HOẠCH chưa nói: số đo, giới hạn, bring-up
 ```
 
@@ -3390,13 +3385,13 @@ Quy tắc header:
 | L3 | `net_wifi` / `net_mqtt` / `net_ota` / `net_provision` | C | `common`, `sys_storage`, `esp_wifi` / `mqtt` / `esp_http_client` + `app_update` / `esp_http_client`; `net_provision` thêm `sys_time` để đặt giờ từ header `Date` |
 | L4 | `svc_door` | C++ | `common`, `bsp_board`, `drv_servo`, `esp_timer` |
 | L4 | `svc_vision` | C++ | `common`, `ai_engine`, `svc_facedb`, `drv_camera` |
-| L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_facedb`, `sys_storage`, `sys_time`, `svc_door`, `drv_audio` |
+| L5 | `svc_attendance` | C++ | `common`, `svc_vision`, `svc_door`, `sys_storage`, `sys_time` |
 | L5 | `svc_sync` | C++ | `common`, `sys_storage`, `net_mqtt`, `sys_time` (mốc boot để đặt lại bản ghi chưa có giờ) |
-| L6 | `ui_kiosk` | C++ | `common`, `bsp_board`, `drv_lcd`, `drv_touch`, `sys_storage` |
+| L6 | `ui_kiosk` | C++ | `common`, `bsp_board`, `drv_lcd`, `sys_storage` |
 | L7 | `main` | C | tất cả |
 
 **Ba quy tắc bất di bất dịch:**
-1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng — **không có ngoại lệ nào**. Driver cùng tầng không gọi nhau; thứ nhiều driver cùng cần thì nằm ở tầng thấp hơn tất cả chúng, như `drv_ioexp` ở L2 dưới bốn driver L3 dùng nó. Hai component ở cùng tầng mà cần nhau nghĩa là một trong hai đặt sai tầng: hạ nó xuống, đừng mở ngoại lệ. Số tầng là **thứ tự toàn phần**, nên đọc số là biết ngay ai được phụ thuộc ai mà không phải tra bảng.
+1. Không component nào được `REQUIRES` lên tầng trên hoặc ngang tầng — **không có ngoại lệ nào**. Driver cùng tầng không gọi nhau; thứ nhiều driver cùng cần thì nằm ở tầng thấp hơn tất cả chúng, như `drv_ioexp` ở L2 dưới ba driver L3 dùng nó. Hai component ở cùng tầng mà cần nhau nghĩa là một trong hai đặt sai tầng: hạ nó xuống, đừng mở ngoại lệ. Số tầng là **thứ tự toàn phần**, nên đọc số là biết ngay ai được phụ thuộc ai mà không phải tra bảng.
 2. `ui_kiosk` **không gọi** `svc_attendance`, và `svc_attendance` **không biết UI tồn tại**. Hai bên gặp nhau qua queue/event khai trong `common/include/app_events.h`, do `main/app_wiring.c` nối. Đây là chỗ dễ đẻ ra vòng phụ thuộc nhất.
 3. `tools/check_layers.py` đọc `REQUIRES` trong mọi `CMakeLists.txt`, dựng đồ thị, **fail CI nếu có cạnh đi ngược**. Quy ước không được kiểm tra tự động thì 3 tháng sau sẽ bị vi phạm.
 
@@ -3431,7 +3426,7 @@ Resume phải nêu lại **đủ mọi tham số `model.params`**, không chỉ 
 | `virtual` trong vòng lặp tensor/pixel | Chặn inline, mỗi lần gọi thêm 1 lần đọc vtable | Template / hàm free |
 | Biến static toàn cục có constructor phức tạp | Static init order fiasco | Đối tượng POD + hàm `init()` gọi tường minh từ `app_main` |
 
-`virtual` **được phép** ở đúng bốn chỗ có nhu cầu thay thế thật: model TFLM, cơ cấu mở cửa, thuật toán so khớp, màn hình UI. Ba model × 1 vtable là chi phí không đáng kể; đổi lại là code test được trên máy host.
+`virtual` **được phép** ở những chỗ có nhu cầu thay thế thật: model TFLM, cơ cấu mở cửa, thuật toán so khớp, màn hình UI, và các interface tiêm phụ thuộc để test bằng bản giả ở `svc_vision`, `svc_facedb`, `svc_sync`. Ba model × 1 vtable là chi phí không đáng kể; đổi lại là code test được trên máy host.
 
 ##### b) Tiện ích RAII dùng chung (`components/common/include/*.hpp`)
 
@@ -3493,9 +3488,8 @@ Chỗ RAII cứu thật là mutex: `FaceDb` giữ khoá bảng và khoá IO qua 
         └───┬───────┬───────┬──┘
             │       │       │
      DetectModel SpoofModel RecogModel
-     op:6        op:7       op:4         ← MicroMutableOpResolver<N> riêng từng lớp
-     +decode()   +score()   +l2norm()
-     +nms()
+     op:6        op:9       op:10        ← MicroMutableOpResolver<N> riêng từng lớp
+                 +score()   +embedding()
 ```
 
 Ba lớp con khác nhau ở **danh sách op đăng ký** và **hậu xử lý**, không phải khác cho có. `TfliteModelBase` giữ phần lặp lại: dựng interpreter trên arena được đưa và `AllocateTensors`.
@@ -3508,6 +3502,7 @@ public:
     virtual esp_err_t     init(const tflite::Model* graph, Arena& arena) noexcept = 0;
     virtual TfLiteTensor* input(int index)  noexcept = 0;
     virtual TfLiteTensor* output(int index) noexcept = 0;
+    virtual size_t        output_count() const noexcept = 0;
     virtual esp_err_t     invoke() noexcept = 0;
     virtual const char*   name()       const noexcept = 0;
 };
@@ -3517,14 +3512,13 @@ public:
 
 **`init` nhận `Arena&` chứ không nhận `(size, caps)`.** Model tự cấp buffer riêng thì mỗi model một `MicroAllocator`, mà §3.8 đòi ngược lại: **anti-spoof và recognition** phải dùng **chung** một allocator mới chồng được tail và dùng chung head. `Arena` sở hữu buffer, model chỉ mượn. detect có `arena_fast` một mình, nhưng vẫn nhận `Arena&` — cùng một giao diện cho cả ba nhánh, và cách chia lại arena không phải sửa chữ ký.
 
-**`input`/`output` có chỉ số.** Anti-spoof đọc hai crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
+**`input`/`output` có chỉ số.** Anti-spoof đọc một crop, YuNet trả 9 tensor (3 đầu × 3 stride), nên một `input()` trơ không đủ diễn đạt.
 
 ```cpp
 // src/detection/tflm/detect_model.hpp
 class DetectModel final : public TfliteModelBase {
 public:
     const char* name() const noexcept override { return "detect"; }
-    int decode_and_nms(FaceBox* out, int max_out) noexcept;   // KHÔNG virtual — đường nóng
 protected:
     tflite::MicroOpResolver& resolver() noexcept override { return detect_ops(); }
 };
@@ -3532,7 +3526,7 @@ protected:
 
 `resolver()` là **template method**: `core/` dựng interpreter mà không biết nhánh nào đăng ký op gì, đúng luật "`src/core/` không được biết tên bất kỳ model nào" ở §4.5.6. Danh sách op nằm ở `<nhánh>/tflm/ops.cpp`.
 
-`decode_and_nms` cố tình **không** virtual: nó nằm trong đường nóng và chỉ có một cách làm.
+Decode và NMS là hàm tự do `decode_faces` / `suppress` trong `detection/detection.hpp`, cố tình **không** virtual: chúng nằm trong đường nóng, chỉ có một cách làm, và hai runtime dùng chung.
 
 **Runtime ESP-DL dùng chung mọi hậu xử lý, qua một view trung tính.** Letterbox, decode, NMS,
 crop anti-spoof, align, l2norm và softmax nhận `ai::TensorView` — con trỏ int8 NHWC, `dims`,
@@ -3570,7 +3564,8 @@ class IDetector { virtual size_t detect(const ai_engine_frame_t&, float min_scor
 class ILiveness { virtual bool available() const = 0;
                   virtual esp_err_t score(const ai_engine_frame_t&, const float box[4], float* live) = 0; };
 class IEmbedder { virtual esp_err_t embed(const ai_engine_frame_t&, const float landmarks[10], int8_t* out, size_t cap, float* scale) = 0; };
-class IMatcher  { virtual esp_err_t best(const int8_t* emb, float scale, uint32_t* id, float* score) = 0; };
+class IMatcher  { virtual esp_err_t best(const int8_t* emb, float scale, uint32_t* id, float* score, char* name, size_t name_cap) = 0;
+                  virtual esp_err_t keep(const int8_t* emb, float scale, uint32_t id, uint16_t template_idx, const char* name) = 0; };
 
 class VisionPipeline {
 public:
@@ -3624,7 +3619,7 @@ hộp mặt với khung. Tỉ lệ một nửa là ngưỡng nghiệp vụ: NVS 
 
 **Kết quả là sự kiện, không phải trạng thái.** `step()` trả `SVC_VISION_NONE` ở phần lớn khung; `NO_FACE`/`FACE_SMALL`/`FACE_OFF_GUIDE`/`FACE_OUT_OF_FRAME` chỉ báo khi trạng thái quan sát đổi; `SPOOF`/`UNKNOWN`/`MATCH` báo đúng một lần mỗi lượt xác thực. Mỗi kết quả mang **số hiệu track** của khuôn mặt nó nói về, đúng con số bộ quan sát nhận trong cùng bước: phán quyết đi đường chậm qua `svc_attendance`, và tới màn khi người khác có thể đã bước vào (§4.5.5h.1). Nhánh spoof vắng trong ảnh `models_0` (§6.2.2) thì pipeline bỏ qua spoof và trả `live_score = −1`; cho cửa hay không với điểm âm đó là quyết định của `svc_attendance`, không phải của tầng này.
 
-Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) đi vào `svc_vision_init()` từ `main`, theo hai loại của §4.9. Ba ngưỡng đầu là của model: `main` đọc chúng từ header ngăn model đang chạy (§6.2.2), nên chúng đổi cùng model và lùi cùng ngăn. `face_min_px` là ngưỡng vận hành: `main` đọc từ NVS namespace `vision` (§6.2.1), gieo từ `Kconfig` của `svc_vision` ở lần boot đầu, `SET_CONFIG` đổi được. `live_min` là **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` là **350‰**, đo 13/09 trên board sau khi sửa thứ tự byte RGB565 (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức sàn 500‰ cũ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` hạ **113 → 100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức hụt cổng cũ đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên lại.
+Bốn ngưỡng (`detect_min_score`, `live_min_score`, `match_min_score`, `face_min_px`) đi vào `svc_vision_init()` từ `main`, theo hai loại của §4.9. Ba ngưỡng đầu là của model: `main` đọc chúng từ header ngăn model đang chạy (§6.2.2), nên chúng đổi cùng model và lùi cùng ngăn. `face_min_px` là ngưỡng vận hành: `main` đọc từ NVS namespace `vision` (§6.2.1), gieo từ `Kconfig` của `svc_vision` ở lần boot đầu, `SET_CONFIG` đổi được. `live_min` là **500‰**, đo 16/09 trên 62 khung thật và 25 khung giả **đều chụp bằng chính OV5640**, chấm bằng file INT8 trên `models.lock.json` qua đúng crop và lấy mẫu của firmware (`docs/measurements/antispoof` §42.2): mọi khung giả đứng dưới 0,316, mặt thật thấp nhất ở 0,636, nên 500‰ nằm giữa với biên hai phía 0,184 và 0,136. Con số tròn ấy có được nhờ bước căn bias của §3: không có nó thì cửa sổ chỉ rộng 19‰ và một sai số gieo vài phần nghìn là lật phán quyết. Bộ giả mới có hai phiên, một điện thoại và một bộ ảnh in, nên E8-T12 vẫn phải chốt lại khi có thêm đòn tấn công. `detect_min` là **350‰**, đo 13/09 trên board với thứ tự byte RGB565 đúng (§4.5.6): một khuôn mặt thật ở cự ly kiosk chấm **0,45–0,59**, tức một sàn 500‰ sẽ nằm **ngay giữa dải điểm của chính khuôn mặt ấy** — detector bắt được một bước rồi trượt bước sau, lặp lại suốt, và `kStableDetects` = 2 của §4.5.5d không bao giờ đủ điều kiện nên người dùng phải căn đi căn lại. Trong cùng phép đo, ứng viên nhiễu của nền chấm 0,14–0,37, nên 350‰ nằm giữa hai đám và giữ được biên cả hai phía. Một ứng viên giả lọt qua sàn này vẫn phải qua `face_min_px`, hình học §3 "Chốt 1", liveness và cosine, nên hạ sàn detect **không** hạ độ an toàn của cả chuỗi. `face_min_px` là **100**, đo 13/09 trên board: người đứng ở cự ly tự nhiên trước kiosk cho hộp mặt **107–110 px**, tức một cổng 113 hụt đúng 3–6 px **liên tục** — khung ngắm không bao giờ chuyển sang trạng thái đủ gần và người dùng căn mãi không xong. Cổng đo **hộp mặt** của detector chứ không đo cái đầu, mà khung ngắm thì người ta lấp bằng **cả đầu**: đo được đầu lấp kín khung 240 px panel thì hộp mặt chỉ 162 px panel, tức **108 px khung** — hệ số đầu/mặt ≈ **1,48**. Vậy 113 và khung 240 px là hai con số mâu thuẫn nhau; 100 px cho lại biên 7–10 px ở đúng cự ly người ta đứng. Giá phải trả: recognition kéo mặt 100 px lên 113×113, phóng 13%. 🔬 **Chưa đo** ảnh hưởng lên accuracy — E8-T12 phải chốt lại, và nếu nó tốn quá thì đường đúng là **thu khung ngắm về đúng cỡ hộp mặt** chứ không phải nâng cổng lên 113.
 
 `match_min` là **450‰**, đo 24/09 bằng đúng file recog `.espdl` trên `models.lock.json` (mô phỏng ESP-PPQ) trên 18.998 cặp khác người có mặt thật của sáu benchmark độc lập (`docs/measurements/recognition` §8): người lạ dồn quanh 0,02 với độ lệch chuẩn 0,07–0,08, cặp khác người cao nhất là hai người thật trông giống nhau ở CALFW, **0,387**. 450‰ đứng trên cặp ấy 0,063, không cặp khác người nào lọt, và giữ 92–94% cặp cùng người ở hai tập chính diện. Ngưỡng nghiêng về phía loại oan vì hai kiểu sai không cùng giá: loại oan tốn thêm một nhịp (`kUnknownTries`), nhận nhầm mở cửa và ghi công cho người khác. Ngưỡng đi theo model recog, nằm trong chính ảnh của nó: đổi model thì đo lại ngưỡng, vì 600‰ của `1750` loại oan một phần ba người thật trên LFW với model này. Trên 29,6 triệu cặp khác người của LFW (§1.2, `docs/measurements/recognition` §8.2), 450‰ để lọt 20 cặp mang hai tên khác hẳn nhau, tức 6,75·10⁻⁷ mỗi phép so (≤ 9,8·10⁻⁷ ở 95%). Kiosk so một khuôn mặt với 3 mẫu mỗi người qua tối đa 2 khung, nên khi bảng đầy 333 người, một người lạ bị nhận nhầm nhiều nhất cỡ 0,2% mỗi lượt. Tỉ lệ nhận trên OV5640 là E8-T12 🔬.
 
@@ -3661,7 +3656,7 @@ class ServoDoor final : public IDoor { /* drv_servo_angle() + esp_timer đóng l
 class FakeDoor  final : public IDoor { /* ghi lại lệnh cuối để test kiểm */ };
 ```
 
-Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` theo luật §4.5.3 chỉ có cú pháp C: handle mờ `svc_door_t`, `svc_door_servo()` trả về cửa thật dựng tĩnh một lần, `svc_door_fake()` trả về cửa giả, và ba hàm `svc_door_open / svc_door_close / svc_door_is_open` gọi vào bảng ảo bên dưới. `svc_attendance` chỉ thấy `svc_door_t`. `main/app_wiring.c` đưa `svc_door_servo()` vào; `test_apps` của `svc_attendance` đưa `svc_door_fake()` vào cùng chỗ để chạy máy trạng thái chấm công trên host, không cần board. Không có `Kconfig` chọn cơ cấu vì chỉ có một cơ cấu thật.
+Ba lớp nằm trong `priv_include/door.hpp`. Header công khai `svc_door.h` theo luật §4.5.3 chỉ có cú pháp C: handle mờ `svc_door_t`, `svc_door_servo()` trả về cửa thật dựng tĩnh một lần, `svc_door_fake()` trả về cửa giả, và ba hàm `svc_door_open / svc_door_close / svc_door_is_open` gọi vào bảng ảo bên dưới. `svc_attendance` chỉ thấy `svc_door_t`. `main/app_wiring.c` đưa `svc_door_servo()` vào; `test_apps` của `svc_attendance` đưa `svc_door_fake()` vào cùng chỗ để chạy máy trạng thái chấm công trên board mà không cần servo. Không có `Kconfig` chọn cơ cấu vì chỉ có một cơ cấu thật.
 
 **Đồng hồ giữ UTC, múi giờ là việc của tầng vẽ.** DS3231 và `sys_time_now_ms()` đều là UTC, nên
 một bản ghi chấm công mang đúng một mốc thời gian dù kiosk đứng ở đâu. Chuỗi POSIX nằm ở NVS
@@ -4245,10 +4240,10 @@ chứ không phải đi bù một con số đo được một lần. Giới hạ
 là một dải tuyệt đối `|yaw| < kFrontalYaw`, nên một người có độ lệch tự nhiên vượt 0,10 sẽ không
 qua nổi mẫu đầu. Chưa gặp trên board, nhưng người đo 19/09 đã nằm sát vạch.
 
-**Câu nhắc tư thế phải là điều kiện, không phải lời đề nghị.** Bản đầu chỉ đổi chữ rồi lấy
-**khung verified kế tiếp bất kỳ**, cách nhau tối thiểu 400 ms — không có phép so nào kiểm mặt
-có quay hay không. Đứng yên nhìn thẳng suốt cả ba lượt vẫn lấy đủ 3 mẫu và vẫn báo "Đã thêm",
-mà thứ ghi xuống flash là **ba mẫu chính diện gần trùng nhau**. Đó đúng là lỗi đoạn trên vừa
+**Câu nhắc tư thế phải là điều kiện, không phải lời đề nghị.** Chỉ đổi chữ rồi lấy **khung
+verified kế tiếp bất kỳ**, cách nhau tối thiểu 400 ms, thì không có phép so nào kiểm mặt có
+quay hay không: đứng yên nhìn thẳng suốt cả ba lượt vẫn lấy đủ 3 mẫu và vẫn báo "Đã thêm",
+mà thứ ghi xuống flash là **ba mẫu chính diện gần trùng nhau**. Đó đúng là lỗi đoạn trên
 mô tả, chỉ khác là nó đến qua đường chạy trọn vẹn chứ không qua đường huỷ giữa chừng.
 
 **Đo góc quay ngang bằng chính 5 điểm mốc YuNet đã trả.** Không thêm model, không thêm phép
@@ -4256,8 +4251,8 @@ chạy: chiếu vectơ *mũi − trung điểm hai mắt* lên **trục hai mắ
 trục ấy. Chọn phép chiếu chứ không lấy lệch ngang thuần, vì phép chiếu **không đổi khi đầu
 nghiêng** — nghiêng đầu mà bị đọc thành quay là kiểu sai làm người dùng phát điên.
 
-**Bẫy dấu, và nó đã sập một lần.** `hmirror` = 1 (§2.1) nên khung đã lật gương trước khi tới cả
-model lẫn UI, vì thế dấu **không suy ra bằng lập luận mà phải đo**. Hằng số đặt tạm ban đầu là
+**Bẫy dấu.** `hmirror` = 1 (§2.1) nên khung đã lật gương trước khi tới cả
+model lẫn UI, vì thế dấu **không suy ra bằng lập luận mà phải đo**. Lập luận cho ra
 `+1` cho "trái"; phép đo trên board 14/09 cho thấy **ngược lại**:
 
 | Tư thế | min | trung vị | max |
@@ -4558,8 +4553,8 @@ Mọi đối tượng C++ nằm trong bộ nhớ tĩnh, dựng đúng một lầ
 | `ai_engine` | `ITfliteModel` → `TfliteModelBase` → 3 lớp con | Kế thừa + template method | Ba model khác nhau ở op resolver và hậu xử lý |
 | `svc_vision` | `VisionPipeline`, 4 interface + 4 adapter | Chuỗi thoát sớm; tiêm phụ thuộc qua tham chiếu interface | Kết quả nhanh nhất ba model cho phép; test toàn bộ logic với adapter giả, không cần model |
 | `svc_facedb` | `FaceDb`, `IMatcher` | Strategy | Đổi thuật toán so khớp khi quy mô tăng |
-| `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên host với cửa giả |
-| `svc_attendance` | `AttendanceFsm` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
+| `svc_door` | `IDoor`, `ServoDoor`, `FakeDoor` | Adapter bọc driver C, ra ngoài bằng handle mờ | Chạy máy trạng thái chấm công trên board với cửa giả, không cần servo |
+| `svc_attendance` | `kTable` + `attend::next()` | Bảng `constexpr`, **không** virtual | Nhìn hết sơ đồ trạng thái trong 1 màn hình |
 | `svc_sync` | `UplinkQueue`, `IPersist`, `ILink` | Composition | Thay LittleFS **và** broker bằng fake khi test: luật "con trỏ đi sau ack" của §6.2.6 chỉ kiểm được khi ép được cả hai bên trả lỗi |
 | `ui_kiosk` | `Screen` → 9 lớp con, `ScreenManager`, `BoxTracker` | Kế thừa; bộ bám là giá trị thuần | Chín màn hình cùng vòng đời; khung ngắm đứng yên, bộ bám giữ lại ngoài đường vẽ |
 
@@ -4620,7 +4615,7 @@ components/ai_engine/
 │       └── tflm/{recog_model.hpp, ops.cpp}    # RecogModel; MicroMutableOpResolver<10>: PRELU, khối ECA (MEAN, RESHAPE, LOGISTIC, MUL)
 └── test_apps/                             # chuẩn ESP-IDF, host-side chạy bằng pytest-embedded
     ├── detection/{main/test_decode.c, CMakeLists.txt, pytest_decode.py}
-    ├── antispoof/{main/{test_spoof.c, test_preproc.c}, CMakeLists.txt, pytest_preproc.py}
+    ├── antispoof/{main/test_spoof.c, CMakeLists.txt, pytest_spoof.py}
     ├── recognition/{main/test_align.c, CMakeLists.txt, pytest_align.py}
     └── probe/{main/{test_probe.cpp, CMakeLists.txt}, CMakeLists.txt, sdkconfig.defaults}
                                            # bản dò ESP-DL (§3.7): ảnh dò ở hai ngăn model, khung thật
@@ -4638,7 +4633,7 @@ thư viện runtime nào. ESP-DL chưa có phần riêng theo nhánh (§4.5.5c),
 `src/ai_engine_tflm.cpp` và `src/ai_engine_espdl.cpp` nằm ngoài `core/` chính vì lý do đó: mỗi runtime có **đúng một** chỗ gọi tên cả ba nhánh, để dựng đúng model nào với bộ nhớ nào. `CMakeLists.txt` biên dịch một trong hai theo `AI_RUNTIME`, nên chúng cùng định nghĩa `ai_engine.h` mà không bao giờ cùng có mặt lúc link. `core/` chỉ nhận `tflite::Model*` và một `Arena&`, hoặc một con trỏ `.espdl` và cờ `param_copy`, không biết chúng thuộc nhánh gì.
 
 **Cả hai thư viện runtime vẫn nằm trong `PRIV_REQUIRES`.** IDF gom phụ thuộc của component trước
-khi đọc Kconfig (`tools/cmake/build.cmake`), nên một `PRIV_REQUIRES` đặt theo `CONFIG_AI_RUNTIME_*`
+khi đọc Kconfig (`$IDF_PATH/tools/cmake/build.cmake`), nên một `PRIV_REQUIRES` đặt theo `CONFIG_AI_RUNTIME_*`
 không có tác dụng. Thư viện của runtime không chọn vẫn được biên dịch, nhưng không file nào của
 `ai_engine` được dựng gọi tới nó.
 
@@ -4654,7 +4649,7 @@ include là biết file thuộc runtime nào.
 |---|---|---|
 | `AI_RUNTIME_TFLM` / `AI_RUNTIME_ESPDL` | **ESP-DL** | `choice AI_RUNTIME`. Chọn runtime được biên dịch và link. TFLM là bản đối chứng, build bằng overlay `test_apps/bench_ai/sdkconfig.tflm` (`make fw-bench-ai RUNTIME=tflm`). Mặc định và `contracts/models.lock.json` luôn cùng runtime (§6.2.2) |
 | `AI_ARENA_FAST_KB` | 224 | TFLM. `arena_fast` riêng detect. E8-T7 đo detect dùng 189.628 B |
-| `AI_ARENA_BIG_KB` | 1536 | TFLM. `arena_big`, spoof + recog dùng chung. Đo 823.148 B |
+| `AI_ARENA_BIG_KB` | 1536 | TFLM. `arena_big`, spoof + recog dùng chung. Đo 995.196 B (cặp `0118` + `2106`, E9-T51) |
 | `AI_ARENA_FAST_INTERNAL` | n | TFLM. `n` = `arena_fast` ở PSRAM; `y` = xin SRAM nội trước (§3.8) |
 | `AI_WEIGHTS_PSRAM_DETECT` | y | ESP-DL. `y` = lúc nạp, chép trọng số detect từ mmap sang PSRAM (`param_copy` của `dl::Model`), sống tới reboot; `n` = đọc thẳng từ mmap. Đo 23/09: chép nhanh hơn ở cả năm model thử (§3 lớp 5, §6.3). Bản chép cho TFLM là E9-T28, chưa có |
 | `AI_WEIGHTS_PSRAM_SPOOF` | y | như trên, nhánh spoof |
@@ -4688,7 +4683,7 @@ Ba trục phân chia này **khớp nhau** ở cả ba nơi — mở cùng một 
 |---|---|---|
 | Unit từng component | `components/<name>/test_apps/<app>/` | `idf.py -C … build flash` + `pytest_*.py` host-side |
 | Parity C ↔ Python | `test_apps/parity/` | đọc `contracts/golden/`, so sánh sai số |
-| Đo hiệu năng | `test_apps/bench_ai/`, `bench_mem/` | in ra CSV cho `ml/bench/device_client.py` |
+| Đo hiệu năng | `test_apps/bench_ai/`, `bench_mem/` | log đọc bằng `ml/bench/runtime_report.py` (`make fw-bench-ai-run`, `make runtime-report`) |
 | Soak | `test_apps/soak/` | chạy 24h, theo dõi rò heap |
 | Bản dò ESP-DL | `components/ai_engine/test_apps/probe/` | `make ai-unit`: đồ thị và bản cắt qua `model->test()`, khung thật so từng bit với mô phỏng, giờ từng module qua `profile_module` (§3.7) |
 
