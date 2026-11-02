@@ -1445,6 +1445,10 @@ static void sync_task(void *arg)
     if (table != ESP_OK) {
         note_fault(DEVICE_EVENT_TYPE_STORAGE_FAULT, table, "face table lost, roster asked again");
     }
+    const esp_err_t amplifier = app_boot_audio_error();
+    if (amplifier != ESP_OK) {
+        note_fault(DEVICE_EVENT_TYPE_AUDIO_FAULT, amplifier, "amplifier would not start");
+    }
     report_update_outcome();
     esp_err_t said = ESP_FAIL;
     uint32_t batches = 0;
@@ -2437,6 +2441,7 @@ static void audio_task(void *arg)
     } else {
         ESP_LOGW(TAG, "audio: no clip, %s read %s at %u bytes, cap %u", STORAGE_SOUND_OK_PATH,
                  esp_err_to_name(read), (unsigned)len, (unsigned)AUDIO_CLIP_CAP_BYTES);
+        note_fault(DEVICE_EVENT_TYPE_AUDIO_FAULT, read != ESP_OK ? read : ESP_ERR_NOT_SUPPORTED, "no playable clip");
     }
 
     for (;;) {
@@ -2450,6 +2455,7 @@ static void audio_task(void *arg)
         const esp_err_t played = drv_audio_play_pcm(pcm, samples);
         if (played != ESP_OK) {
             ESP_LOGE(TAG, "audio play %s", esp_err_to_name(played));
+            note_fault(DEVICE_EVENT_TYPE_AUDIO_FAULT, played, "clip did not play");
         }
     }
 }

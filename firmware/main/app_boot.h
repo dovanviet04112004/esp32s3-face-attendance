@@ -32,6 +32,12 @@ esp_err_t app_boot_models_error(void);
  */
 esp_err_t app_boot_table_error(void);
 
+/** Why the amplifier would not start this boot, so the uplink can say so.
+ *  @ctx any | non-blocking | set by app_boot
+ *  @ret ESP_OK once drv_audio_init succeeded, else its error
+ */
+esp_err_t app_boot_audio_error(void);
+
 /** Why the chip last started, in a few words for the boot log and the BOOTED note (KEHOACH 4.6).
  *  @ctx any | non-blocking
  */

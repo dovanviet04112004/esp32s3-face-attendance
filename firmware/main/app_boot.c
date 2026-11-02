@@ -34,6 +34,7 @@
 static const char *TAG = "app_boot";
 static esp_err_t models_error = ESP_OK;
 static esp_err_t table_error = ESP_OK;
+static esp_err_t audio_error = ESP_OK;
 
 #define BOOT_MARK_MAGIC 0x424D4B31u
 
@@ -387,6 +388,11 @@ esp_err_t app_boot_models_error(void)
     return models_error;
 }
 
+esp_err_t app_boot_audio_error(void)
+{
+    return audio_error;
+}
+
 esp_err_t app_boot_table_error(void)
 {
     return table_error;
@@ -508,6 +514,7 @@ esp_err_t app_boot(void)
     // A kiosk with no voice still opens doors, so the amplifier only warns.
     const esp_err_t amplifier = drv_audio_init();
     if (amplifier != ESP_OK) {
+        audio_error = amplifier;
         ESP_LOGW(TAG, "audio down: %s", esp_err_to_name(amplifier));
     }
     if (drv_audio_set_volume(loud) != ESP_OK) {
