@@ -42,9 +42,9 @@
 #define WAV_CHUNK_BYTES 8
 #define BARE_WRITE_TIMEOUT_MS (CLIP_MS * 2)
 
-// The recording assets/build_assets.py ships as snd/ok.wav, byte for byte.
-extern const uint8_t s_shipped_start[] asm("_binary_xincamon_1_1_wav_start");
-extern const uint8_t s_shipped_end[] asm("_binary_xincamon_1_1_wav_end");
+// The clip assets/build_assets.py ships as snd/ok.wav, byte for byte.
+extern const uint8_t s_shipped_start[] asm("_binary_beep_wav_start");
+extern const uint8_t s_shipped_end[] asm("_binary_beep_wav_end");
 
 static const uint8_t LOOP_LEVELS[] = { DRV_AUDIO_VOLUME_MAX, KIOSK_VOLUME, QUIET_VOLUME };
 static int16_t s_clip[CLIP_SAMPLES];
@@ -202,10 +202,10 @@ static void bare_loop(void)
     size_t samples = 0;
     const int16_t *pcm = shipped_pcm(&samples);
     if (pcm == NULL || samples > CLIP_SAMPLES) {
-        printf("bare: the shipped recording is missing or longer than %d samples\n", CLIP_SAMPLES);
+        printf("bare: the shipped clip is missing or longer than %d samples\n", CLIP_SAMPLES);
         return;
     }
-    printf("bare: no expander answered, so SD has to sit on 3V3; the shipped recording straight on I2S, "
+    printf("bare: no expander answered, so SD has to sit on 3V3; the shipped clip straight on I2S, "
            "%u samples at %u, %u and %u %% in turn, %d ms of silence between\n",
            (unsigned)samples, LOOP_LEVELS[0], LOOP_LEVELS[1], LOOP_LEVELS[2], LOOP_GAP_MS);
     for (unsigned round = 0;; ++round) {
@@ -220,7 +220,7 @@ static void bare_loop(void)
     }
 }
 
-TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audio][manual]")
+TEST_CASE("the shipped clip on a loop for the ear, until reset", "[drv_audio][manual]")
 {
     // The suite may have stopped part way up: what already answered stays, the rest comes up here.
     up_or_already(bsp_board_init());
@@ -229,7 +229,7 @@ TEST_CASE("the shipped recording on a loop for the ear, until reset", "[drv_audi
     size_t samples = 0;
     const int16_t *pcm = shipped_pcm(&samples);
     TEST_ASSERT_NOT_NULL(pcm);
-    printf("listen: the shipped recording, %u samples, at %u, %u and %u %% in turn, %d ms of silence between\n",
+    printf("listen: the shipped clip, %u samples, at %u, %u and %u %% in turn, %d ms of silence between\n",
            (unsigned)samples, LOOP_LEVELS[0], LOOP_LEVELS[1], LOOP_LEVELS[2], LOOP_GAP_MS);
     for (unsigned round = 0;; ++round) {
         const uint8_t level = LOOP_LEVELS[round % sizeof(LOOP_LEVELS)];

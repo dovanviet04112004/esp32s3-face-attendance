@@ -17,7 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # device path <- source file, relative to this directory
-STAGE = {"snd/ok.wav": "sounds/xincamon-1_1.wav"}
+STAGE = {"snd/ok.wav": "sounds/beep.wav"}
 STORAGE_FORMAT = HERE.parent / "components" / "sys_storage" / "include" / "storage_format.h"
 WAVE_FORMAT_PCM = 1
 WANT_RATE_HZ = 16000
