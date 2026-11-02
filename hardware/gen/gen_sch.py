@@ -138,9 +138,10 @@ JACK1 = [("+5V", "+5V_R1"), ("GND", "GND")]
 JACK2 = [("+5V", "+5V_R2"), ("GND", "GND")]
 
 # ref, value, pins for the left bank, pins for the right bank, x, y. Three columns: the
-# devkit, everything quiet, everything that moves current.
+# devkit with the panel's regulator under it, everything quiet, everything that moves current.
 PARTS = [
     ("U1", "ESP32-S3-CAM N16R8", DEVKIT_LEFT, DEVKIT_RIGHT, 48.0, 105.0),
+    ("U2", "AMS1117-3.3 - rail rieng cho LCD", REGULATOR, [], 48.0, 180.34),
     ("J3", "LCD 4.0in ST7796S + GT911", LCD, [], 112.0, 48.26),
     ("J14", "LCD microSD - lo cho, chua noi day", SD, [], 112.0, 90.17),
     ("J4", "VL53L1X", TOF, [], 112.0, 121.92),
@@ -151,7 +152,6 @@ PARTS = [
     ("J9", "SG90 servo", SERVO, [], 182.0, 102.87),
     ("J10", "Jack 5V rail 1", JACK1, [], 182.0, 160.02),
     ("J11", "Jack 5V rail 2", JACK2, [], 182.0, 215.9),
-    ("U2", "AMS1117-3.3 - rail rieng cho LCD", REGULATOR, [], 182.0, 250.0),
 ]
 
 # ref, value, top net, bottom net, x, y. Each one is drawn beside the load it holds
@@ -162,7 +162,7 @@ TWO_PIN = [
     ("C2", "470uF", "+5V_R1", "GND", 182.0, 73.66),
     ("C3", "470uF", "+5V_R2", "GND", 182.0, 132.08),
     ("C4", "100uF", "+3V3_LCD", "GND", 132.0, 48.26),
-    ("C5", "470uF", "+5V_R1", "GND", 182.0, 272.0),
+    ("C5", "470uF", "+5V_R1", "GND", 48.0, 207.01),
 ]
 
 FONT = "(effects (font (size 1.27 1.27)))"
