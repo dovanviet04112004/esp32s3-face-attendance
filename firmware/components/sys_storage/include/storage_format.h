@@ -28,8 +28,9 @@
 #define STORAGE_ATTEND_FILES 1000u
 #define STORAGE_CURSOR_PATH "/lfs/log/cursor.bin"
 #define STORAGE_BOOT_PATH "/lfs/log/boot.bin"
-#define STORAGE_ASSETS_MOUNT "/assets"    // KEHOACH 6.2.8, read-only
+#define STORAGE_ASSETS_MOUNT "/assets"    // KEHOACH 6.2.8, never written at run time
 #define STORAGE_SOUND_OK_PATH STORAGE_ASSETS_MOUNT "/snd/ok.wav"
+#define STORAGE_SOUND_CAP_BYTES (128 * 1024) // largest clip file audio_task buffers
 #define STORAGE_FACES_MAGIC 0x31424446u   // 'FDB1'
 #define STORAGE_FACES_VER 3u
 #define STORAGE_FACES_VER_UNTAGGED 2u     // same records, no model tag in the header
