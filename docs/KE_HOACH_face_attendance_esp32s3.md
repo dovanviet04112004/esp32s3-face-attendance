@@ -3477,8 +3477,14 @@ Resume phải nêu lại **đủ mọi tham số `model.params`**, không chỉ 
 ##### a) Ràng buộc C++ trên MCU
 
 ```
--std=gnu++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit
+-std=gnu++26 -fno-exceptions -fno-rtti
 ```
+
+Đó là đúng bộ cờ mặc định của ESP-IDF 6.0.2: `CONFIG_COMPILER_CXX_EXCEPTIONS` và
+`CONFIG_COMPILER_CXX_RTTI` để tắt, và không `CMakeLists.txt` nào của dự án đặt thêm cờ C++.
+Biến `static` cục bộ giữ khoá thread-safe mặc định: ESP-DL có những biến như thế, kể cả trên
+đường chạy hai lõi `module_forward_dual_core`, nên bỏ khoá chỉ đổi vài trăm byte lấy một cuộc
+đua lúc khởi tạo.
 
 | Cấm | Vì sao | Dùng gì thay |
 |---|---|---|
