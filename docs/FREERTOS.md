@@ -45,7 +45,7 @@ phải bằng chứng.
 | Bẫy đơn vị watermark (6.2) | Code nhân `sizeof(StackType_t)` thay vì hằng số 4 | `portSTACK_TYPE` là `uint8_t` nên nhân 1 — đúng ở đây **và** trên port khác |
 | `pdMS_TO_TICKS` về 0 tick (4.1) | `CONFIG_FREERTOS_HZ=1000`, sàn 1 ms | Ràng buộc này **phụ thuộc config** — hạ tick rate là dính lại |
 | Đảo ngược ưu tiên (10.4) | Khoá dùng mutex thật; semaphore nhị phân và đếm chỉ để báo hiệu | Sáu mutex (`FaceDb` hai, `sys_storage`, `bsp` I2C, `ServoDoor`, gửi MQTT); semaphore báo hiệu ISR→task ở ToF, touch, bounce LCD và task→task ở ack MQTT, overlay UI — không cái nào làm khoá |
-| Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ duy nhất lồng ba khoá đi đúng chiều | `FaceDb::persist` lấy `m_facedb_io` rồi `m_facedb` rồi mới `m_littlefs` |
+| Deadlock (10.2) | Thứ tự khoá chốt ở §5.3; chỗ lồng khoá duy nhất đi đúng chiều | `FaceDb::persist` giữ `m_facedb_io`, lấy `m_facedb` lúc nén rồi thả, ghi `m_littlefs` dưới một mình `m_facedb_io` |
 | ISR chạm PSRAM (8.4) | Ba đường ngắt chỉ đụng handle semaphore ở DRAM | Đọc `drv_tof.c`, `drv_touch.c`, `drv_lcd.c` |
 | Cấp phát động sau boot (7.7) | CLAUDE.md §4.1 cấm `new`/`delete` sau boot | `grep` ra **0 chỗ** |
 | Mất quyền sở hữu con trỏ (9.7) | `cam_task` không đụng `frame` sau khi gửi; `blit` xảy ra **trước** | Đọc `cam_task` |
@@ -211,13 +211,13 @@ rò được, và cũng là lý do nó không nới được. `.bss` tốn **0 b
 | 7.1 | Rò: xin mà không trả. **Vi điều khiển không có ai thu hồi** — chỉ hết khi khởi động lại | Đo heap trước và sau **một chu kỳ đầy đủ** | ✅ `soak` so mẫu đầu với mẫu sau; heap phẳng trong 56 B suốt một phút |
 | 7.2 | **Phân mảnh**: tổng trống còn nhiều mà **dải liền mạch** thì hết. *(bản đồ: trống 31.083 B, xin 20 KB vẫn trượt, mảnh lớn nhất 7.936 B)* | `heap_caps_get_largest_free_block`, **không** chỉ `get_free_size` | ✅ `bench_mem` in cả hai. Dự án đã dính đúng lỗi này một lần: `arena.md` §1c — trống 192 KB mà mảnh to nhất 143 KB nên arena lùi xuống PSRAM |
 | 7.3 | Hỏng heap: ghi lố ra ngoài khối, đè sổ sách khối kế. **Không canary nào kêu**, nổ ở hàm khác lúc khác, ra `LoadProhibited` với `EXCVADDR` vô nghĩa | `CONFIG_HEAP_POISONING` từng profile | ⚠ **P4**, xem §13 — `soak` đã lấy `sdkconfig.dev`, còn nợ chính lượt chạy 24 giờ |
-| 7.4 | "Đang trống" nói lên rất ít — phải xem **thấp nhất từng chạm**. *(bản đồ: trống 389.071 B mà đáy 2.207 B, chênh 176×)* | `heap_caps_get_minimum_free_size` | ⏳ E8-T9, cần ngoại vi |
+| 7.4 | "Đang trống" nói lên rất ít — phải xem **thấp nhất từng chạm**. *(bản đồ: trống 389.071 B mà đáy 2.207 B, chênh 176×)* | `heap_caps_get_minimum_free_size` | ✅ `bench_mem` và heartbeat (`heapMinFreeBytes`) in đáy; đáy RAM nội 28.675 B qua 16 phút (`ram.md` §13) |
 | 7.5 | Không kiểm `NULL` sau khi xin | Đọc mọi `malloc`/`heap_caps_malloc` | ✅ |
 | 7.6 | Dùng sau khi trả, hoặc trả rồi không gán `NULL` | Đọc mắt | ✅ `free_case` trong `parity.cpp` gán `NULL` ngay sau `free` |
 | 7.7 | `new`/`delete` sau boot (CLAUDE.md §4.1) | `grep "\bnew \|\bdelete "` | ✅ **0 chỗ** |
 | 7.8 | Trả về địa chỉ biến cục bộ | Đọc mắt | ✅ |
 
-### 7b. Số học đáng nhớ của heap *(bản đồ)*
+### 7.1 Số học đáng nhớ của heap *(bản đồ)*
 
 | | |
 |---|---|
@@ -280,7 +280,7 @@ không phải phiền toái.
 | 9.17 | Nhầm `xQueuePeek` với `xQueueReceive` — `Peek` đọc món đầu mà **không gỡ nó ra** | `grep xQueuePeek` | ✅ không dùng |
 | 9.18 | `queue set` trả về **chính cái queue** chứ không phải dữ liệu — quên nhận tiếp là treo | `grep xQueueCreateSet` | ✅ không dùng |
 
-### 9b. Ba mức chờ, mỗi mức một nghĩa vụ
+### 9.1 Ba mức chờ, mỗi mức một nghĩa vụ
 
 | Timeout | Nghĩa | Nghĩa vụ kèm theo |
 |---|---|---|
@@ -339,15 +339,13 @@ Ba profile của §4.5.9 đều vào git và đều hợp lý: `dev` bật asser
 panic `GDBSTUB`; `prod` và `bench` tắt poisoning, assert im, panic `PRINT_REBOOT`. Không có
 vấn đề ở đây.
 
-Vấn đề ở chỗ khác: **`soak` và `bench_mem` không chọn profile nào.** Chúng chỉ nạp
-`sdkconfig.defaults.esp32s3` — file chỉ khai flash, PSRAM và cache — nên phần còn lại rơi về
-mặc định IDF, mà mặc định của `HEAP_CORRUPTION_DETECTION` là **`DISABLED`**.
+Vấn đề ở chỗ khác: **test app không chọn profile nào thì chỉ nạp `sdkconfig.defaults.esp32s3`**
+— file chỉ khai flash, PSRAM và cache — nên phần còn lại rơi về mặc định IDF, mà mặc định của
+`HEAP_CORRUPTION_DETECTION` là **`DISABLED`**. Với `soak`, bài kiểm **24 giờ** có nhiều thời gian
+nhất để một lỗi ghi lố heap lộ ra, như thế là chạy với phép bắt lỗi đó **tắt**. `bench_ai` và
+`parity` tắt tường minh, nhưng chúng chạy vài phút nên không sao.
 
-Nghĩa là bài kiểm **24 giờ**, thứ có nhiều thời gian nhất để một lỗi ghi lố heap lộ ra, chạy
-với phép bắt lỗi đó **tắt**. `bench_ai` và `parity` cũng tắt tường minh, nhưng chúng chạy vài
-phút nên không sao.
-
-Hai app đã có profile: `soak` lấy `sdkconfig.dev` (đọc lại `sdkconfig` sinh ra thấy
+Nên hai app chọn profile: `soak` lấy `sdkconfig.dev` (đọc lại `sdkconfig` sinh ra thấy
 `CONFIG_HEAP_POISONING_LIGHT=y`), còn `bench_mem` lấy `sdkconfig.bench` chứ không phải `dev` —
 nó đi báo số chứ không đi săn lỗi, mà poisoning thêm canary vào **mọi** khối nên sẽ thổi phồng
 đúng con số RAM đỉnh nó sinh ra; `bench` vẫn giữ `FREERTOS_USE_TRACE_FACILITY` mà
@@ -370,7 +368,6 @@ kiểu P1 hay P3 phải bị chặn từ `dev`, vì trên hiện trường sẽ 
 | Phải kiểm | Vì sao | Row |
 |---|---|---|
 | Watermark của `ai` khi spoof và recog chạy sâu trên ESP-DL | Số đo 23/09 có đủ mười task nhưng không chắc có mặt người trước camera | E10-T8 |
-| Đáy heap nội và PSRAM khi cả hệ chạy, có Wi-Fi và MQTT/TLS | `bench_mem` in được, chưa có lượt đo đủ hệ | E8-T9 |
 | Soak 24 giờ và rút điện 20 lần, **một lượt dựng bằng `sdkconfig.dev`** để có poisoning | P4 | E10-T3, E10-T8 |
 | Một lượt OTA trọn khi `cam_task` đang vẽ và kiosk đang ghi chấm công | Kiểm bằng máy điều 11.4: ghi flash xen giữa vẽ và ngắt | E13-T1 |
 
