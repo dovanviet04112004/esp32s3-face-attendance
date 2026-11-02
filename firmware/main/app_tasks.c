@@ -2254,6 +2254,15 @@ static int64_t session_start_ms(void)
     return wall_ms > 0 ? wall_ms : esp_timer_get_time() / 1000 + 1;
 }
 
+// Whoever holds a turn cannot read the glass, so each kept sample is heard (KEHOACH 6.2.8).
+static void announce_sample(const app_wiring_t *wiring)
+{
+    const app_sound_t sound = APP_SOUND_ENROLL;
+    if (xQueueSend(wiring->sounds, &sound, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "sample sound dropped, audio queue full");
+    }
+}
+
 static void drop_bank(uint32_t employee_id, uint16_t bank)
 {
     for (uint16_t idx = bank; idx < bank + ENROL_SAMPLES; ++idx) {
@@ -2312,6 +2321,7 @@ static void ui_task(void *arg)
         if (armed && !svc_vision_enrol_pending()) {
             armed = false;
             ui_kiosk_enrol_kept();
+            announce_sample(wiring);
             if (ui_kiosk_enrol_complete()) {
                 const int64_t started_us = esp_timer_get_time();
                 svc_facedb_seal_session(new_employee, bank, ENROL_SAMPLES, session_ms);
@@ -2448,7 +2458,7 @@ static void audio_task(void *arg)
         if (xQueueReceive(wiring->sounds, &sound, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        if (sound != APP_SOUND_OK || samples == 0) {
+        if ((sound != APP_SOUND_OK && sound != APP_SOUND_ENROLL) || samples == 0) {
             continue;
         }
         const esp_err_t played = drv_audio_play_pcm(pcm, samples);
@@ -2561,8 +2571,8 @@ static app_ui_verdict_t refusal_of(svc_vision_kind_t kind)
     }
 }
 
-// The kiosk speaks only when it opens the door: a refusal is already on the
-// glass, and a sound would announce it to the room (KEHOACH 6.2.8).
+// The kiosk speaks for a grant and never for a refusal: a refusal is already
+// on the glass, and a sound would announce it to the room (KEHOACH 6.2.8).
 static void announce(const app_wiring_t *wiring)
 {
     const app_sound_t sound = APP_SOUND_OK;
