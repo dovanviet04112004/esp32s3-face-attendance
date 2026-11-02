@@ -1115,7 +1115,7 @@ chân bị ghim mức cho ra số liệu rất ổn định mà không chứa th
 
 ### 2.5 Ngân sách nguồn
 
-Hai rail, chung mass.
+Hai rail, chung mass. Board đế nhận điện qua đúng hai domino vít: `J10` cho rail 1, `J11` cho rail 2.
 
 **Rail 1 — 5 V / 2 A, logic và ngoại vi**
 
@@ -1227,7 +1227,7 @@ của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A
 **Router giữ khe rộng hơn mức netclass đòi.** Netclass vẫn là 0,2 mm cho tín hiệu và 0,3 mm cho
 nguồn — DRC chấm theo đúng đó — nhưng router đi với 0,25 và 0,35, nên nó tự tránh những lối chỉ
 vừa khít. Kết quả: khe đồng hẹp nhất toàn board **0,255 mm** thay vì 0,215, không còn cặp nào dưới
-0,25 mm, và đường đi đơn giản hơn nên cũng ít via hơn; bản hiện tại có 49 via (§2.5). Đi sát đúng mức tối
+0,25 mm, và đường đi đơn giản hơn nên cũng ít via hơn; bản hiện tại có 46 via (§2.5). Đi sát đúng mức tối
 thiểu thì DRC vẫn qua, nhưng không còn chỗ nào cho sai số ăn mòn của xưởng.
 
 **Ba dây I²S giữ xa nhau và giữ xa I²C, vì board không có mặt đất.** Đồng mặt sau là những nhánh
@@ -1240,8 +1240,7 @@ thêm khoảng hở dọc đường chạy: **2,0 mm** giữa hai dây I²S bấ
 7 chu kỳ; **1,0 mm** giữa `AMP_SD` và cặp I²C, vì SD ở mức cao chỉ là nguồn ~100 µA của PCF8574. Luật
 bỏ qua trong bán kính 4 mm quanh hai chân một đoạn dây nối, vì chân header cách nhau 2,54 mm. Đo
 trên đồng đã đi: BCLK và DIN chạy trong 2 mm của nhau **4,2 mm** thay vì 85,5 mm, chỉ còn ở chỗ vào
-chân `J7`; SD cách SDA hẹp nhất **1,17 mm** thay vì 0,37 mm; số via vẫn 49, khe đồng hẹp nhất vẫn
-0,255 mm.
+chân `J7`; SD cách SDA hẹp nhất **1,17 mm** thay vì 0,37 mm.
 
 **Không đồng nào trong bán kính 3,5 mm quanh tám lỗ vít.** Luật này không phải luật điện, nên DRC
 không bao giờ bắt: khoảng cách đồng tới **mép lỗ** thì DRC chấm, còn thứ đè lên mặt board là **đầu
@@ -1268,7 +1267,7 @@ làm hai net rời (`GND@1`, `GND@2`) chặn nhau y hệt, rồi nối lại b�
 hai domino — đó là luật 1, thành ra đúng nghĩa đen chứ không còn là lời dặn.
 
 Một chân bị hai chân khác kẹp trong hàng thì **chỉ còn hai lối ra**, nên không chân nào ở chỗ chật
-được phép đẻ quá hai nhánh. Cây mass xếp lại theo đúng ràng buộc đó: bốn nhánh rời `J10.2` (chỗ
+được phép đẻ quá hai nhánh. Cây mass xếp lại theo đúng ràng buộc đó: ba nhánh rời `J10.2` (chỗ
 rộng), còn các chân trong hàng thì nối chuỗi hai một.
 
 **Điểm sao của rail 1 là chân domino cộng chân tụ `C1`**, không phải riêng chân domino. `C1` cố ý
@@ -1283,52 +1282,6 @@ Luật 5 là luật **đi dây trong vỏ máy**, không phải luật PCB: loa 
 chính module MAX98357A, nên `OUT+` và `OUT−` không có net nào trên board đế và board đế
 không mang đầu nối loa (§2.3E). `OUT−` **không bao giờ** nối xuống GND — kể cả khi bắt vít
 loa vào khung máy.
-
-#### Hai cổng USB nạp điện — `J15`…`J18`
-
-Ngoài hai domino, board đế có **hai chỗ hàn breakout USB** để cấp 5 V lúc thử trên bàn. Mỗi chỗ
-là hai phần rời nhau:
-
-| Ref | Là gì | Lỗ |
-|---|---|---|
-| `J15` | Lưới hàn giữ breakout **USB-C** | **20 lỗ** Ø1,0, lưới 4 × 5 bước 2,54 — **không lỗ nào mang net** |
-| `J16` | Hai lỗ nguồn của cổng USB-C | `+5V_R1` và `GND` |
-| `J17` | Lưới hàn giữ breakout **micro-USB** | 20 lỗ Ø1,0, lưới 4 × 5 bước 2,54 — không lỗ nào mang net |
-| `J18` | Hai lỗ nguồn của cổng micro-USB | `+5V_R2` và `GND` |
-
-**Lưới hàn chứ không phải hàng chân.** Breakout USB bán ngoài không theo chuẩn chân nào: micro-USB
-thường 5 chân (`VBUS D− D+ ID GND`), USB-C có loại 2, 6 và 16 chân, `VBUS` với `GND` khi thì cạnh
-nhau khi thì ở hai đầu. Đặt sẵn một hàng lỗ là cược rằng chân của nó rơi đúng chỗ đó — cược cả về
-số chân lẫn về việc hàng chân nằm cách mép module bao nhiêu, mà cả hai số đều chưa ai đo.
-
-Lưới 2,54 thì không phải cược: **lỗ và chân cùng một bước, nên trượt module tới đâu cũng có lúc cả
-hàng chân rơi trọn vào lỗ.** Đẩy cho trùng rồi hàn, thừa lỗ thì bỏ trống. Đổi sang con breakout
-khác sau này cũng không phải sửa board.
-
-`J15` và `J17` **không có trên sơ đồ nguyên lý**: chúng không mang một net nào, đúng như bốn lỗ vít
-`H5`…`H8`. Điện đi riêng — hai sợi dây ngắn từ `VBUS` và `GND` của breakout lên `J16`/`J18` ngay
-phía trên, và hai lỗ đó đã có đồng nối thẳng về domino.
-
-**USB-C gánh rail 1, micro-USB gánh rail 2.** Đầu C chịu 3 A nên đỡ được đỉnh 1,34 A của rail 1;
-đầu micro-B chỉ chịu 1,8 A và tiếp xúc yếu hơn hẳn, nên chỉ giao cho đỉnh 0,7 A của servo. Làm
-ngược lại là dựng sẵn đúng cú sụt áp đã đo ở §2.3E, lần này ngay tại đầu cắm.
-
-⚠️ **Cắm USB lúc đang vặn dây vào domino là đấu song song hai nguồn** — cùng cái bẫy mà cảnh báo
-ngay trên đã nói cho chân `5V` của devkit, giờ thêm hai đường nữa. Board không chặn được bằng
-đồng: muốn chặn phải thêm diode Schottky, mà mỗi con sụt 0,3–0,4 V trên một rail 5 V vốn không dư
-(ESP32 brownout quanh 4,5 V). **Mỗi lúc chỉ một đường vào.**
-
-⚠️ **Breakout USB-C thiếu hai con 5,1 kΩ ở `CC1`/`CC2` thì sạc USB-C không ra một vôn nào.** Đó là
-cách nguồn USB-C nhận biết có thiết bị; loại 2 chân rẻ nhất hay bỏ hai con này. Soi trước khi
-mua — board không sửa được chuyện đó.
-
-**Khung thân 13 × 15 mm mỗi con.** Hai con nằm cạnh nhau ở mép dưới, cùng quay đầu cắm ra ngoài —
-chung mép với hai domino, để dây nguồn vào từ một phía. Ô chứa chúng rộng **31 mm**, chặn trái
-bởi khung tấm màn và chặn phải bởi `J10`; để đủ chỗ thì **`C1` `J10` `J11` đã dịch sang phải
-3 mm**, đúng một phép tịnh tiến nên mọi khoảng cách trong luật 1–7 giữ nguyên.
-
-Cả hai con đo **chưa tới 10 mm** bề ngang, bằng nhau, nên mỗi khung 13 mm còn dư hơn 3 mm. Khung
-vẽ rộng hơn thân là cố ý: nó là chỗ cấm đặt linh kiện khác, không phải bản vẽ của con breakout.
 
 **Hai domino đặt sát nhau hết mức đường bao cho phép**, nên luật 1 gần đúng nghĩa đen: `J10.GND` và `J11.GND` cách nhau **11,5 mm**. Bước bốn con ốc ra **5 / 6,5 / 5 mm** — không đều được vì đường bao hai domino chạm nhau ở 6,5, ép sát hơn là hai khung chồng lên nhau. Tụ `C1` đặt **lệch hẳn về `J10`**, hai chân nằm đúng trên hai chân của nó. Nó mang net `+5V_R1`, không dính gì tới `+5V_R2` của `J11` — kê nó cân giữa hai domino là vẽ ra một quan hệ điện không có thật, và kéo dài đoạn đồng tới đúng cái domino cần nó. Rail 2 không có tụ trữ ở domino: 470 µF của nó nằm sát chân servo theo luật 3.
 
