@@ -19,16 +19,19 @@ static const char *TAG = "drv_audio";
 #define WRITE_TIMEOUT_MS 1000
 #define AMP_WAKE_MS 10
 #define AMP_SD_TRIES 3
+#define AMP_SD_SLEEP_TRIES 10
+#define AMP_SD_GAP_MS 20
 
 static i2s_chan_handle_t s_tx;
 static uint8_t s_volume_pct = DRV_AUDIO_VOLUME_MAX;
 static int16_t s_chunk[CHUNK_SAMPLES];
 
-static esp_err_t amp_awake(bool awake)
+static esp_err_t amp_awake(bool awake, int tries)
 {
-    // A lost SD write leaves a grant silent or the amp switching at rest, so it is tried again.
-    esp_err_t err = ESP_FAIL;
-    for (int tries = 0; tries < AMP_SD_TRIES && err != ESP_OK; ++tries) {
+    // SD rides on the I2C expander another task may hold, so a lost write waits and goes again.
+    esp_err_t err = drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, awake);
+    for (int tried = 1; tried < tries && err != ESP_OK; ++tried) {
+        vTaskDelay(pdMS_TO_TICKS(AMP_SD_GAP_MS));
         err = drv_ioexp_set(APP_IOEXP_P_AUDIO_SD, awake);
     }
     return err;
@@ -102,7 +105,7 @@ esp_err_t drv_audio_init(void)
     if (s_tx != NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    APP_RETURN_ON_ERR(amp_awake(false), TAG, "amp off");
+    APP_RETURN_ON_ERR(amp_awake(false, AMP_SD_TRIES), TAG, "amp off");
     APP_RETURN_ON_ERR(channel_up(), TAG, "i2s");
     ESP_LOGI(TAG, "max98357a on bclk%d ws%d din%d, %d Hz 16-bit mono, sd on p%d", APP_AUDIO_BCLK_GPIO,
              APP_AUDIO_LRC_GPIO, APP_AUDIO_DIN_GPIO, DRV_AUDIO_SAMPLE_HZ, APP_IOEXP_P_AUDIO_SD);
@@ -127,13 +130,17 @@ esp_err_t drv_audio_play_pcm(const int16_t *pcm, size_t samples)
     if (s_volume_pct == 0) {
         return ESP_OK;
     }
-    APP_RETURN_ON_ERR(amp_awake(true), TAG, "amp on");
+    APP_RETURN_ON_ERR(amp_awake(true, AMP_SD_TRIES), TAG, "amp on");
     vTaskDelay(pdMS_TO_TICKS(AMP_WAKE_MS));
     esp_err_t err = push_scaled(pcm, samples);
     if (err == ESP_OK) {
         // Whatever the ring holds when SD drops is lost, so it has to hold silence by then.
         err = push_silence(DMA_RING_SAMPLES);
     }
-    const esp_err_t off = amp_awake(false);
+    // An amp left awake switches at rest until the next grant, so shutdown gets more tries.
+    const esp_err_t off = amp_awake(false, AMP_SD_SLEEP_TRIES);
+    if (off != ESP_OK) {
+        ESP_LOGE(TAG, "amp left awake: %s", esp_err_to_name(off));
+    }
     return err != ESP_OK ? err : off;
 }

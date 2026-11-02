@@ -28,9 +28,9 @@ esp_err_t drv_audio_init(void);
 esp_err_t drv_audio_set_volume(uint8_t percent);
 
 /** Wake the amp, push the clip through, and shut the amp down again; at volume 0 nothing wakes.
- *  @ctx task | blocking for the clip length plus about 100 ms | takes m_i2c
+ *  @ctx task | blocking for the clip plus ~25 ms, up to ~2 s more while m_i2c is held | takes m_i2c
  *  @param samples count of int16 mono samples at DRV_AUDIO_SAMPLE_HZ
- *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init | ESP_ERR_TIMEOUT
+ *  @ret ESP_OK | ESP_ERR_INVALID_STATE without init or pcm | ESP_ERR_TIMEOUT | the SD line's I2C error
  */
 esp_err_t drv_audio_play_pcm(const int16_t *pcm, size_t samples);
 
