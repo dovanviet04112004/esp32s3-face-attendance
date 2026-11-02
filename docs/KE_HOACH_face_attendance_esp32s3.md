@@ -1048,11 +1048,12 @@ PCF8574 dài 48 mm đổ xuống dưới nó, `J3` hất xuống vì tấm màn 
 sang trái. Chiều cao board (121 mm) và khe giữa tấm màn với khung con amp đều là hệ quả của luật
 này chứ không phải chọn trước. `tools/check_pcb.py` bắt lại: chữ nào rơi vào khung module thì fail.
 
-**Chữ in lụa: cao 0,8 mm, nét 0,15 mm** — đúng hai mức sàn mà xưởng công bố (JLCPCB: rộng nét
-≥ 0,15, cao ≥ 0,8). Nét đúng tỉ lệ với cỡ chữ 0,8 là 0,12, và 0,12 vẫn in ra trên dây chuyền bây
-giờ — nhưng nó nằm **dưới** mức hãng cam kết, nghĩa là họ được quyền in mờ hoặc bỏ hẳn mà không
-báo. Cả bộ in lụa này tồn tại để cắm module khỏi phải tra bảng, nên mất chữ là mất hết công; đổi
-lấy chữ đậm hơn một chút là đổi có lãi. Đường bao thân linh kiện vẫn giữ **0,12** của thư viện
+**Chữ in lụa: cao 0,8 mm, nét 0,15 mm, nên đặt in ở JLCPCB phải chọn chữ high-precision.** Hãng
+cam kết hai mức: chữ thường từ cao 1,0 mm, nét 0,15 mm; chữ high-precision, chọn lúc đặt hàng, từ
+cao 0,8 mm, nét 0,10 mm (Character Design Specifications, tra 02/11/2026). Dưới mức cam kết thì
+hãng được quyền in mờ hoặc bỏ hẳn mà không báo, mà cả bộ in lụa này tồn tại để cắm module khỏi
+phải tra bảng: mất chữ là mất hết công. Nét 0,15 đậm hơn tỉ lệ 1:6 của cỡ chữ 0,8 (0,12) một chút,
+cho chữ dễ đọc hơn. Đường bao thân linh kiện vẫn giữ **0,12** của thư viện
 KiCad: đó là nét thẳng dài, in bao giờ cũng ra, mà sửa nó thì dấu chân lệch khỏi thư viện và DRC
 dựng lại cả loạt cảnh báo `lib_footprint_mismatch`.
 
@@ -1140,13 +1141,16 @@ Tách rail 1 khỏi rail 2 vì hai đỉnh trùng nhau: kiosk phát tiếng báo
 **Rail 2 không được là sạc dự phòng.** Sạc dự phòng tự ngắt ngõ ra khi tải dưới ngưỡng vài chục mA, mà servo đứng yên gần như không ăn dòng — đo 10/09 trên bàn: servo "chết" dù xung ở GPIO38 đúng từng micro giây, chỉ vì sạc đã tắt từ lúc nào. Kiosk thật dùng adapter 5 V thường; trên bàn thử thì phải giữ tải liên tục (servo quét, hoặc tải giả) cho sạc không ngủ.
 
 Tụ: 1000 µF gần jack 5 V, 470 µF gần MAX98357A, 470 µF gần chân nguồn servo, 470 µF ở đầu vào
-`U2`, 100 µF ở đầu ra `U2` ngay sát tấm màn.
+`U2`, 100 µF ở đầu ra `U2` ngay sát tấm màn. Tụ trên rail 5 V chịu từ **10 V** trở lên, con 100 µF
+trên `+3V3_LCD` từ **6,3 V**. Thân phải đúng cỡ footprint: Ø10 bước 5,0 cho 1000 µF, Ø8 bước 3,5
+cho ba con 470 µF, Ø5 bước 2,0 cho 100 µF. Loại áp cao hơn cùng dung lượng thường to hơn một cỡ,
+nên đừng mua dư áp quá xa mức trên.
 
 **Tấm màn không ăn thẳng `+3V3` của devkit nữa.** Rail riêng `+3V3_LCD` do `U2` — một module ổn
 áp 3,3 V ba chân cắm đế — lấy từ `+5V_R1` mà ra, và chỉ nuôi đúng `J3.1`. Ba cảm biến I2C với
 trở treo `R1` vẫn ở `+3V3` của devkit. `U2` tiêu tán `(5 − 3,3) × 0,1 A ≈ 0,17 W`, không cần tản.
 
-Con 100 µF của màn phải là loại **thân Ø5 mm**, không phải Ø6,3. Khe nó nằm rộng 7,30 mm (§2.3A) nên thân 6,3 chỉ hở 0,25 mm mỗi bên, còn 5 mm hở 0,90. Bước chân hai loại đều 2,50 mm nên **lỗ khoan giống hệt nhau** — mua nhầm loại to vẫn cắm vừa, chỉ là sát.
+Con 100 µF của màn phải là loại **thân Ø5 mm**, không phải Ø6,3. Khe nó nằm rộng 7,30 mm (§2.3A) nên thân 6,3 chỉ hở 0,25 mm mỗi bên, còn 5 mm hở 0,90. Tụ Ø5 có bước chân **2,0 mm**, nên `C4` dùng footprint bước 2,0; con Ø6,3 bước 2,5 thì phải bóp chân mới cắm được.
 
 #### Đường mass — quyết định lúc đi dây, không phải lúc vẽ sơ đồ
 
@@ -1219,10 +1223,10 @@ Board **2 lớp**. Đường nguồn **1,0 mm đi mặt sau**, tín hiệu **0,2
 thì lật sang mặt kia, và chỗ lật là một **via**. Mọi chân đều xuyên lỗ nên một đường đi trọn vẹn ở
 mặt sau vẫn tới được chân mà không tốn via nào.
 
-**Via nguồn khoan to hơn via tín hiệu** — Ø0,6 so với Ø0,4. Theo IPC-2221 (1 oz, 10 °C), thành mạ
-25 µm của lỗ Ø0,4 chỉ chịu **1,11 A**, mà via mass nặng nhất trên board gánh **0,91 A** (đường về
-của devkit + màn + ba con I2C) — dư 18%, mỏng. Ø0,6 đưa lên **1,48 A**, dư 63%. Dây 1,0 mm thì chịu
-**2,39 A** so với đỉnh 1,34 A của rail 1, không phải lo.
+**Via nguồn khoan to hơn via tín hiệu** — Ø0,6 so với Ø0,4. Theo IPC-2221 (1 oz, 10 °C) với thành
+mạ **18 µm**, mức trung bình JLCPCB công bố, lỗ Ø0,4 chỉ chịu **0,87 A**, dưới 0,91 A mà via mass
+nặng nhất trên board gánh (đường về của devkit + màn + ba con I2C). Ø0,6 đưa lên **1,17 A**, dư 29%.
+Dây 1,0 mm thì chịu **2,39 A** so với đỉnh 1,34 A của rail 1, không phải lo.
 
 **Router giữ khe rộng hơn mức netclass đòi.** Netclass vẫn là 0,2 mm cho tín hiệu và 0,3 mm cho
 nguồn — DRC chấm theo đúng đó — nhưng router đi với 0,25 và 0,35, nên nó tự tránh những lối chỉ
@@ -1259,6 +1263,11 @@ vào via nằm dưới nó, in lụa in đè lên được (xưởng gọt in l�
 qua via là mất chữ), và không có đồng trần nào để oxy hoá. Mất một thứ: không chọc que đồng hồ vào
 via đo được nữa — board này via không phải điểm đo nên không mất gì. Ngoài ra router vẫn chặn sẵn
 không đặt via dưới chữ, và `check_pcb` kiểm lại.
+
+JLCPCB chỉ bảo đảm bịt kín lỗ tới **Ø0,5** (khuyên ≤ 0,4), và không nhận khiếu nại với lỗ to hơn
+(Five Via Finishes, tra 02/11/2026). 31 via tín hiệu Ø0,4 nằm trong mức đó; 15 via nguồn Ø0,6 thì
+miệng lỗ có thể hở đồng. Vẫn giữ Ø0,6 vì dòng ở đoạn trên: via Ø0,5 chỉ còn khoảng 1,02 A, dư 12%.
+Lỗ hở chỉ lộ đồng của chính net ấy, và không via nào nằm trong vùng cấm quanh lỗ vít.
 
 **Bảy luật trên không phải là thứ máy tự tìm ra được.** Router đi theo cây khai sẵn trong
 `RAIL_TREE` của `hardware/gen/gen_pcb.py` — từng nhánh một — và **các nhánh của cùng một cây chặn
@@ -2583,6 +2592,7 @@ esp32s3-face-attendance/
 │   ├── kicad/{kiosk.kicad_pro, .kicad_sch, .kicad_pcb, fp-lib-table, sym-lib-table}  # ✅ text
 │   ├── lib/{symbols/, footprints/}  # ✅ sinh từ gen/; kéo về thì kèm UPSTREAM.md
 │   ├── export/                      # ✅ PDF/PNG cho báo cáo, đóng dấu git sha của §2
+│   │   └── fab/                     # ❌ gitignore — Gerber + file khoan đem đặt in (make hw-fab)
 │   ├── datasheets/                  # ❌ gitignore PDF — chỉ giữ INDEX.md
 │   └── vendor/                      # ❌ gitignore — sơ đồ module hãng, giữ UPSTREAM.md
 ├── backend/       NestJS
