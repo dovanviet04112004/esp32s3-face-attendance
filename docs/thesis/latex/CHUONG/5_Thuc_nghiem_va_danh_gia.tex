@@ -1,28 +1,1217 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
+Chương này đo bản hệ thống đã dựng ở Chương~\ref{chapter:Implementation} rồi đối chiếu kết quả với yêu cầu ở
+Mục~\ref{section:3.1}. Mục~\ref{section:5.1} nêu cấu hình đo và thước đo. Ba mục tiếp theo đo ba mô hình trên board, so ESP-DL với
+TFLite Micro và đánh giá chống giả mạo trên khung OV5640. Mục~\ref{section:5.5} nói về FAR và FRR, Mục~\ref{section:5.6} và
+Mục~\ref{section:5.7} kiểm thử phần mềm và toàn hệ thống, Mục~\ref{section:5.8} tổng hợp các giải pháp nổi bật. Phép đo nào chưa
+thực hiện thì chương ghi là chưa có, kèm thứ còn thiếu để đo.
+
 \section{Thiết lập thực nghiệm}
 \label{section:5.1}
+
+\subsection{Môi trường đo trên board}
+\label{section:5.1.1}
+
+Số đo trên chip lấy trên bản lắp ở Mục~\ref{section:4.2}, dựng ở mức tối ưu của profile \texttt{bench}. Thời gian và bộ nhớ của
+mô hình đo bằng ứng dụng \texttt{bench\_ai} theo cấu hình ở Bảng~\ref{tab:moi_truong_do}. Mô hình chạy ở lõi 1 như \texttt{ai\_task}
+của máy. Điều kiện có tải thêm một task ở lõi 0 chép một khung 480$\times$320 RGB565 mỗi 70~ms, để tạo trên bus PSRAM lưu lượng của
+đường xem trước trong lúc mô hình chạy.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Cấu hình đo trên board.}
+\label{tab:moi_truong_do}
+\begin{tabular}{|L{3.4cm}|L{10.7cm}|}
+\hline
+\textbf{Hạng mục} & \textbf{Cấu hình} \\
+\hline
+Chip & ESP32-S3 bản v0.2, CPU 240~MHz, cache dữ liệu 64~KB, dòng 64~B \\
+\hline
+Bộ nhớ & Flash 16~MB QIO 80~MHz, PSRAM 8~MB octal 80~MHz \\
+\hline
+Công cụ & ESP-IDF 6.0.2, GCC 15.2.0, \texttt{-O2}, FreeRTOS tick 1.000~Hz \\
+\hline
+Thư viện & esp-dl 3.3.11, esp-tflite-micro 1.4.0, esp-nn 1.3.2 \\
+\hline
+Lặp & 3 lượt khởi động rồi 50 lượt đo cho mỗi số \\
+\hline
+Đầu vào & Ảnh tổng hợp tất định, chung cho mọi cấu hình \\
+\hline
+Tải xem trước & Lõi 0 chép 307.200~B mỗi 70~ms, mô hình ở lõi 1 \\
+\hline
+\end{tabular}
+\end{table}
+
+Độ chính xác chấm trên máy tính bằng mô phỏng ESP-PPQ của chính đồ thị đã xuất. Số mô phỏng là số của chip, vì mọi hàng được chọn
+qua \texttt{model->test()} ở đồ thị và bốn bản cắt, và khớp mô phỏng từng bit trên khung OV5640 thật.
+
+\subsection{Tập dữ liệu và thước đo}
+\label{section:5.1.2}
+
+Bảng~\ref{tab:tap_du_lieu} là các tập và thước của từng nhánh. Thước chính là thước dùng để chọn cấu hình lượng tử ở
+Mục~\ref{section:5.2.2}. Phát hiện lấy AP trên mặt từ 38~px, vì 38~px trên đầu vào 160$\times$120 ứng với cạnh 113~px trên khung
+480$\times$320, cỡ mặt mà nhận diện cần. Nhận diện lấy TAR tại FAR $10^{-3}$ trên CFP-FP. LFW đã bão hòa ở 0,99 nên không còn phân
+biệt được các cấu hình, còn accuracy đo ở điểm cân bằng, trong khi máy chạy ở FAR thấp vì nhận nhầm người đắt hơn nhiều so với bắt
+người đứng thử lại.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Tập dữ liệu và thước đo của ba nhánh.}
+\label{tab:tap_du_lieu}
+\begin{tabular}{|L{2.3cm}|L{4.0cm}|L{2.9cm}|L{4.0cm}|}
+\hline
+\textbf{Nhánh} & \textbf{Tập} & \textbf{Quy mô} & \textbf{Thước} \\
+\hline
+Phát hiện & WIDER FACE val~\cite{wider} & 3.226 ảnh, đưa về 160$\times$120 & AP mặt từ 38~px (chính); AP easy, medium, hard \\
+\hline
+Chống giả mạo & CelebA-Spoof~\cite{celebaspoof} & 39.072 mặt & AUC (chính), EER; APCER, BPCER ở ngưỡng 0,5 \\
+\hline
+Chống giả mạo & Tập OV5640 & 62 khung thật, 25 khung giả & Số mặt thật giữ, số khung giả chặn ở ngưỡng 0,5 \\
+\hline
+Chống giả mạo & LCC-FASD~\cite{lccfasd}, SynthASpoof~\cite{synthaspoof}, NUAA~\cite{nuaa}, Axon & Chỉ để đọc, không vào cửa chọn & AUC, EER \\
+\hline
+Nhận diện & CFP-FP~\cite{cfp} & 7.000 cặp & TAR tại FAR $10^{-3}$ (chính), $10^{-4}$; accuracy \\
+\hline
+Nhận diện & LFW~\cite{lfw}, AgeDB-30~\cite{agedb} & 6.000 cặp mỗi tập & TAR tại FAR $10^{-3}$, $10^{-4}$; accuracy \\
+\hline
+Nhận diện & CFP-FF, CALFW~\cite{calfw}, CPLFW & 6.000--7.000 cặp mỗi tập & Người lạ lọt, cùng người qua ở từng ngưỡng \\
+\hline
+\end{tabular}
+\end{table}
+
+Tập OV5640 gồm 87 khung có nhãn và có mặt, chụp bằng chính camera của máy. Phía thật có 62 khung từ 6 phiên chụp. Phía giả có
+25 khung, gồm 21 khung ảnh thẻ trên màn điện thoại và 4 khung mặt trên một điện thoại thứ hai. Tập này đã dùng để chọn mô hình và
+chọn cấu hình lượng tử, nên số trên nó không phải số của một tập kiểm độc lập. Mục~\ref{section:5.4} bàn lại giới hạn này.
 
 \section{Độ trễ, bộ nhớ và độ chính xác trên board}
 \label{section:5.2}
 
+\subsection{Độ trễ}
+\label{section:5.2.1}
+
+Bảng~\ref{tab:do_tre} là thời gian của ba mô hình trên ESP-DL, ở hàng lượng tử đã chọn. Lúc rảnh, p95 trùng median tới chữ số
+thập phân thứ nhất nên cột rảnh chỉ ghi một số. Một lượt là ba mô hình chạy nối nhau.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thời gian của ba mô hình trên ESP-DL (ms).}
+\label{tab:do_tre}
+\begin{tabular}{|L{4.0cm}|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Rảnh} & \textbf{Có tải, median} & \textbf{Có tải, p95} & \textbf{Chậm đi} \\
+\hline
+Phát hiện & 32,9 & 35,2 & 41,7 & +7,0\% \\
+\hline
+Chống giả mạo & 73,3 & 86,0 & 87,0 & +17,3\% \\
+\hline
+Nhận diện & 246,4 & 278,5 & 289,9 & +13,0\% \\
+\hline
+Một lượt ba mô hình & 353,6 & 406,2 & 411,4 & +14,9\% \\
+\hline
+\end{tabular}
+\end{table}
+
+Lúc rảnh một lượt mất 353,6~ms, dưới mức 360~ms của NF1 6,4~ms. Có tải thì 406,2~ms, vượt 46,2~ms. Trong lượt chấm thật máy luôn vẽ
+xem trước, nên 406,2~ms mới là số ở điểm vận hành, và NF1 chỉ đạt ở điều kiện rảnh. Phần chậm đi đến từ bus PSRAM mà mô hình và
+đường xem trước cùng dùng: đặt mô hình sang lõi 0 chung với tải vẫn mất 404,1~ms, nên đổi lõi không gỡ được. Người chấm công đứng
+trước máy 1--2~s, tức 2 tới 4 lượt ở tốc độ này, còn chỗ cho các lần thử lại ở Mục~\ref{section:3.4}.
+
+Nhận diện chiếm 69,7\% một lượt lúc rảnh. Phát hiện chạy 30,41 khung mỗi giây, gấp đôi nhịp 14,19~fps của camera, và hai mô hình sau
+chỉ chạy khi có mặt qua cổng. Đường xem trước giữ 13,2--14,2~fps khi máy chạy đủ giao diện, mỗi khung ghi màn hình mất
+36,9--39,5~ms.
+
+Hình~\ref{fig:chuoi_toi_uu} tách thời gian theo từng mức tối ưu, đo bằng bản dò trên máy thật, mỗi mô hình đo riêng rồi cộng. Đồ
+thị chưa vá chạy kernel gốc của esp-dl và mất 444,8~ms. Các bản vá giữ nguyên số nguyên đưa xuống 333,8~ms, giảm 25,0\% mà kết quả
+không đổi một bit. Các bản vá làm tròn kéo tiếp xuống 251,6~ms, nhưng chúng đổi số nguyên nên phải qua thang ở
+Mục~\ref{section:5.2.2}, và ở hai nhánh sau chúng không qua cửa chất lượng. Bộ chạy thật vì vậy mất 349,3~ms, cao hơn mức thấp nhất
+97,7~ms. Cách đo này lệch 1,2\% so với 353,6~ms của \texttt{bench\_ai}, nơi ba mô hình chạy nối nhau.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\footnotesize, x=0.0215cm, y=1cm]
+\foreach \t in {0,100,200,300,400} {
+  \draw[black!20] (\t,0) -- (\t,3.75);
+  \node[below] at (\t,0) {\t};
+}
+\foreach \y/\name/\a/\b/\c/\la/\lb/\lc/\tot in {
+  3.25/Chưa vá/62.5/83.2/299.1/{62,5}/{83,2}/{299,1}/{444,8},
+  2.35/Vá giữ số nguyên/32.03/56.81/244.99/{32,0}/{56,8}/{245,0}/{333,8},
+  1.45/Thêm vá làm tròn/31.80/39.59/180.26/{31,8}/{39,6}/{180,3}/{251,6},
+  0.55/Hàng đã chọn/31.58/72.63/245.09/{31,6}/{72,6}/{245,1}/{349,3}} {
+  \pgfmathsetmacro{\pb}{\a+\b}
+  \pgfmathsetmacro{\pc}{\a+\b+\c}
+  \fill[black!12] (0,\y-0.3) rectangle (\a,\y+0.3);
+  \fill[black!30] (\a,\y-0.3) rectangle (\pb,\y+0.3);
+  \fill[black!45] (\pb,\y-0.3) rectangle (\pc,\y+0.3);
+  \draw[white, line width=0.8pt] (\a,\y-0.3) -- (\a,\y+0.3);
+  \draw[white, line width=0.8pt] (\pb,\y-0.3) -- (\pb,\y+0.3);
+  \node[font=\scriptsize] at ({\a/2},\y) {\la};
+  \node[font=\scriptsize] at ({(\a+\pb)/2},\y) {\lb};
+  \node[font=\scriptsize] at ({(\pb+\pc)/2},\y) {\lc};
+  \node[anchor=east] at (-6,\y) {\name};
+  \node[anchor=east] at (522,\y) {\tot~ms};
+}
+\draw (0,0) -- (0,3.75);
+\draw (0,0) -- (500,0);
+\draw[dashed] (360,0) -- (360,3.85) node[above] {NF1: 360~ms};
+\node at (250,-0.72) {Thời gian một lượt ba mô hình (ms)};
+\fill[black!12] (40,-1.3) rectangle ++(12,0.22);
+\node[anchor=west] at (54,-1.19) {Phát hiện};
+\fill[black!30] (160,-1.3) rectangle ++(12,0.22);
+\node[anchor=west] at (174,-1.19) {Chống giả mạo};
+\fill[black!45] (330,-1.3) rectangle ++(12,0.22);
+\node[anchor=west] at (344,-1.19) {Nhận diện};
+\end{tikzpicture}
+\caption{Thời gian một lượt ba mô hình theo từng mức tối ưu, lúc rảnh.}
+\label{fig:chuoi_toi_uu}
+\end{figure}
+
+\subsection{Thang lượng tử hóa}
+\label{section:5.2.2}
+
+Mỗi nhánh đi trọn thang bốn bậc ở Mục~\ref{section:2.4.2} trên đồ thị đã vá, mỗi cấu hình là một hàng. Bậc 1 nằm sẵn trong mọi hàng
+bậc 2. Bậc 2 thử bốn cách hiệu chuẩn, bậc 3 đưa các lớp nhạy nhất lên int16, bậc 4 là QAT 2.000 bước chưng cất từ mô hình float.
+Hàng có dấu cộng là biến thể làm tròn. Cửa chất lượng của mọi nhánh là thước chính sụt dưới 1\% so với mô hình float. Trong các hàng
+qua cửa, luật lấy hàng chất lượng cao nhất, rồi đổi sang hàng nhanh hơn nếu hàng đó cách không quá một bước phân giải của thước:
+0,1 điểm AP ở phát hiện, 0,001 AUC ở chống giả mạo. Thời gian trên chip chỉ đo ở các hàng luật chọn cần, nên các ô khác để trống.
+
+Bảng~\ref{tab:thang_phat_hien} là thang của phát hiện. Mọi hàng qua cửa. \texttt{mse} cao nhất ở bậc 2. Biến thể đổi 18 ReLU6 thành
+ReLU bão hòa ở đỉnh lưới int8 giữ nguyên AP tới chữ số thứ năm và nhanh hơn 0,23~ms, nên được chọn. Thêm lớp int16 không lợi gì:
+\texttt{int16\_top1} chậm hơn 2,36~ms mà AP không tăng. QAT kéo đồ thị về sát mô hình float nên AP xuống 0,9488.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thang lượng tử hóa của nhánh phát hiện. Hàng đã chọn in nghiêng.}
+\label{tab:thang_phat_hien}
+\begin{tabular}{|c|L{4.0cm}|c|c|c|c|c|}
+\hline
+\textbf{Bậc} & \textbf{Hàng} & \textbf{Easy} & \textbf{Medium} & \textbf{Hard} & \textbf{Từ 38~px} & \textbf{ms} \\
+\hline
+0 & \texttt{float} & 0,6439 & 0,3664 & 0,1524 & 0,9414 & \\
+\hline
+2 & \texttt{minmax} & 0,6338 & 0,3595 & 0,1495 & 0,9382 & \\
+\hline
+2 & \texttt{percentile} & 0,6379 & 0,3622 & 0,1506 & 0,9471 & \\
+\hline
+2 & \texttt{mse} & 0,6352 & 0,3605 & 0,1499 & 0,9544 & 31,81 \\
+\hline
+2 & \texttt{kl} & 0,6401 & 0,3638 & 0,1513 & 0,9534 & \\
+\hline
+3 & \texttt{int16\_top1} & 0,6367 & 0,3613 & 0,1502 & 0,9541 & 34,17 \\
+\hline
+3 & \texttt{int16\_top2} & 0,6375 & 0,3615 & 0,1503 & 0,9502 & \\
+\hline
+3 & \texttt{int16\_top4} & 0,6356 & 0,3607 & 0,1499 & 0,9446 & \\
+\hline
+4 & \texttt{qat} & 0,6328 & 0,3588 & 0,1492 & 0,9488 & \\
+\hline
+2 & \textit{\texttt{mse+clip\_as\_relu}} & \textit{0,6404} & \textit{0,3643} & \textit{0,1515} & \textit{0,9544} & \textit{31,58} \\
+\hline
+\end{tabular}
+\end{table}
+
+Cửa của chống giả mạo có thêm hai điều kiện trên tập OV5640: chặn đủ khung giả và giữ không ít mặt thật hơn mô hình float.
+Bảng~\ref{tab:thang_gia_mao} cho thấy lý do. \texttt{percentile} có AUC 0,8247 nhưng chỉ giữ 58/62 mặt thật nên trượt. Hai biến thể
+gộp PReLU đưa nhánh này xuống khoảng 39,6~ms và giữ nguyên AUC, nhưng chỉ còn 49--50/62 mặt thật. PReLU gộp làm tròn xuống ở nhánh
+âm, kéo điểm sống của mặt thật dưới 0,5, và mặt thật thấp nhất còn 0,034 so với 0,196 của hàng đã chọn. \texttt{int16\_top1} là hàng
+qua cửa có AUC cao nhất. Hàng \texttt{kl} kém 0,002 AUC, quá một bước phân giải, nên luật không lấy dù ước tính nhanh hơn khoảng
+16~ms. Lớp int16 của hàng đã chọn là phần làm nhánh này chậm hơn 15,8~ms so với hàng chỉ có bản vá giữ nguyên số nguyên.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thang lượng tử hóa của nhánh chống giả mạo. Mọi hàng chặn 25/25 khung giả. Hàng đã chọn in nghiêng.}
+\label{tab:thang_gia_mao}
+\begin{tabular}{|c|L{6.0cm}|c|c|c|c|}
+\hline
+\textbf{Bậc} & \textbf{Hàng} & \textbf{AUC} & \textbf{Thật giữ} & \textbf{Cửa} & \textbf{ms} \\
+\hline
+0 & \texttt{float} & 0,8208 & 59/62 & & \\
+\hline
+2 & \texttt{minmax} & 0,8198 & 59/62 & đạt & \\
+\hline
+2 & \texttt{percentile} & 0,8247 & 58/62 & trượt & \\
+\hline
+2 & \texttt{mse} & 0,8207 & 60/62 & đạt & \\
+\hline
+2 & \texttt{kl} & 0,8222 & 59/62 & đạt & \\
+\hline
+3 & \textit{\texttt{int16\_top1}} & \textit{0,8242} & \textit{59/62} & \textit{đạt} & \textit{72,63} \\
+\hline
+3 & \texttt{int16\_top2} & 0,8238 & 59/62 & đạt & 79,64 \\
+\hline
+3 & \texttt{int16\_top4} & 0,8224 & 59/62 & đạt & \\
+\hline
+4 & \texttt{qat} & 0,8223 & 60/62 & đạt & \\
+\hline
+3 & \texttt{int16\_top1+fused\_prelu} & 0,8217 & 49/62 & trượt & \\
+\hline
+3 & + \texttt{prelu\_on\_input\_grid} & 0,8249 & 50/62 & trượt & \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:thang_nhan_dien} là thang của nhận diện, với cửa từ 0,822 trở lên. Không hàng nào qua. Không cách hiệu chuẩn nào giữ
+được CFP-FP, cao nhất \texttt{kl} 0,775, và một tới tám lớp int16 không kéo nó lên. QAT nâng lên 0,799, còn thiếu 0,023. Luật không
+chọn được hàng nào nên đồ án lấy \texttt{qat}, hàng chất lượng cao nhất. \texttt{qat+fused\_prelu} nhanh hơn 26,22~ms nhưng còn
+0,783. Hàng đã chọn sụt 3,7\% ở CFP-FP và 5,1\% ở AgeDB-30 so với float, nên NF3 không đạt ở nhánh này, và máy sẽ từ chối oan nhiều
+hơn với mặt nghiêng.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thang lượng tử hóa của nhánh nhận diện, TAR tại FAR. Hàng đã chọn in nghiêng.}
+\label{tab:thang_nhan_dien}
+\begin{tabular}{|c|L{5.0cm}|c|c|c|c|c|}
+\hline
+\textbf{Bậc} & \textbf{Hàng} & \textbf{\shortstack{CFP-FP\\$10^{-3}$}} & \textbf{\shortstack{CFP-FP\\$10^{-4}$}} & \textbf{\shortstack{AgeDB\\$10^{-3}$}} & \textbf{\shortstack{LFW\\$10^{-3}$}} & \textbf{ms} \\
+\hline
+0 & \texttt{float} & 0,830 & 0,813 & 0,895 & 0,995 & \\
+\hline
+2 & \texttt{minmax} & 0,607 & 0,520 & 0,775 & 0,985 & \\
+\hline
+2 & \texttt{percentile} & 0,768 & 0,693 & 0,836 & 0,995 & \\
+\hline
+2 & \texttt{mse} & 0,757 & 0,746 & 0,802 & 0,991 & \\
+\hline
+2 & \texttt{kl} & 0,775 & 0,740 & 0,838 & 0,995 & \\
+\hline
+3 & \texttt{int16\_top1} & 0,770 & 0,743 & 0,834 & 0,994 & \\
+\hline
+3 & \texttt{int16\_top2} & 0,760 & 0,744 & 0,839 & 0,995 & \\
+\hline
+3 & \texttt{int16\_top4} & 0,768 & 0,723 & 0,830 & 0,994 & \\
+\hline
+3 & \texttt{int16\_top8} & 0,765 & 0,716 & 0,854 & 0,993 & \\
+\hline
+4 & \textit{\texttt{qat}} & \textit{0,799} & \textit{0,767} & \textit{0,849} & \textit{0,994} & \textit{245,09} \\
+\hline
+4 & \texttt{qat+fused\_prelu} & 0,783 & 0,690 & 0,864 & 0,994 & 218,87 \\
+\hline
+4 & + \texttt{prelu\_on\_input\_grid} & 0,677 & 0,495 & 0,688 & 0,991 & \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Bộ nhớ}
+\label{section:5.2.3}
+
+Bảng~\ref{tab:ram_may} đọc từ heartbeat của máy thật, 30~s một lần, với firmware profile \texttt{bench} chạy đủ giao diện, ba mô hình
+đã khóa và phiên MQTT/TLS sống suốt lượt đo. Đáy RAM nội là giá trị thấp nhất kể từ lúc khởi động.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Bộ nhớ của máy chấm công qua 16 phút chạy.}
+\label{tab:ram_may}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Thời gian chạy} & \textbf{Đáy RAM nội (B)} & \textbf{RAM nội trống (B)} & \textbf{PSRAM trống (B)} \\
+\hline
+1,5 phút & 29.363 & 37.935 & 1.788.464 \\
+\hline
+4,5 phút & 29.183 & 38.123 & 1.788.464 \\
+\hline
+14,8 phút & 28.675 & 38.143 & 1.788.464 \\
+\hline
+15,9 phút & 28.675 & 38.143 & 1.788.464 \\
+\hline
+\end{tabular}
+\end{table}
+
+Đáy 28.675~B cao hơn mốc 24~KB của NF2 4.099~B. Ba tệp mô hình chiếm 2.115,8~KB trong khe 2,25~MB, còn 188,2~KB. Ảnh firmware bản
+\texttt{prod} là 2.328.032~B, còn 19\% khe 2,75~MB. Đồ án đặt thêm một mốc 2.000~KB cho đáy PSRAM, và số đo nằm dưới mốc này:
+PSRAM trống 1.788~KB, trong khi heartbeat không mang đáy nên đáy thật bằng hoặc thấp hơn. Phần hụt chủ yếu do hàng
+\texttt{int16\_top1} của chống giả mạo, lúc dựng chiếm 1.137.644~B so với 811.276~B của hàng int8 trước đó.
+
+Trong \texttt{bench\_ai}, một lượt ba mô hình dùng đỉnh stack 2.812~B và heap không đổi sau 50 lượt, cả RAM nội lẫn PSRAM. Lượt đo
+16 phút không ghi lại có người đứng trước máy hay không, nên nó chưa thay được bài chạy liên tục 24 giờ, bài này chưa thực hiện
+(Bảng~\ref{tab:chua_do}).
+
+\subsection{Độ chính xác}
+\label{section:5.2.4}
+
+Bảng~\ref{tab:chinh_xac} so hàng chạy trên chip với mô hình float của cùng lần huấn luyện.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Độ chính xác của hàng chạy trên chip so với mô hình float.}
+\label{tab:chinh_xac}
+\begin{tabular}{|L{2.7cm}|L{5.3cm}|c|c|c|}
+\hline
+\textbf{Nhánh} & \textbf{Thước} & \textbf{Float} & \textbf{Trên chip} & \textbf{Đổi} \\
+\hline
+Phát hiện & AP mặt từ 38~px & 0,9414 & 0,9544 & +1,4\% \\
+\hline
+Phát hiện & AP easy & 0,6439 & 0,6404 & $-$0,5\% \\
+\hline
+Phát hiện & AP medium & 0,3664 & 0,3643 & $-$0,6\% \\
+\hline
+Phát hiện & AP hard & 0,1524 & 0,1515 & $-$0,6\% \\
+\hline
+Chống giả mạo & AUC CelebA-Spoof & 0,8208 & 0,8242 & +0,4\% \\
+\hline
+Chống giả mạo & Mặt thật giữ, tập OV5640 & 59/62 & 59/62 & 0 \\
+\hline
+Nhận diện & TAR CFP-FP tại FAR $10^{-3}$ & 0,830 & 0,799 & $-$3,7\% \\
+\hline
+Nhận diện & TAR AgeDB-30 tại FAR $10^{-3}$ & 0,895 & 0,849 & $-$5,1\% \\
+\hline
+Nhận diện & TAR LFW tại FAR $10^{-3}$ & 0,995 & 0,994 & $-$0,1\% \\
+\hline
+Nhận diện & Accuracy CFP-FP & 0,9530 & 0,9459 & $-$0,7\% \\
+\hline
+Nhận diện & Accuracy AgeDB-30 & 0,9682 & 0,9623 & $-$0,6\% \\
+\hline
+Nhận diện & Accuracy LFW & 0,9963 & 0,9962 & 0,0\% \\
+\hline
+\end{tabular}
+\end{table}
+
+AP mặt từ 38~px đạt 0,9544, trên mục tiêu 0,90 của NF3. Mức +1,4\% không có nghĩa lượng tử hóa làm mô hình tốt hơn, chênh lệch này
+nằm trong cỡ nhiễu của tập đo. Ba số easy, medium, hard thấp vì đầu vào 160$\times$120 ép ảnh WIDER FACE rộng khoảng 1.024~px xuống
+hệ số 0,156, và ba số đó gần như trùng nhau giữa float và chip, nên phần mất là của độ phân giải.
+
+Trên 87 khung của tập OV5640, mặt người có điểm phát hiện thấp nhất 0,438, median 0,679, còn vật khác cao nhất 0,378. Ngưỡng 0,35 giữ
+đủ 87 mặt. Một khung có vật khác vượt ngưỡng, và vật đó còn phải qua cổng cỡ mặt, cổng hình học, chống giả mạo và cosine. Năm điểm
+mốc đo bằng mô hình float trên WIDER FACE: trong miền mặt từ 38~px, mô hình bắt 113/114 mặt với NMSE 5,46\%, vượt mục tiêu 5\% của
+đồ án 0,46 điểm phần trăm. Phép đo điểm mốc trên khung OV5640 chưa có.
+
 \section{So sánh ESP-DL với TFLite Micro}
 \label{section:5.3}
+
+Đối chứng dùng cùng ba lần huấn luyện, chạy trên cùng board và cùng cấu hình đo. ESP-DL chạy đúng ba tệp đang nạp lên máy. TFLite
+Micro chạy tệp \texttt{.tflite} lượng tử hóa sau huấn luyện, ở hai bản build: kernel esp-nn tối ưu cho ESP32-S3, và esp-nn bản C để
+biết phần tăng tốc của lệnh SIMD. Bảng~\ref{tab:so_thoi_gian} là thời gian của ba cấu hình.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thời gian trên ba cấu hình (ms) và hệ số của ESP-DL so với TFLite Micro + esp-nn.}
+\label{tab:so_thoi_gian}
+\begin{tabular}{|L{4.6cm}|c|c|c|c|}
+\hline
+\textbf{Phép đo} & \textbf{ESP-DL} & \textbf{TFLM + esp-nn} & \textbf{TFLM bản C} & \textbf{Hệ số} \\
+\hline
+Phát hiện, rảnh & 32,9 & 232,5 & 1.750,5 & 7,07 \\
+\hline
+Chống giả mạo, rảnh & 73,3 & 780,3 & 2.663,6 & 10,64 \\
+\hline
+Nhận diện, rảnh & 246,4 & 2.704,3 & 12.854,3 & 10,98 \\
+\hline
+Một lượt, rảnh & 353,6 & 3.717,7 & 17.268,6 & 10,51 \\
+\hline
+Một lượt, có tải & 406,2 & 3.864,6 & 17.832,0 & 9,51 \\
+\hline
+MAC mỗi chu kỳ CPU, một lượt & 3,38 & 0,32 & 0,07 & \\
+\hline
+\end{tabular}
+\end{table}
+
+ESP-DL nhanh hơn TFLite Micro + esp-nn 10,51 lần và hơn bản C 48,83 lần. Nguyên nhân chính nằm ở luật lượng tử hóa. TFLite lượng tử
+hóa activation bất đối xứng, có zero point, nên esp-nn phải nhân ở 16 bit, kênh lẻ rơi về kernel C, và depthwise chép filter cùng
+input vào vùng đệm ở mỗi lượt. ESP-DL lượng tử hóa đối xứng với thang lũy thừa 2 và nhân thẳng 8 bit bằng lệnh PIE. Các phép toán đồ
+án tự viết ở Bảng~\ref{tab:phep_toan} cộng thêm phần còn lại, đưa mức dùng phép nhân lên 3,38 MAC mỗi chu kỳ. Với TFLite Micro + esp-nn,
+máy cần 3,7~s cho một lượt, tức dài hơn cả thời gian người đứng trước máy, nên phương án này không dùng được cho luồng chấm công.
+
+Tốc độ đó phải trả bằng bộ nhớ. Bảng~\ref{tab:so_tai_nguyen} là tài nguyên của ba cấu hình. Ảnh ứng dụng của ESP-DL lớn gấp 3,3 lần vì
+thư viện esp-dl chiếm 598,1~KB và \texttt{ai\_engine} chiếm 218,8~KB. PSRAM lớn gấp 3,1 lần vì mỗi mô hình giữ khối riêng và trọng số
+được chép sang PSRAM, trong khi TFLite Micro dùng chung hai arena 186~KB và 972~KB, trọng số đọc từ flash. Dựng ba mô hình lâu gấp 3,0
+lần, nhưng chỉ xảy ra một lần lúc khởi động. ESP-DL cũng nhạy với tải hơn: chậm đi 14,9\% so với 4,0\% của TFLite Micro + esp-nn, vì
+cả trọng số lẫn tensor của nó nằm trên đúng bus mà đường xem trước tranh.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Tài nguyên của ba cấu hình.}
+\label{tab:so_tai_nguyen}
+\begin{tabular}{|L{6.0cm}|c|c|c|}
+\hline
+\textbf{Tài nguyên} & \textbf{ESP-DL} & \textbf{TFLM + esp-nn} & \textbf{TFLM bản C} \\
+\hline
+Ảnh ứng dụng \texttt{bench\_ai} (KB) & 1.283,4 & 386,5 & 360,9 \\
+\hline
+RAM tĩnh DIRAM (KB) & 84,3 & 68,9 & 68,9 \\
+\hline
+PSRAM lấy khi dựng ba mô hình (KB) & 3.574 & 1.158 & 1.158 \\
+\hline
+RAM nội lấy khi dựng ba mô hình (KB) & 0 & 0 & 0 \\
+\hline
+Thời gian dựng ba mô hình (ms) & 379 & 125 & 119 \\
+\hline
+Đỉnh stack một lượt (B) & 2.812 & 3.780 & 2.820 \\
+\hline
+Heap đổi sau 50 lượt (B) & 0 & 0 & 0 \\
+\hline
+Trọng số khi chạy nằm ở & PSRAM & Flash & Flash \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:so_chinh_xac} so độ chính xác. Hai bản TFLite Micro chạy cùng một tệp nên chung một cột. ESP-DL không đổi tốc độ lấy độ
+chính xác: hơn 0,0155 AP ở mặt từ 38~px, giữ thêm 2 mặt thật, bằng nhau ở thước chính của nhận diện. Chỗ thua rõ nhất là AgeDB-30, TAR
+tại FAR $10^{-3}$ thấp hơn 0,046.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Độ chính xác của ESP-DL và TFLite.}
+\label{tab:so_chinh_xac}
+\begin{tabular}{|L{2.7cm}|L{6.3cm}|c|c|}
+\hline
+\textbf{Nhánh} & \textbf{Thước} & \textbf{ESP-DL} & \textbf{TFLite} \\
+\hline
+Phát hiện & AP mặt từ 38~px & 0,9544 & 0,9389 \\
+\hline
+Phát hiện & AP easy & 0,6404 & 0,6393 \\
+\hline
+Phát hiện & AP medium & 0,3643 & 0,3635 \\
+\hline
+Phát hiện & AP hard & 0,1515 & 0,1512 \\
+\hline
+Chống giả mạo & AUC CelebA-Spoof & 0,8242 & 0,8252 \\
+\hline
+Chống giả mạo & Mặt thật giữ, tập OV5640 & 59/62 & 57/62 \\
+\hline
+Chống giả mạo & Khung giả chặn, tập OV5640 & 25/25 & 25/25 \\
+\hline
+Nhận diện & TAR CFP-FP tại FAR $10^{-3}$ & 0,799 & 0,799 \\
+\hline
+Nhận diện & TAR CFP-FP tại FAR $10^{-4}$ & 0,767 & 0,733 \\
+\hline
+Nhận diện & TAR AgeDB-30 tại FAR $10^{-3}$ & 0,849 & 0,895 \\
+\hline
+Nhận diện & Accuracy LFW & 0,9962 & 0,9962 \\
+\hline
+\end{tabular}
+\end{table}
+
+Phép so này có thêm kiểm tra chéo để loại lỗi đo. Hai bản TFLite Micro cho CRC đầu ra trùng nhau ở cả ba mô hình, nên chúng chỉ khác
+tốc độ. Điểm sống trên board trùng TFLite trên máy tính tới sáu chữ số, 0,951984. Vector đặc trưng trên board lệch TFLite 7/512 phần
+tử, tối đa 3 bậc, cosine 0,999984. Cả ba bản build qua ca Unity của mình, lần lượt 10, 9 và 9 ca.
 
 \section{Đánh giá chống giả mạo trên ảnh OV5640}
 \label{section:5.4}
 
+Nhánh này dùng MiniFASNetV1SE với vùng cắt 2,7 lần hộp mặt và ngưỡng 0,5. Bảng~\ref{tab:gia_ov} là kết quả trên 87 khung, chấm bằng
+đúng đường cắt và lấy mẫu của firmware.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Chống giả mạo trên tập OV5640.}
+\label{tab:gia_ov}
+\begin{tabular}{|L{6.5cm}|c|c|}
+\hline
+\textbf{Thước} & \textbf{ESP-DL} & \textbf{TFLite} \\
+\hline
+AUC & 1,0000 & 1,0000 \\
+\hline
+EER & 0,0000 & 0,0000 \\
+\hline
+Điểm sống thấp nhất của mặt thật & 0,196 & 0,163 \\
+\hline
+Điểm sống cao nhất của khung giả & 0,010 & 0,014 \\
+\hline
+Mặt thật giữ ở ngưỡng 0,5 & 59/62 & 57/62 \\
+\hline
+Khung giả chặn ở ngưỡng 0,5 & 25/25 & 25/25 \\
+\hline
+\end{tabular}
+\end{table}
+
+AUC 1,0000 nghĩa là mọi mặt thật xếp trên mọi khung giả, với khe 0,186 giữa mặt thật thấp nhất và khung giả cao nhất. Ở ngưỡng 0,5 máy
+chặn 25/25 khung giả, đúng mục tiêu của NF3. Ba mặt thật dưới ngưỡng có điểm 0,196, 0,281 và 0,486, cả ba có vùng cắt từ 2,09 lần trở
+lên.
+
+Bốn điều làm hẹp kết quả trên. (i)~Cả 25 khung giả là màn hình điện thoại. Chưa có khung OV5640 nào của ảnh in, thẻ hay giấy, nên phần
+ảnh in của F2 chưa có số trên máy. Một phép thử trực tiếp bằng tờ tiền trên bản TFLite Micro cùng trọng số cho 19 lần chấm với điểm cao
+nhất 0,321, dưới ngưỡng, nhưng đó không phải phép đo có nhãn. (ii)~Tập này đã dùng để chọn mô hình và hàng lượng tử, nên AUC 1,0000 là số
+lạc quan. (iii)~Qua đúng cổng của firmware, tức mặt từ 100~px và ô vuông lọt trong khung, chỉ còn 48 mặt thật và 3 khung giả. 22 khung giả
+kia là điện thoại kề sát ống kính, máy bảo lùi lại và không chấm, nên 25/25 là kết quả của cổng và mô hình cộng lại. (iv)~Vùng cắt đạt
+được của hai phía gần như tách rời: mặt thật 2,0--2,7 lần, khung giả 0,8--1,7 lần. Một phần của khe có thể đến từ cỡ mặt, và chỉ khung
+giả chụp ở xa mới tách được.
+
+Điểm của cùng một mặt thật dao động theo khung. Log của máy có 4 khung dưới ngưỡng ở mặt 190--209~px, điểm 0,023--0,424, mà lần thử kế
+tiếp đều qua, chậm nhất 1,12~s sau. Cắt lại 17 khung đủ chỗ với vùng nhỏ dần cho 1/17 khung dưới ngưỡng ở 2,0, 1,8 và 1,6 lần, 2/17 ở
+1,4 lần và 6/17 ở 1,2 lần. Trong dải 1,6--2,0 lần máy gặp, thiếu ngữ cảnh vì vậy không giải thích được bốn khung đó. Máy xử lý bằng cách
+thử 3 lần mới báo giả mạo, và phía giả không đổi vì khung giả đứng dưới 0,010. Tập OV5640 không có mặt thật nào trên khoảng 198~px, nên
+chưa loại hẳn được trường hợp mặt rất gần.
+
+Trên tập công khai ở Bảng~\ref{tab:gia_cong_khai} mô hình yếu hơn nhiều. Ở ngưỡng 0,5 trên CelebA-Spoof, APCER là 0,3769 và BPCER là
+0,1690, tức 37,7\% mẫu tấn công lọt và 16,9\% mặt thật bị chặn. NUAA gần như tuyệt đối, nhưng đó là ảnh in chụp bằng webcam, không thay
+được khung giấy từ OV5640. Mặt nạ 3D của Axon nằm ngoài phạm vi phòng thủ của một mô hình nhìn một khung RGB, và AUC 0,7654 chỉ để đọc.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Chống giả mạo trên các tập công khai, hàng đang nạp.}
+\label{tab:gia_cong_khai}
+\begin{tabular}{|L{3.4cm}|L{5.6cm}|c|c|}
+\hline
+\textbf{Tập} & \textbf{Đặc điểm} & \textbf{AUC} & \textbf{EER} \\
+\hline
+CelebA-Spoof & Thước chính của thang & 0,8242 & 0,2612 \\
+\hline
+LCC-FASD & Ảnh và video do đám đông thu & 0,8762 & 0,2003 \\
+\hline
+SynthASpoof & Mặt tổng hợp, in và phát lại & 0,9080 & 0,1714 \\
+\hline
+NUAA & Ảnh in, webcam & 0,9999 & 0,0023 \\
+\hline
+Axon & Có mặt nạ 3D & 0,7654 & 0,2847 \\
+\hline
+\end{tabular}
+\end{table}
+
 \section{Đánh giá FAR và FRR với nhiều người}
 \label{section:5.5}
+
+Phép chạy thử với nhiều người đứng trước máy chưa thực hiện, nên đồ án chưa có FAR và FRR trên OV5640 của bản đang chạy. Máy mới giữ
+mẫu của vài người, chưa đủ cho phép đo này. Mục này báo số đo trên tập công khai, ngưỡng 0,45 đang dùng, và cách đo trên máy.
+
+Ngưỡng 0,45 đặt dựa trên 18.998 cặp khác người của sáu benchmark, chạy bằng mô phỏng của hàng \texttt{qat}, cosine của vector đặc trưng
+không lật ảnh. Bảng~\ref{tab:nguong_khop} cho thấy từ 0,40 trở lên không còn cặp nào lọt, và cặp khác người cao nhất có điểm 0,383. Ngưỡng
+0,45 cách cặp đó 0,067 và giữ 91,6--93,5\% cặp cùng người ở hai tập chính diện. Các tập lệch tuổi hay lệch tư thế thấp hơn hẳn: 0,309 ở
+CFP-FP, nơi một ảnh nghiêng 90 độ. Hai kiểu sai không cùng giá: loại oan thì người đứng thêm một nhịp, nhận nhầm thì mở thanh chắn và ghi
+công cho người khác.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Người lạ lọt trên 18.998 cặp và tỉ lệ cùng người qua theo ngưỡng cosine.}
+\label{tab:nguong_khop}
+\begin{tabular}{|c|c|c|c|c|c|c|c|}
+\hline
+\textbf{Ngưỡng} & \textbf{Lọt} & \textbf{LFW} & \textbf{CFP-FF} & \textbf{CALFW} & \textbf{CFP-FP} & \textbf{AgeDB} & \textbf{CPLFW} \\
+\hline
+0,30 & 8 & 0,990 & 0,987 & 0,885 & 0,697 & 0,829 & 0,656 \\
+\hline
+0,35 & 3 & 0,981 & 0,976 & 0,842 & 0,580 & 0,717 & 0,571 \\
+\hline
+0,40 & 0 & 0,967 & 0,954 & 0,778 & 0,447 & 0,570 & 0,470 \\
+\hline
+0,45 & 0 & 0,935 & 0,916 & 0,689 & 0,309 & 0,402 & 0,363 \\
+\hline
+0,50 & 0 & 0,889 & 0,867 & 0,577 & 0,186 & 0,244 & 0,260 \\
+\hline
+0,60 & 0 & 0,686 & 0,657 & 0,290 & 0,037 & 0,049 & 0,080 \\
+\hline
+\end{tabular}
+\end{table}
+
+Không cặp nào lọt trong 18.998 chỉ chặn tỉ lệ mỗi phép so dưới khoảng $1{,}6\cdot10^{-4}$, chưa đủ cho máy so một với nhiều. Đồ án vì vậy so
+mọi cặp khác tên của LFW: 7.701 ảnh, 4.281 người, 29.640.749 cặp, gấp 1.560 lần phép đo trên. Bảng~\ref{tab:lfw_moi_cap} và
+Hình~\ref{fig:nguong_far} là kết quả, cận trên tính theo Clopper-Pearson một phía. Từ 0,40 lên 0,45 tỉ lệ lọt giảm 3,7 lần mà cặp cùng người
+chỉ mất 3,2 điểm phần trăm. Từ 0,45 lên 0,50 tỉ lệ lọt chỉ giảm 1,4 lần mà cặp cùng người mất 5,0 điểm phần trăm. Ngưỡng 0,45 nằm ở
+khúc gãy đó.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Mọi cặp khác tên của LFW theo ngưỡng cosine.}
+\label{tab:lfw_moi_cap}
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+\textbf{Ngưỡng} & \textbf{Cặp lọt} & \textbf{Mỗi phép so} & \textbf{Cận trên 95\%} & \textbf{Cùng người qua} \\
+\hline
+0,30 & 6.847 & $2{,}31\cdot10^{-4}$ & $2{,}36\cdot10^{-4}$ & 0,991 \\
+\hline
+0,35 & 1.153 & $3{,}89\cdot10^{-5}$ & $4{,}08\cdot10^{-5}$ & 0,986 \\
+\hline
+0,40 & 172 & $5{,}80\cdot10^{-6}$ & $6{,}59\cdot10^{-6}$ & 0,971 \\
+\hline
+0,45 & 46 & $1{,}55\cdot10^{-6}$ & $1{,}98\cdot10^{-6}$ & 0,939 \\
+\hline
+0,50 & 34 & $1{,}15\cdot10^{-6}$ & $1{,}53\cdot10^{-6}$ & 0,889 \\
+\hline
+0,60 & 15 & $5{,}06\cdot10^{-7}$ & $7{,}79\cdot10^{-7}$ & 0,678 \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\footnotesize]
+\foreach \x/\l in {0/{0,30},1.8/{0,40},2.7/{0,45},3.6/{0,50},5.4/{0,60}} {
+  \draw[black!20] (\x,0) -- (\x,3.2);
+  \node[below] at (\x,0) {\l};
+}
+\foreach \y/\l in {0/{0,6},0.8/{0,7},1.6/{0,8},2.4/{0,9},3.2/{1,0}} {
+  \draw[black!20] (0,\y) -- (5.4,\y);
+  \node[left] at (0,\y) {\l};
+}
+\draw (0,0) -- (0,3.2);
+\draw (0,0) -- (5.4,0);
+\draw[dashed] (2.7,0) -- (2.7,3.2);
+\draw[line width=1pt] (0,3.128) -- (0.9,3.088) -- (1.8,2.968) -- (2.7,2.712) -- (3.6,2.312) -- (5.4,0.624);
+\foreach \x/\y in {0/3.128,0.9/3.088,1.8/2.968,2.7/2.712,3.6/2.312,5.4/0.624} {
+  \fill (\x,\y) circle (1.5pt);
+}
+\node[anchor=north east] at (2.65,2.68) {0,939};
+\node[above] at (2.7,3.25) {Cặp cùng người qua};
+\node at (2.7,-0.72) {Ngưỡng cosine};
+\begin{scope}[xshift=7.6cm]
+\foreach \x/\l in {0/{0,30},1.8/{0,40},2.7/{0,45},3.6/{0,50},5.4/{0,60}} {
+  \draw[black!20] (\x,0) -- (\x,3.2);
+  \node[below] at (\x,0) {\l};
+}
+\foreach \y/\l in {0/{-7},0.8/{-6},1.6/{-5},2.4/{-4},3.2/{-3}} {
+  \draw[black!20] (0,\y) -- (5.4,\y);
+  \node[left] at (0,\y) {$10^{\l}$};
+}
+\draw (0,0) -- (0,3.2);
+\draw (0,0) -- (5.4,0);
+\draw[dashed] (2.7,0) -- (2.7,3.2);
+\draw[line width=1pt] (0,2.691) -- (0.9,2.072) -- (1.8,1.410) -- (2.7,0.952) -- (3.6,0.849) -- (5.4,0.563);
+\foreach \x/\y in {0/2.691,0.9/2.072,1.8/1.410,2.7/0.952,3.6/0.849,5.4/0.563} {
+  \fill (\x,\y) circle (1.5pt);
+}
+\node[anchor=south west] at (2.75,1.0) {$1{,}55\cdot10^{-6}$};
+\node[above] at (2.7,3.25) {Cặp khác tên lọt, mỗi phép so};
+\node at (2.7,-0.72) {Ngưỡng cosine};
+\end{scope}
+\end{tikzpicture}
+\caption{Đánh đổi theo ngưỡng cosine trên LFW, thang log ở hình phải. Đường đứt là ngưỡng 0,45.}
+\label{fig:nguong_far}
+\end{figure}
+
+Cột lọt đếm theo nhãn, mà nhãn LFW có lỗi. Trong 46 cặp lọt ở 0,45 có 10 cặp đã được errata của LFW ghi là một người, 16 cặp là hai cách
+ghi tên một nhân vật, 20 cặp là hai tên khác hẳn nhau. Tính riêng 20 cặp cuối, tỉ lệ mỗi phép so là $6{,}75\cdot10^{-7}$, cận trên
+$9{,}80\cdot10^{-7}$. Bảng~\ref{tab:nguoi_la} quy số này ra máy. Đây là phép tính, không phải phép đo: máy có $N$ người giữ $3N$ mẫu và thử tối đa
+2 khung, nên một người lạ chịu nhiều nhất $6N$ phép so, và phép cộng coi các phép so đó độc lập nên ra mức trên. Một bảng mẫu đầy là
+1.000 mẫu, khoảng 333 người.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Tỉ lệ một người lạ bị nhận nhầm trong một lượt, tính từ Bảng~\ref{tab:lfw_moi_cap}.}
+\label{tab:nguoi_la}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Người đăng ký} & \textbf{20 cặp} & \textbf{Cận 95\%, 20 cặp} & \textbf{Cận 95\%, 46 cặp} \\
+\hline
+10 & 0,004\% & 0,006\% & 0,012\% \\
+\hline
+50 & 0,020\% & 0,029\% & 0,060\% \\
+\hline
+100 & 0,040\% & 0,059\% & 0,119\% \\
+\hline
+333 & 0,135\% & 0,196\% & 0,396\% \\
+\hline
+\end{tabular}
+\end{table}
+
+LFW là ảnh báo chí của người nổi tiếng, gần chính diện, khác khung OV5640, nên các số trên không thay được FAR đo trên máy. Danh tính trùng
+giữa tập huấn luyện MS1M và LFW chưa được kiểm, và nếu có trùng thì số trên lạc quan. Về phía FRR, trên OV5640 mới có một phép đo với một
+người, 50 khung, mô hình nhận diện trước đó chạy float trên máy tính: ở 0,45 nhận 41/49 khung, các khung rớt chủ yếu là mặt chìm trong
+bóng. Số này không dùng cho hàng \texttt{qat}.
+
+Phép đo trên máy cần ba việc. Đăng ký nhiều người bằng đúng luồng ba tư thế. Mỗi người chấm nhiều lượt trong dải 0,25--0,42~m, ghi số
+lượt nhận đúng, nhận sai và từ chối để tính FRR. Người chưa đăng ký đứng trước máy để tính FAR, kèm khung giấy và thẻ cho nhánh chống
+giả mạo. Khung thu được phải lưu có nhãn, vì phép thử trực tiếp không kết luận được số.
 
 \section{Kiểm thử backend và kiểm thử tải}
 \label{section:5.6}
 
+\subsection{Kiểm thử e2e}
+\label{section:5.6.1}
+
+Bộ e2e gồm 78 tệp, chạy bằng \texttt{make be-e2e} như CI: clone sạch, PostgreSQL 16, Redis 7 và EMQX 6.3.1 trong container vứt đi, ba tệp
+chạy song song. Lượt mới nhất qua 971/971 ca, gồm 905 ca chạy song song trong 112,2~s và 66 ca phải chạy riêng trong 57,9~s vì đổi trạng thái
+toàn cục. Bảng~\ref{tab:e2e} gom các ca theo nhóm.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các ca e2e của backend theo nhóm.}
+\label{tab:e2e}
+\begin{tabular}{|L{3.8cm}|c|L{8.6cm}|}
+\hline
+\textbf{Nhóm} & \textbf{Số ca} & \textbf{Nội dung} \\
+\hline
+Xác thực và phiên & 110 & Đăng nhập, TOTP, đặt và đổi mật khẩu, khóa tài khoản, giới hạn truy cập, kiểm biến môi trường \\
+\hline
+Phân quyền và vết & 97 & Vai theo route, phạm vi theo dòng, pháp nhân, chặn tự duyệt, nhật ký kiểm toán \\
+\hline
+Máy chấm công & 146 & Duyệt máy, phiên broker, đồng bộ danh sách người, đăng ký mẫu, lệnh, OTA, lượt chấm \\
+\hline
+Ca, công, đơn từ & 105 & Ngày công, nghỉ phép, số dư phép, hộp duyệt, ranh giới ngày theo giờ công ty \\
+\hline
+Lương & 133 & Kỳ lương, thuế, bảo hiểm, tạm ứng, quyết toán, khiếu nại, phiếu lương \\
+\hline
+Hồ sơ nhân sự & 241 & Nhân viên, nhập tệp, danh mục, tài liệu, nhận việc, nghỉ việc, tìm kiếm, phân trang \\
+\hline
+Thông báo và vận hành & 139 & Chuông, đẩy, thời gian thực, quét định kỳ, sao lưu \\
+\hline
+Tổng & 971 & \\
+\hline
+\end{tabular}
+\end{table}
+
+Về phân quyền, \texttt{check\_routes.py} kiểm 260 route và không route nào thiếu khai báo vai. Các ca e2e kiểm từng route chỉ mở cho đúng vai,
+người ngoài phạm vi không đọc được dòng dữ liệu kể cả khi hỏi thẳng bằng id, và quản lý xem được công việc của cấp dưới mà không xem được
+lương. Tám ca chặn tự quyết: không ai duyệt đơn của chính mình, trả lời khiếu nại về phiếu lương của mình, duyệt người phụ thuộc làm giảm
+thuế của mình hay tự ký hợp đồng của mình.
+
+Về tính công, các ca kiểm những tình huống dễ sai: đơn nghỉ duyệt sau khi ngày đã dựng đổi ngày vắng thành ngày nghỉ, nửa ngày phép chỉ tính
+muộn và sớm ở nửa còn lại, lượt chấm tới muộn làm dựng lại đúng ngày đó, giờ của máy sai xa bị đánh dấu nghi ngờ và không vào ngày công, và
+00:30 giờ Việt Nam là ngày mới ở cả mã lẫn SQL.
+
+Về tính lương, 16 ca của phép tính kiểm thuế lũy tiến theo từng lát, liên tục tại mọi ranh giới bậc và khớp công thức rút gọn của cơ quan
+thuế, mức đóng bảo hiểm dừng ở 20 lần mức tham chiếu, nghỉ không lương đủ 14 ngày thì không đóng, tạm ứng trừ sau thuế, và thu nhập trừ mọi
+khoản bằng đúng thực lĩnh. Điểm lệch về tiền làm thêm giờ ở Mục~\ref{section:4.5.5} vẫn còn, nên ca kiểm thử phần này khớp luật cũ.
+
+Ngoài backend, 455 ca pytest của phần học máy qua trong 50,8~s, và \texttt{check\_error\_codes.py} kiểm 222 mã lỗi khớp giữa backend và hai
+tệp ngôn ngữ của dashboard. Firmware có 266 ca Unity trong 29 ứng dụng, chạy riêng từng ứng dụng trên board. Bộ vector vàng kiểm sáu hàm hậu xử lý
+C++ với bản Python qua 24 ca: năm hàm khớp tuyệt đối hoặc tới sáu chữ số, \texttt{align\_face} lệch tối đa 2 bậc trên thang 0--255 vì board
+chỉ có float32.
+
+\subsection{Kiểm thử tải}
+\label{section:5.6.2}
+
+Dữ liệu quy mô sinh bằng \texttt{make be-demo}: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 dòng ngày công, 51.209 phiếu lương, 59.731 đơn,
+879~MB. \texttt{check\_plans.py} chạy EXPLAIN 11 câu đọc nặng trên bộ dữ liệu này và không báo lỗi nào. Câu gộp công một tháng quét đúng một mảnh
+tháng của \texttt{AttendanceDay}, các bảng lớn khác đi bằng chỉ mục. Phép kiểm này đọc kế hoạch truy vấn chứ không đo thời gian, nên nó ít phụ thuộc máy chạy
+hơn các số ở Bảng~\ref{tab:quy_mo}.
+
+Bảng~\ref{tab:quy_mo} là các phép đo thời gian ở quy mô 5.000 người. Mọi số trong bảng đo trên máy phát triển 20 lõi, PostgreSQL chạy trong Docker
+qua WSL2. Máy chủ thật có 1 vCPU và 2~GB RAM, nên số tuyệt đối không áp được cho máy chủ. Thứ bảng chứng minh được là tỉ lệ giữa hai cách làm.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Phép đo ở quy mô 5.000 nhân viên, trên máy phát triển.}
+\label{tab:quy_mo}
+\begin{tabular}{|L{5.0cm}|L{4.2cm}|L{4.2cm}|}
+\hline
+\textbf{Phép đo} & \textbf{Đối chứng} & \textbf{Cách đồ án dùng} \\
+\hline
+Tổng hợp công tháng, 5.002 người, 300.001 lượt & Gom ở Node: 3.245~ms, heap 586~MB & Gộp ở PostgreSQL: 82~ms, heap thêm 3~MB \\
+\hline
+Trang 1.000 của 300.001 lượt, 50 dòng & \texttt{OFFSET}: 7,26~ms & Con trỏ: 1,36~ms \\
+\hline
+Đếm tổng 300.001 lượt & Đếm đủ: 11,63~ms & Đếm có trần: 2,20~ms \\
+\hline
+Chèn một lượt giữa hai trang & \texttt{OFFSET} lặp 1 dòng & Con trỏ lặp 0 dòng \\
+\hline
+Chốt kỳ 5.000 phiếu, nhà cung cấp đẩy giả trả lời sau 20~ms & Một câu \texttt{INSERT}: vượt trần 65.535 tham số, 0 dòng & Lô 1.000 dòng: 3.446~ms, 5.000 dòng, đẩy xong sau 9,1~s \\
+\hline
+Số trên chuông, 558.223 dòng thông báo & & 2,4~ms với 11.675 dòng chưa đọc \\
+\hline
+\end{tabular}
+\end{table}
+
+Thời gian phản hồi p50, p95 của API khi nhiều phiên gọi cùng lúc chưa đo. Số này chỉ có nghĩa khi đo trên chính VPS, mà VPS đang phục vụ
+hệ thống thật, nên phép đo cần một cơ sở dữ liệu riêng và một khung giờ không ai dùng. Việc này còn thiếu so với nhiệm vụ kiểm thử tải.
+
 \section{Kiểm thử toàn hệ thống}
 \label{section:5.7}
 
+\subsection{Mất mạng và đồng bộ dữ liệu}
+\label{section:5.7.1}
+
+Hàng đợi gửi lên qua 11/11 ca trên board với đường mạng và đường lưu giả, gồm ca mất mạng: 30 bản ghi dồn lại, nối lại thì đủ 30 đúng thứ tự.
+Với EMQX thật, 604 bản ghi tồn xả hết qua TLS, QoS 1, không lỗi xác thực nào. Broker qua 6/6 phép thử: QoS 1 khứ hồi đúng từng byte, retained
+tới người nối muộn, LWT sau khi giết cứng client, retained \texttt{status} bị LWT ghi đè, wildcard của backend và một bản tin đúng hợp đồng.
+Phía máy chủ, cùng một lượt gửi hai lần chỉ thành một dòng và một lần báo lên dashboard, và lượt của người không có trên máy bị bỏ.
+
+Lưu trữ qua 20/21 ca trên board: cắt đuôi dở 16~B, \texttt{cursor.bin} hỏng đọc từ bản dự phòng, xoay vòng đúng ở 262.112~B, xóa tệp khi con
+trỏ vượt qua. Ca còn lại là rút điện 20 lần, cần thao tác tay và chưa chạy. Nghiệm thu ngắt mạng 1 giờ trên máy thật, đối chiếu số bản ghi với
+máy chủ, cũng chưa chạy. NF5 vì vậy mới đạt ở mức ca kiểm thử.
+
+Đồng bộ danh sách người có 34 ca e2e, gồm gửi lại toàn bộ theo yêu cầu, máy ở hai mô hình khác nhau, và mọi bản tin đúng hợp đồng. Trên board,
+đồng bộ 200 người và đăng ký 20 người chưa thử.
+
+\subsection{Cập nhật OTA}
+\label{section:5.7.2}
+
+Firmware 0.9.7 lên 0.9.8 qua 74~s. Bản mới tự xác nhận ở giây 30, máy chủ đọc \texttt{fwOnTrial = false} và không có \texttt{OTA\_ROLLED\_BACK}.
+Đường tải thật chạy qua các bản từ 0.9.2 tới 0.9.9. Bốn bản kê khai firmware sai bị từ chối đúng tên trong dưới 1~s mà broker không rớt, và năm bản
+kê khai mô hình sai bị từ chối mà không lần nào xóa phân vùng dự phòng. Ứng dụng \texttt{ota} có 9 ca trên board, e2e \texttt{releases} có 32 ca.
+
+Phép xóa \texttt{models\_0} kiểm đường hỏng thật: máy chạy tiếp không có AI, khởi động lại một lần trong 60~s, bảng mẫu giữ đủ 6 mẫu, máy chủ nhận
+\texttt{MODEL\_LOAD\_FAILED}. Ghi lại \texttt{models\_0} với sha256 khớp thì máy lên đủ mẫu và chạy lại mô hình. Bốn phép thử OTA còn lại ở
+Bảng~\ref{tab:chua_do} chưa chạy, trong đó có bản firmware cố ý hỏng tự quay về, nên F9 mới đạt một phần.
+
+\subsection{Giao diện điện thoại}
+\label{section:5.7.3}
+
+Bản dựng production đi qua 93 trang của năm vai với 0 lỗi console và 0 lần CSP chặn. Trên 99 trang ở 1.440~px, 408 menu, hộp thoại và ô chọn mở
+được, không trang nào sập. Ở 390~px với mạng 150~ms, 1,6~Mbps và CPU chậm 4 lần, khung điện thoại hiện lúc 0,70~s khi mở lần đầu và 0,17~s khi mở
+lại. Trang của nhân viên đạt 89 điểm Lighthouse mobile, CLS 0, ở 412~px cùng điều kiện mạng. Thông báo đẩy mã hóa dài 210~byte và không mang tên hay
+số tiền. Đơn gửi khi mất mạng có 6 ca e2e, gửi lại bằng khóa do máy sinh nên không thành hai đơn.
+
+Các số trên đo bằng trình duyệt headless trên laptop có giới hạn mạng và CPU. Số trên máy Android tầm thấp thật chưa có.
+
+\subsection{Đối chiếu với yêu cầu}
+\label{section:5.7.4}
+
+Bảng~\ref{tab:chua_do} liệt kê các phép thử đã có kế hoạch mà chưa chạy, kèm thứ còn thiếu.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các phép thử chưa thực hiện.}
+\label{tab:chua_do}
+\begin{tabular}{|L{7.6cm}|L{6.5cm}|}
+\hline
+\textbf{Phép thử} & \textbf{Còn thiếu} \\
+\hline
+FAR, FRR với nhiều người trên máy & Người tham gia, khung giấy và thẻ \\
+\hline
+p50, p95 của API dưới tải trên VPS & Cơ sở dữ liệu riêng, khung giờ không ai dùng \\
+\hline
+Ngắt mạng 1 giờ, đối chiếu số bản ghi & Một phiên trên máy thật có người chấm \\
+\hline
+Rút điện 20 lần & Một phiên thao tác tay với ứng dụng \texttt{storage} \\
+\hline
+Chạy liên tục 24 giờ & Một lượt \texttt{soak} trên máy \\
+\hline
+Dòng thật, thời gian chạy pin & Đồng hồ đo dòng \\
+\hline
+OTA mô hình thật qua dashboard & Một phiên trên máy thật \\
+\hline
+Bản firmware cố ý hỏng tự quay về & Một bản phát hành cố ý hỏng \\
+\hline
+Rút mạng giữa lúc OTA & Một phiên trên máy thật \\
+\hline
+Ba lần OTA liên tiếp & Một phiên trên máy thật \\
+\hline
+Đăng ký 20 người, đồng bộ 200 người trên máy & Danh sách người giao từ máy chủ \\
+\hline
+Xem trước dưới đèn huỳnh quang 50~Hz & Phòng có đèn huỳnh quang \\
+\hline
+Tải trang trên máy Android tầm thấp & Một máy tầm thấp, mạng 3G \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:doi_chieu_f} đối chiếu yêu cầu chức năng, Bảng~\ref{tab:doi_chieu_nf} đối chiếu yêu cầu phi chức năng. Đạt nghĩa là có bằng chứng ở
+các mục trên. Một phần nghĩa là có bằng chứng nhưng còn phép thử chưa chạy.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đối chiếu kết quả với yêu cầu chức năng.}
+\label{tab:doi_chieu_f}
+\begin{tabular}{|c|L{1.9cm}|L{11.0cm}|}
+\hline
+\textbf{Mã} & \textbf{Kết quả} & \textbf{Bằng chứng và phần còn thiếu} \\
+\hline
+F1 & Một phần & Máy chạy đủ luồng, lượt chấm về máy chủ qua TLS; chưa thử với nhiều người \\
+\hline
+F2 & Một phần & Chặn 25/25 khung màn hình; chưa có khung ảnh in từ OV5640 \\
+\hline
+F3 & Một phần & 34 ca đồng bộ danh sách, 16 ca đăng ký mẫu; chưa thử 20 người trên máy \\
+\hline
+F4 & Đạt & Máy thức theo ToF và tự nghỉ, chạy trên máy thật \\
+\hline
+F5 & Một phần & 11/11 ca gửi lại, 604 bản ghi xả qua TLS; chưa ngắt mạng 1 giờ \\
+\hline
+F6 & Một phần & Lệnh mở từ dashboard về \texttt{DONE}, tiếng báo chạy; servo đặt trên bàn, chưa có thanh chắn \\
+\hline
+F7 & Đạt & Duyệt máy thật qua dashboard production, 13 ca e2e \\
+\hline
+F8 & Một phần & \texttt{OPEN\_DOOR}, \texttt{SET\_CONFIG}, \texttt{ROTATE\_TOKEN}, \texttt{DIAGNOSTICS} về \texttt{DONE}; \texttt{SET\_ACTIVE\_SLOT} chưa thử trên máy \\
+\hline
+F9 & Một phần & OTA firmware 74~s, 32 ca e2e; chưa OTA mô hình thật, chưa có bản hỏng tự quay về \\
+\hline
+F10 & Đạt & 241 ca hồ sơ, 97 ca phân quyền \\
+\hline
+F11 & Một phần & 105 ca công và đơn; chưa có ca làm qua nửa đêm \\
+\hline
+F12 & Đạt & 105 ca công và đơn \\
+\hline
+F13 & Một phần & 133 ca lương; tiền làm thêm giờ còn lệch văn bản mới \\
+\hline
+F14 & Đạt & Trang điện thoại đo ở 390~px, 93 trang không lỗi \\
+\hline
+F15 & Đạt & Đẩy 210~byte, đọc lại dữ liệu đã tải, 6 ca đơn khi mất mạng \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đối chiếu kết quả với yêu cầu phi chức năng.}
+\label{tab:doi_chieu_nf}
+\begin{tabular}{|c|L{1.9cm}|L{11.0cm}|}
+\hline
+\textbf{Mã} & \textbf{Kết quả} & \textbf{Bằng chứng và phần còn thiếu} \\
+\hline
+NF1 & Một phần & 353,6~ms lúc rảnh; 406,2~ms có tải xem trước, vượt 360~ms \\
+\hline
+NF2 & Đạt & Đáy 28.675~B qua 16 phút, ba mô hình 2.115,8~KB; chưa có lượt 24 giờ \\
+\hline
+NF3 & Một phần & AP 0,9544; chặn 25/25; nhận diện sụt 3,7\%, không đạt mức 1\% \\
+\hline
+NF4 & Đạt & Bản tin không có trường ảnh; mẫu lưu bằng AES-256-GCM, có ca e2e kiểm \\
+\hline
+NF5 & Một phần & Gửi lại chỉ thành một dòng; rút điện và ngắt mạng dài chưa chạy \\
+\hline
+NF6 & Một phần & TLS, JWT riêng từng máy, phạm vi theo dòng, TOTP; Secure Boot và mã hóa flash chưa bật \\
+\hline
+NF7 & Một phần & 5.006 người, 11 câu truy vấn không lỗi, 17 ca phân trang; chưa có p50, p95 dưới tải trên VPS \\
+\hline
+NF8 & Đạt & Hai ngôn ngữ ở máy và web, thiếu bản dịch là lỗi lúc build \\
+\hline
+NF9 & Đạt & Một ESP32-S3 và các module bán sẵn; chưa lập bảng giá \\
+\hline
+\end{tabular}
+\end{table}
+
+\clearpage
 \section{Các giải pháp và đóng góp nổi bật}
 \label{section:5.8}
+
+Mục này gom bảy giải pháp đồ án tự làm. Mỗi giải pháp nêu vấn đề, cách giải và kết quả đo. Bảng~\ref{tab:dong_gop} tóm tắt cả bảy.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các giải pháp nổi bật của đồ án.}
+\label{tab:dong_gop}
+\begin{tabular}{|L{4.3cm}|L{4.6cm}|L{4.6cm}|}
+\hline
+\textbf{Giải pháp} & \textbf{Vấn đề} & \textbf{Kết quả} \\
+\hline
+Kernel ESP-DL khớp từng bit & Đồ thị chưa vá mất 444,8~ms & 353,6~ms, nhanh hơn TFLite Micro + esp-nn 10,51 lần \\
+\hline
+Chọn lượng tử bằng thước của máy & AUC không thấy mặt thật bị mất & 33 hàng qua một luật, loại hàng giữ 49/62 mặt thật \\
+\hline
+Chống giả mạo cho OV5640 & Mô hình tự huấn luyện AUC 0,6473 trên khung thật & AUC 1,0000, giữ 59/62, chặn 25/25 trên tập OV5640 \\
+\hline
+Giữ RAM nội cho Wi-Fi và DMA & Ba mô hình lấy 94~KB, TLS đòi đệm liền & Đáy 28.675~B khi có TLS \\
+\hline
+Lượt chấm không mất, không trùng & Mạng giao ít nhất một lần, điện cắt giữa lúc ghi & 604 bản ghi xả qua TLS, gửi lại chỉ một dòng \\
+\hline
+Cập nhật từ xa không làm chết máy & Gói mô hình hỏng vẫn boot được & OTA 74~s, xóa \texttt{models\_0} máy vẫn chạy và báo lỗi \\
+\hline
+Nghiệp vụ trên máy chủ nhỏ & Gom ở Node lấy 586~MB heap & Gộp ở PostgreSQL thêm 3~MB, 82~ms \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Kernel ESP-DL khớp từng bit}
+\label{section:5.8.1}
+
+Một lượt chấm đi qua ba mô hình, tổng 287,3 triệu MAC, trên chip 240~MHz, và NF1 cho 360~ms. TFLite Micro với esp-nn mất 3.717,7~ms. ESP-DL tốt hơn hẳn nhưng
+đồ thị chưa vá vẫn mất 444,8~ms. Bảng~\ref{tab:gio_theo_op} chỉ ra thời gian nằm ở đâu, đo bằng \texttt{profile\_module} của esp-dl nên tổng lệch thời gian
+một khung vài phần trăm. Tích chập chiếm 69--75\%, activation chạy riêng chiếm 17--24\%. Soi tiếp từng module thì nhiều mẫu đi đường chậm: tích chập
+1$\times$1 đọc lại trọng số từ PSRAM ở mỗi điểm, khối ECA tách thành năm phép toán nhỏ, tích chập đầu 3 kênh không căn 16 kênh.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Thời gian theo loại phép toán của đồ thị chưa vá (ms).}
+\label{tab:gio_theo_op}
+\begin{tabular}{|L{4.6cm}|c|c|c|}
+\hline
+\textbf{Loại phép toán} & \textbf{Phát hiện} & \textbf{Chống giả mạo} & \textbf{Nhận diện} \\
+\hline
+Tích chập & 43,3 & 64,3 & 221,9 \\
+\hline
+Activation chạy riêng & 15,2 & 14,5 & 51,1 \\
+\hline
+Còn lại & 4,7 & 6,4 & 28,1 \\
+\hline
+Tổng & 63,2 & 85,2 & 301,1 \\
+\hline
+\end{tabular}
+\end{table}
+
+Đồ án không sửa mã nguồn esp-dl mà thêm phép toán từ bên ngoài. Mỗi phép toán gồm một bản vá Python thay mẫu trên đồ thị lúc xuất tệp và một module C++ đăng ký
+tên đó với ESP-DL, phần tính nặng viết bằng lệnh PIE. Luật giữ một bản vá là chip phải khớp mô phỏng từng bit trên khung OV5640 thật và thời gian phải giảm. Luật
+này tách tốc độ khỏi chất lượng: bản vá giữ nguyên số nguyên không đổi độ chính xác nên không phải chấm lại, chỉ bản vá làm tròn mới phải qua thang. Để mô phỏng
+khớp được, phần số thực của mô phỏng chép theo mã máy đọc bằng \texttt{objdump}, vì esp-dl build với \texttt{-ffast-math} nên trình biên dịch đã đổi thứ tự phép
+tính.
+
+Hình~\ref{fig:chuoi_toi_uu} là kết quả: 444,8~ms xuống 333,8~ms không đổi một bit, bộ chạy thật 349,3~ms. So với TFLite Micro + esp-nn, ESP-DL đã vá nhanh hơn
+10,51 lần, với 3,38 MAC mỗi chu kỳ so với 0,32. Giá phải trả là ảnh ứng dụng lớn gấp 3,3 lần, và các hợp đồng giữa bản vá với module gắn chặt với esp-dl 3.3.11,
+nâng phiên bản là phải soát lại cả bảy phép toán.
+
+\subsection{Chọn lượng tử bằng thước của máy}
+\label{section:5.8.2}
+
+Thước công khai và thứ máy cần có thể lệch nhau. Hàng gộp PReLU của chống giả mạo có AUC 0,8217 trên CelebA-Spoof, cao hơn mô hình float, và biến thể của nó chạy
+khoảng 39,6~ms so với 72,63~ms của hàng đã chọn. Nhìn thước công khai thì đó là hàng nên lấy. Trên khung OV5640 nó chỉ giữ 49/62 mặt thật, tức 21\% khung mặt thật
+bị chặn.
+
+Đồ án cố định ba thứ trước khi chạy thang: (i)~mỗi nhánh đi trọn bốn bậc kể cả khi bậc đầu đã đạt; (ii)~cửa chất lượng gồm cả thước công khai lẫn tập OV5640;
+(iii)~luật chọn viết thành lệnh \texttt{quant-choose}, nên hàng được chọn không phụ thuộc người đọc bảng. Thời gian lấy trên chip và độ chính xác lấy trên đồ thị đã
+vá, nên mọi số trong bảng là số của đúng tệp nạp lên máy.
+
+Đi trọn thang có giá trị rõ nhất ở nhánh khó. Nhận diện với \texttt{minmax} chỉ có TAR 0,607 trên CFP-FP, cách hiệu chuẩn tốt nhất lên 0,775, QAT lên 0,799. Với
+phát hiện, bậc 3 và bậc 4 không thêm gì, và bảng ghi lại điều đó để không ai phải thử lại.
+
+33 hàng của ba nhánh đi qua cùng một luật. Phát hiện đạt AP 0,9544 ở 31,58~ms. Chống giả mạo giữ 59/62 và chặn 25/25 ở 72,63~ms. Nhận diện không có hàng nào qua,
+luật không chọn được, đồ án lấy hàng chất lượng cao nhất và ghi NF3 không đạt ở nhánh này. Đổi lại, hàng \texttt{qat} chậm hơn \texttt{qat+fused\_prelu} 26,22~ms,
+và mọi mẫu khuôn mặt phải đăng ký lại sau khi nạp.
+
+\subsection{Chống giả mạo cho OV5640}
+\label{section:5.8.3}
+
+Mô hình tự huấn luyện đạt kết quả tốt trên tập công khai nhưng trên 85 khung OV5640 chỉ có AUC 0,6473, và để lọt 81,0\% khung giả khi chỉ cho chặn oan 5\%. Đo độ
+nét bề mặt chỉ ra nguyên nhân: trong tập huấn luyện ảnh giả nét hơn mặt thật, tỉ số thật trên giả 0,915, còn trên máy mặt thật nét hơn, tỉ số 1,591. Phép làm mờ là
+phép nhân nên giữ nguyên tỉ số, và không hiệu chỉnh mù nhãn nào lật được dấu. Bão hòa màu của mặt thật cũng lệch 1,82 lần, 0,6556 trên máy và 0,3606 trong tập huấn
+luyện. Mô hình càng khớp tập huấn luyện càng học chặt quan hệ ngược dấu đó.
+
+Đồ án bỏ hướng huấn luyện tiếp và chọn trọng số công khai bằng cách chấm trên đúng đường ảnh của chip. Bảng~\ref{tab:mo_hinh_cong_khai} là kết quả với mô hình
+float trên 87 khung. Cột thật mất là số mặt thật bị loại khi chặn hết khung giả. Hai mô hình của Minivision giữ đủ 62 mặt thật ở vùng cắt 2,7 lần. Phần lớn mô hình huấn
+luyện trên CelebA-Spoof mất từ 6 tới 34 mặt. facenox giữ đủ ở vùng cắt 1,5 lần, nhưng nó có 108,9 triệu MAC, gấp 2,6 lần V1SE, và ở vùng cắt 2,7 lần của firmware mất
+5 mặt.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Mô hình công khai trên 87 khung OV5640, float.}
+\label{tab:mo_hinh_cong_khai}
+\begin{tabular}{|L{5.2cm}|L{3.2cm}|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Huấn luyện trên} & \textbf{Vùng cắt} & \textbf{AUC} & \textbf{Thật mất} \\
+\hline
+MiniFASNetV1SE, Minivision & Bộ riêng & 2,7 & 1,0000 & 0/62 \\
+\hline
+MiniFASNetV2, Minivision & Bộ riêng & 2,7 & 1,0000 & 0/62 \\
+\hline
+facenox & CelebA-Spoof & 1,5 & 1,0000 & 0/62 \\
+\hline
+ModelScope FLRGB & Dữ liệu riêng & 2,7 & 0,9961 & 2/62 \\
+\hline
+Faceplugin & Không rõ & 2,7 & 0,9981 & 3/62 \\
+\hline
+hairymax \texttt{bin\_1.5\_128} & CelebA-Spoof & 1,5 & 0,9858 & 6/62 \\
+\hline
+OpenVINO \texttt{anti-spoof-mn3} & CelebA-Spoof & 1,0 & 0,9613 & 9/62 \\
+\hline
+DeePixBiS & NUAA & 1,0 & 0,7910 & 31/62 \\
+\hline
+hairymax \texttt{print-replay\_1.5\_128} & CelebA-Spoof & 1,5 & 0,9032 & 34/62 \\
+\hline
+\end{tabular}
+\end{table}
+
+Tín hiệu của nhóm mô hình đứng đầu nằm ở vành ngữ cảnh quanh mặt: cùng trọng số V2 ở vùng cắt 1,0 lần mất 21/64 mặt thật. Ô vuông trượt theo khung cho khe +0,553 giữa
+p5 mặt thật và p95 khung giả, còn chữ nhật kéo giãn của kho gốc chỉ +0,022, vì kéo giãn phá tỉ lệ viền máy. Giữa V1SE và V2, đồ án lấy V1SE vì khe INT8 +0,559 so với
++0,365.
+
+Hai quyết định nữa giữ mô hình đúng với dữ liệu đang có. Đồ án không căn bias theo tập OV5640: hằng số +5,0051 nâng mặt thật lên nhưng đẩy tờ tiền từ tối đa 0,321 lên
+0,41--0,99, vì bộ căn chỉ có màn điện thoại kề ống kính. Và vì điểm của một mặt thật có thể nhảy từ 0,023 lên 0,877 trong chưa đầy một giây, máy thử 3 lần mới báo giả
+mạo.
+
+Kết quả là AUC 1,0000, giữ 59/62 và chặn 25/25 trên tập OV5640, với cả bốn giới hạn đã nêu ở Mục~\ref{section:5.4}. Cách làm dùng lại được cho camera rẻ khác: chấm trên
+đúng đường ảnh của chip trước khi tin số của tập công khai.
+
+\subsection{Giữ RAM nội cho Wi-Fi và DMA}
+\label{section:5.8.4}
+
+RAM nội là tài nguyên khan nhất của máy. Wi-Fi và DMA của camera, màn hình cần nó, và NF2 yêu cầu đáy từ 24~KB. Ba mô hình để mặc định lấy 94~KB RAM nội, một phiên TLS
+mặc định đòi đệm vào 16~KB liền và đệm ra 4~KB, hai task mạng cần thêm 11~KB stack. Số trống cũng không nói hết: ở một lượt đo còn 32.655~B trống mà khối liền lớn nhất
+chỉ 22.516~B, vì 4.700~B nằm ở RTCRAM, nơi FreeRTOS không đặt được stack, và 4.636~B vỡ thành bảy khe giữa 289 khối đã cấp. Đồ án vì thế theo dõi cả đáy lẫn khối liền lớn
+nhất.
+
+Bảng~\ref{tab:doi_ram} là các thay đổi trả lại RAM nội. Trong các thay đổi đo cùng lượt, đệm bounce là thay đổi duy nhất trả về cả tổng trống lẫn khối liền, vì phần thu về nằm đúng trong vùng DMA
+nội và gộp được. Stack của task MQTT chuyển sang PSRAM thì tổng tăng nhưng khối liền nhỏ đi 256~B, vì khối điều khiển task vẫn ở RAM nội.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các thay đổi trả lại RAM nội.}
+\label{tab:doi_ram}
+\begin{tabular}{|L{5.6cm}|L{4.3cm}|L{3.6cm}|}
+\hline
+\textbf{Thay đổi} & \textbf{Thu về} & \textbf{Giá phải trả} \\
+\hline
+Guard đẩy đối tượng nhỏ của ESP-DL sang PSRAM & RAM nội lấy khi dựng từ 94~KB về 0 & Thêm PSRAM \\
+\hline
+Đệm mbedTLS sang PSRAM & Đệm vào 16.384~B, đệm ra 4.096~B & Thêm PSRAM \\
+\hline
+Đệm bounce từ 48 xuống 32 dòng & Khối liền từ 5.364 lên 22.516~B & \\
+\hline
+Đệm bounce từ 32 xuống 20 dòng & Đáy thêm 15.280~B & Xem trước từ 14,16 xuống 13,88~fps \\
+\hline
+\end{tabular}
+\end{table}
+
+Máy chạy đủ giao diện và phiên TLS có đáy 28.675~B sau 16 phút, cao hơn mốc 4.099~B, và \texttt{bench\_mem} có TLS đo khối liền lớn nhất 31.744~B. Chi phí chuyển sang PSRAM:
+còn trống 1.788~KB, dưới mốc 2.000~KB đồ án đặt ra, và đây là chỗ chật nhất nếu thêm tính năng.
+
+\subsection{Lượt chấm không mất, không trùng}
+\label{section:5.8.5}
+
+MQTT QoS 1 giao ít nhất một lần, mạng có thể mất hàng giờ, điện có thể cắt giữa lúc ghi. Nếu máy coi lượt đã gửi khi chưa có ack thì lượt có thể mất. Nếu máy chủ không nhận
+ra bản trùng thì một lượt thành hai và đi thẳng vào ngày công, phiếu lương.
+
+Phía máy, nhật ký chỉ ghi thêm và mỗi bản ghi 48~B có CRC32. Con trỏ gửi chỉ đi sau PUBACK và ghi theo hai pha kèm bản dự phòng. Phía máy chủ, ràng buộc unique trên cặp máy
+và mã lượt bỏ bản trùng. Khóa này chỉ đúng khi \texttt{local\_id} không lặp, nên số lần khởi động lấy giá trị lớn nhất trong NVS, \texttt{boot.bin} và bản ghi cuối của nhật
+ký, và máy chủ trả lại mốc lớn nhất khi cấp JWT. Bảng~\ref{tab:tinh_huong_hong} là cách từng tình huống hỏng được xử lý và kiểm.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các tình huống hỏng của đường lượt chấm.}
+\label{tab:tinh_huong_hong}
+\begin{tabular}{|L{4.3cm}|L{5.0cm}|L{4.2cm}|}
+\hline
+\textbf{Tình huống} & \textbf{Hệ thống làm gì} & \textbf{Kiểm bằng} \\
+\hline
+Mất điện giữa lúc ghi & Cắt đuôi dở về đúng mốc ở lần ghi sau & Ca cắt đuôi 16~B trên board \\
+\hline
+\texttt{cursor.bin} hỏng & Đọc bản \texttt{.bak} & Ca trên board \\
+\hline
+Mất mạng, broker chết & Con trỏ đứng yên, bản ghi nằm trong nhật ký & 30 bản ghi về đủ, đúng thứ tự \\
+\hline
+Có ack nhưng chưa ghi được con trỏ & Gửi lại, máy chủ bỏ bản trùng & e2e gửi hai lần ra một dòng \\
+\hline
+Máy mất bộ nhớ NVS & Lấy mốc lớn nhất của ba chỗ và của máy chủ & Ca e2e mốc của máy chủ \\
+\hline
+\end{tabular}
+\end{table}
+
+Kết quả đo ở Mục~\ref{section:5.7.1}: 604 bản ghi xả qua TLS không lỗi, gửi lại chỉ thành một dòng. Phân vùng 4~MB giữ khoảng 87.000 bản ghi. Hai phép thử quyết định là rút
+điện 20 lần và ngắt mạng 1 giờ vẫn chưa chạy, nên chưa thể nói không mất lượt nào trên máy thật.
+
+\subsection{Cập nhật từ xa không làm chết máy}
+\label{section:5.8.6}
+
+Máy đặt ở cổng, không cắm cáp. Một bản firmware hay gói mô hình hỏng mà máy không tự thoát được thì phải tới tận nơi nạp lại. Gói mô hình còn khó hơn firmware, vì nó boot được
+rồi không nhận ra ai.
+
+Đồ án có hai khe firmware và hai khe mô hình, đường ghi luôn nhắm khe đang không chạy. Mọi điều quyết được bằng số học đều quyết trước khi đụng flash: địa chỉ có đúng gốc API,
+digest có đúng dạng, ảnh có vừa khe, nên bản kê khai sai không tốn một lần xóa khe 3~MB. sha256 phải băm từ chính luồng byte đang tải, nên đồ án tải bằng
+\texttt{esp\_http\_client}, vì \texttt{esp\_https\_ota} ghi thẳng xuống khe và không cho thấy dữ liệu. Bản mới chạy ở trạng thái thử tới khi đủ 30~s và mô hình đã nạp. Gói mô
+hình không nạp được thì máy lùi khe đúng một lần, chốt bằng một khóa trong NVS, vì không có chốt thì hai gói cùng hỏng sẽ đá nhau mãi. Gói đang dùng hỏng ngoài lượt thử thì máy vẫn chạy tiếp
+không có AI và báo mã lỗi về máy chủ, để còn nhận được bản kế tiếp.
+
+OTA 0.9.7 lên 0.9.8 mất 74~s, bản mới tự xác nhận ở giây 30. Chín bản kê khai sai bị từ chối đúng tên. Xóa \texttt{models\_0} thì máy chạy tiếp, giữ đủ mẫu và báo
+\texttt{MODEL\_LOAD\_FAILED}. Phép thử bản firmware cố ý hỏng chưa chạy, nên đường tự quay về của bootloader mới được kiểm ở phía máy chủ bằng ca e2e.
+
+\subsection{Nghiệp vụ trên máy chủ nhỏ}
+\label{section:5.8.7}
+
+Hệ thống chạy trên VPS 1 vCPU, 2~GB, nên cách viết truy vấn quyết định phần mềm có sống được với 5.000 nhân viên hay không. Với 5.002 người và 300.001 lượt, gom ở Node kéo heap
+lên 586~MB cho một báo cáo, tức hơn một phần tư RAM của cả máy chủ.
+
+Đồ án đặt năm luật cho mọi truy vấn lớn. (i)~Số tổng hợp gộp ở PostgreSQL. (ii)~Ngày công chia mảnh theo tháng, truy vấn một tháng chỉ chạm một mảnh. (iii)~Danh sách dài đi bằng con
+trỏ trên cặp khóa có thứ tự toàn phần, nên trang 1.000 rẻ ngang trang đầu và lượt ghi xen giữa không làm lặp dòng. (iv)~Đếm có trần, quá trần thì giao diện đọc là hơn 10.000.
+(v)~Việc dài vào hàng đợi: lượt lương chia 500 người một lô, idempotent theo lượt và người, thông báo chốt kỳ ghi 1.000 dòng một lô rồi đẩy 50 lần song song ở nền.
+
+Con trỏ có một bẫy đáng ghi. Chỉ mục phải phủ đúng cặp khóa, và phép so phải thành điều kiện chỉ mục chứ không thành bộ lọc: dạng \texttt{ts < x OR (ts = x AND id < y)} mà ORM
+phát ra cho bộ lọc 14,98~ms, thêm một vế \texttt{ts <= x} trông thừa thì còn 0,99~ms, vì đó là vế thành được điều kiện chỉ mục.
+
+Gộp ở PostgreSQL mất 82~ms với heap thêm 3~MB, nhanh hơn 40 lần, nhưng thứ quyết định là bộ nhớ. Con trỏ giữ 1,36~ms ở trang 1.000. 11 câu đọc nặng không lỗi trên 5.006 người. Các
+tỉ lệ này đến từ máy phát triển, nên phần chưa chứng minh là thời gian phản hồi trên chính VPS (Mục~\ref{section:5.6.2}).
+
+Ba mô hình chạy một lượt trong 353,6~ms lúc rảnh và 406,2~ms khi có xem trước, nhanh hơn TFLite Micro + esp-nn 10,51 lần, với đáy RAM nội 28.675~B
+và 971/971 ca e2e qua. Hai yêu cầu không đạt trọn: NF1 ở điểm vận hành và nhận diện sụt 3,7\% sau lượng tử hóa. Các phép đo FAR, FRR với nhiều người và thời gian phản hồi dưới tải
+trên VPS còn thiếu, cùng các phép thử ở Bảng~\ref{tab:chua_do}. Phần Kết luận tổng hợp những việc đã làm, hạn chế và hướng phát triển.
 
 \end{document}
