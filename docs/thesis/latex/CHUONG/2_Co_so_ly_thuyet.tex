@@ -186,8 +186,8 @@ Một lượt chấm đi qua ba mô hình nối tiếp như Hình~\ref{fig:chuoi
 cùng một khung camera 480$\times$320 ở ba cỡ khác nhau, và mỗi khâu chỉ chạy khi
 khâu trước đạt: không có mặt thì không chống giả mạo, mặt giả thì không nhận
 diện. Thời gian trong hình là trung vị đo trên board lúc máy rảnh.
-Hình~\ref{fig:vung_anh} vẽ theo tỉ lệ ba vùng ảnh đó khi mặt ở mức nhỏ nhất máy chấp
-nhận.
+Hình~\ref{fig:vung_anh} vẽ theo tỉ lệ ba vùng ảnh đó với mặt rộng 113~px, mốc đồ án dùng
+để chấm bộ phát hiện.
 
 \begin{figure}[H]
 \centering
@@ -282,7 +282,7 @@ Các số ở Bảng~\ref{tab:phat_hien} đo trên ảnh gốc của WIDER FACE~
 không phải điểm vận hành của máy chấm công. Đồ án chạy YuNet ở 160$\times$120,
 nơi cạnh mặt trung vị của tập Hard chỉ còn 3,1~px, nên AP Hard của bản chạy thật
 là 0,1515. Con số đó cũng không phải bài toán của máy: người đứng cách camera
-0,25--0,42~m và mặt rộng hơn 113~px trong khung, tức hơn 38~px ở đầu vào YuNet.
+0,25--0,42~m, mặt rộng khoảng 113~px trong khung, tức 38~px ở đầu vào YuNet.
 Đồ án vì vậy chấm bộ phát hiện bằng AP trên các mặt từ 38~px trở lên, đạt 0,9544
 sau lượng tử hóa, và vẫn báo đủ ba số của WIDER FACE ở
 Chương~\ref{chapter:Experiment}.
@@ -353,10 +353,10 @@ nhựa trong từng lọt qua bản V2 và chưa mô hình nào chặn được.
 
 Nhận diện ánh xạ ảnh khuôn mặt thành vector đặc trưng sao cho ảnh cùng người cho
 vector gần nhau. Firmware dùng năm điểm mốc của YuNet tính phép biến đổi affine,
-đưa mặt về ô 112$\times$112 đúng vị trí mô hình đã học. Mặt phải rộng ít nhất
-113~px trong khung camera, vì dưới mức đó ảnh phải phóng to mà nội suy không thêm
-thông tin. Cạnh mặt đo trên board xấp xỉ $47{,}7/d$~px với $d$ tính bằng mét, nên
-tầm làm việc dừng ở khoảng 0,42~m.
+đưa mặt về ô 112$\times$112 đúng vị trí mô hình đã học. Mặt nhỏ hơn cỡ đó phải phóng
+to, mà nội suy không thêm thông tin. Cạnh mặt đo trên board xấp xỉ $47{,}7/d$~px với
+$d$ tính bằng mét, nên mặt đạt 113~px ở khoảng 0,42~m. Cổng trên máy đặt thấp hơn một
+chút, 100~px, vì người đứng đúng khoảng khung ngắm gợi ý đo được 107--110~px.
 
 MobileFaceNet thay lớp gộp trung bình toàn cục bằng tích chập depthwise toàn cục,
 vì ở khuôn mặt, ô góc của bản đồ đặc trưng cuối ít giá trị hơn ô giữa~\cite{mobilefacenet2018}.
