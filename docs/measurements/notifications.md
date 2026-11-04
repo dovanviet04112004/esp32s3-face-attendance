@@ -261,3 +261,22 @@ BEGIN;
 EXPLAIN (ANALYZE, BUFFERS, SUMMARY ON) UPDATE "Notification" SET "readAt" = now() WHERE "userId" = :'hr' AND "archivedAt" IS NULL AND "readAt" IS NULL;
 ROLLBACK;
 ```
+
+## 6. Đo lại trên chính VPS (E14-T10) — 04/11/2026
+
+Máy dev ở §3 và §5 không nói gì về VPS 1 vCPU, 2 GB, nên hai phép đo này chạy lại trên stack đo tách riêng của `latency.md` §18. DB demo cộng lệnh nạp của §5:
+583.397 dòng `Notification`, tài khoản `HR` giữ 51.022 dòng, 11.865 dòng chưa đọc. Mỗi câu chạy ba lần, ghi lần thứ ba như §5. Sáu lần chạy dao động mạnh vì
+healthcheck EMQX ở `latency.md` §18.3, nên có thêm cột khoảng.
+
+| Câu, tài khoản `HR` | Máy dev §5 | VPS, lần ba | VPS, ba lần |
+|---|---:|---:|---:|
+| Đếm chưa đọc kiểu cũ | 3,0 ms | 7,2 ms | 2,8–9,9 ms |
+| Số trên chuông | 2,4 ms | 4,9 ms | 2,1–6,8 ms |
+| *Cần xử lý* | 17,8 ms | 71,5 ms | 71,5–934,8 ms |
+| Chấm đỏ | 1,3 ms | 8,5 ms | 4,1–8,5 ms |
+| Trang đầu, tab *Tất cả* | 0,7 ms | 1,0 ms | 0,7–1,1 ms |
+| Trang đầu, tab *Cần xử lý* | 0,7 ms | 1,7 ms | 1,0–1,7 ms |
+| Tổng dưới trần, tab *Tất cả* | 5,5 ms | 17,3 ms | 10,4–17,3 ms |
+| *Đánh dấu đã đọc hết* | 701 ms | 4.004 ms | 1.878–6.499 ms |
+
+Chốt kỳ 4.804 phiếu qua API mất **92,6 s** so với 3.446 ms ở §3 (5.000 phiếu), không có đẩy vì stack đo tắt VAPID. Nhà cung cấp đẩy giả của §3 không dùng ở đây.

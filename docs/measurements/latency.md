@@ -1314,3 +1314,92 @@ Board khớp TFLM từng bit. So từng tensor giữa LiteRT `BUILTIN_REF` và T
 board. Để so, kernel mặc định của LiteRT lệch kernel tham chiếu của nó 501/512 phần tử, tối đa 46 bậc, cosine 0,931
 trên cùng đầu vào, và cosine trung vị 0,968 (thấp nhất 0,933) trên 100 mặt LFW: chấm bằng kernel mặc định là chấm
 một phép tính khác hẳn board.
+
+## 18. API dưới tải trên chính VPS, dữ liệu 5.000 người — đo 04/11 (E14-T10)
+
+Máy đo là VPS production: 1 vCPU Xeon Gold 6230 2,1 GHz, 2 GB RAM, swap 8 GB. Chủ repo duyệt và cho đo ngay. Stack đo chạy cạnh stack
+thật và tách hẳn: `load-pg` (`postgres:16-alpine`, `shared_buffers` 256 MB, `max_connections` 100, không đẩy WAL), `load-redis`, `load-api`
+(đúng image `e7d7279e` đang chạy thật), mạng `load-net`, API chỉ mở ở `127.0.0.1:3900`. Không broker thật, không mail, không push, secret là
+của stack walk. Dữ liệu là bản dump DB demo: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 ngày công, 51.209 phiếu, 59.731 đơn, 657 MB sau
+restore. Hạn mức throttle nâng lên để không chặn tải, và tải không đi qua Traefik. Đo xong đã xoá cả stack, volume, mạng và tệp.
+
+Tải gọi từ laptop qua đường hầm SSH, `/health` qua đường hầm mất khoảng 78 ms. Mỗi phiên ảo mở trang rồi nghỉ 2,5–7,5 s. Một lượt mở trang bắn
+đúng các GET mà trang gửi, bắt từ trình duyệt thật: trang chủ của nhân viên là 13 lượt gọi. Dữ liệu tháng 2026-09. Mỗi bậc 60 s sau 10 s khởi
+động, một lượt mỗi bậc. Một bộ canh gọi `/health` của API thật mỗi 2 s, ba lần liền quá 3 s thì dừng. Ba cách trộn: `all` là 7 nhân viên, 1 quản
+lý, 2 bàn giấy trên 10 phiên; `phone` là 8 nhân viên, 2 quản lý; `desk` là `HR` và `PAYROLL`.
+
+### 18.1 Lượt đầu, lúc VPS còn khoẻ
+
+Trộn `all`, stack đo ở `--cpu-shares 256`. Số gọi gồm cả 10 s khởi động, số trang thì không.
+
+| Phiên | Gọi/s | p50 ms | p95 ms | p99 ms | Mở trang p50 | Mở trang p95 | Lỗi | API thật p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 7,4 | 157 | 802 | 1.285 | 188 | 1.321 | 0 | 163 |
+| 10 | 14,5 | 161 | 1.356 | 1.834 | 210 | 1.478 | 0 | 153 |
+| 20 | 18,1 | 290 | 26.285 | 28.848 | 558 | 28.544 | 12 | 2.222 |
+| 40 | 5,2 | 31.608 | 63.601 | 88.494 | 53.131 | 97.176 | 49 | 2.990 |
+
+Sập giữa 10 và 20 phiên. Lỗi là `P2028` (`Unable to start a transaction in the given time`) và kết nối đứt: pool 10 kết nối của `pg` bị các
+câu chậm giữ, request xếp hàng tới 30 s.
+
+### 18.2 Lượt cuối, sau khi VPS đã quá tải một lần
+
+Stack đo ở CPU weight mặc định như stack thật. Hàng `+ chỉ mục` thêm `CREATE INDEX ON "AttendanceRecord"(review) WHERE review IS NOT NULL`,
+chỉ trên DB đo.
+
+| Trộn | Phiên | Gọi/s | p50 ms | p95 ms | p99 ms | Mở trang p50 | Mở trang p95 | Lỗi | API thật p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `phone` | 2 | 2,5 | 267 | 4.055 | 4.424 | 234 | 6.083 | 1 | 966 |
+| `phone` | 4 | 4,7 | 171 | 3.996 | 6.052 | 546 | 7.210 | 1 | 1.892 |
+| `phone` | 6 | 6,2 | 2.672 | 9.522 | 11.497 | 4.074 | 11.520 | 10 | 2.367 |
+| `phone` | 8 | 9,9 | 1.136 | 6.787 | 7.650 | 2.707 | 7.347 | 1 | 1.739 |
+| `desk` | 1 | 0,6 | 448 | 8.054 | 8.055 | 2.165 | 8.055 | 0 | 2.228 |
+| `all` | 5 | 4,5 | 1.722 | 9.298 | 9.562 | 3.516 | 9.350 | 3 | 2.507 |
+| `desk` + chỉ mục | 1 | 0,8 | 706 | 4.423 | 4.453 | 1.524 | 4.614 | 0 | 718 |
+| `all` + chỉ mục | 5 | 5,3 | 1.804 | 5.594 | 6.822 | 3.571 | 6.823 | 0 | 1.428 |
+
+Cùng 5 phiên `all`, p95 từ 802 ms (§18.1) lên 9.298 ms. Mỗi bậc chỉ một lượt 60 s nên `phone` 6 xấu hơn `phone` 8 là nhiễu của mẫu, không phải
+quy luật. Một lượt giữa hai bảng, stack ở `--cpu-shares 256` và VPS đã lỗi như §18.3, cho `all` 5 p50 5.641 ms, p95 11.824 ms, nên số này không
+dùng. Thang `idx all 15` của lượt ấy bị bộ canh dừng khi API thật ba lần liền quá 3 s, p95 5.003 ms.
+
+### 18.3 Vì sao
+
+**Câu đếm việc chờ duyệt quét cả bảng.** `punchesWaitingOn` đếm `review = 'PENDING'`. Prisma gửi vế này thành
+`review = CAST($1::text AS "PunchReview")`: `enum_in` là hàm `STABLE` nên planner không gập được thành hằng, và không chứng minh được vế đó khớp
+điều kiện của chỉ mục từng phần `AttendanceRecord_pending_idx`. Kết quả là Parallel Seq Scan trên 456.149 dòng.
+
+| Dạng câu, 3 dòng khớp | Kế hoạch | Thời gian trên VPS rảnh |
+|---|---|---:|
+| Tham số, như Prisma gửi | Parallel Seq Scan | 1.650–3.255 ms |
+| Hằng `'PENDING'` | Index Scan `AttendanceRecord_pending_idx` | 2,4 ms |
+| Tham số, thêm chỉ mục `WHERE review IS NOT NULL` | Index Scan | 0,08 ms |
+
+Dưới tải câu này lên 5–10 s và giữ một kết nối của pool. `/requests/inbox/counts` chạy nó ở mọi trang của bàn giấy. `tools/check_plans.py` không
+có câu này, và nó viết hằng ở chỗ service gửi tham số, nên không thể bắt lỗi kiểu này.
+
+**Healthcheck của EMQX ăn CPU.** `emqx ctl status` dựng một máy ảo Erlang mỗi lần, đo được 6,1 s user + 0,9 s sys, timeout của healthcheck là 5 s, chu
+kỳ 10 s. Sau lượt đầu, mọi lần kiểm đều quá 5 s: `FailingStreak` lên 221 lúc 08:38, tính ngược về khoảng 07:40. Lúc stack đo rảnh, VPS vẫn bận trung bình
+32,4% và 15 trong 60 giây bận trên 80%. Việc CPU cố định (md5 48 MB) p50 135 ms, p90 1.654 ms, cao nhất 2.678 ms; sau khi xoá stack đo p50 124 ms, p90 963 ms,
+cao nhất 1.447 ms. Đó là lý do §18.2 xấu hơn §18.1, và API thật cũng chậm đi: p95 `/health` 153 ms ở §18.1, 966–2.507 ms ở §18.2.
+
+**Mỗi lượt gọi đắt.** Ở `phone` 8, trang chủ 13 lượt gọi đẩy VPS tới 57% CPU trung bình mà chỉ 9,9 lượt gọi/s. Node, Postgres, Redis, Traefik, EMQX và MinIO
+chung một vCPU. Ở `desk`, một lượt `/reports/attendance/totals` tốn 5,4 s, `/timesheet/summary` và `/timesheet/totals` 1–6 s.
+
+### 18.4 Việc nặng
+
+| Việc | VPS | Máy dev |
+|---|---:|---:|
+| Chạy lương 4.776 người | lượt 1 403,8 s, BullMQ chạy lại lượt 2 388,9 s, rồi `FAILED` | 4.804 người 11,3 s |
+| Chốt kỳ 4.804 phiếu, không có đẩy | 92,6 s | 5.000 phiếu 3,4 s (`notifications.md` §3) |
+
+Lượt lương thất bại với `job stalled more than allowable limit`: khoá của job hết hạn trong lúc chạy (`Missing lock for job 1`), BullMQ coi job treo và
+chạy lại, tới lần thứ hai thì đánh `FAILED`. Không có tải đo nào khác trong lúc này, chỉ có healthcheck EMQX của §18.3.
+
+### 18.5 Đọc ra
+
+- Lúc VPS khoẻ, 10 phiên hỗn hợp đạt 14,5 lượt gọi/s, mở trang p50 210 ms, p95 1.478 ms. 20 phiên thì sập.
+- 🔬 Ước lượng, chưa đo: 5.000 người, 20% mở app trong 15 phút là khoảng 1,1 lượt mở trang mỗi giây, khoảng 14 lượt gọi/s, tức đúng ngưỡng ở trên.
+- Với dữ liệu 5.000 người, chạy lương không xong trên VPS này. Đó là điểm không đạt lớn nhất.
+- Cả ba chỗ đều sửa được mà chưa cần máy to hơn, nhưng chưa sửa: chỉ mục cho `review`, healthcheck EMQX nhẹ hơn, khoá job dài hơn. Chưa có số sau khi sửa ngoài hai hàng chỉ mục ở §18.2.
+
+Script ở `~/kiosk-walk/` (`capture-api.mjs`, `loadprep.mjs`, `loadapi.mjs`, `loadseq.mjs`, `loadpay.mjs`), ngoài repo, vì đây là phép đo một lần trên máy thật.
