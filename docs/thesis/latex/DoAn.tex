@@ -1,0 +1,263 @@
+\documentclass[a4paper,13pt,3p,twoside]{report}
+\usepackage{scrextend}
+\changefontsizes{13pt}
+\usepackage[utf8]{vietnam}
+\usepackage[top=2cm, bottom=2cm, left=3.5cm, right=2.5cm]{geometry}
+
+\usepackage{graphicx} % Cho phép chèn hình ảnh
+\usepackage{fancybox} % Tạo khung box
+\usepackage{indentfirst} % Thụt đầu dòng ở dòng đầu tiên trong đoạn
+\usepackage{amsthm} % Cho phép thêm các môi trường định nghĩa
+\usepackage{latexsym} % Các kí hiệu toán học
+\usepackage{amsmath} % Hỗ trợ một số biểu thức toán học
+\usepackage{amssymb} % Bổ sung thêm kí hiệu về toán học
+\usepackage{amsbsy} % Hỗ trợ các kí hiệu in đậm
+\usepackage{times} % Chọn font Times New Roman
+\usepackage{array} % Tạo bảng array
+\usepackage{enumitem} % Cho phép thay đổi kí hiệu của list
+\usepackage{subfiles} % Chèn các file nhỏ, mỗi chương một file
+\usepackage{titlesec} % Chỉnh sửa tiêu đề chương, mục
+\usepackage{titletoc}
+\usepackage{chngcntr} % Thiết lập lại cách đánh số caption
+\usepackage{pdflscape} % Bảng đặt theo chiều ngang giấy
+\usepackage{afterpage}
+\usepackage[ruled,vlined]{algorithm2e} % Viết giải thuật
+\usepackage{capt-of} % Caption lớn trên trang ngang
+\usepackage{multirow} % Gộp ô
+\usepackage{longtable} % Bảng dài nhiều trang, lặp header
+\usepackage{fancyhdr} % Tùy biến header và footer
+\usepackage{appendix}
+
+\usepackage[font=small,labelfont=bf,justification=centering]{caption}
+
+\usepackage{listings}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{xurl}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{tocbasic}
+
+% ===================================================
+
+\usepackage[backend=biber,style=ieee]{biblatex}
+\addbibresource{Danh_sach_tai_lieu_tham_khao.bib}
+\setcounter{biburlnumpenalty}{9000} % Cho phép xuống dòng trong URL
+\setcounter{biburlucpenalty}{9000}
+\setcounter{biburllcpenalty}{9000}
+
+\renewcommand\appendixname{PHỤ LỤC}
+\renewcommand\appendixpagename{PHỤ LỤC}
+\renewcommand\appendixtocname{PHỤ LỤC}
+
+% ===================================================
+
+\fancypagestyle{plain}{%
+\fancyhf{} % Xóa toàn bộ header và footer
+\fancyfoot[RO,RE]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}}
+
+\setlength{\headheight}{10pt}
+
+\def \TITLE{ĐỒ ÁN TỐT NGHIỆP}
+\def \AUTHOR{ĐỖ VĂN VIỆT}
+\newcommand{\TenDeTai}{Hệ thống chấm công nhận diện khuôn mặt ứng dụng TinyML trên vi điều khiển ESP32-S3}
+\newcommand{\GVHD}{TS. Đỗ Công Thuần}
+\newcommand{\ThoiGianNop}{HÀ NỘI, 01/2027}
+
+% ===================================================
+\titleformat
+    {\chapter} % command
+    [hang] % shape
+    {\centering\bfseries} % format
+    {CHƯƠNG \thechapter.\ } % label
+    {0pt} % sep
+    {} % before
+    [] % after
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\titleformat
+    {\section} % command
+    [hang] % shape
+    {\bfseries} % format
+    {\thechapter.\arabic{section}\ \ \ \ } % label
+    {0pt} % sep
+    {} % before
+    [] % after
+\titlespacing{\section}{0pt}{\parskip}{0.5\parskip}
+
+\titleformat
+    {\subsection} % command
+    [hang] % shape
+    {\bfseries} % format
+    {\thechapter.\arabic{section}.\arabic{subsection}\ \ \ \ } % label
+    {0pt} % sep
+    {} % before
+    [] % after
+\titlespacing{\subsection}{30pt}{\parskip}{0.5\parskip}
+
+\renewcommand\thesubsubsection{\alph{subsubsection}}
+\titleformat
+    {\subsubsection} % command
+    [hang] % shape
+    {\bfseries} % format
+    {\alph{subsubsection}, \ } % label
+    {0pt} % sep
+    {} % before
+    [] % after
+\titlespacing{\subsubsection}{50pt}{\parskip}{0.5\parskip}
+
+% ===================================================
+\usepackage{hyperref}
+\hypersetup{pdfborder = {0 0 0}}
+\hypersetup{pdftitle={\TITLE},
+	pdfauthor={\AUTHOR}}
+
+\usepackage[all]{hypcap} % Tham chiếu chính xác đến hình và bảng
+
+\graphicspath{{Hinhve/}{../Hinhve/}} % Thư mục chứa hình
+
+\counterwithin{figure}{chapter} % Đánh số hình theo chương: Hình 1.1, 1.2
+
+\title{\bf \TITLE}
+\author{\AUTHOR}
+
+\setcounter{secnumdepth}{3} % Cho phép subsubsection trong report
+
+\theoremstyle{definition}
+\newtheorem{example}{Ví dụ}[chapter]
+
+\onehalfspacing
+\setlength{\parskip}{6pt} % Khoảng cách giữa hai đoạn
+\setlength{\parindent}{15pt} % Lùi đầu dòng
+
+% Khoảng cách hình, bảng với văn bản cố định và đồng nhất mọi nơi.
+\raggedbottom
+\setlength{\intextsep}{8pt}
+\setlength{\textfloatsep}{8pt}
+\setlength{\floatsep}{8pt}
+\setlength{\abovecaptionskip}{5pt}
+\setlength{\belowcaptionskip}{2pt}
+
+% =========================== BODY ===============
+\begin{document}
+\subfile{Bia}
+\subfile{Bia_Lot}
+
+% ===================================================
+\newpage
+\pagenumbering{gobble}
+\subfile{CHUONG/01_Loi_cam_on}
+
+\newpage
+\pagenumbering{gobble}
+\subfile{CHUONG/02_Tom_tat_noi_dung_tieng_Viet}
+
+% ===================================================
+\newpage
+\pagenumbering{roman}
+\renewcommand*\contentsname{MỤC LỤC}
+
+\titlecontents{chapter}
+    [0.0cm] % left margin
+    {\bfseries\vspace{0.3cm}} % above code
+    {{\bfseries{\scshape}
+    CHƯƠNG \thecontentslabel.\ }} % numbered format
+    {} % unnumbered format
+    {\titlerule*[0.3pc]{.}\contentspage} % filler-page-format
+
+\titlecontents{section}
+    [0.0cm] % left margin
+    {\vspace{0.3cm}} % above code
+    {\thecontentslabel \ } % numbered format
+    {} % unnumbered format
+    {\titlerule*[0.3pc]{.}\contentspage} % filler-page-format
+
+\titlecontents{subsection}
+    [1.0cm] % left margin
+    {\vspace{0.3cm}} % above code
+    {\thecontentslabel \ } % numbered format
+    {} % unnumbered format
+    {\titlerule*[0.3pc]{.}\contentspage} % filler-page-format
+
+\addtocontents{toc}{\protect\thispagestyle{empty}}
+\tableofcontents
+\thispagestyle{empty}
+\cleardoublepage
+
+\renewcommand{\listfigurename}{DANH MỤC HÌNH VẼ}
+{\let\oldnumberline\numberline
+\renewcommand{\numberline}{Hình~\oldnumberline}
+\listoffigures}
+\newpage
+
+\renewcommand{\listtablename}{DANH MỤC BẢNG BIỂU}
+{\let\oldnumberline\numberline
+\renewcommand{\numberline}{Bảng~\oldnumberline}
+\listoftables}
+
+\newpage
+\subfile{CHUONG/03_Danh_muc_viet_tat}
+
+\newpage
+\subfile{CHUONG/04_Thuat_ngu}
+% ===================================================
+
+\newpage
+\pagenumbering{arabic}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[RE, LO]{\leftmark}
+\fancyfoot[RE, LO]{\thepage}
+
+\chapter{GIỚI THIỆU ĐỀ TÀI}
+\label{chapter:Introduction}
+\subfile{CHUONG/1_Gioi_Thieu_De_Tai}
+
+\newpage
+\chapter{CƠ SỞ LÝ THUYẾT}
+\label{chapter:Related_works}
+\subfile{CHUONG/2_Co_so_ly_thuyet}
+
+\newpage
+\chapter{PHÂN TÍCH THIẾT KẾ HỆ THỐNG}
+\label{chapter:Design}
+\subfile{CHUONG/3_Thiet_ke}
+
+\newpage
+\chapter{TRIỂN KHAI HỆ THỐNG}
+\label{chapter:Implementation}
+\subfile{CHUONG/4_Trien_khai}
+
+\newpage
+\chapter{THỰC NGHIỆM VÀ ĐÁNH GIÁ}
+\label{chapter:Experiment}
+\subfile{CHUONG/5_Thuc_nghiem_va_danh_gia}
+
+\newpage
+\chapter*{KẾT LUẬN}
+\addcontentsline{toc}{chapter}{KẾT LUẬN}
+\markboth{KẾT LUẬN}{}
+\subfile{CHUONG/6_Ket_luan}
+
+% ===================================================
+\newpage
+\printbibliography[heading=bibintoc, title={TÀI LIỆU THAM KHẢO}]
+
+\appendixpage
+\appendices
+\addappheadtotoc
+
+\titleformat{\chapter}[hang]{\centering\bfseries}{ \thechapter.\ }{0pt}{}[]
+\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\titlecontents{chapter}
+    [0.0cm] % left margin
+    {\bfseries\vspace{0.3cm}} % above code
+    {{\bfseries{\scshape} \thecontentslabel.\ }} % numbered format
+    {} % unnumbered format
+    {\titlerule*[0.3pc]{.}\contentspage} % filler-page-format
+\subfile{CHUONG/phu_luc}
+\end{document}

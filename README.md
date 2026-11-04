@@ -72,7 +72,7 @@ Còn mở, chi tiết ở [TASKS.md](docs/TASKS.md):
 - FAR/FRR trên ảnh OV5640 của nhiều người (E8-T12).
 - Đáy RAM nội qua 10 phút chạy có Wi-Fi và MQTT/TLS, cần giữ từ 24 KB trở lên 🔬.
 - Secure Boot và mã hoá flash chưa bật (E13-T3).
-- Báo cáo ĐATN (E14): các chương chưa viết, `docs/thesis/` mới có ghi chép thực nghiệm.
+- Báo cáo ĐATN (E14): `docs/thesis/latex/` có khung và Chương 1, dựng bằng `make thesis`; các chương sau chưa viết.
 
 ## Phần cứng
 

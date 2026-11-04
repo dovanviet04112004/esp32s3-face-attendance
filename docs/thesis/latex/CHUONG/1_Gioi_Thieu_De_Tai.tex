@@ -1,0 +1,129 @@
+\documentclass[../DoAn.tex]{subfiles}
+\begin{document}
+
+Chương này trình bày bài toán chấm công, lý do đồ án xử lý khuôn mặt ngay
+trên vi điều khiển, mục tiêu, phạm vi và định hướng giải pháp.
+
+\section{Đặt vấn đề}
+\label{section:1.1}
+
+Trong doanh nghiệp, dữ liệu chấm công đi thẳng vào tiền lương. Lượt vào ra
+của nhân viên được quy đổi thành ngày công theo ca làm, ngày công là căn cứ
+tính lương, và từ lương mới tính thuế thu nhập cá nhân và bảo hiểm xã hội.
+Một lượt chấm sai hoặc bị mất làm sai phiếu lương của người đó, và bộ phận
+nhân sự phải lần ngược từ phiếu lương về từng lượt chấm để sửa.
+
+Các máy chấm công hiện nay chủ yếu dùng thẻ từ, vân tay hoặc khuôn mặt. Thẻ
+từ rẻ nhưng chỉ chứng minh ai đang cầm thẻ, nên người này có thể quẹt hộ
+người kia~\cite{jain2004}. Vân tay gắn với từng người nhưng buộc mọi nhân
+viên chạm vào cùng một cảm biến, và vân tay của lao động chân tay thường bị
+mòn hoặc xước nên máy khó đọc~\cite{jain2004}. Nhận diện khuôn mặt không cần
+vật mang và không cần chạm vào máy, nhưng kéo theo hai vấn đề khác.
+
+Vấn đề đầu tiên là giả mạo. Nếu máy chỉ so khớp khuôn mặt, một tấm ảnh in
+hay một đoạn video phát trên điện thoại cũng chấm công được thay cho người
+trong ảnh. Cách tấn công này gọi là tấn công trình diện, được mô tả trong bộ
+tiêu chuẩn ISO/IEC 30107~\cite{iso30107}, và phát hiện khuôn mặt giả đã
+thành một hướng nghiên cứu riêng của thị giác máy tính~\cite{yu2023fas}.
+
+Vấn đề còn lại là quyền riêng tư. Dữ liệu sinh trắc học nằm trong danh mục
+dữ liệu cá nhân nhạy cảm của Nghị định 356/2025/NĐ-CP~\cite{nd3562025}, và
+Luật Bảo vệ dữ liệu cá nhân có hiệu lực từ ngày 01/01/2026 có một điều riêng
+cho loại dữ liệu này~\cite{luat912025}. Nếu ảnh khuôn mặt được gửi về máy chủ
+để nhận diện, doanh nghiệp phải bảo vệ nó cả trên đường truyền lẫn ở nơi lưu.
+Nếu máy chấm công tự nhận diện, ảnh không cần rời khỏi máy.
+
+Mô hình học sâu cho khuôn mặt thường chạy trên máy tính nhúng có hệ điều hành
+đầy đủ hoặc bộ tăng tốc riêng, nên giá mỗi máy cao hơn nhiều so với một vi
+điều khiển. TinyML nghiên cứu cách chạy mô hình học máy trên vi
+điều khiển~\cite{warden2019,david2021}. Đồ án chọn ESP32-S3, có hai lõi Xtensa
+LX7 tốc độ tối đa 240~MHz, 512~KB SRAM và tập lệnh vector dùng cho tính toán
+mạng nơ-ron~\cite{esp32s3}. Khó khăn nằm ở chỗ ba mô hình phát hiện, chống giả
+mạo và nhận diện khuôn mặt sau khi lượng tử hóa vẫn nặng 2.116~KB, hơn bốn lần
+SRAM của chip, trong khi người chấm công chỉ đứng trước máy khoảng 1--2 giây.
+
+Phía sau máy chấm công còn cả phần nghiệp vụ. Lượt chấm phải được tính thành
+ngày công và bảng lương, nhân viên cần tra được công, phép, lương của mình và
+gửi đơn trên điện thoại, người quản trị cần biết máy nào đang mất kết nối. Khi
+mạng đứt, máy vẫn phải nhận diện được người và giữ lại lượt chấm để gửi sau.
+
+\section{Mục tiêu và phạm vi đề tài}
+\label{section:1.2}
+
+Đồ án xây dựng hệ thống chấm công nhận diện khuôn mặt chạy trên ESP32-S3,
+gồm cả phần quản trị nhân sự nhận dữ liệu từ máy. Sản phẩm gồm:
+(i)~máy chấm công phát hiện, chống giả mạo và nhận diện khuôn mặt ngay trên
+chip, cho đăng ký khuôn mặt tại máy, tự thức khi có người lại gần và vẫn chấm
+công khi mất mạng; (ii)~hệ thống quản trị nhân sự trên web với hồ sơ nhân
+viên, cơ cấu tổ chức, ca làm, bảng công, nghỉ phép, kỳ lương, phiếu lương và
+báo cáo; (iii)~cổng nhân viên trên điện thoại, ở dạng ứng dụng web PWA và ứng
+dụng Android, để xem công, xin nghỉ và nhận phiếu lương; (iv)~chức năng quản
+lý máy chấm công từ xa gồm duyệt máy mới, theo dõi trạng thái và cập nhật
+qua OTA.
+
+Máy chấm công phải chấm được mà không cần tiếp xúc, chặn được ảnh in và video
+phát lại, và không gửi ảnh khuôn mặt lên máy chủ. Phía máy chủ phải tự đi từ
+lượt chấm tới ngày công và phiếu lương, có tính thuế thu nhập cá nhân và bảo
+hiểm xã hội, để nhân viên tự tra cứu trên điện thoại thay vì hỏi bộ phận nhân
+sự.
+
+Đồ án chỉ xét tấn công bằng ảnh in và video phát lại. Mặt nạ 3D có chiều sâu
+thật, nên mô hình đầu vào 80$\times$80 chạy trên vi điều khiển không đọc được
+dấu vết của nó; rủi ro này được ghi nhận và không xử lý trong đồ án. Máy chấm
+công được thiết kế để đặt trong nhà, nơi có người qua lại. Phần nhân sự dừng
+ở chấm công, nghỉ phép và tính lương, không gồm tuyển dụng, đánh giá năng lực
+và đào tạo.
+
+\section{Định hướng giải pháp}
+\label{section:1.3}
+
+Hệ thống chia thành ba phần: máy chấm công, máy chủ và ứng dụng cho người dùng.
+
+Máy chấm công dùng module ESP32-S3 có 16~MB flash và 8~MB PSRAM, camera
+OV5640, màn hình cảm ứng 4~inch, cảm biến khoảng cách VL53L1X, loa và servo gạt
+thanh chắn, gắn trên một mạch đế thiết kế bằng KiCad. Cảm biến thấy có người
+thì máy thức dậy. Mỗi khuôn mặt đi qua ba mô hình nối tiếp trên chip: YuNet tìm
+khuôn mặt và năm điểm mốc~\cite{yunet2023}, MiniFASNet phân biệt mặt thật với
+mặt giả~\cite{minifas}, MobileFaceNet tạo vector đặc trưng 512
+chiều~\cite{mobilefacenet2018} để so với các mẫu lưu trên máy. Các mô hình được
+lượng tử hóa chủ yếu về số nguyên 8~bit và chạy bằng thư viện
+ESP-DL~\cite{espdl}. Đo trên board, một lượt qua cả ba mô hình mất 406,2~ms khi
+camera đang xem trước, nhanh hơn 9,5 lần so với cùng bộ mô hình chạy bằng
+TFLite Micro.
+
+Lượt chấm được ghi vào flash của máy trước, có mạng mới gửi lên máy chủ qua
+MQTT trên TLS. Mỗi lượt mang một mã duy nhất theo từng máy nên gửi lại nhiều lần
+cũng chỉ thành một bản ghi. Máy chủ dùng NestJS và PostgreSQL để tính ngày công,
+bảng công và bảng lương, và gửi bản cập nhật firmware và mô hình xuống máy qua
+OTA. Ảnh khuôn mặt không rời máy chấm công; vector đặc trưng trên máy chủ được
+mã hóa khi lưu.
+
+Người dùng làm việc qua bảng điều khiển web dành cho bộ phận nhân sự và quản
+trị, và cổng nhân viên trên điện thoại. Các giao diện dùng chung một API và cập
+nhật ngay khi dữ liệu thay đổi.
+
+Đóng góp chính của đồ án là đưa trọn chuỗi phát hiện, chống giả mạo và nhận diện
+khuôn mặt lên một vi điều khiển và đo đạc trên board thật, trong đó có so sánh
+ESP-DL với TFLite Micro và đánh giá chống giả mạo trên ảnh do chính camera OV5640
+chụp. Đồ án cũng xây dựng đường dữ liệu không mất lượt chấm khi mất mạng, và một
+hệ quản trị nhân sự chạy trên máy chủ thật từ tháng 9/2026.
+
+\section{Bố cục đồ án}
+\label{section:1.4}
+
+Phần còn lại của đồ án được tổ chức như sau.
+Chương~\ref{chapter:Related_works} trình bày cơ sở lý thuyết: các giải pháp chấm
+công, TinyML, ba bài toán phát hiện, chống giả mạo và nhận diện khuôn mặt, lượng
+tử hóa mô hình, nền tảng nhúng, truyền thông IoT và nghiệp vụ nhân sự.
+Chương~\ref{chapter:Design} phân tích yêu cầu và trình bày thiết kế phần cứng,
+pipeline AI, firmware, bản tin MQTT, cơ sở dữ liệu, API và giao diện.
+Chương~\ref{chapter:Implementation} trình bày việc lắp ráp phần cứng, huấn luyện
+và triển khai mô hình, xây dựng firmware, backend, các phân hệ nhân sự, giao diện
+web, ứng dụng Android và triển khai hệ thống.
+Chương~\ref{chapter:Experiment} đo độ trễ, bộ nhớ và độ chính xác trên board, so
+sánh ESP-DL với TFLite Micro, đánh giá chống giả mạo, tỉ lệ FAR và FRR, kiểm thử
+backend, kiểm thử tải và kiểm thử toàn hệ thống, rồi tổng hợp các giải pháp và
+đóng góp nổi bật.
+Phần Kết luận tóm tắt kết quả đạt được và đề xuất hướng phát triển.
+
+\end{document}
