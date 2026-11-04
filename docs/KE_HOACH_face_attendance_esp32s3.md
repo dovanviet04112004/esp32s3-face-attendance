@@ -2624,6 +2624,7 @@ esp32s3-face-attendance/
     │                 │                                           #   chốt kỳ, đối soát — §9.21.4
     │                 └ {antispoof,detection,recognition,rppg}/   # số theo nhánh; rppg: vì sao không dùng (§3)
     └── thesis/                                  # bản báo cáo ĐATN
+        └── latex/                               # nguồn LaTeX của quyển, PDF dựng ở build/ ❌ gitignore
 ```
 
 | File gốc | Vai trò |
