@@ -1,25 +1,732 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
+\newcommand{\anh}[3]{%
+  \IfFileExists{Hinhve/#1}%
+    {\includegraphics[width=#2]{#1}}%
+    {\fbox{\parbox[c][#3][c]{#2}{\centering\footnotesize Ảnh chụp đặt ở đây:\\\texttt{\detokenize{#1}}}}}}
+
+Chương này trình bày cách hiện thực các thiết kế ở Chương~\ref{chapter:Design}, theo thứ
+tự môi trường, phần cứng, mô hình, firmware, backend, giao diện web rồi đường đưa hệ thống
+lên máy chủ. Bản đang chạy khác thiết kế ở một điểm lớn: máy lắp trên breadboard, chưa có
+mạch đế in, chưa có vỏ và thanh chắn. Mục~\ref{section:4.2} nói rõ phần này.
+
 \section{Môi trường triển khai}
 \label{section:4.1}
+
+Mã nguồn nằm trong một kho chung, và mọi thao tác đi qua một Makefile ở gốc kho: cài đặt,
+sinh mã từ hợp đồng, huấn luyện, lượng tử hóa, build, nạp và phát hành. Một số đo trong sổ
+đo vì thế đi kèm đúng một dòng lệnh để lặp lại. Bảng~\ref{tab:moi_truong} liệt kê công cụ
+và phiên bản. Máy phát triển là một laptop chạy WSL2, vừa build vừa huấn luyện. WSL chỉ có
+10~GB RAM, nên các bước nặng của thang lượng tử hóa chạy trong một scope systemd có trần bộ
+nhớ: bước nào vượt trần thì chỉ bước đó chết, máy không sập theo.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Công cụ và phiên bản.}
+\label{tab:moi_truong}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Khối} & \textbf{Công cụ} \\
+\hline
+Máy phát triển & Laptop chạy WSL2, RAM 10~GB, GPU RTX 3050 Laptop \\
+\hline
+Mạch đế & KiCad 10.0.6, script Python sinh sơ đồ và mạch in \\
+\hline
+Mô hình & Python 3.12, PyTorch 2.13 với CUDA 13.0, ONNX, ESP-PPQ 1.3.11 \\
+\hline
+Firmware & ESP-IDF 6.0.2, esp-dl 3.3.11, esp-tflite-micro 1.4.0, esp-nn 1.3.2, esp32-camera 2.1.7, LittleFS 1.22.3 \\
+\hline
+Backend & Node.js 24, NestJS 12, Prisma 7, BullMQ 6, Socket.IO 4, TypeScript 6 \\
+\hline
+Frontend & Next.js 16, React 19, Kumo 2.14.0, TailwindCSS 4, TanStack Query 5, next-intl 4 \\
+\hline
+Android & Trusted Web Activity, androidbrowserhelper 2.6.2, SDK đích 36, SDK thấp nhất 21 \\
+\hline
+Máy chủ & VPS 1 vCPU, 2~GB RAM, Ubuntu 24.04, Docker Compose, Traefik v3, EMQX 6.3.1, PostgreSQL 16, Redis 7 \\
+\hline
+Phát hành & GitHub Actions, kho ảnh container của GitHub, Vercel \\
+\hline
+\end{tabular}
+\end{table}
+
+Phiên bản được ghim chặt ở những chỗ có hợp đồng hai phía. ESP-PPQ 1.3.11 và esp-dl 3.3.11
+đi thành cặp, vì mỗi bản vá đồ thị ở Mục~\ref{section:4.3} phải khớp kernel trên chip từng
+số nguyên. Kumo ghim đúng 2.14.0 vì thư viện này lên bản liên tục.
 
 \section{Lắp ráp phần cứng}
 \label{section:4.2}
 
+Máy hiện lắp trên breadboard bằng dây cắm, theo bảng chân ở Phụ lục~\ref{appendix:chan},
+như Hình~\ref{fig:ban_lap}. Mạch đế ở Mục~\ref{section:3.3.3} đã xong thiết kế, đạt ERC và
+DRC, đã xuất tệp Gerber nhưng chưa đặt in, nên các luật đi dây của mục đó chưa được thử trên
+đồng thật. Máy chưa có vỏ và chưa có thanh chắn: servo SG90 quay trần trên bàn, góc 0° là
+đóng, 90° là mở. Những chỗ đồ án viết mở thanh chắn vì thế chỉ tới mức servo quay đúng góc.
+Mọi số đo ở Chương~\ref{chapter:Experiment} lấy trên bản lắp này.
+
+\begin{figure}[!htb]
+\centering
+\anh{anh_ban_lap.jpg}{0.8\textwidth}{6cm}
+\caption{Máy chấm công lắp trên breadboard.}
+\label{fig:ban_lap}
+\end{figure}
+
+Bản đang chạy lấy hai đường 5~V của Bảng~\ref{tab:nguon} từ một khối pin nằm ngoài mạch,
+Hình~\ref{fig:khoi_pin}. Khối này gồm hai pin 18650 3,7~V 3.300~mAh nối tiếp qua mạch bảo
+vệ 2S, một công tắc và hai module hạ áp MP1584EN, mỗi module nuôi một đường. Hộp pin đo được
+8,3~V, hai module chỉnh ở 5,11--5,12~V. Khối không có mạch sạc nên pin tháo ra sạc ngoài.
+Trước khi lắp vào máy, module của đường 1 được thử riêng bằng ứng dụng phát tiếng. Lấy điện
+cho bộ khuếch đại qua chân của board thì loa ra tiếng như khi dùng USB, còn kéo một dây 5~V
+riêng tới bộ khuếch đại trên breadboard thì loa rè to rồi mất tiếng. Đồ án nghi đường mass
+của dây cắm nhưng chưa chứng minh được, và cũng chưa đo thời gian chạy của một lần sạc.
+
+\begin{figure}[!htb]
+\centering
+\anh{anh_khoi_pin.jpg}{0.6\textwidth}{5cm}
+\caption{Khối pin 2S và hai module hạ áp.}
+\label{fig:khoi_pin}
+\end{figure}
+
+Ngoại vi được đưa lên lần lượt, mỗi con có một ứng dụng kiểm thử riêng chạy trên board trước
+khi ghép vào firmware. Cách làm này lộ ra một loại lỗi mà build và kiểm thử trên máy tính
+không bắt được: hàm báo thành công trong khi phần cứng chưa làm được việc.
+Bảng~\ref{tab:loi_board} ghi các lỗi điển hình. Nghiệm thu màn hình vì thế phải có người
+nhìn kính, vì bộ kiểm thử panel có 9 ca thì 8 ca chỉ kiểm mã trả về.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các lỗi chỉ lộ ra trên board.}
+\label{tab:loi_board}
+\begin{tabular}{|L{4.3cm}|L{5.0cm}|L{4.2cm}|}
+\hline
+\textbf{Hiện tượng} & \textbf{Nguyên nhân} & \textbf{Cách xử lý} \\
+\hline
+Lần ghi I\textsuperscript{2}C đầu bị NACK, chỉ sau khi rút điện cắm lại & Hàm khởi tạo bus trả về ở mốc 4~ms, PCF8574 trả lời ở 5~ms, VL53L1X ở 17~ms. Reset chip không tái hiện được vì ngoại vi còn điện & Thăm dò tới khi PCF8574 trả lời, trần 500~ms \\
+\hline
+Ngắt VL53L1X đủ 20/20 lần nhưng lần đọc nào cũng chưa có dữ liệu & Cảm biến mặc định tích cực mức cao, driver bắt cạnh xuống nên đọc đúng lúc dữ liệu vừa bị xóa & Đặt tích cực mức thấp ngay trong hàm khởi tạo \\
+\hline
+Màn hình tối hẳn sau khi thêm một phép kiểm cảm ứng & Phép kiểm trả lỗi, \texttt{ESP\_ERROR\_CHECK} reset chip khoảng mỗi 150~ms & Chia ngoại vi thành nhóm dừng máy và nhóm chạy tiếp (Mục~\ref{section:3.5.6}) \\
+\hline
+Màn sáng trơ, mọi lệnh SPI báo thành công, log vẫn 14~fps & Một chân dây SPI lỏng. Bus này một chiều nên firmware không có cách biết & Tô đỏ, lục, lam để mắt kiểm tra, rồi cắm lại dây \\
+\hline
+GT911 trả lời ở 0x14 khi chưa chạy trình tự reset & Chân reset nằm trên PCF8574 và tự lên cao lúc cấp nguồn, nên địa chỉ do cuộc đua quyết định & Luôn chạy trình tự reset, đòi đúng mã \texttt{911} ở thanh ghi 0x8140 \\
+\hline
+Loa rè, USB của board rớt 3 lần khi phát to & Bộ khuếch đại lấy 5~V từ chân board, chân này đi từ cáp USB và không tải nổi đỉnh 600~mA & Cấp từ đường 5~V riêng, tụ 470~$\mu$F gần chân nguồn \\
+\hline
+Đọc dòng quét của panel luôn trả 0xFFFF trong firmware & \texttt{esp\_lcd} tắt driver chân DC giữa hai giao dịch nên lệnh đọc thành dữ liệu & Bật lại ngõ ra DC trước mỗi lần đọc \\
+\hline
+\end{tabular}
+\end{table}
+
 \section{Huấn luyện, lượng tử hóa và triển khai mô hình}
 \label{section:4.3}
+
+\subsection{Nguồn của ba mô hình}
+\label{section:4.3.1}
+
+Chỉ nhánh phát hiện do đồ án tự huấn luyện. Hai nhánh còn lại nhập trọng số công khai, vì
+các bản tự huấn luyện đều thua sau lượng tử hóa hoặc thua trên ảnh OV5640
+(Mục~\ref{section:2.3}). Bảng~\ref{tab:nguon_mo_hinh} ghi rõ nguồn và giấy phép. Chuỗi này có
+mắt xích chỉ dùng cho nghiên cứu, nên muốn thương mại hóa phải huấn luyện lại nhánh nhận
+diện trên dữ liệu khác.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Nguồn trọng số và giấy phép của ba mô hình.}
+\label{tab:nguon_mo_hinh}
+\begin{tabular}{|L{2.5cm}|L{3.8cm}|L{3.6cm}|L{3.3cm}|}
+\hline
+\textbf{Nhánh} & \textbf{Trọng số} & \textbf{Dữ liệu huấn luyện} & \textbf{Giấy phép} \\
+\hline
+Phát hiện & Tự huấn luyện YuNet~\cite{yunet2023}, 300 epoch & WIDER FACE~\cite{wider}, 12.880 ảnh, giữ lại 1.262 ảnh để đo & Mã nguồn MIT \\
+\hline
+Chống giả mạo & Nhập MiniFASNetV1SE của Minivision~\cite{minifas} & Dữ liệu riêng của Minivision & Apache-2.0 \\
+\hline
+Nhận diện & Nhập MobileFaceNet-ECA của FRBench~\cite{frbench} & MS-Celeb-1M~\cite{ms1m} & Mã nguồn MIT, trọng số chỉ dùng nghiên cứu \\
+\hline
+\end{tabular}
+\end{table}
+
+Dữ liệu đi qua ba tầng: thư mục \texttt{raw/} chỉ đọc, \texttt{interim/} đã chuẩn hóa, và tệp
+chia tập ghi kèm seed và sha256. Mỗi lần huấn luyện ghi vào một thư mục mang ngày, mã commit
+và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên một
+con số trong sổ đo truy được về đúng lần chạy. Script nhập trọng số viết ra thư mục cùng cấu
+trúc đó, nên lượng tử hóa không phân biệt mô hình tự huấn luyện hay nhập.
+
+\subsection{Huấn luyện YuNet}
+\label{section:4.3.2}
+
+Bản dựng trong đồ án có 75.631 tham số, đầu vào 160$\times$120. Lần huấn luyện chạy 300 epoch
+trên RTX 3050 Laptop, batch 64, SGD Nesterov với tốc độ học 0,02, lịch cosine có 3 epoch khởi
+động, EMA 0,999, seed 42. Chỗ khó nằm ở công thức lấy mẫu. Ở đầu vào 160$\times$120, ảnh WIDER
+bị ép xuống hệ số 0,156, nên trung vị cạnh mặt còn 2,9~px và 85,5\% số mặt nhỏ hơn một ô lưới
+bước 8. Tầng bước 32 không nhận mẫu dương nào, tức ba đầu ra chỉ dùng thật một.
+
+Đồ án đổi ba thứ, mọi ngưỡng lấy từ đo: (i)~cắt vùng ngẫu nhiên tỉ lệ 0,3--1,0 rồi phóng về đầu
+vào, nên trung vị lên 13,6~px và phủ được dải mặt của máy; (ii)~bỏ mặt dưới 8~px sau khi cắt
+chứ không bỏ khỏi tập dữ liệu, để cùng một mặt vẫn được học khi rơi vào vùng cắt gần; (iii)~chia
+ba tầng ở các mốc 16 và 48~px, được 61,1\%, 33,6\% và 5,3\% số mặt. Bản FP32 chọn theo AP đạt
+0,9414 trên mặt từ 38~px, qua mốc 0,90 của NF3.
+
+\subsection{Nhập trọng số}
+\label{section:4.3.3}
+
+Script \texttt{import\_minifasnet.py} dựng lại kiến trúc rồi gấp các khác biệt tiền xử lý vào
+trọng số, để code trên chip không phải biết gì về kho gốc. Kho gốc đọc ảnh BGR thang 0--255 nên
+script đảo trục kênh vào và nhân 255 vào tích chập đầu, rồi hoán vị đầu ra để lớp sống đứng ở
+chỉ số 0. Nhờ vậy mô hình nhận ảnh RGB thang 0--1 đúng như đường tiền xử lý sẵn có.
+
+Script \texttt{import\_frbench.py} nạp trọng số MobileFaceNet-ECA bằng \texttt{load\_state\_dict}
+chế độ chặt, giữ đúng tên thuộc tính của kho gốc. Chỗ duy nhất khác kho gốc là khối ECA. Bản gốc
+gọi \texttt{expand\_as} trước khi nhân, ONNX ghi bước đó thành phép toán \texttt{Expand}, mà ESP-DL
+3.3.11 không có module tương ứng và cũng không có đường dự phòng: nạp bản đầu tiên ngày 23/09/2026
+làm máy khởi động lặp 129 lần. Phép nhân vốn tự phát sóng trên kênh, nên bỏ \texttt{expand\_as}
+ra cùng hàm, đo trên máy tính lệch 0,0. Từ đó \texttt{espdl\_op\_check.py} đối chiếu phép toán của
+mô hình với đúng bản esp-dl trước khi nạp.
+
+\subsection{Lượng tử hóa và tối ưu kernel}
+\label{section:4.3.4}
+
+Mỗi nhánh đi theo chuỗi ở Hình~\ref{fig:chuoi_quant}, chia bốn bước. Mỗi bước là một lệnh
+\texttt{make} có điều kiện qua, chưa qua thì không sang bước sau.
+
+Bước đúng kiểm chip tính như mô phỏng. \texttt{make quant-timing} dựng một đồ thị thử, rồi
+đồ thị đó được nạp lên board bằng \texttt{make ai-unit}. Bước này qua khi \texttt{model->test()} khớp ở cả đồ thị
+lẫn các bản cắt giữa đồ thị, và đồ thị khớp mô phỏng từng bit trên khung OV5640 thật. Lệch thì chia
+đôi bằng các bản cắt tới phép toán đầu tiên lệch rồi sửa mô phỏng.
+
+Bước nhanh lặp \texttt{make speed}: chạy bản dò trên board, in thời gian từng module, rồi
+\texttt{espdl\_profile.py} gắn nhãn các đường chậm kèm bản vá xử lý nó. Bản vá được giữ khi bản dò
+vẫn khớp từng bit và thời gian giảm. Bước này dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
+
+Bước chất lượng dựng bốn bậc của thang bằng \texttt{quant-ptq}, \texttt{quant-int16},
+\texttt{quant-qat}, dựng các hàng có bản vá làm tròn bằng \texttt{quant-variants}, rồi
+\texttt{quant-choose} áp luật chọn. Bước chốt chạy lại bản dò trên hàng đã chọn, và
+\texttt{quant-deploy} chép tệp vào \texttt{firmware/models/} rồi khóa phiên bản trong
+\texttt{models.lock.json}.
+
+Bản dò ghi đè board, nên mỗi phiên mở bằng \texttt{make board-save} và đóng bằng
+\texttt{make board-restore}. NVS không bao giờ được lưu hay trả lại, vì một số lần khởi động cũ
+làm mã lượt lặp (Mục~\ref{section:3.5.4}).
+
+Bước nhanh sinh ra bảy phép toán tự viết ở Bảng~\ref{tab:phep_toan}. Mỗi phép toán là một cặp: bản
+vá Python thay một mẫu trên đồ thị lúc xuất tệp \texttt{.espdl}, module C++ trong
+\texttt{ai\_engine} đăng ký tên đó với ESP-DL và chạy nó, phần tính nặng viết bằng lệnh PIE. Hai đầu
+khớp nhau qua tên phép toán, tên thuộc tính, cách xếp trọng số và phép làm tròn. Phần mô phỏng phải
+chép theo mã máy của kernel ESP-DL đọc bằng \texttt{objdump}, vì esp-dl build với
+\texttt{-ffast-math -O3} nên trình biên dịch đã đổi thứ tự các phép số thực. Nâng esp-dl khỏi bản
+3.3.11 là phải soát lại toàn bộ các hợp đồng này.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các phép toán đồ án tự viết cho ESP-DL.}
+\label{tab:phep_toan}
+\begin{tabular}{|L{4.6cm}|L{3.8cm}|L{2.9cm}|L{1.9cm}|}
+\hline
+\textbf{Phép toán} & \textbf{Đường chậm bị bỏ} & \textbf{Số đo} & \textbf{Nhánh} \\
+\hline
+\texttt{ConvSlices} & Tích chập 1$\times$1 có trọng số từ 64~KB đọc lại từ PSRAM ở mỗi điểm & Nhận diện 299,1 $\to$ 264,5~ms & Giả mạo, nhận diện \\
+\hline
+\texttt{ChannelConv} & Năm phép toán của khối ECA & 15 phép còn 0,7~ms & Nhận diện \\
+\hline
+\texttt{ConvIm2col} & Tích chập đầu 3 kênh đi đường không căn 16 & Tích chập đầu 17,4 $\to$ 8,5~ms & Cả ba \\
+\hline
+\mbox{\texttt{PointwiseDepthwise}} & Tensor giữa 1$\times$1 và depthwise đi một vòng qua PSRAM & Nhanh hơn 5,0--5,5\% & Phát hiện \\
+\hline
+\texttt{MulAdd} & Tích của cổng ECA, SE ghi ra PSRAM rồi mới cộng & 12 phép 12,9~ms, trước đó 16,6~ms & Giả mạo, nhận diện \\
+\hline
+\texttt{SpatialMean} & \texttt{ReduceMean} cộng bằng vòng C tổng quát & 3 phép trước đó 1,9~ms & Giả mạo \\
+\hline
+\texttt{ConvPRelu} & PReLU chạy riêng sau tích chập & Trượt cửa chất lượng & Không dùng \\
+\hline
+\end{tabular}
+\end{table}
+
+Thang chọn hàng \texttt{mse+clip\_as\_relu} cho phát hiện, \texttt{int16\_top1} cho chống giả mạo và
+\texttt{qat} cho nhận diện. Nhánh nhận diện không có hàng nào qua cửa nên luật không chọn được, và đồ
+án lấy hàng chất lượng cao nhất. Hàng này đổi số nguyên của mô hình, nên mọi khuôn mặt phải đăng ký
+lại sau khi nạp. Số của từng bậc nằm ở Chương~\ref{chapter:Experiment}. Đối chứng TFLite Micro dùng
+cùng ba lần huấn luyện, lượng tử hóa ở mức Q1 và chạy bằng một profile riêng.
+
+\subsection{Đưa mô hình lên chip}
+\label{section:4.3.5}
+
+\texttt{make pack} gói ba tệp \texttt{.espdl} thành một ảnh có tiêu đề và ghi vào phân vùng
+\texttt{models\_0} hoặc \texttt{models\_1}. Lúc khởi động, \texttt{ai\_engine\_init} ánh xạ phân
+vùng bằng mmap, không tốn RAM, rồi ESP-DL dựng từng mô hình qua ba bước: đọc đồ thị, chép trọng số
+sang PSRAM, lập kế hoạch bộ nhớ tensor. Trọng số được chép vì PSRAM chạy bus 8 dây còn flash chạy 4
+dây: đo ngày 23/09/2026, chép sang làm mô hình nhanh hơn từ 3\% tới 25\%. Tensor nào không sống cùng
+lúc thì xếp chồng lên cùng một chỗ, nên mỗi mô hình chỉ cần một khối. Bảng~\ref{tab:bo_nho_mo_hinh}
+là kết quả đo trên board.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Bộ nhớ và thời gian dựng của ba mô hình trên board.}
+\label{tab:bo_nho_mo_hinh}
+\begin{tabular}{|L{3.0cm}|c|c|c|c|}
+\hline
+\textbf{Nhánh} & \textbf{Tệp (KB)} & \textbf{Trọng số (KB)} & \textbf{Tensor (KB)} & \textbf{Dựng (ms)} \\
+\hline
+Phát hiện & 192,9 & 78,4 & 187,5 & 62 \\
+\hline
+Chống giả mạo & 577,1 & 464,2 & 568,8 & 123 \\
+\hline
+Nhận diện & 1.345,8 & 1.194,6 & 820,8 & 192 \\
+\hline
+\end{tabular}
+\end{table}
+
+Cả ba lấy 3.574~KB PSRAM và 0~KB RAM nội. Phần chênh so với tổng của bảng là hàng nghìn đối tượng
+nhỏ của ESP-DL, khoảng 73--89~KB mỗi mô hình. Một guard đẩy chúng sang PSRAM trong lúc dựng, vì để
+mặc định thì ba mô hình lấy 94~KB RAM nội, phần bộ nhớ mà Wi-Fi, TLS và DMA đang cần.
 
 \section{Xây dựng firmware}
 \label{section:4.4}
 
+\subsection{Profile build}
+\label{section:4.4.1}
+
+Firmware dựng theo bốn profile ở Bảng~\ref{tab:profile}, mỗi profile trong thư mục riêng. Số đo chỉ
+lấy ở \texttt{bench}. Đo ngày 14/10/2026, cùng mã nguồn dựng bằng \texttt{dev} ghi một khung màn hình
+mất 46,0--55,0~ms và xé hình, còn \texttt{bench} mất 36,9--39,5~ms và không xé.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các profile build của firmware.}
+\label{tab:profile}
+\begin{tabular}{|L{1.6cm}|L{1.5cm}|L{10.4cm}|}
+\hline
+\textbf{Profile} & \textbf{Tối ưu} & \textbf{Đặc điểm} \\
+\hline
+\texttt{dev} & \texttt{-Og} & Gỡ lỗi: assert, kiểm tràn stack, kiểm heap, gdbstub, console \\
+\hline
+\texttt{bench} & \texttt{-O2} & Tốc độ như bản xuất xưởng, còn trace FreeRTOS và console \\
+\hline
+\texttt{prod} & \texttt{-O2} & Log mức cảnh báo, tắt console, bắt buộc TLS, bắt buộc có token lô \\
+\hline
+\texttt{fleet} & \texttt{-O2} & Bản phát hành OTA: \texttt{prod} cộng cấu hình khởi động lại khi panic \\
+\hline
+\end{tabular}
+\end{table}
+
+Secure Boot và mã hóa flash chưa bật ở profile nào, vì đốt eFuse là thao tác một chiều. Người có
+máy trong tay vì thế đọc được JWT từ flash và gửi được lượt chấm cho người đang ở máy đó. Máy chủ chặn
+một phần bằng cặp máy, người và luật giữ lượt ở Mục~\ref{section:3.5.5}, phần còn lại là việc chưa
+làm.
+
+\subsection{Driver ngoại vi}
+\label{section:4.4.2}
+
+Camera chạy một cấu hình duy nhất cho xem trước, suy luận và thu dữ liệu: khung 480$\times$320
+RGB565, XCLK 27~MHz, 14,19~fps. Đồ án tắt tự động phơi sáng của OV5640 vì nó đo sáng cả cảnh, trần
+nhà sáng dìm mặt vào bóng: đo lúc đó, điểm sống của cùng một mặt đi từ 0,9999 xuống 0,683. Hàm
+\texttt{drv\_camera\_expose} tự đo một phần tư giữa khung, mỗi lần chỉnh một phần tư quãng còn thiếu
+rồi nghỉ hai khung cho cảm biến bắt kịp. Thời gian phơi lấy theo bội 10~ms để không nhấp nháy dưới
+đèn 50~Hz, phần lẻ bù bằng gain 1--4 lần.
+
+Ghi một khung màn hình mất 31,7~ms ở SPI 80~MHz, lâu hơn chu kỳ quét 57~Hz của panel, nên tia quét
+vượt con trỏ ghi và ảnh động bị khấc ngang. \texttt{drv\_lcd} sửa bằng hai việc. Thanh ghi
+\texttt{FRMCTR1} hạ tần số quét xuống 23,26~Hz, chu kỳ 42,98~ms, dài hơn thời gian ghi. Trước mỗi lượt
+ghi, driver đọc dòng quét qua chân SDO và chỉ bắt đầu khi bộ đếm ở đoạn 160--200, nên con trỏ ghi có
+ít nhất 7,2~ms chạy đà. Tốc độ khung của ảnh không đổi, vì camera mới là thứ quyết định nhịp đó. Lần
+đọc đầu ngay sau một lượt ghi luôn ra giá trị ngoài dải, nên driver đọc lại tối đa 4 lần. Bỏ cuộc ngay
+lần đầu làm 616/1.260 khung ghi lệch nhịp mà không báo gì.
+
+Các driver còn lại mỏng hơn. \texttt{drv\_touch} chạy trình tự chọn địa chỉ GT911 rồi đọc điểm chạm theo
+ngắt. \texttt{drv\_tof} đặt cực tính ngắt và trả khoảng cách, task \texttt{tof} đổi nó thành hai cạnh có
+người và hết người. \texttt{drv\_audio} nạp tiếng bíp tổng hợp từ phân vùng \texttt{assets} một lần lúc
+khởi động, giữ PCM trong PSRAM, và kéo chân SD của bộ khuếch đại xuống khi không phát. Mọi lệnh tới
+PCF8574 và các thiết bị khác trên bus đi qua khóa \texttt{m\_i2c}.
+
+\subsection{Đường đi của một khung}
+\label{section:4.4.3}
+
+Hình~\ref{fig:duong_khung} là đường đi của một khung. Hàng đợi chỉ chở con trỏ 4 byte, nên 300~KB
+điểm ảnh nằm yên ở chỗ DMA đã ghi và ba mô hình cùng đọc tại đó. Mỗi lúc chỉ một task giữ khung nên
+không cần khóa. Cái giá là AI giữ khung suốt lượt chạy, tới khoảng 350~ms, nên camera cần 4 bộ đệm: một
+cho AI, một nằm chờ trong hàng đợi, một cho \texttt{cam} đang vẽ, một cho cảm biến đang ghi. Với 3 bộ
+đệm, xem trước tụt từ 14,18~fps xuống 8,1~fps.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=9mm and 14mm,
+  box/.style={draw, align=center, text width=24mm, minimum height=11mm, inner sep=2pt},
+  lab/.style={font=\scriptsize, align=center},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (s) {OV5640};
+\node[box, right=of s] (b) {Bốn bộ đệm\\ở PSRAM};
+\node[box, right=of b] (c) {Task \texttt{cam},\\lõi 0};
+\node[box, right=of c] (p) {Panel ST7796S};
+\node[box, below=of c] (a) {Task \texttt{ai},\\lõi 1};
+\node[box, right=of a] (t) {Tensor vào của\\từng mô hình};
+\node[box, left=of a] (r) {Task \texttt{attend}};
+\draw[arr] (s) -- node[lab, above] {DMA} (b);
+\draw[arr] (b) -- (c);
+\draw[arr] (c) -- node[lab, above] {SPI} (p);
+\draw[arr] (c) -- node[lab, right] {\texttt{q\_frame\_ai}, con trỏ} (a);
+\draw[arr] (b.south east) -- node[lab, sloped, below] {đọc tại chỗ} (a.north west);
+\draw[arr] (a) -- node[lab, below] {cắt,\\thu nhỏ} (t);
+\draw[arr] (a) -- node[lab, below] {\texttt{q\_result}} (r);
+\end{tikzpicture}
+\caption{Đường đi của một khung trong firmware.}
+\label{fig:duong_khung}
+\end{figure}
+
+Thứ duy nhất bị chép là bản đã cắt hoặc thu nhỏ, ghi thẳng vào tensor vào của từng mô hình: 57,6~KB,
+19,2~KB và 37,6~KB. \texttt{letterbox\_frame} thu cả khung về 160$\times$120, \texttt{crop\_face} cắt
+vùng 2,7 lần hộp mặt từ khung gốc. \texttt{align\_face} tìm phép xoay, phóng đều và dời từ năm điểm mốc
+bằng bình phương tối thiểu dạng đóng, rồi đi từ từng điểm của ảnh đích 112$\times$112 ngược về khung gốc
+và nội suy song tuyến, nên ảnh đích không có lỗ. Vector ra được chuẩn hóa về độ dài 1 rồi lượng tử lại
+về int8 với thang riêng từng vector. Phép so trong \texttt{svc\_facedb} dùng nhân vô hướng int8 viết bằng
+assembly PIE và chia cho bình phương độ dài đã tính sẵn của mẫu.
+
+\texttt{VisionPipeline} nhận bốn giao diện cho phát hiện, chống giả mạo, nhận diện và so khớp. Nhờ
+vậy ứng dụng kiểm thử cắm bốn bản giả đếm số lần gọi, chạy trên board mà không cần
+phân vùng mô hình, và kiểm đúng thứ tự ba mô hình cùng mọi lối thoát sớm.
+
+\subsection{Máy trạng thái và đường lượt chấm}
+\label{section:4.4.4}
+
+Máy trạng thái ở Hình~\ref{fig:may_trang_thai} là một mảng \texttt{constexpr} 24 dòng, hàm
+\texttt{next} tra mảng và trả trạng thái kế tiếp cùng hành động. Hai đường tự lặp của \texttt{Granted}
+và \texttt{Denied} không đổi trạng thái, nên \texttt{main} không thể đoán từ cạnh trạng thái. Hàm
+\texttt{svc\_attendance\_on\_vision} vì thế trả thẳng một trong bốn lời đáp \texttt{GRANTED},
+\texttt{ALREADY}, \texttt{REFUSED}, \texttt{NOTHING}, và màn hình vẽ theo đó.
+
+Mỗi lượt chấm ghi bằng \texttt{lfs\_file\_write} rồi \texttt{lfs\_file\_sync} ngay, tốn 10--20~ms, xong
+mới đưa lời nhắc vào \texttt{q\_uplink}. Task \texttt{sync} đọc bản ghi ở con trỏ, dựng JSON bằng kiểu sinh
+từ hợp đồng, gửi QoS 1, chờ PUBACK rồi mới ghi \texttt{cursor.bin} theo đường hai pha. Bản ghi làm ra lúc
+máy chưa có giờ được cộng mốc khởi động trước khi gửi, và con trỏ dừng lại chờ giờ tối đa mười phút, vì
+broker thường lên trước NTP.
+
+RAM nội là giới hạn thật của phần mạng. Đo trên \texttt{dev}, mảnh liền lớn nhất chỉ còn 5.620~B trong khi
+esp-mqtt xin 6.144~B cho ngăn xếp, nên ngăn xếp task MQTT nằm ở PSRAM và mbedTLS cũng cấp phát ở đó. Điều
+kiện của cách này là ngăn xếp ở PSRAM không được chạm khi cache flash tắt, và lượt ghi flash đã đỗ lõi kia
+và tắt ngắt nên không task nào chạy lúc đó.
+
+\subsection{OTA}
+\label{section:4.4.5}
+
+\texttt{net\_ota} so link với gốc API đã biên dịch sẵn trước khi mở kết nối, tải vào khe không chạy, kiểm
+sha256 rồi đổi khe. Khởi động được chưa đủ để coi là thành công, vì một gói mô hình hỏng vẫn boot được rồi
+không nhận ra ai. Bản mới ở trạng thái chạy thử tới khi chạy đủ 30~s và \texttt{AI\_READY} đã bật, lúc đó
+hàm \texttt{settle\_this\_build} mới đánh dấu khe hợp lệ cho bootloader. Gói mô hình đi
+đường tương tự, với dấu chạy thử nằm trong NVS: ghi dấu trước, đổi khe sau, và gói không nạp được thì máy
+lùi khe rồi khởi động lại. Nhịp sống mang cờ \texttt{onTrial}, nên dashboard phân biệt được bản đã lên với bản
+đang chạy thử.
+
+\subsection{Giao diện máy chấm công}
+\label{section:4.4.6}
+
+Mỗi màn hình là một lớp con của \texttt{Screen}, \texttt{ScreenManager} giữ chín đối tượng dựng sẵn lúc khởi
+động. \texttt{ui} vẽ vào \texttt{Canvas}, một bản đồ 1 byte mỗi điểm mang chỉ số màu và độ phủ, rồi \texttt{cam}
+trộn nó vào từng dải 20 dòng ngay lúc đẩy ra panel, nên lớp phủ không tốn thêm lượt SPI hay lượt quét PSRAM
+nào. Hai khoang của lớp phủ cần một luật giữ chỗ: khi \texttt{ui} được phép xóa khoang \texttt{cam} đang đọc,
+đo 19/09/2026 có 156/660 khung hỏng lúc chạm liên tục, thêm luật giữ chỗ thì 0/840 khung.
+
+Chữ lấy từ bảng glyph 4~bit sinh sẵn từ phông MiSans, khoảng 110 chuỗi khai ở \texttt{StrId} với hai bản dịch.
+Hình~\ref{fig:man_may} là màn quét và màn lấy mẫu. Màn lấy mẫu vẽ ba vạch sáng dần, đổi câu nhắc theo mẫu đang
+chờ, và giữ tên người đang được chụp ở thanh trên để mặt không rơi vào tên người khác. Màn Cài đặt
+chia thẻ nhóm gồm ngôn ngữ, Wi-Fi, độ sáng, âm lượng và trang thiết bị của tôi, giá trị ghi vào NVS.
+
+\begin{figure}[!htb]
+\centering
+\anh{anh_man_quet.jpg}{0.4\textwidth}{7cm}
+\hspace{4mm}
+\anh{anh_man_mau.jpg}{0.4\textwidth}{7cm}
+\caption{Màn quét và màn lấy mẫu trên máy chấm công.}
+\label{fig:man_may}
+\end{figure}
+
+\subsection{Kiểm thử trên board}
+\label{section:4.4.7}
+
+Firmware có 29 ứng dụng kiểm thử, 25 ứng dụng nằm trong từng thành phần và 4 ứng dụng chung
+\texttt{bench\_ai}, \texttt{bench\_mem}, \texttt{parity}, \texttt{soak}, tổng 266 ca Unity. \texttt{make fw-app-test} nạp
+ứng dụng và chạy kịch bản pytest trên board. Bộ vector vàng ở \texttt{contracts/golden/} giữ hậu xử lý C++
+khớp bản Python. Một dòng tổng kết màu xanh chưa đủ để tin: bộ kiểm thử lưu trữ từng in 11/11 ca đạt trong khi
+phía trên có hai lần panic, nên kịch bản đếm cả số lần khởi động.
+
 \section{Xây dựng backend và các phân hệ nhân sự}
 \label{section:4.5}
+
+\subsection{Cấu trúc}
+\label{section:4.5.1}
+
+Backend là một ứng dụng NestJS~\cite{nestjs} gồm 27 module, nối PostgreSQL qua Prisma~\cite{prisma}. Phần dùng
+chung nằm ở \texttt{src/common/}: guard xác thực và vai, \texttt{ScopeService}, interceptor ghi nhật ký và phát tin
+thay đổi, bộ ghi CSV. Mọi biến môi trường đọc ở một tệp \texttt{env.schema.ts} và kiểm bằng zod lúc khởi động,
+thiếu là dừng ngay. Mỗi route khai vai bằng \texttt{@Roles} hoặc \texttt{@CurrentViewer}, và
+\texttt{check\_routes.py} chặn route thiếu khai báo. \texttt{check\_error\_codes.py} kiểm mọi mã lỗi có câu ở
+cả hai ngôn ngữ. Hình~\ref{fig:luong_cong} là đường dữ liệu từ lượt chấm tới phiếu lương, các mục dưới đi theo
+hình này.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=6mm and 7mm,
+  box/.style={draw, align=center, text width=30mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (r) {AttendanceRecord\\lượt chấm thô};
+\node[box, right=of r] (d) {AttendanceDay\\ngày công};
+\node[box, right=of d] (p) {PayrollRun\\lượt tính};
+\node[box, right=of p] (s) {Payslip\\phiếu lương};
+\node[box, below=of d] (q) {Request\\đơn nghỉ, giải trình};
+\node[box, below=of p] (c) {PayrollPolicy,\\mức lương};
+\draw[arr] (r) -- (d);
+\draw[arr] (d) -- (p);
+\draw[arr] (p) -- (s);
+\draw[arr] (q) -- (d);
+\draw[arr] (c) -- (p);
+\end{tikzpicture}
+\caption{Đường dữ liệu từ lượt chấm tới phiếu lương.}
+\label{fig:luong_cong}
+\end{figure}
+
+\subsection{Nhận lượt chấm qua MQTT}
+\label{section:4.5.2}
+
+\texttt{MqttService} nối EMQX bằng client ID cố định, phiên không sạch, và tự giữ việc trả ack: thư viện mqtt.js
+trả ack ngay trong vòng đọc, còn đồ án hoãn tới khi trình xử lý xong. Tin của mỗi máy đi theo một làn riêng nên
+đúng thứ tự tới, các máy không chờ nhau. Tin hỏng được thử lại giãn từ 1~s tới 30~s, sau năm lần thì ghi log rồi
+ack, để một tin độc không chặn cả hàng.
+
+\texttt{AttendanceListener} so \texttt{deviceId} trong bản tin với topic, vì topic mới là thứ broker đã xác thực.
+\texttt{AttendanceService.record} rồi kiểm lần lượt: máy còn trong đội, lượt chưa có, người đang ở máy đó, giờ có
+nghi vấn không, có phải giữ lượt không. Hai lần giao cùng lúc có thể cùng qua phép đọc, và ràng buộc unique ở cơ
+sở dữ liệu là chỗ phân xử cuối. Lượt của một ngày đã qua xếp ngày đó của người đó vào hàng dựng lại. Ghi xong mới
+phát tin cho dashboard qua Socket.IO~\cite{socketio}, vì dashboard trả lời bằng cách hỏi lại danh sách.
+
+\subsection{Ngày công, ca làm và giải trình công}
+\label{section:4.5.3}
+
+Việc dựng ngày chạy lúc 00:30 theo múi giờ công ty cho ngày hôm qua. Hàm \texttt{dayOf} lấy lượt đầu và lượt cuối
+của ngày, tính phút làm, phút muộn sau ân hạn, phút về sớm và phút tăng ca so với ca của người đó. Ngày không có
+lượt thì tra lịch: ngày lễ, cuối tuần, phép đã duyệt, công tác đã duyệt, còn lại là vắng. Phút tăng ca chỉ được đếm,
+chỉ phần có đơn duyệt mới thành tiền. Nghỉ nửa ngày dời một đầu của ca về điểm giữa ca, ví dụ ca 08:00--17:30 có
+điểm giữa 12:45. Ngày nhân sự đã sửa tay không bị dựng đè, và dòng ngày giữ người sửa, lý do, phút máy đo.
+
+Ngày lệch sinh một việc cho chính người đó. Từ đó họ gửi đơn giải trình công, là một \texttt{Request} loại
+\texttt{ATTENDANCE\_FIX} điền sẵn ngày ấy, hoặc bấm không cần giải trình. Đơn được duyệt thì \texttt{applyFix} sửa
+ngày công trong cùng giao dịch với lượt duyệt. Ca qua nửa đêm chưa có thiết kế: ca có giờ ra không đứng sau giờ vào
+bị từ chối với mã \texttt{SHIFT\_CROSSES\_MIDNIGHT}, vì mọi phép tính trên đặt cả ca vào một ngày lịch.
+
+\subsection{Nghỉ phép}
+\label{section:4.5.4}
+
+Số dư giữ chỗ bằng một câu \texttt{UPDATE} có điều kiện, kiểm và giữ trong cùng một lệnh, vì hai đơn đọc cùng một số
+dư sẽ cùng qua phép kiểm tách rời. Câu lệnh không chạm dòng nào thì trả \texttt{LEAVE\_BALANCE\_SHORT}. Đơn chồng ngày
+do ràng buộc loại trừ của PostgreSQL chặn. Lượt duyệt cũng là ghi có điều kiện \texttt{state = PENDING}, nên hai người
+duyệt cùng lúc thì người sau nhận \texttt{REQUEST\_ALREADY\_DECIDED}. Đơn mang \texttt{clientKey} do máy gửi sinh ra,
+nên điện thoại gửi lại lúc mạng yếu chỉ nhận về đơn đã có, không thành hai đơn.
+
+\subsection{Tính lương}
+\label{section:4.5.5}
+
+Phép tính nằm trong một hàm thuần \texttt{calculate}, không đụng cơ sở dữ liệu nên kiểm thử được từng ca. Tiền là số
+nguyên lớn tính bằng đồng, tỉ lệ là phần vạn, ngày là phần trăm ngày. Thứ tự tính gồm: (i)~lương theo ngày công;
+(ii)~phụ cấp, tăng ca theo từng hệ số, phụ trội làm đêm; (iii)~bảo hiểm trên lương đóng bảo hiểm, có trần, và miễn
+đóng khi nghỉ không lương từ 14 ngày; (iv)~thu nhập tính thuế sau phần miễn, bảo hiểm và giảm trừ gia cảnh; (v)~thuế
+lũy tiến; (vi)~các khoản trừ khác như tạm ứng, rồi thực lĩnh. Phần âm không thành dòng chuyển tiền âm mà ghi thành
+dòng \texttt{CARRY\_OUT} và sang kỳ sau.
+
+Mọi con số do luật đặt nằm ở \texttt{PayrollPolicy} và \texttt{TaxBracket} theo ngày hiệu lực, và phép tính hỏi chính
+sách tại ngày cuối kỳ, nên mức tham chiếu đổi giữa năm 2026 là hai dòng dữ liệu. Bộ kiểm thử kiểm biểu thuế bằng hai
+đường độc lập: liên tục tại mọi ranh giới bậc, và khớp công thức rút gọn của từng bậc.
+
+Bấm chạy thì \texttt{execute} kiểm trước những gì chắc chắn làm lượt hỏng, rồi xếp việc vào hàng đợi. \texttt{runNow}
+chia 500 người một lô, mỗi lô một giao dịch, nên không có phiếu nào thiếu dòng. Khóa đặt trên dòng pháp nhân, dòng kỳ
+và dòng lượt, nên hai tài khoản bấm cùng lúc gặp đúng một luật. Một điểm còn lệch: hàm này chỉ miễn phần chênh của tiền
+làm thêm giờ theo Thông tư 111/2013, trong khi văn bản hướng dẫn Luật Thuế thu nhập cá nhân
+2025~\cite{luattncn2025} được cho là miễn toàn bộ. Đồ án chưa đọc được nguyên văn nên chưa sửa code.
+
+\subsection{Quản lý máy chấm công và hàng đợi}
+\label{section:4.5.6}
+
+Module \texttt{devices} giữ vòng đời máy, nhận nhịp sống, ghi độ lệch đồng hồ và gửi lệnh qua \texttt{down/cmd} với thời
+hạn. Module \texttt{enrollment} giữ cặp máy, người và đẩy danh sách xuống theo số phiên bản. Module \texttt{models} nhận
+bản phát hành qua \texttt{POST /releases}, băm sha256 trong lúc ghi xuống volume, và tìm đường ngắn nhất từ thứ máy đang
+chạy tới bản mới nhất của cả firmware lẫn mô hình, theo các lời khai \texttt{minFwVersion} và \texttt{requiresModels}.
+
+Việc nền đi qua sáu hàng đợi BullMQ~\cite{bullmq}: \texttt{report}, \texttt{notify}, \texttt{payroll},
+\texttt{timesheet}, \texttt{people}, \texttt{leave}, gồm 31 loại việc. Mọi lịch lặp mang múi giờ công ty, và dựng lại một
+ngày không đổi gì thì không ghi dòng nào. Thông báo tách tin của một người khỏi việc của cả nhóm: ba người bàn nhân sự
+cùng nhận một đơn, một người duyệt xong thì việc đóng cho cả ba.
 
 \section{Xây dựng dashboard, cổng nhân viên và ứng dụng Android}
 \label{section:4.6}
 
+\subsection{Dashboard}
+\label{section:4.6.1}
+
+Frontend là một ứng dụng Next.js~\cite{nextjs} dùng App Router, 46 trang nằm dưới tiền tố ngôn ngữ, giao diện dựng bằng
+Kumo~\cite{kumo}. Dữ liệu đi qua TanStack Query~\cite{tanstack}, bộ lọc giữ trong URL, và \texttt{lib/ws.ts} ánh xạ mỗi
+kênh tin sang các truy vấn cần làm mới, nên trang đang mở tự cập nhật. Chuỗi hiển thị dùng next-intl với 2.993 khóa mỗi
+ngôn ngữ. Tệp \texttt{vi.json} là nguồn kiểu nên \texttt{en.json} thiếu khóa là lỗi biên dịch, và \texttt{lib/fault.ts} đổi mã
+lỗi của API thành câu.
+
+Các ảnh dưới chụp từ môi trường thử với một công ty giả 5.006 nhân viên, tên người là tên sinh ngẫu nhiên.
+Hình~\ref{fig:web_duyet} là hộp chờ duyệt: mỗi dòng đủ ngữ cảnh để quyết, gồm số dư sau khi duyệt và thời gian đã chờ, số
+đếm trên tab đến từ tổng của máy chủ. Hình~\ref{fig:web_luong} là một kỳ lương đã trả với 4.767 phiếu.
+Hình~\ref{fig:web_may} là danh sách máy chấm công với trạng thái, phiên bản và máy chờ duyệt.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.88\textwidth]{web_cho_duyet.png}
+\caption{Hộp chờ duyệt của nhân sự, dữ liệu giả.}
+\label{fig:web_duyet}
+\end{figure}
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.88\textwidth]{web_ky_luong.png}
+\caption{Trang một kỳ lương đã trả, dữ liệu giả.}
+\label{fig:web_luong}
+\end{figure}
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.88\textwidth]{web_may_cham_cong.png}
+\caption{Danh sách máy chấm công, dữ liệu giả.}
+\label{fig:web_may}
+\end{figure}
+
+\subsection{Cổng nhân viên}
+\label{section:4.6.2}
+
+Cổng nhân viên là chính ứng dụng web ở bề ngang hẹp, Hình~\ref{fig:dien_thoai}. Bảng đổi thành thẻ từ cùng một bộ cột,
+mỗi cột mang mức ưu tiên để bảng tự bỏ cột theo bề rộng thật. Ứng dụng cài được như PWA với \texttt{manifest.webmanifest} và
+\texttt{sw.js}. Service worker giữ dữ liệu đã tải trong ngăn của từng tài khoản và xóa khi đăng xuất. Đơn gửi lúc mất mạng
+nằm trong IndexedDB ở \texttt{lib/outbox.ts} và được thử lại ở ba lúc: khi trình duyệt báo có mạng, khi mở lại ứng dụng, và
+một nhịp chậm trong lúc mở. Đồ án không dùng Background Sync vì Safari trên iOS không có. Thông báo đẩy đi qua Web
+Push~\cite{webpush} với khóa VAPID, nửa riêng không rời VPS.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.29\textwidth]{dt_trang_chu.png}
+\hspace{2mm}
+\includegraphics[width=0.29\textwidth]{dt_cham_cong.png}
+\hspace{2mm}
+\includegraphics[width=0.29\textwidth]{dt_phieu_luong.png}
+\caption{Trang của quản lý, công của tôi và phiếu lương trên điện thoại, dữ liệu giả.}
+\label{fig:dien_thoai}
+\end{figure}
+
+\subsection{Ứng dụng Android}
+\label{section:4.6.3}
+
+Trên Android, Chrome không cho PWA đã cài tô hai thanh hệ thống theo màu ứng dụng: đo ngày 25/09/2026 trên điện thoại thật,
+hai dải đó lóe khác màu mỗi lần mở. Đồ án vì thế bọc đúng trang web trong một vỏ Trusted Web Activity~\cite{twa}, gói
+\texttt{vn.io.cckiosk.nhanluc}, dựng bằng Bubblewrap từ \texttt{twa-manifest.json}. Vỏ không mang code nghiệp vụ nào, nên mọi
+thay đổi của web tới ứng dụng như tới trình duyệt. Tệp \texttt{assetlinks.json} trên miền web mang dấu SHA-256 của khóa ký,
+thiếu nó thì Chrome hiện thanh địa chỉ. Tệp APK phát qua GitHub Releases, còn iPhone dùng PWA vì iOS không cài APK.
+
 \section{Triển khai Docker và CI/CD}
 \label{section:4.7}
+
+\subsection{Dịch vụ trên VPS}
+\label{section:4.7.1}
+
+Máy chủ chạy bằng Docker Compose~\cite{compose} gồm Traefik~\cite{traefik}, API, PostgreSQL, Redis, EMQX và một container sao
+lưu. Frontend không nằm ở đây mà build trên Vercel mỗi lần push, dưới tên miền \texttt{app.cckiosk.io.vn}, cùng site với
+\texttt{api.cckiosk.io.vn}, để cookie làm mới là cookie bên thứ nhất và Safari không đăng xuất người dùng iPhone.
+
+EMQX mặc định mở, nên \texttt{emqx.conf} phải đóng lại ba thứ: xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
+\texttt{POST /mqtt/auth}~\cite{emqxhttp}; ACL theo tên đăng nhập; chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM, đo
+được 0 bản ghi còn lại sau khi khởi động lại broker, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
+tồn tại. Đường \texttt{/mqtt/auth} không ra internet: router của Traefik loại tiền tố đó không phân biệt hoa thường, vì Express
+định tuyến không phân biệt mà \texttt{PathPrefix} thì có.
+
+\subsection{Tích hợp và triển khai liên tục}
+\label{section:4.7.2}
+
+Bảng~\ref{tab:ci} liệt kê sáu workflow của GitHub Actions~\cite{ghactions}. Workflow \texttt{contracts} chạy mọi lần push và giữ
+các khối không trôi khỏi nhau, kể cả sơ đồ nguyên lý so với bảng chân.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các workflow của GitHub Actions.}
+\label{tab:ci}
+\begin{tabular}{|L{2.4cm}|L{11.2cm}|}
+\hline
+\textbf{Workflow} & \textbf{Việc} \\
+\hline
+\texttt{contracts} & Kiểm lược đồ, sinh lại mã và chặn lệch, luật comment, tài liệu, tầng firmware, sơ đồ, mạch in, mã lỗi \\
+\hline
+\texttt{ml} & Lint và pytest trên CPU \\
+\hline
+\texttt{firmware} & Build và báo cỡ ảnh; job \texttt{release} phát hành bản \texttt{fleet} khi số phiên bản mới \\
+\hline
+\texttt{backend} & PostgreSQL, Redis, EMQX thật, migrate, seed, kiểm thử e2e, build \\
+\hline
+\texttt{frontend} & Sinh kiểu route, \texttt{tsc}, \texttt{next build} \\
+\hline
+\texttt{deploy} & Gọi lại \texttt{backend}, dựng ảnh container, chạy \texttt{deploy.sh} trên VPS \\
+\hline
+\end{tabular}
+\end{table}
+
+Hình~\ref{fig:cd} là đường triển khai. Push lên \texttt{main} chạm backend, hợp đồng hay cấu hình triển khai là lên VPS, nhưng chỉ
+khi kiểm thử qua. Ảnh container dựng trên GitHub vì đo ngày 24/09/2026 trên chính VPS, build mất 3,5 phút với đỉnh 1.250~MB RAM,
+trong khi cả stack lúc chạy chỉ khoảng 390~MB. Khóa SSH của GitHub bị ép chạy đúng \texttt{deploy.sh}, nên lộ khóa chỉ deploy lại
+được một bản đã có. Token kéo ảnh đi qua stdin và hết hạn cùng job.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=6mm and 5mm,
+  box/.style={draw, align=center, text width=28mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}},
+  lab/.style={font=\scriptsize, align=center}]
+\node[box] (p) {Push lên\\\texttt{main}};
+\node[box, right=of p] (t) {Job \texttt{test}};
+\node[box, right=of t] (i) {Job \texttt{image}};
+\node[box, right=of i] (s) {Job \texttt{ship}:\\\texttt{deploy.sh}};
+\node[box, below=of s] (h) {Chờ \texttt{/health}\\tối đa 120~s};
+\node[box, left=of h] (d) {Ghi \texttt{.deployed},\\dọn ảnh cũ};
+\node[box, below=of h] (r) {Lùi về sha\\ở \texttt{.deployed}};
+\draw[arr] (p) -- (t);
+\draw[arr] (t) -- (i);
+\draw[arr] (i) -- (s);
+\draw[arr] (s) -- (h);
+\draw[arr] (h) -- node[lab, above] {200} (d);
+\draw[arr] (h) -- node[lab, right] {không đạt} (r);
+\end{tikzpicture}
+\caption{Đường triển khai backend lên VPS.}
+\label{fig:cd}
+\end{figure}
+
+\texttt{deploy.sh} đưa cấu hình về đúng commit, dựng lại image sao lưu khi tệp của nó đổi, kéo ảnh API, rồi dựng lại bằng
+\texttt{-{}-force-recreate} đúng dịch vụ có tệp cấu hình đổi. Bước cuối này cần thiết vì \texttt{git checkout} thay tệp bằng inode mới
+trong khi bind mount một tệp lẻ vẫn cầm inode cũ, nên dịch vụ chạy tiếp cấu hình cũ mà không báo gì. Container API chạy
+\texttt{prisma migrate deploy} trước khi nghe, và lùi bản an toàn nhờ luật nở rồi co: bản cũ vẫn chạy được trên lược đồ mới.
+
+Firmware và mô hình đi đường khác. \texttt{make release} tăng số phiên bản, dựng ảnh như CI, commit và theo lượt CI tới khi máy chủ có
+bản mới. \texttt{make models-release} chạy trên máy huấn luyện, vì trọng số không vào kho mã.
+
+\subsection{Sao lưu}
+\label{section:4.7.3}
+
+Mỗi đêm container sao lưu viết một bản logic, một bản logic riêng cho mẫu khuôn mặt và một bản gốc vật lý, còn PostgreSQL đẩy WAL liên
+tục với \texttt{archive\_timeout} 5 phút. Hai loại cần nhau vì WAL chỉ phát lại được lên bản gốc vật lý. Tệp được nén rồi mã hóa bằng
+khóa công khai của \texttt{age} trước khi chạm đĩa, nên ai chiếm được máy chủ cũng không đọc lại được lịch sử. Mỗi 5 phút tệp mới được
+chép sang một bucket ngoài máy, có khóa 5 ngày chống xóa. Script \texttt{restore-drill.sh} dựng lại cả hai loại vào một PostgreSQL vứt đi
+và bấm giờ, cứ 15 phút API hỏi trạng thái đẩy WAL và gửi mail cho quản trị khi có chuỗi cũ quá 26 giờ. Trong 7 ngày gần nhất hệ thống mất
+tối đa 5 phút dữ liệu, cũ hơn thì mất tối đa một ngày.
+
+Hệ thống đã hiện thực đủ các khối phần mềm ở Chương~\ref{chapter:Design}: firmware 0.9.13 với 29 ứng dụng kiểm thử, ba mô hình trên ESP-DL
+với bảy phép toán tự viết, backend 27 module chạy trên VPS từ tháng 9/2026, 46 trang web và ứng dụng Android. Phần cứng còn thiếu mạch đế in,
+vỏ và thanh chắn. Chương~\ref{chapter:Experiment} đo các phần trên và đối chiếu với yêu cầu đã đặt.
 
 \end{document}

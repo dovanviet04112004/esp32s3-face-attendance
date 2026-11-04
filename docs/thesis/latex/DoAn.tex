@@ -40,6 +40,8 @@
 \usepackage{tikz} % Vẽ sơ đồ
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}} % Cột bảng canh trái
+\DeclareRobustCommand{\texttt}[1]{{\ttfamily\hyphenchar\font=-1 #1}} % Tên trong code không ngắt dòng ở giữa từ
+\setlength{\emergencystretch}{2em}
 
 % ===================================================
 
