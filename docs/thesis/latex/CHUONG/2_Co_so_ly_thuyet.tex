@@ -149,6 +149,10 @@ Trọng số khi chạy & Đọc từ flash qua mmap & Chép sang PSRAM lúc d�
 \hline
 Bộ nhớ tensor & Arena dùng chung & Mỗi mô hình một vùng riêng \\
 \hline
+Số phép toán của ba đồ thị & 62, 115, 189 & 35, 113, 145 \\
+\hline
+66 lớp PReLU & Kernel C tham chiếu & Kernel của ESP-DL \\
+\hline
 Tệp ứng dụng đo & 386,5~KB & 1.283,4~KB \\
 \hline
 PSRAM lấy khi dựng ba mô hình & 1.158~KB & 3.574~KB \\
@@ -160,13 +164,20 @@ Một lượt, có xem trước & 3.864,6~ms & 406,2~ms \\
 \end{tabular}
 \end{table}
 
-Đo từng phép toán trên bộ mô hình dùng TFLM trước đó, 94,1\% thời gian đã nằm
+Đo từng phép toán trên bộ mô hình ReLU dùng TFLM trước đó, 94,1\% thời gian đã nằm
 trong kernel esp-nn, nên bớt phần thông dịch không giúp được gì và đồ án đổi thư
-viện. Số ở Bảng~\ref{tab:hai_thu_vien} gồm cả các kernel đồ án tự thêm vào ESP-DL
-(Mục~\ref{section:2.4.3}), nên hệ số 10,51 lần không phải của riêng thư viện. Cái
-giá là tệp ứng dụng lớn thêm 896,9~KB, kéo khe OTA từ 2~MB lên 2,75~MB, và PSRAM
-tốn thêm 2.416~KB. TFLM vẫn dựng được và là đối
-chứng ở Chương~\ref{chapter:Experiment}.
+viện. Cái giá là tệp ứng dụng lớn thêm 896,9~KB, kéo khe OTA từ 2~MB lên 2,75~MB, và
+PSRAM tốn thêm 2.416~KB. TFLM vẫn dựng được và là đối chứng ở
+Chương~\ref{chapter:Experiment}.
+
+Hệ số 10,51 lần ở Bảng~\ref{tab:hai_thu_vien} cần đọc đúng điều kiện. Hai bên chạy
+cùng kiến trúc và cùng trọng số FP32 của ba mô hình đang triển khai, nhưng không cùng
+phép toán khi chạy. Trên TFLM, 66 lớp PReLU không có kernel esp-nn nên rơi về kernel
+C tham chiếu, còn phía ESP-DL có kernel cho PReLU và có thêm các phép toán gộp đồ án
+tự viết (Mục~\ref{section:2.4.3}). Trên một bộ mô hình ReLU, cùng phép toán và chưa
+có kernel tự viết, đo ngày 23/09/2026 thì khoảng cách là 5,42 lần (1.270,5~ms so với
+234,2~ms). Với bộ đang triển khai, ESP-DL chưa vá mất 451,9~ms, tức khoảng 8,2 lần, và
+chuỗi tối ưu đưa con số lên 10,51 lần.
 
 \section{Phát hiện, chống giả mạo và nhận diện khuôn mặt}
 \label{section:2.3}
@@ -221,7 +232,7 @@ chỗ duy nhất trong chuỗi biết các vị trí đó. Bảng~\ref{tab:phat_
 ứng viên đã xét. Bản nano của YOLO-face bị loại vì giấy phép AGPL-3.0 của nó sẽ lan
 vào firmware.
 
-\begin{table}[H]
+\begin{table}[!htb]
 \centering
 \small
 \caption{Các bộ phát hiện đã xét, AP là số công bố, đồ án không đo lại.}
