@@ -462,6 +462,8 @@ E13-T2.
 | E14-T5 | Rà license research-only, ghi rõ trong báo cáo | Có mục riêng | E14-T2 |
 | **E14-T7** | **Mục "lỗi chỉ phần cứng thật mới lộ"** — `docs/thesis/loi-tim-thay-tren-board.md` đã có bản đầu cho ba lỗi 09/09: cuộc đua khởi tạo bus I2C, giả định phân cực chân ngắt, và mốc thời gian datasheet sai mô hình mạch. Ghi tiếp mỗi lỗi cùng loại tìm được về sau **Soát 01/10, còn nợ:** đã có sáu lỗi và ba lần kết luận sai; chưa ghi các lỗi 25–27/09: XSHUT kẹt thấp gây khởi động lặp, OTA chết vì `IDLE0` bị bỏ đói, khởi động lặp sau 1,5 ngày rút điện. | Mỗi lỗi có hiện tượng, giả thuyết đã loại, mốc đo, cách sửa, bằng chứng trên board | — |
 | E14-T6 | Slide bảo vệ + tập trình bày | Xong | E14-T3, E14-T4 |
+| E14-T9 | **Khung quyển LaTeX, bìa, Chương 1 — viết 04/11.** Preamble theo template SoICT, các chương chia theo năm nội dung của phiếu giao nhiệm vụ, `make thesis` ra `docs/thesis/latex/build/DoAn.pdf`. Có bìa, bìa lót, lời cảm ơn (136 từ) và Chương 1 (3 trang); Chương 2–5 mới có đề mục, tóm tắt và kết luận viết sau cùng. Tháng trên bìa để tạm 01/2027 | Bìa khớp phiếu giao nhiệm vụ, `make thesis` không lỗi, lời cảm ơn 100–150 từ, Chương 1 trong 3–6 trang | — |
+| E14-T10 | 🔬 **Thời gian phản hồi API dưới tải cho Chương 5.** Phiếu giao nhiệm vụ cam kết kiểm thử tải 5.000 nhân viên. Đã có `make be-demo` (5.000 người), `make be-plans` và số chốt kỳ 5.000 phiếu ở `docs/measurements/notifications.md`; còn thiếu p50 và p95 của vài API chính khi nhiều phiên gọi cùng lúc, đo trên DB riêng | Có bảng số ở `docs/measurements/` | E14-T9 |
 
 ---
 
