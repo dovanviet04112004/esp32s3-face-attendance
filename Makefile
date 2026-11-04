@@ -9,7 +9,7 @@ SHELL := /bin/bash
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
-        usb-list usb-attach usb-detach hw-gen hw-check hw-export hw-fab \
+        usb-list usb-attach usb-detach hw-gen hw-check hw-export hw-fab thesis \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
@@ -772,6 +772,10 @@ board-restore: idf ## Write back and verify what board-save kept in DIR; NVS nev
 	cd $(BOARD_DIR) && sha256sum -c SHA256SUMS
 	$(esptool_board) write-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
 	$(esptool_board) verify-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
+
+##@ Thesis
+thesis: ## Build the thesis into docs/thesis/latex/build/DoAn.pdf
+	cd docs/thesis/latex && latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=build DoAn.tex
 
 ##@ Hardware (close KiCad first: it saves its own copy over a regenerated file)
 hw-gen: ## Regenerate hardware/kicad and hardware/lib from hardware/gen, then check board against sheet and pin map
