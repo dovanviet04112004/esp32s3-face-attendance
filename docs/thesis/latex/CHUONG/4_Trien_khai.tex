@@ -15,8 +15,7 @@ mạch đế in, chưa có vỏ và thanh chắn. Mục~\ref{section:4.2} nói r
 \label{section:4.1}
 
 Mã nguồn nằm trong một kho chung, và mọi thao tác đi qua một Makefile ở gốc kho: cài đặt,
-sinh mã từ hợp đồng, huấn luyện, lượng tử hóa, build, nạp và phát hành. Một số đo trong sổ
-đo vì thế đi kèm đúng một dòng lệnh để lặp lại. Bảng~\ref{tab:moi_truong} liệt kê công cụ
+sinh mã từ hợp đồng, huấn luyện, lượng tử hóa, build, nạp và phát hành. Một số đo vì thế lặp lại được bằng đúng một dòng lệnh. Bảng~\ref{tab:moi_truong} liệt kê công cụ
 và phiên bản. Máy phát triển là một laptop chạy WSL2, vừa build vừa huấn luyện. WSL chỉ có
 10~GB RAM, nên các bước nặng của thang lượng tử hóa chạy trong một scope systemd có trần bộ
 nhớ: bước nào vượt trần thì chỉ bước đó chết, máy không sập theo.
@@ -74,12 +73,8 @@ Mọi số đo ở Chương~\ref{chapter:Experiment} lấy trên bản lắp nà
 
 Bản đang chạy lấy hai đường 5~V của Bảng~\ref{tab:nguon} từ một khối pin nằm ngoài mạch,
 Hình~\ref{fig:khoi_pin}. Khối này gồm hai pin 18650 3,7~V 3.300~mAh nối tiếp qua mạch bảo
-vệ 2S, một công tắc và hai module hạ áp MP1584EN, mỗi module nuôi một đường. Hộp pin đo được
-8,3~V, hai module chỉnh ở 5,11--5,12~V. Khối không có mạch sạc nên pin tháo ra sạc ngoài.
-Trước khi lắp vào máy, module của đường 1 được thử riêng bằng ứng dụng phát tiếng. Lấy điện
-cho bộ khuếch đại qua chân của board thì loa ra tiếng như khi dùng USB, còn kéo một dây 5~V
-riêng tới bộ khuếch đại trên breadboard thì loa rè to rồi mất tiếng. Đồ án nghi đường mass
-của dây cắm nhưng chưa chứng minh được, và cũng chưa đo thời gian chạy của một lần sạc.
+vệ 2S, một công tắc và hai module hạ áp MP1584EN, mỗi module nuôi một đường. Hộp pin cho 8,3~V, hai module chỉnh ở 5,11--5,12~V. Khối không có mạch sạc nên pin tháo ra sạc ngoài.
+Trên breadboard, kéo một dây 5~V riêng tới bộ khuếch đại làm loa rè to rồi mất tiếng, còn lấy điện qua chân của board thì loa ra tiếng bình thường. Nguyên nhân nghi ở đường mass của dây cắm, chưa được chứng minh. Thời gian chạy của một lần sạc chưa đo.
 
 \begin{figure}[!htb]
 \centering
@@ -88,16 +83,13 @@ của dây cắm nhưng chưa chứng minh được, và cũng chưa đo thời 
 \label{fig:khoi_pin}
 \end{figure}
 
-Ngoại vi được đưa lên lần lượt, mỗi con có một ứng dụng kiểm thử riêng chạy trên board trước
-khi ghép vào firmware. Cách làm này lộ ra một loại lỗi mà build và kiểm thử trên máy tính
-không bắt được: hàm báo thành công trong khi phần cứng chưa làm được việc.
-Bảng~\ref{tab:loi_board} ghi các lỗi điển hình. Nghiệm thu màn hình vì thế phải có người
+Mỗi ngoại vi có một ứng dụng kiểm thử riêng chạy trên board trước khi ghép vào firmware, vì có một loại lỗi mà build và kiểm thử trên máy tính không bắt được: hàm báo thành công trong khi phần cứng chưa làm được việc. Bảng~\ref{tab:loi_board} ghi các lỗi điển hình và cách xử lý. Nghiệm thu màn hình vì thế phải có người
 nhìn kính, vì bộ kiểm thử panel có 9 ca thì 8 ca chỉ kiểm mã trả về.
 
 \begin{table}[!htb]
 \centering
 \small
-\caption{Các lỗi chỉ lộ ra trên board.}
+\caption{Các lỗi chỉ thấy được trên board.}
 \label{tab:loi_board}
 \begin{tabular}{|L{4.3cm}|L{5.0cm}|L{4.2cm}|}
 \hline
@@ -152,20 +144,18 @@ Nhận diện & Nhập MobileFaceNet-ECA của FRBench~\cite{frbench} & MS-Celeb
 
 Dữ liệu đi qua ba tầng: thư mục \texttt{raw/} chỉ đọc, \texttt{interim/} đã chuẩn hóa, và tệp
 chia tập ghi kèm seed và sha256. Mỗi lần huấn luyện ghi vào một thư mục mang ngày, mã commit
-và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên một
-con số trong sổ đo truy được về đúng lần chạy. Script nhập trọng số viết ra thư mục cùng cấu
+và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên mỗi kết quả truy được về đúng lần huấn luyện. Script nhập trọng số viết ra thư mục cùng cấu
 trúc đó, nên lượng tử hóa không phân biệt mô hình tự huấn luyện hay nhập.
 
 \subsection{Huấn luyện YuNet}
 \label{section:4.3.2}
 
-Bản dựng trong đồ án có 75.631 tham số, đầu vào 160$\times$120. Lần huấn luyện chạy 300 epoch
-trên RTX 3050 Laptop, batch 64, SGD Nesterov với tốc độ học 0,02, lịch cosine có 3 epoch khởi
+Bản dựng trong đồ án có 75.631 tham số, đầu vào 160$\times$120. Mô hình huấn luyện 300 epoch trên RTX 3050 Laptop, batch 64, SGD Nesterov với tốc độ học 0,02, lịch cosine có 3 epoch khởi
 động, EMA 0,999, seed 42. Chỗ khó nằm ở công thức lấy mẫu. Ở đầu vào 160$\times$120, ảnh WIDER
 bị ép xuống hệ số 0,156, nên trung vị cạnh mặt còn 2,9~px và 85,5\% số mặt nhỏ hơn một ô lưới
 bước 8. Tầng bước 32 không nhận mẫu dương nào, tức ba đầu ra chỉ dùng thật một.
 
-Đồ án đổi ba thứ, mọi ngưỡng lấy từ đo: (i)~cắt vùng ngẫu nhiên tỉ lệ 0,3--1,0 rồi phóng về đầu
+Công thức lấy mẫu vì thế có ba điểm: (i)~cắt vùng ngẫu nhiên tỉ lệ 0,3--1,0 rồi phóng về đầu
 vào, nên trung vị lên 13,6~px và phủ được dải mặt của máy; (ii)~bỏ mặt dưới 8~px sau khi cắt
 chứ không bỏ khỏi tập dữ liệu, để cùng một mặt vẫn được học khi rơi vào vùng cắt gần; (iii)~chia
 ba tầng ở các mốc 16 và 48~px, được 61,1\%, 33,6\% và 5,3\% số mặt. Bản FP32 chọn theo AP đạt
@@ -182,9 +172,7 @@ chỉ số 0. Nhờ vậy mô hình nhận ảnh RGB thang 0--1 đúng như đư
 Script \texttt{import\_frbench.py} nạp trọng số MobileFaceNet-ECA bằng \texttt{load\_state\_dict}
 chế độ chặt, giữ đúng tên thuộc tính của kho gốc. Chỗ duy nhất khác kho gốc là khối ECA. Bản gốc
 gọi \texttt{expand\_as} trước khi nhân, ONNX ghi bước đó thành phép toán \texttt{Expand}, mà ESP-DL
-3.3.11 không có module tương ứng và cũng không có đường dự phòng: nạp bản đầu tiên ngày 23/09/2026
-làm máy khởi động lặp 129 lần. Phép nhân vốn tự phát sóng trên kênh, nên bỏ \texttt{expand\_as}
-ra cùng hàm, đo trên máy tính lệch 0,0. Từ đó \texttt{espdl\_op\_check.py} đối chiếu phép toán của
+3.3.11 không có module tương ứng và cũng không có đường dự phòng: đồ thị như vậy làm máy khởi động lặp. Phép nhân vốn tự phát sóng trên kênh, nên bỏ \texttt{expand\_as} vẫn ra cùng hàm. \texttt{espdl\_op\_check.py} đối chiếu phép toán của
 mô hình với đúng bản esp-dl trước khi nạp.
 
 \subsection{Lượng tử hóa và tối ưu kernel}
@@ -258,10 +246,8 @@ cùng ba lần huấn luyện, lượng tử hóa ở mức Q1 và chạy bằng
 \texttt{make pack} gói ba tệp \texttt{.espdl} thành một ảnh có tiêu đề và ghi vào phân vùng
 \texttt{models\_0} hoặc \texttt{models\_1}. Lúc khởi động, \texttt{ai\_engine\_init} ánh xạ phân
 vùng bằng mmap, không tốn RAM, rồi ESP-DL dựng từng mô hình qua ba bước: đọc đồ thị, chép trọng số
-sang PSRAM, lập kế hoạch bộ nhớ tensor. Trọng số được chép vì PSRAM chạy bus 8 dây còn flash chạy 4
-dây: đo ngày 23/09/2026, chép sang làm mô hình nhanh hơn từ 3\% tới 25\%. Tensor nào không sống cùng
-lúc thì xếp chồng lên cùng một chỗ, nên mỗi mô hình chỉ cần một khối. Bảng~\ref{tab:bo_nho_mo_hinh}
-là kết quả đo trên board.
+sang PSRAM, lập kế hoạch bộ nhớ tensor. Trọng số được chép vì PSRAM chạy bus 8 dây còn flash chạy 4 dây, nên mô hình nhanh hơn từ 3\% tới 25\%. Tensor nào không sống cùng
+lúc thì xếp chồng lên cùng một chỗ, nên mỗi mô hình chỉ cần một khối. Bảng~\ref{tab:bo_nho_mo_hinh} là bộ nhớ và thời gian dựng của từng mô hình.
 
 \begin{table}[!htb]
 \centering
@@ -291,8 +277,7 @@ mặc định thì ba mô hình lấy 94~KB RAM nội, phần bộ nhớ mà Wi-
 \subsection{Profile build}
 \label{section:4.4.1}
 
-Firmware dựng theo bốn profile ở Bảng~\ref{tab:profile}, mỗi profile trong thư mục riêng. Số đo chỉ
-lấy ở \texttt{bench}. Đo ngày 14/10/2026, cùng mã nguồn dựng bằng \texttt{dev} ghi một khung màn hình
+Firmware dựng theo bốn profile ở Bảng~\ref{tab:profile}, mỗi profile trong thư mục riêng. Số đo chỉ lấy ở \texttt{bench}, vì cùng mã nguồn dựng bằng \texttt{dev} ghi một khung màn hình
 mất 46,0--55,0~ms và xé hình, còn \texttt{bench} mất 36,9--39,5~ms và không xé.
 
 \begin{table}[!htb]
@@ -325,7 +310,7 @@ làm.
 
 Camera chạy một cấu hình duy nhất cho xem trước, suy luận và thu dữ liệu: khung 480$\times$320
 RGB565, XCLK 27~MHz, 14,19~fps. Đồ án tắt tự động phơi sáng của OV5640 vì nó đo sáng cả cảnh, trần
-nhà sáng dìm mặt vào bóng: đo lúc đó, điểm sống của cùng một mặt đi từ 0,9999 xuống 0,683. Hàm
+nhà sáng dìm mặt vào bóng, làm điểm sống của cùng một mặt tụt từ 0,9999 xuống 0,683. Hàm
 \texttt{drv\_camera\_expose} tự đo một phần tư giữa khung, mỗi lần chỉnh một phần tư quãng còn thiếu
 rồi nghỉ hai khung cho cảm biến bắt kịp. Thời gian phơi lấy theo bội 10~ms để không nhấp nháy dưới
 đèn 50~Hz, phần lẻ bù bằng gain 1--4 lần.
@@ -335,8 +320,7 @@ vượt con trỏ ghi và ảnh động bị khấc ngang. \texttt{drv\_lcd} s�
 \texttt{FRMCTR1} hạ tần số quét xuống 23,26~Hz, chu kỳ 42,98~ms, dài hơn thời gian ghi. Trước mỗi lượt
 ghi, driver đọc dòng quét qua chân SDO và chỉ bắt đầu khi bộ đếm ở đoạn 160--200, nên con trỏ ghi có
 ít nhất 7,2~ms chạy đà. Tốc độ khung của ảnh không đổi, vì camera mới là thứ quyết định nhịp đó. Lần
-đọc đầu ngay sau một lượt ghi luôn ra giá trị ngoài dải, nên driver đọc lại tối đa 4 lần. Bỏ cuộc ngay
-lần đầu làm 616/1.260 khung ghi lệch nhịp mà không báo gì.
+đọc đầu ngay sau một lượt ghi luôn ra giá trị ngoài dải, nên driver đọc lại tối đa 4 lần. Không đọc lại thì 616/1.260 khung ghi lệch nhịp.
 
 Các driver còn lại mỏng hơn. \texttt{drv\_touch} chạy trình tự chọn địa chỉ GT911 rồi đọc điểm chạm theo
 ngắt. \texttt{drv\_tof} đặt cực tính ngắt và trả khoảng cách, task \texttt{tof} đổi nó thành hai cạnh có
@@ -407,7 +391,7 @@ từ hợp đồng, gửi QoS 1, chờ PUBACK rồi mới ghi \texttt{cursor.bin
 máy chưa có giờ được cộng mốc khởi động trước khi gửi, và con trỏ dừng lại chờ giờ tối đa mười phút, vì
 broker thường lên trước NTP.
 
-RAM nội là giới hạn thật của phần mạng. Đo trên \texttt{dev}, mảnh liền lớn nhất chỉ còn 5.620~B trong khi
+RAM nội là giới hạn thật của phần mạng. Ở profile \texttt{dev}, mảnh liền lớn nhất chỉ còn 5.620~B trong khi
 esp-mqtt xin 6.144~B cho ngăn xếp, nên ngăn xếp task MQTT nằm ở PSRAM và mbedTLS cũng cấp phát ở đó. Điều
 kiện của cách này là ngăn xếp ở PSRAM không được chạm khi cache flash tắt, và lượt ghi flash đã đỗ lõi kia
 và tắt ngắt nên không task nào chạy lúc đó.
@@ -429,8 +413,7 @@ lùi khe rồi khởi động lại. Nhịp sống mang cờ \texttt{onTrial}, n
 Mỗi màn hình là một lớp con của \texttt{Screen}, \texttt{ScreenManager} giữ chín đối tượng dựng sẵn lúc khởi
 động. \texttt{ui} vẽ vào \texttt{Canvas}, một bản đồ 1 byte mỗi điểm mang chỉ số màu và độ phủ, rồi \texttt{cam}
 trộn nó vào từng dải 20 dòng ngay lúc đẩy ra panel, nên lớp phủ không tốn thêm lượt SPI hay lượt quét PSRAM
-nào. Hai khoang của lớp phủ cần một luật giữ chỗ: khi \texttt{ui} được phép xóa khoang \texttt{cam} đang đọc,
-đo 19/09/2026 có 156/660 khung hỏng lúc chạm liên tục, thêm luật giữ chỗ thì 0/840 khung.
+nào. Hai khoang của lớp phủ cần một luật giữ chỗ: nếu \texttt{ui} được phép xóa khoang \texttt{cam} đang đọc thì 156/660 khung hỏng lúc chạm liên tục, có luật giữ chỗ thì 0/840 khung.
 
 Chữ lấy từ bảng glyph 4~bit sinh sẵn từ phông MiSans, khoảng 110 chuỗi khai ở \texttt{StrId} với hai bản dịch.
 Hình~\ref{fig:man_may} là màn quét và màn lấy mẫu. Màn lấy mẫu vẽ ba vạch sáng dần, đổi câu nhắc theo mẫu đang
@@ -452,8 +435,7 @@ chia thẻ nhóm gồm ngôn ngữ, Wi-Fi, độ sáng, âm lượng và trang t
 Firmware có 29 ứng dụng kiểm thử, 25 ứng dụng nằm trong từng thành phần và 4 ứng dụng chung
 \texttt{bench\_ai}, \texttt{bench\_mem}, \texttt{parity}, \texttt{soak}, tổng 266 ca Unity. \texttt{make fw-app-test} nạp
 ứng dụng và chạy kịch bản pytest trên board. Bộ vector vàng ở \texttt{contracts/golden/} giữ hậu xử lý C++
-khớp bản Python. Một dòng tổng kết màu xanh chưa đủ để tin: bộ kiểm thử lưu trữ từng in 11/11 ca đạt trong khi
-phía trên có hai lần panic, nên kịch bản đếm cả số lần khởi động.
+khớp bản Python. Kịch bản đếm cả số lần khởi động, vì dòng tổng kết có thể báo đủ ca đạt trong khi phía trên có panic.
 
 \section{Xây dựng backend và các phân hệ nhân sự}
 \label{section:4.5}
@@ -624,8 +606,7 @@ Push~\cite{webpush} với khóa VAPID, nửa riêng không rời VPS.
 \subsection{Ứng dụng Android}
 \label{section:4.6.3}
 
-Trên Android, Chrome không cho PWA đã cài tô hai thanh hệ thống theo màu ứng dụng: đo ngày 25/09/2026 trên điện thoại thật,
-hai dải đó lóe khác màu mỗi lần mở. Đồ án vì thế bọc đúng trang web trong một vỏ Trusted Web Activity~\cite{twa}, gói
+Trên Android, Chrome không cho PWA đã cài tô hai thanh hệ thống theo màu ứng dụng, nên hai dải đó lóe khác màu mỗi lần mở. Đồ án vì thế bọc đúng trang web trong một vỏ Trusted Web Activity~\cite{twa}, gói
 \texttt{vn.io.cckiosk.nhanluc}, dựng bằng Bubblewrap từ \texttt{twa-manifest.json}. Vỏ không mang code nghiệp vụ nào, nên mọi
 thay đổi của web tới ứng dụng như tới trình duyệt. Tệp \texttt{assetlinks.json} trên miền web mang dấu SHA-256 của khóa ký,
 thiếu nó thì Chrome hiện thanh địa chỉ. Tệp APK phát qua GitHub Releases, còn iPhone dùng PWA vì iOS không cài APK.
@@ -641,8 +622,7 @@ lưu. Frontend không nằm ở đây mà build trên Vercel mỗi lần push, d
 \texttt{api.cckiosk.io.vn}, để cookie làm mới là cookie bên thứ nhất và Safari không đăng xuất người dùng iPhone.
 
 EMQX mặc định mở, nên \texttt{emqx.conf} phải đóng lại ba thứ: xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
-\texttt{POST /mqtt/auth}~\cite{emqxhttp}; ACL theo tên đăng nhập; chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM, đo
-được 0 bản ghi còn lại sau khi khởi động lại broker, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
+\texttt{POST /mqtt/auth}~\cite{emqxhttp}; ACL theo tên đăng nhập; chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM và mất hết khi broker khởi động lại, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
 tồn tại. Đường \texttt{/mqtt/auth} không ra internet: router của Traefik loại tiền tố đó không phân biệt hoa thường, vì Express
 định tuyến không phân biệt mà \texttt{PathPrefix} thì có.
 
@@ -677,7 +657,7 @@ các khối không trôi khỏi nhau, kể cả sơ đồ nguyên lý so với b
 \end{table}
 
 Hình~\ref{fig:cd} là đường triển khai. Push lên \texttt{main} chạm backend, hợp đồng hay cấu hình triển khai là lên VPS, nhưng chỉ
-khi kiểm thử qua. Ảnh container dựng trên GitHub vì đo ngày 24/09/2026 trên chính VPS, build mất 3,5 phút với đỉnh 1.250~MB RAM,
+khi kiểm thử qua. Ảnh container dựng trên GitHub vì build trên VPS tốn 3,5 phút với đỉnh 1.250~MB RAM,
 trong khi cả stack lúc chạy chỉ khoảng 390~MB. Khóa SSH của GitHub bị ép chạy đúng \texttt{deploy.sh}, nên lộ khóa chỉ deploy lại
 được một bản đã có. Token kéo ảnh đi qua stdin và hết hạn cùng job.
 
@@ -726,7 +706,7 @@ và bấm giờ, cứ 15 phút API hỏi trạng thái đẩy WAL và gửi mail
 tối đa 5 phút dữ liệu, cũ hơn thì mất tối đa một ngày.
 
 Hệ thống đã hiện thực đủ các khối phần mềm ở Chương~\ref{chapter:Design}: firmware 0.9.13 với 29 ứng dụng kiểm thử, ba mô hình trên ESP-DL
-với bảy phép toán tự viết, backend 27 module chạy trên VPS từ tháng 9/2026, 46 trang web và ứng dụng Android. Phần cứng còn thiếu mạch đế in,
+với bảy phép toán tự viết, backend 27 module chạy trên VPS, 46 trang web và ứng dụng Android. Phần cứng còn thiếu mạch đế in,
 vỏ và thanh chắn. Chương~\ref{chapter:Experiment} đo các phần trên và đối chiếu với yêu cầu đã đặt.
 
 \end{document}

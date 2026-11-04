@@ -74,7 +74,7 @@ khác vì module ESP32-S3 có thêm PSRAM: giữ các kiến trúc đã có tr�
 Hình~\ref{fig:bo_nho} vẽ các tầng bộ nhớ của máy chấm công và dữ liệu đặt ở từng
 tầng. Chip có 512~KB SRAM~\cite{esp32s3}, nhưng phần lớn đã có chủ: Wi-Fi và lwIP
 khoảng 55~KB, ngăn xếp các task khoảng 53~KB, bộ đệm DMA của màn hình 25.600~B.
-Đo trên máy thật qua 16 phút chạy đủ giao diện và phiên MQTT, đáy SRAM trống là
+Khi chạy đủ giao diện và phiên MQTT, đáy SRAM trống là
 28.675~B. Riêng tensor của ba mô hình đã cần 187,5 + 568,8 + 820,8 = 1.577,1~KB,
 gấp ba lần toàn bộ SRAM, nên mọi tensor, trọng số và khung camera phải nằm ở PSRAM.
 
@@ -164,8 +164,7 @@ Một lượt, có xem trước & 3.864,6~ms & 406,2~ms \\
 \end{tabular}
 \end{table}
 
-Đo từng phép toán trên bộ mô hình ReLU dùng TFLM trước đó, 94,1\% thời gian đã nằm
-trong kernel esp-nn, nên bớt phần thông dịch không giúp được gì và đồ án đổi thư
+Trên bộ mô hình ReLU dùng TFLM, 94,1\% thời gian nằm trong kernel esp-nn, nên bớt phần thông dịch không giúp được gì và đồ án đổi thư
 viện. Cái giá là tệp ứng dụng lớn thêm 896,9~KB, kéo khe OTA từ 2~MB lên 2,75~MB, và
 PSRAM tốn thêm 2.416~KB. TFLM vẫn dựng được và là đối chứng ở
 Chương~\ref{chapter:Experiment}.
@@ -175,7 +174,7 @@ cùng kiến trúc và cùng trọng số FP32 của ba mô hình đang triển 
 phép toán khi chạy. Trên TFLM, 66 lớp PReLU không có kernel esp-nn nên rơi về kernel
 C tham chiếu, còn phía ESP-DL có kernel cho PReLU và có thêm các phép toán gộp đồ án
 tự viết (Mục~\ref{section:2.4.3}). Trên một bộ mô hình ReLU, cùng phép toán và chưa
-có kernel tự viết, đo ngày 23/09/2026 thì khoảng cách là 5,42 lần (1.270,5~ms so với
+có kernel tự viết, khoảng cách là 5,42 lần (1.270,5~ms so với
 234,2~ms). Với bộ đang triển khai, ESP-DL chưa vá mất 451,9~ms, tức khoảng 8,2 lần, và
 chuỗi tối ưu đưa con số lên 10,51 lần.
 
@@ -304,8 +303,7 @@ kia.
 
 Các phương pháp chia theo trục thời gian. Nhóm một khung đọc kết cấu của ảnh tĩnh.
 Nhóm nhiều khung đọc chuyển động hoặc mạch đập qua màu da, gọi là
-rPPG~\cite{yu2023fas}. Giấy và màn hình không có mạch nên rPPG từng là phương án
-được xét kỹ, nhưng đồ án đo trên video có sẵn thì cửa sổ dưới 4~s chưa đủ: đỉnh
+rPPG~\cite{yu2023fas}. Giấy và màn hình không có mạch nên rPPG là một hướng đáng xét, nhưng cửa sổ dưới 4~s chưa đủ: đỉnh
 mạch nhòe ra gần phủ kín dải 45--180 nhịp mỗi phút, và ngay cả nhiễu trắng cũng
 có một nửa số cửa sổ 2~s không chấm được. Người chấm công chỉ đứng trước máy
 1--2~s, nên hệ thống quyết định trên một khung.
@@ -324,9 +322,7 @@ chiều và $\mathbf{W}_2$ trả lại số chiều ban đầu.
 \end{equation}
 
 Khó khăn lớn nhất của bài toán là lệch miền: mô hình học trên một bộ camera và
-kiểu tấn công thường kém đi trên miền chưa thấy~\cite{yu2023fas}. Đồ án gặp đúng
-hiện tượng đó. Một bản tự huấn luyện đạt kết quả tốt trên các tập công khai,
-nhưng chấm lại bằng đúng tệp INT8 đang nạp với 13 khung thật và 21 khung giả của
+kiểu tấn công thường kém đi trên miền chưa thấy~\cite{yu2023fas}. Một bản tự huấn luyện đạt kết quả tốt trên các tập công khai, nhưng với 13 khung thật và 21 khung giả của
 OV5640 thì AUC chỉ còn 0,6960. Điểm sống trung vị của khung giả là 0,984, sát
 0,998 của khung thật, và ở ngưỡng 0,75 có 85,7\% khung giả lọt. Truy nguyên thì
 mô hình học vết chụp lại như moiré và vân giấy. Ở cự ly làm việc, ống kính OV5640
@@ -345,8 +341,7 @@ CelebA-Spoof~\cite{celebaspoof} chỉ đạt AUC 0,8242 với APCER 0,3769 và B
 0,1690, vì trọng số được huấn luyện trên dữ liệu khác. Số 87 khung cần đọc đúng
 giới hạn của nó. Tập này đã dùng để chọn mô hình nên không phải tập kiểm tra độc
 lập. Cả 25 khung giả đều là màn hình điện thoại, board chưa có một khung ảnh in
-nào, nên khả năng chặn giấy mới được thử trực tiếp chứ chưa có số đo. Thẻ bọc
-nhựa trong từng lọt qua bản V2 và chưa mô hình nào chặn được.
+nào, nên khả năng chặn giấy mới được thử trực tiếp chứ chưa có số đo. Thẻ bọc nhựa trong lọt qua bản V2 và chưa mô hình nào chặn được.
 
 \subsection{Nhận diện khuôn mặt}
 \label{section:2.3.3}
@@ -354,9 +349,9 @@ nhựa trong từng lọt qua bản V2 và chưa mô hình nào chặn được.
 Nhận diện ánh xạ ảnh khuôn mặt thành vector đặc trưng sao cho ảnh cùng người cho
 vector gần nhau. Firmware dùng năm điểm mốc của YuNet tính phép biến đổi affine,
 đưa mặt về ô 112$\times$112 đúng vị trí mô hình đã học. Mặt nhỏ hơn cỡ đó phải phóng
-to, mà nội suy không thêm thông tin. Cạnh mặt đo trên board xấp xỉ $47{,}7/d$~px với
+to, mà nội suy không thêm thông tin. Cạnh mặt trong khung xấp xỉ $47{,}7/d$~px với
 $d$ tính bằng mét, nên mặt đạt 113~px ở khoảng 0,42~m. Cổng trên máy đặt thấp hơn một
-chút, 100~px, vì người đứng đúng khoảng khung ngắm gợi ý đo được 107--110~px.
+chút, 100~px, vì người đứng đúng khoảng khung ngắm gợi ý có mặt rộng 107--110~px.
 
 MobileFaceNet thay lớp gộp trung bình toàn cục bằng tích chập depthwise toàn cục,
 vì ở khuôn mặt, ô góc của bản đồ đặc trưng cuối ít giá trị hơn ô giữa~\cite{mobilefacenet2018}.
@@ -443,7 +438,7 @@ P = 1 - (1 - \mathrm{FAR})^{n} \approx n \cdot \mathrm{FAR}
 \end{equation}
 
 Ngưỡng $\tau = 0{,}45$ được chọn trên 18.998 cặp khác người của sáu bộ benchmark:
-không cặp nào lọt, và cặp cao nhất đạt 0,383. Đo tiếp trên 29.640.749 cặp khác
+không cặp nào lọt, và cặp cao nhất đạt 0,383. Trên 29.640.749 cặp khác
 người của LFW~\cite{lfw}, có 46 cặp lọt, tức $1{,}55\cdot10^{-6}$ mỗi phép so. Bỏ
 các cặp nghi trùng người do lỗi nhãn còn 20 cặp. Với 100 người đăng ký, tỉ lệ một
 người lạ bị nhận nhầm mỗi lượt khoảng 0,04\%, cận trên 95\% là 0,119\% nếu tính cả
@@ -633,10 +628,7 @@ Chương~\ref{chapter:Implementation}, số đo ở Chương~\ref{chapter:Experi
 \label{section:2.4.4}
 
 Hai hướng nén khác đã được xét và không đi vào bản chạy thật. Chưng cất tri thức
-dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Thiết kế ban đầu có
-một mạng thầy cho mỗi nhánh, nhưng ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn}
-chấm trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không
-có gì để chưng cất và đồ án bỏ hướng này. Khi đã có trọng số MiniFASNet nhập, một
+dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn} trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không có gì để chưng cất và đồ án không dùng hướng này. Khi đã có trọng số MiniFASNet nhập, một
 bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi
 đòn giấy khi thử trực tiếp, nên chỉ được giữ làm phương án nhẹ.
 
@@ -791,7 +783,7 @@ firmware, mật khẩu là JWT riêng của từng máy, và luật truy cập c
 nhánh \texttt{up/} và đọc nhánh \texttt{down/} của chính nó.
 
 Về broker, Mosquitto đủ các cơ chế ở Bảng~\ref{tab:mqtt} và chỉ tốn khoảng 5~MB RAM
-so với 382~MB đo được của EMQX. Đồ án vẫn chọn EMQX vì JWT của máy được xoay vòng.
+so với 382~MB của EMQX. Đồ án vẫn chọn EMQX vì JWT của máy được xoay vòng.
 Mosquitto giữ mật khẩu trong tệp và phải nhận tín hiệu nạp lại khi tệp
 đổi~\cite{mosquitto}, tức backend phải điều khiển thêm một đường ngoài. EMQX hỏi
 thẳng API của backend qua HTTP mỗi lần có máy nối vào~\cite{emqxhttp}, nên đổi JWT
@@ -864,8 +856,7 @@ một chiều, nên ai lấy được chip đọc được JWT và mẫu khuôn 
 Giao diện dùng Kumo, thư viện thành phần mã nguồn mở của Cloudflare~\cite{kumo}.
 Phương án shadcn bị loại vì nó chép mã thành phần vào repo và đồ án phải tự bảo
 trì, còn Kumo là một gói npm ghim ở bản 2.14.0. Trên Android, Chrome không cho PWA
-đã cài vẽ ra sau thanh trạng thái và thanh điều hướng, và đo ngày 25/09/2026 trên
-điện thoại thật thì hai dải đó lóe khác màu mỗi lần chuyển ứng dụng. Đồ án bọc
+đã cài vẽ ra sau thanh trạng thái và thanh điều hướng, nên hai dải đó lóe khác màu mỗi lần chuyển ứng dụng. Đồ án bọc
 trang web trong một Trusted Web Activity, tức ứng dụng Android mở nội dung web toàn
 màn hình qua Chrome, xác thực với miền web bằng Digital Asset Links~\cite{twa}. Vỏ
 này không chứa mã nghiệp vụ, nên mọi thay đổi của web tới ứng dụng ngay.

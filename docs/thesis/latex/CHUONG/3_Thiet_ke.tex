@@ -349,11 +349,7 @@ khoản dịch vụ của broker.
 
 Quyết định lớn nhất của phần này là ai giữ thứ gì, tóm tắt ở Bảng~\ref{tab:noi_giu}.
 Máy chủ giữ danh tính vì một người tồn tại trong công ty nhiều năm, còn mẫu khuôn mặt
-gắn với một máy cụ thể và mất khi máy hỏng. Hai lần thử để máy tự đặt mã nhân viên đều
-hỏng. Mã tăng dần làm hai máy cùng sinh mã 1 cho hai người. Mã ở dải riêng thì vượt kiểu
-\texttt{Int} của máy chủ: đo ngày 24/09/2026 trên production, 125 bản ghi bị PostgreSQL
-từ chối trong khi máy vẫn thấy broker đã nhận. Từ đó máy chỉ đăng ký người máy chủ đã
-giao.
+gắn với một máy cụ thể và mất khi máy hỏng. Máy không tự đặt mã nhân viên. Mã tăng dần làm hai máy cùng sinh mã 1 cho hai người, còn mã ở dải riêng vượt kiểu \texttt{Int} của máy chủ, khiến PostgreSQL từ chối bản ghi trong khi máy vẫn thấy broker đã nhận. Máy vì thế chỉ đăng ký người máy chủ đã giao.
 
 \begin{table}[!htb]
 \centering
@@ -437,7 +433,7 @@ chưa có dữ liệu I\textsuperscript{2}S. Bảng chân đầy đủ nằm ở
 Bus I\textsuperscript{2}C chạy 400~kHz và do bốn thiết bị dùng chung. Mỗi đường có đúng một
 điện trở kéo lên: SDA dùng R1 4,7~k$\Omega$ trên mạch đế, SCL dùng điện trở có sẵn của
 module cảm ứng. GT911, VL53L1X và DS3231 đều đạt 400~kHz, nhưng datasheet của PCF8574 chỉ
-ghi tối đa 100~kHz~\cite{pcf8574}. Bài kiểm tra bus ngày 12/09/2026 đạt 7/7 ca ở 400~kHz
+ghi tối đa 100~kHz~\cite{pcf8574}. Bài kiểm tra bus đạt 7/7 ca ở 400~kHz
 với đủ thiết bị, nên thiết kế giữ mức này. Đây là một điểm nằm ngoài đặc tả: kết quả đo
 chỉ nói về linh kiện đang dùng, đổi lô PCF8574 thì phải chạy lại bài kiểm tra.
 
@@ -449,8 +445,7 @@ khối pin ở Mục~\ref{section:4.2}. Hai đường tách nhau
 vì hai đỉnh dòng trùng nhau: máy phát tiếng đúng lúc mở thanh chắn. Đặt chung một đường
 thì đỉnh 1,34~A cộng 0,7~A của servo đủ kéo sụt áp và làm ESP32 khởi động lại. Đường 2
 không được là sạc dự phòng, vì sạc tự ngắt khi tải nhỏ mà servo đứng yên gần như không
-ăn dòng. Đo ngày 10/09/2026, servo không quay dù xung ở GPIO38 đúng từng micro giây, chỉ
-vì sạc đã tắt.
+ăn dòng.
 
 \begin{table}[!htb]
 \centering
@@ -472,10 +467,7 @@ vì sạc đã tắt.
 
 Tấm màn hình có đường 3,3~V riêng qua module ổn áp U2. Dãy LED đèn nền không tự ổn áp nên
 độ sáng bám theo điện áp đặt vào, trong khi đường 3,3~V của board còn nuôi lõi 240~MHz và
-PSRAM. Ngày 19/09/2026, màn hình nhấp nháy thấy rõ trên nền trắng khi chung đường đó, còn
-mọi thanh ghi đọc từ ST7796S đều phẳng. Cho panel ngủ hẳn mà đèn nền vẫn nháy, nên nguyên
-nhân nằm ở gợn trên đường nuôi dãy LED. Đất của màn hình vì thế đóng lại ngay tại chân
-đất U2. Các tụ lọc gồm 1000~$\mu$F gần đầu vào, 470~$\mu$F gần bộ khuếch đại, gần servo và
+PSRAM. Chung đường đó thì gợn điện áp theo tải của chip đi thẳng vào dãy LED, và màn hình nhấp nháy thấy rõ trên nền trắng. Đất của màn hình cũng đóng lại ngay tại chân đất U2. Các tụ lọc gồm 1000~$\mu$F gần đầu vào, 470~$\mu$F gần bộ khuếch đại, gần servo và
 ở đầu vào U2, 100~$\mu$F ở đầu ra U2.
 
 Hình~\ref{fig:nguon} vẽ cây nguồn. Board ESP32-S3-CAM và bộ khuếch đại nhận 5~V bằng hai nhánh
@@ -555,9 +547,7 @@ Pipeline xử lý từng khung theo Hình~\ref{fig:pipeline}, còn ba vùng ản
 vẽ ở Hình~\ref{fig:vung_anh}. Bộ phát hiện chạy trên mỗi khung AI lấy được, 32,9~ms một
 lần. Hai mô hình sau tốn 73,3~ms và 246,4~ms nên chỉ chạy khi hộp mặt đã đứng yên qua 2 lần
 phát hiện với IoU từ 0,5 trở lên (NF1). Kết quả của các cổng được báo ra ngay sau bước
-phát hiện, trước hai mô hình chậm, qua một hàm quan sát. Đo trên board ngày 18/09/2026, khi
-trạng thái chỉ báo sau khi cả bước xong, dòng Đang nhận diện gần như không bao giờ hiện và
-màn hình nhảy thẳng từ Lại gần hơn sang kết quả.
+phát hiện, trước hai mô hình chậm, qua một hàm quan sát. Nếu chỉ báo sau khi cả bước xong thì dòng Đang nhận diện gần như không bao giờ hiện, màn hình nhảy thẳng từ Lại gần hơn sang kết quả.
 
 \begin{figure}[!htb]
 \centering
@@ -613,8 +603,7 @@ nằm ở NVS.
 Đăng ký đi qua chính đường xác thực này. Chống giả mạo chạy trước nhận diện, nên ảnh giơ lên
 lúc đăng ký bị từ chối trước khi có vector đặc trưng và không mẫu giả nào vào được bảng. Máy
 đo góc quay bằng năm điểm mốc: chiếu vector từ trung điểm hai mắt tới mũi lên trục hai mắt.
-Mốc nhìn thẳng lấy trung bình của chính người đó, vì đo trên board ngày 19/09/2026 thì mốc
-lệch khoảng 0,06 so với 0, gần một phần ba ngưỡng quay 0,20. Nhờ phép đo này, người đứng yên
+Mốc nhìn thẳng lấy trung bình của chính người đó, vì mốc thực lệch khoảng 0,06 so với 0, gần một phần ba ngưỡng quay 0,20. Nhờ phép đo này, người đứng yên
 không thể lấy đủ ba mẫu chính diện gần trùng nhau.
 
 Ba mô hình đóng chung một gói. Tiêu đề gói mang phiên bản, vị trí, sha256 và ba ngưỡng, và
@@ -755,8 +744,7 @@ chính.
 \label{fig:may_trang_thai}
 \end{figure}
 
-Máy cấp quyền theo lần đến của một người. Thiếu luật này, đo trên board ngày 14/09/2026,
-thanh chắn mở lại và loa kêu lại khoảng mỗi 4~s suốt lúc người ta còn đứng đó. Cùng người
+Máy cấp quyền theo lần đến của một người. Thiếu luật này thì thanh chắn mở lại và loa kêu lại khoảng mỗi 4~s suốt lúc người đó còn đứng trước máy. Cùng người
 trong vòng 5 phút mà chưa rời đi thì máy im lặng: không mở thanh chắn, không ghi, không kêu.
 Đã rời khung ngắm rồi quay lại trong 5 phút thì thanh chắn vẫn mở nhưng không sinh bản ghi
 mới, vì người ta quét lại thường do thanh chắn chưa kịp mở. Người khác bước tới được cấp ngay
@@ -958,9 +946,7 @@ máy chủ thấy số cũ thì đẩy phần còn thiếu, kể cả các lư�
 lúc máy mất mạng sẽ không bao giờ tới, và khuôn mặt người đã nghỉ việc vẫn mở được thanh chắn.
 
 Vòng đời máy đi qua \texttt{PENDING}, \texttt{APPROVED}, \texttt{REVOKED}. Thu hồi làm ba việc theo
-thứ tự: ghi dòng, xóa cache của broker, rồi đá phiên. Ba việc đó cần thiết vì broker chỉ kiểm JWT lúc
-nối: đo trên production ngày 24/09/2026, máy đã thu hồi vẫn gửi 16 nhịp sống trong 15 phút qua phiên
-cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
+thứ tự: ghi dòng, xóa cache của broker, rồi đá phiên. Ba việc đó cần thiết vì broker chỉ kiểm JWT lúc nối, nên không đá phiên thì máy đã thu hồi vẫn gửi tin qua phiên cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
 
 \subsection{Cơ sở dữ liệu}
 \label{section:3.6.2}
@@ -1145,14 +1131,12 @@ trong lúc ấy, nên các màn này tự về màn quét sau 30~s không chạm
 
 Máy tự vẽ giao diện bằng một \texttt{Canvas}, không dùng thư viện LVGL. Màn hình chính là video xem trước,
 và thêm LVGL là có hai bộ vẽ cùng ghi một panel SPI. Cái giá là nút, danh sách, thanh trượt, bàn phím phải
-tự viết, và không có gì chặn chữ tràn: đo bảng chữ cũ, dòng Đưa khuôn mặt vào khung rộng 331~px trên panel
-320~px. Nên mọi màn vẽ qua hai tầng bắt buộc, \texttt{theme} giữ bảng màu, thang chữ, nấc giãn cách, còn
+tự viết, và không có gì tự chặn chữ tràn khỏi panel 320~px. Nên mọi màn vẽ qua hai tầng bắt buộc, \texttt{theme} giữ bảng màu, thang chữ, nấc giãn cách, còn
 \texttt{widgets} giữ các phần tử lặp lại và phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId},
 nên thiếu một bản dịch thì không biên dịch được. Tiếng Việt là mặc định.
 
 Khung ngắm vẽ theo chính cổng cỡ mặt của pipeline. Đường xem trước phóng khung camera lên panel với hệ số
-1,502, nên cổng 100~px ứng với 150~px trên panel. Người ta lấp khung bằng cả cái đầu, mà tỉ lệ đầu trên mặt
-đo được là 1,48, nên khung rộng 240 $\times$ 296~px: đầu lấp kín khung cho hộp mặt 108~px trong khung camera,
+1,502, nên cổng 100~px ứng với 150~px trên panel. Người ta lấp khung bằng cả cái đầu, mà tỉ lệ đầu trên mặt là 1,48, nên khung rộng 240 $\times$ 296~px: đầu lấp kín khung cho hộp mặt 108~px trong khung camera,
 dư 8~px trên cổng. Khung trắng khi chờ, hổ phách khi cần người dùng sửa, xanh dương khi pipeline đang làm
 việc, xanh lá khi đạt. Dòng nhắc dưới khung đi theo đúng các cổng: Đưa khuôn mặt vào khung, Lại gần hơn, Lùi
 lại một chút, Đang nhận diện. Kết quả đạt hiện thành thẻ 1,5~s. Máy chỉ phát tiếng khi một việc đã xong là
