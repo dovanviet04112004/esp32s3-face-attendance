@@ -37,6 +37,9 @@
 \usepackage{setspace}
 \usepackage{parskip}
 \usepackage{tocbasic}
+\usepackage{tikz} % Vẽ sơ đồ
+\usetikzlibrary{arrows.meta,positioning}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}} % Cột bảng canh trái
 
 % ===================================================
 
@@ -45,6 +48,7 @@
 \setcounter{biburlnumpenalty}{9000} % Cho phép xuống dòng trong URL
 \setcounter{biburlucpenalty}{9000}
 \setcounter{biburllcpenalty}{9000}
+\AtBeginBibliography{\setlength{\emergencystretch}{3em}}
 
 \renewcommand\appendixname{PHỤ LỤC}
 \renewcommand\appendixpagename{PHỤ LỤC}

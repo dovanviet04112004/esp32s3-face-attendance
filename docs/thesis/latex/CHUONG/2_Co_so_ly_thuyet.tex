@@ -1,25 +1,937 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
+Chương này trình bày cơ sở lý thuyết và các công nghệ đồ án dùng tới. Mỗi phần
+nói rõ hệ thống cần gì ở công nghệ đó và phương án nào đã bị loại. Trình tự đi
+từ các giải pháp chấm công, xuống vi điều khiển và ba mô hình khuôn mặt, qua
+lượng tử hóa, nền tảng nhúng và máy chủ, rồi tới nghiệp vụ tính lương. Cuối
+chương so sánh đồ án với các công trình gần nhất.
+
 \section{Các giải pháp chấm công hiện có}
 \label{section:2.1}
+
+Các giải pháp chấm công khác nhau ở bằng chứng máy thu được và nơi xử lý bằng
+chứng đó. Bảng~\ref{tab:giai_phap} xếp chúng theo các yêu cầu đã nêu ở
+Mục~\ref{section:1.2}: không tiếp xúc, chống chấm công hộ, không gửi ảnh khuôn
+mặt lên máy chủ và chấm được khi mất mạng.
+
+\begin{table}[H]
+\centering
+\small
+\caption{So sánh các nhóm giải pháp chấm công.}
+\label{tab:giai_phap}
+\begin{tabular}{|L{3.4cm}|L{2.4cm}|L{2.0cm}|L{1.3cm}|L{1.6cm}|L{1.6cm}|}
+\hline
+\textbf{Giải pháp} & \textbf{Bằng chứng} & \textbf{Chống chấm hộ} & \textbf{Chạm máy} & \textbf{Dữ liệu sinh trắc} & \textbf{Khi mất mạng} \\
+\hline
+Thẻ từ & Thẻ người đó cầm & Không & Có & Không có & Vẫn chấm \\
+\hline
+Vân tay & Mẫu vân tay & Có & Có & Ở lại máy & Vẫn chấm \\
+\hline
+Khuôn mặt, xử lý trên máy chủ & Ảnh gửi lên máy chủ & Có, nếu chống giả mạo & Không & Đi qua mạng & Không chấm được \\
+\hline
+Khuôn mặt, xử lý trên máy tính nhúng trong máy & Vector đặc trưng & Có, nếu chống giả mạo & Không & Ở lại máy & Vẫn chấm \\
+\hline
+Khuôn mặt, xử lý trên vi điều khiển (đồ án) & Vector đặc trưng & Có & Không & Ở lại máy & Vẫn chấm \\
+\hline
+\end{tabular}
+\end{table}
+
+Thẻ từ không gắn với người cầm, còn vân tay buộc mọi nhân viên chạm vào cùng
+một cảm biến~\cite{jain2004}. Nhóm gửi ảnh lên máy chủ có tài nguyên tính toán
+gần như tùy ý, nhưng lượt chấm nào cũng cần mạng và đưa dữ liệu sinh trắc ra
+khỏi máy, trong khi đây là loại dữ liệu có điều luật riêng ở Luật Bảo vệ dữ liệu
+cá nhân~\cite{luat912025}.
+
+Nhóm xử lý ngay trong máy tránh được cả hai chỗ đó, và máy thương mại đã làm
+được trên phần cứng lớn hơn nhiều. Máy Hikvision DS-K1T343MFX chạy Linux trên
+CPU 800~MHz với 512~MB RAM và 4~GB bộ nhớ, lưu tối đa 1.500 khuôn mặt, có chống
+giả mạo và ghi thời gian nhận diện dưới 0,2~s~\cite{hikvision}. Đây là số công
+bố của hãng, đồ án không đo lại. Máy chấm công của đồ án có 512~KB SRAM và 8~MB
+PSRAM, tức RAM ít hơn khoảng 60 lần, và một lượt qua ba mô hình mất 406,2~ms.
+Khoảng cách đó là lý do hai mục tiếp theo dành nhiều chỗ cho bộ nhớ và lượng tử
+hóa.
 
 \section{TinyML và suy luận trên vi điều khiển}
 \label{section:2.2}
 
+TinyML là hướng chạy mô hình học máy trên vi điều khiển, nơi bộ nhớ tính bằng KB
+tới vài MB và chương trình chạy không có hệ điều hành đầy
+đủ~\cite{warden2019,david2021}. Bộ đo chuẩn MLPerf Tiny lấy bốn mô hình làm đại
+diện: nhận từ khóa 52,5~KB, phân loại ảnh 96~KB, phát hiện bất thường 270~KB và
+phát hiện người trên ảnh 96$\times$96 với 325~KB~\cite{mlperftiny}. Ba mô hình
+của đồ án cộng lại 2.116~KB, hơn sáu lần mô hình lớn nhất của bộ đo đó, và chạy
+nối tiếp nhau trên mỗi khuôn mặt.
+
+MCUNet giải bài toán bộ nhớ bằng cách thiết kế lại mạng cho vừa SRAM, và đạt trên
+70\% top-1 ImageNet trên vi điều khiển thương mại~\cite{mcunet}. Đồ án đi đường
+khác vì module ESP32-S3 có thêm PSRAM: giữ các kiến trúc đã có trọng số công bố,
+đặt tensor và trọng số ở bộ nhớ ngoài, rồi xử lý băng thông của bộ nhớ đó.
+
+\subsection{Các tầng bộ nhớ của ESP32-S3}
+\label{section:2.2.1}
+
+Hình~\ref{fig:bo_nho} vẽ các tầng bộ nhớ của máy chấm công và dữ liệu đặt ở từng
+tầng. Chip có 512~KB SRAM~\cite{esp32s3}, nhưng phần lớn đã có chủ: Wi-Fi và lwIP
+khoảng 55~KB, ngăn xếp các task khoảng 53~KB, bộ đệm DMA của màn hình 25.600~B.
+Đo trên máy thật qua 16 phút chạy đủ giao diện và phiên MQTT, đáy SRAM trống là
+28.675~B. Riêng tensor của ba mô hình đã cần 187,5 + 568,8 + 820,8 = 1.577,1~KB,
+gấp ba lần toàn bộ SRAM, nên mọi tensor, trọng số và khung camera phải nằm ở PSRAM.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, align=center, text width=64mm, inner sep=3pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (c0) {Lõi 0: Wi-Fi, camera, giao diện, MQTT};
+\node[box, right=6mm of c0] (c1) {Lõi 1: chỉ chạy task AI};
+\node[box, below=9mm of c0] (sram) {SRAM 512~KB\\ngăn xếp task, Wi-Fi, đệm DMA};
+\node[box, below=9mm of c1] (cache) {Bộ đệm dữ liệu 64~KB, dòng 64~B\\chung cho flash và PSRAM};
+\node[box, below=9mm of sram] (psram) {PSRAM 8~MB, 8 đường, 80~MHz\\ba mô hình 3.574~KB\\khung camera 4$\times$300~KB\\bảng mẫu khuôn mặt 576~KB};
+\node[box, below=9mm of cache] (flash) {Flash 16~MB, 4 đường, 80~MHz\\firmware 2$\times$2,75~MB\\mô hình 2$\times$2,25~MB\\LittleFS 4~MB};
+\draw[arr] (c0) -- (sram);
+\draw[arr] (c1) -- (cache);
+\draw[arr] (c0.south east) -- (cache.north west);
+\draw[arr] (c1.south west) -- (sram.north east);
+\draw[arr] (cache.south west) -- (psram.north east);
+\draw[arr] (cache) -- (flash);
+\end{tikzpicture}
+\caption{Các tầng bộ nhớ của máy chấm công.}
+\label{fig:bo_nho}
+\end{figure}
+
+PSRAM chạy tám đường dữ liệu, flash bốn đường, cùng 80~MHz, và hai bộ nhớ đi chung
+bộ điều khiển ngoài cùng bộ đệm dữ liệu 64~KB. Cấu trúc đó thấy rõ trong số đo.
+Cùng một phép tích chập depthwise tốn 0,9--1,0 chu kỳ cho mỗi phép
+nhân-cộng khi tensor đọc từ PSRAM, nhưng 0,6--0,7 chu kỳ khi tensor nằm gọn trong
+bộ đệm. Khi lõi 0 đẩy khung camera ra màn hình, lõi 1 cũng chậm lại vì tranh bus:
+một lượt ba mô hình đi từ 353,6~ms lên 406,2~ms, chậm thêm 14,9\%. Trọng số cũng
+phải chọn chỗ đặt: chép từ flash sang PSRAM lúc khởi động nhanh hơn đọc thẳng từ
+flash 3--25\% tùy mô hình, và đồ án chấp nhận tốn thêm PSRAM để có phần đó.
+
+\subsection{TensorFlow Lite Micro và ESP-DL}
+\label{section:2.2.2}
+
+Đồ án chạy cả hai thư viện suy luận trên cùng một board và giữ cả hai trong mã
+nguồn để so sánh. TensorFlow Lite Micro (TFLM) là bộ thông dịch: ứng dụng cấp một
+vùng nhớ liền gọi là arena, bộ thông dịch cấp mọi tensor trong đó lúc khởi tạo
+rồi gọi kernel, tức hàm tính, của từng phép toán~\cite{david2021}. Trên ESP32-S3,
+các kernel này đến từ thư viện esp-nn viết bằng lệnh vector. ESP-DL là thư viện của
+Espressif, chạy tệp \texttt{.espdl} do công cụ ESP-PPQ lượng tử hóa và xuất
+ra~\cite{espdl,espppq,espdlquant}.
+
+Cả hai dựa trên phần mở rộng lệnh PIE của ESP32-S3, gồm tám thanh ghi vector 128
+bit và bộ cộng dồn QACC. QACC có 16 ô 20 bit khi xử lý số 8 bit, 8 ô 40 bit khi
+xử lý số 16 bit~\cite{esp32s3trm}, nên một lệnh nhân-cộng làm được 16 số 8 bit
+hoặc 8 số 16 bit. Chênh lệch giữa hai thư viện bắt đầu từ đó. TFLM dùng luật
+lượng tử của TFLite, có zero point ở activation (Mục~\ref{section:2.4}). Kernel
+tích chập 1$\times$1 của esp-nn 1.3.2 mở rộng đầu vào lên 16 bit, cộng zero point
+rồi nhân bằng lệnh 16 bit, và phần lớn kernel depthwise cũng vậy; chỉ một số kernel
+khác tính trước phần zero point nên nhân được ở 8 bit. Zero point của ESP-DL bằng
+0 nên đầu vào giữ nguyên 8 bit. Bảng~\ref{tab:hai_thu_vien} so sánh hai thư viện
+trên cùng ba mô hình, 50 lượt đo sau 3 lượt khởi động.
+
+\begin{table}[H]
+\centering
+\small
+\caption{TFLM và ESP-DL trên cùng ba mô hình, đo trên board.}
+\label{tab:hai_thu_vien}
+\begin{tabular}{|L{5.0cm}|L{4.3cm}|L{4.3cm}|}
+\hline
+\textbf{Tiêu chí} & \textbf{TFLM + esp-nn 1.3.2} & \textbf{ESP-DL 3.3.11} \\
+\hline
+Lượng tử hóa & Trọng số theo kênh, activation theo tensor có zero point & Trọng số và activation theo tensor, đối xứng, bước lũy thừa 2 \\
+\hline
+Kernel tích chập 1$\times$1 & 16 bit, 8 số mỗi lệnh & 8 bit, 16 số mỗi lệnh \\
+\hline
+Trọng số khi chạy & Đọc từ flash qua mmap & Chép sang PSRAM lúc dựng \\
+\hline
+Bộ nhớ tensor & Arena dùng chung & Mỗi mô hình một vùng riêng \\
+\hline
+Tệp ứng dụng đo & 386,5~KB & 1.283,4~KB \\
+\hline
+PSRAM lấy khi dựng ba mô hình & 1.158~KB & 3.574~KB \\
+\hline
+Một lượt ba mô hình, lúc rảnh & 3.717,7~ms & 353,6~ms \\
+\hline
+Một lượt, có xem trước & 3.864,6~ms & 406,2~ms \\
+\hline
+\end{tabular}
+\end{table}
+
+Đo từng phép toán trên bộ mô hình dùng TFLM trước đó, 94,1\% thời gian đã nằm
+trong kernel esp-nn, nên bớt phần thông dịch không giúp được gì và đồ án đổi thư
+viện. Số ở Bảng~\ref{tab:hai_thu_vien} gồm cả các kernel đồ án tự thêm vào ESP-DL
+(Mục~\ref{section:2.4.3}), nên hệ số 10,51 lần không phải của riêng thư viện. Cái
+giá là tệp ứng dụng lớn thêm 896,9~KB, kéo khe OTA từ 2~MB lên 2,75~MB, và PSRAM
+tốn thêm 2.416~KB. TFLM vẫn dựng được và là đối
+chứng ở Chương~\ref{chapter:Experiment}.
+
 \section{Phát hiện, chống giả mạo và nhận diện khuôn mặt}
 \label{section:2.3}
+
+Một lượt chấm đi qua ba mô hình nối tiếp như Hình~\ref{fig:chuoi}. Ba mô hình đọc
+cùng một khung camera 480$\times$320 ở ba cỡ khác nhau, và mỗi khâu chỉ chạy khi
+khâu trước đạt: không có mặt thì không chống giả mạo, mặt giả thì không nhận
+diện. Thời gian trong hình là trung vị đo trên board lúc máy rảnh.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=5mm and 3.5mm,
+  box/.style={draw, align=center, text width=33mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (cam) {Khung camera\\480$\times$320};
+\node[box, right=of cam] (small) {Thu nhỏ\\160$\times$120};
+\node[box, right=of small] (yunet) {YuNet\\32,9~ms};
+\node[box, right=of yunet] (face) {Hộp mặt,\\năm điểm mốc};
+\node[box, below=of face] (crop) {Cắt vùng 2,7$\times$\\80$\times$80};
+\node[box, left=of crop] (fas) {MiniFASNetV1SE\\73,3~ms};
+\node[box, left=of fas] (live) {Điểm sống\\$\geq 0{,}50$};
+\node[box, left=of live] (align) {Căn chỉnh\\112$\times$112};
+\node[box, below=of align] (mfn) {\mbox{MobileFaceNet-ECA}\\246,4~ms};
+\node[box, right=of mfn] (vec) {Vector đặc trưng\\512 chiều};
+\node[box, right=of vec] (cos) {So cosine\\$\geq 0{,}45$};
+\node[box, right=of cos] (id) {Mã nhân viên};
+\draw[arr] (cam) -- (small);
+\draw[arr] (small) -- (yunet);
+\draw[arr] (yunet) -- (face);
+\draw[arr] (face) -- (crop);
+\draw[arr] (crop) -- (fas);
+\draw[arr] (fas) -- (live);
+\draw[arr] (live) -- (align);
+\draw[arr] (align) -- (mfn);
+\draw[arr] (mfn) -- (vec);
+\draw[arr] (vec) -- (cos);
+\draw[arr] (cos) -- (id);
+\end{tikzpicture}
+\caption{Chuỗi ba mô hình trên máy chấm công.}
+\label{fig:chuoi}
+\end{figure}
+
+\subsection{Phát hiện khuôn mặt}
+\label{section:2.3.1}
+
+Bộ phát hiện chạy trên mọi khung camera khi máy thức, nên phải nhanh nhất chuỗi,
+và phải trả năm điểm mốc gồm hai mắt, đầu mũi và hai khóe miệng. Năm điểm này là
+điều kiện cứng vì mô hình nhận diện chỉ nhận ảnh đã căn chỉnh, và bộ phát hiện là
+chỗ duy nhất trong chuỗi biết các vị trí đó. Bảng~\ref{tab:phat_hien} tóm tắt các
+ứng viên đã xét. Bản nano của YOLO-face bị loại vì giấy phép AGPL-3.0 của nó sẽ lan
+vào firmware.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Các bộ phát hiện đã xét, AP là số công bố, đồ án không đo lại.}
+\label{tab:phat_hien}
+\begin{tabular}{|L{3.6cm}|L{2.2cm}|L{3.6cm}|L{3.8cm}|}
+\hline
+\textbf{Mô hình} & \textbf{Đầu ra} & \textbf{AP Easy/Medium/Hard} & \textbf{Kết luận} \\
+\hline
+YuNet~\cite{yunet2023,opencvzoo} & Hộp, 5 điểm & 0,884/0,866/0,750 & Chọn, 75.856 tham số \\
+\hline
+ULFG~\cite{ulfg} & Chỉ hộp & 0,77--0,79/0,67--0,70/ 0,40--0,44 & Loại, thiếu điểm mốc \\
+\hline
+RetinaFace-MobileNet0.25~\cite{retinaface} & Hộp, 5 điểm & Không so & Loại, nặng hơn YuNet \\
+\hline
+BlazeFace~\cite{blazeface} & Hộp, 6 điểm & Không so & Loại, thiết kế cho camera trước của điện thoại \\
+\hline
+\end{tabular}
+\end{table}
+
+YuNet là bộ phát hiện không dùng anchor, với 75.856 tham số~\cite{yunet2023}. Đầu
+ra của nó là các bản đồ điểm tin cậy, hộp và điểm mốc; firmware giải mã chúng rồi
+loại hộp trùng bằng NMS, phần này viết lại bằng C và kiểm khớp từng ca với bản
+Python.
+
+Các số ở Bảng~\ref{tab:phat_hien} đo trên ảnh gốc của WIDER FACE~\cite{wider} và
+không phải điểm vận hành của máy chấm công. Đồ án chạy YuNet ở 160$\times$120,
+nơi cạnh mặt trung vị của tập Hard chỉ còn 3,1~px, nên AP Hard của bản chạy thật
+là 0,1515. Con số đó cũng không phải bài toán của máy: người đứng cách camera
+0,25--0,42~m và mặt rộng hơn 113~px trong khung, tức hơn 38~px ở đầu vào YuNet.
+Đồ án vì vậy chấm bộ phát hiện bằng AP trên các mặt từ 38~px trở lên, đạt 0,9544
+sau lượng tử hóa, và vẫn báo đủ ba số của WIDER FACE ở
+Chương~\ref{chapter:Experiment}.
+
+\subsection{Chống giả mạo}
+\label{section:2.3.2}
+
+Tấn công trình diện là đưa vật giả ra trước cảm biến. Đồ án xét ảnh in và ảnh
+hoặc video phát trên màn hình. Kết quả báo theo công thức~\eqref{eq:apcer}, cách
+đo của tiêu chuẩn ISO/IEC 30107-3~\cite{yu2023fas}: APCER là tỉ lệ mẫu giả lọt
+qua, BPCER là tỉ lệ mặt thật bị chặn oan, và ACER là trung bình của hai tỉ lệ đó.
+\begin{equation}
+\mathrm{APCER} = \frac{N_{\text{giả lọt}}}{N_{\text{giả}}}, \quad
+\mathrm{BPCER} = \frac{N_{\text{thật bị chặn}}}{N_{\text{thật}}}
+\label{eq:apcer}
+\end{equation}
+Đồ án luôn báo cả hai chiều, vì đổi ngưỡng chỉ chuyển lỗi từ chiều này sang chiều
+kia.
+
+Các phương pháp chia theo trục thời gian. Nhóm một khung đọc kết cấu của ảnh tĩnh.
+Nhóm nhiều khung đọc chuyển động hoặc mạch đập qua màu da, gọi là
+rPPG~\cite{yu2023fas}. Giấy và màn hình không có mạch nên rPPG từng là phương án
+được xét kỹ, nhưng đồ án đo trên video có sẵn thì cửa sổ dưới 4~s chưa đủ: đỉnh
+mạch nhòe ra gần phủ kín dải 45--180 nhịp mỗi phút, và ngay cả nhiễu trắng cũng
+có một nửa số cửa sổ 2~s không chấm được. Người chấm công chỉ đứng trước máy
+1--2~s, nên hệ thống quyết định trên một khung.
+
+MiniFASNet là họ mạng của Minivision, khoảng 0,41--0,44 triệu tham số, đọc ảnh
+80$\times$80 và phân ba lớp, lúc huấn luyện có thêm nhánh phụ học phổ
+Fourier~\cite{minifas}. Bản V1SE có 431.958 tham số và ba khối
+Squeeze-and-Excitation (SE). Khối SE gộp mỗi kênh về một số, cho qua hai lớp kết
+nối đầy đủ có thắt nút, rồi dùng kết quả làm trọng số nhân lại vào từng
+kênh~\cite{senet}, như công thức~\eqref{eq:se}, trong đó $\mathbf{z}$ là vector
+trung bình các kênh, $\delta$ là ReLU, $\sigma$ là sigmoid, $\mathbf{W}_1$ giảm số
+chiều và $\mathbf{W}_2$ trả lại số chiều ban đầu.
+\begin{equation}
+\mathbf{s} = \sigma\bigl(\mathbf{W}_2\,\delta(\mathbf{W}_1\,\mathbf{z})\bigr)
+\label{eq:se}
+\end{equation}
+
+Khó khăn lớn nhất của bài toán là lệch miền: mô hình học trên một bộ camera và
+kiểu tấn công thường kém đi trên miền chưa thấy~\cite{yu2023fas}. Đồ án gặp đúng
+hiện tượng đó. Một bản tự huấn luyện đạt kết quả tốt trên các tập công khai,
+nhưng chấm lại bằng đúng tệp INT8 đang nạp với 13 khung thật và 21 khung giả của
+OV5640 thì AUC chỉ còn 0,6960. Điểm sống trung vị của khung giả là 0,984, sát
+0,998 của khung thật, và ở ngưỡng 0,75 có 85,7\% khung giả lọt. Truy nguyên thì
+mô hình học vết chụp lại như moiré và vân giấy. Ở cự ly làm việc, ống kính OV5640
+không phân giải được lưới điểm ảnh của màn hình, nên ảnh thẻ trên điện thoại hiện
+ra mịn và sáng đều, và mô hình đọc thành ảnh nguyên bản.
+
+Đồ án bỏ các bản tự huấn luyện và nhập nguyên trọng số V1SE, đọc vùng cắt rộng
+2,7 lần hộp mặt đúng như lúc trọng số được huấn luyện. Vùng rộng chứa viền máy,
+tay cầm và mép màn hình, và tín hiệu nằm ở đó: bản MiniFASNetV2 cùng kho trọng số,
+đo trên 85 khung OV5640, đạt AUC 1,0000 ở vùng 2,7$\times$ và 0,9241 ở vùng sát
+mặt 1,0$\times$.
+
+Bản đang chạy trên máy chấm công, ở ngưỡng 0,50, giữ 59/62 khung thật và chặn
+25/25 khung giả trên 87 khung OV5640. Cùng tệp đó trên
+CelebA-Spoof~\cite{celebaspoof} chỉ đạt AUC 0,8242 với APCER 0,3769 và BPCER
+0,1690, vì trọng số được huấn luyện trên dữ liệu khác. Số 87 khung cần đọc đúng
+giới hạn của nó. Tập này đã dùng để chọn mô hình nên không phải tập kiểm tra độc
+lập. Cả 25 khung giả đều là màn hình điện thoại, board chưa có một khung ảnh in
+nào, nên khả năng chặn giấy mới được thử trực tiếp chứ chưa có số đo. Thẻ bọc
+nhựa trong từng lọt qua bản V2 và chưa mô hình nào chặn được.
+
+\subsection{Nhận diện khuôn mặt}
+\label{section:2.3.3}
+
+Nhận diện ánh xạ ảnh khuôn mặt thành vector đặc trưng sao cho ảnh cùng người cho
+vector gần nhau. Firmware dùng năm điểm mốc của YuNet tính phép biến đổi affine,
+đưa mặt về ô 112$\times$112 đúng vị trí mô hình đã học. Mặt phải rộng ít nhất
+113~px trong khung camera, vì dưới mức đó ảnh phải phóng to mà nội suy không thêm
+thông tin. Cạnh mặt đo trên board xấp xỉ $47{,}7/d$~px với $d$ tính bằng mét, nên
+tầm làm việc dừng ở khoảng 0,42~m.
+
+MobileFaceNet thay lớp gộp trung bình toàn cục bằng tích chập depthwise toàn cục,
+vì ở khuôn mặt, ô góc của bản đồ đặc trưng cuối ít giá trị hơn ô giữa~\cite{mobilefacenet2018}.
+Bản đồ án dùng là MobileFaceNet-ECA của FRBench~\cite{frbench}: 1,20 triệu tham
+số, vector 512 chiều và 15 khối ECA. Khối ECA làm cùng việc với khối SE ở
+công thức~\eqref{eq:se} nhưng bỏ phần thắt nút, thay bằng tích chập một chiều cỡ
+$k$ dọc trục kênh, nên chỉ thêm $k$ tham số và không giảm số
+chiều~\cite{ecanet}.
+
+Trọng số nhập từ FRBench được huấn luyện trên MS-Celeb-1M~\cite{ms1m} bằng hàm mất
+mát ArcFace, công thức~\eqref{eq:arcface}~\cite{arcface}. Trong đó $\theta_j$ là góc
+giữa vector đặc trưng và tâm lớp $j$, $y$ là lớp đúng, $s$ là hệ số tỉ lệ và $m$
+là biên góc; bài báo gốc dùng $s = 64$, $m = 0{,}5$. Cộng $m$ vào góc của lớp đúng
+buộc mạng đẩy các lớp xa nhau trên mặt cầu, nên lúc chạy không cần lớp phân loại
+nữa, chỉ cần so góc giữa hai vector. Bản nhập vượt mọi bản tự huấn luyện sau
+lượng tử hóa: TAR tại FAR $10^{-3}$ trên AgeDB-30~\cite{agedb} đạt 0,841 so với
+0,599. Đổi lại, MS-Celeb-1M chỉ dành cho nghiên cứu, nên muốn thương mại hóa phải
+huấn luyện lại trên dữ liệu khác.
+\begin{equation}
+L = -\log \frac{e^{s\cos(\theta_y + m)}}
+{e^{s\cos(\theta_y + m)} + \sum_{j \neq y} e^{s\cos\theta_j}}
+\label{eq:arcface}
+\end{equation}
+
+Máy chấm công chuẩn hóa vector về độ dài 1, so với các mẫu đã đăng ký bằng độ
+tương đồng cosine ở công thức~\eqref{eq:cosine}, rồi nhận người có điểm cao nhất
+nếu điểm đó từ ngưỡng $\tau$ trở lên. Chất lượng đo bằng hai tỉ lệ ở
+công thức~\eqref{eq:far}: FAR là tỉ lệ cặp khác người lọt ngưỡng, FRR là tỉ lệ cặp
+cùng người bị từ chối, và TAR $= 1 -$ FRR. Hai kiểu sai không cùng giá. Từ chối
+oan chỉ làm người dùng đứng thêm một nhịp, nhận nhầm thì mở cửa và ghi công cho
+người khác, nên ngưỡng nghiêng về phía từ chối.
+\begin{equation}
+\cos(\mathbf{a}, \mathbf{b}) = \frac{\mathbf{a} \cdot \mathbf{b}}{\lVert\mathbf{a}\rVert\,\lVert\mathbf{b}\rVert}
+\label{eq:cosine}
+\end{equation}
+\begin{equation}
+\mathrm{FAR}(\tau) = \frac{N_{\text{khác người},\,\geq \tau}}{N_{\text{khác người}}}, \quad
+\mathrm{FRR}(\tau) = \frac{N_{\text{cùng người},\,< \tau}}{N_{\text{cùng người}}}
+\label{eq:far}
+\end{equation}
+
+FAR tính trên một phép so, còn máy so một khuôn mặt với mọi mẫu. Mỗi người đăng ký
+giữ ba mẫu và máy thử tối đa hai khung, nên một người lạ trước máy có $N$ người
+đăng ký chịu nhiều nhất $n = 6N$ phép so, và tỉ lệ nhận nhầm mỗi lượt theo
+công thức~\eqref{eq:far_n}.
+\begin{equation}
+P = 1 - (1 - \mathrm{FAR})^{n} \approx n \cdot \mathrm{FAR}
+\label{eq:far_n}
+\end{equation}
+
+Ngưỡng $\tau = 0{,}45$ được chọn trên 18.998 cặp khác người của sáu bộ benchmark:
+không cặp nào lọt, và cặp cao nhất đạt 0,383. Đo tiếp trên 29.640.749 cặp khác
+người của LFW~\cite{lfw}, có 46 cặp lọt, tức $1{,}55\cdot10^{-6}$ mỗi phép so. Bỏ
+các cặp nghi trùng người do lỗi nhãn còn 20 cặp. Với 100 người đăng ký, tỉ lệ một
+người lạ bị nhận nhầm mỗi lượt khoảng 0,04\%, cận trên 95\% là 0,119\% nếu tính cả
+46 cặp. Ở cùng ngưỡng, 93,5\% cặp cùng người của LFW qua được nhưng chỉ 30,9\% ở
+CFP-FP~\cite{cfp}, nơi một ảnh trong cặp nghiêng gần hết. Các số này tính từ ảnh
+benchmark. Tỉ lệ thật trên khung OV5640 với nhiều người phải đo riêng ở
+Chương~\ref{chapter:Experiment}.
 
 \section{Lượng tử hóa mô hình}
 \label{section:2.4}
 
+Lượng tử hóa biểu diễn số thực bằng số nguyên ít bit để giảm bộ nhớ và dùng được
+lệnh vector 8 bit của PIE. Mục này trình bày luật lượng tử của hai thư viện ở
+Mục~\ref{section:2.2.2}, các kỹ thuật bù phần độ chính xác bị mất, rồi chuỗi tối ưu
+đồ án dựng từ Python tới kernel trên chip.
+
+\subsection{Lượng tử affine và lượng tử lũy thừa 2}
+\label{section:2.4.1}
+
+Công thức thông dụng là ánh xạ affine~\eqref{eq:affine}, với $r$ là số thực, $q$
+là số nguyên, $S$ là bước lượng tử và $Z$ là zero point, tức số nguyên ứng với số
+thực 0~\cite{jacob2018}.
+\begin{equation}
+r = S\,(q - Z)
+\label{eq:affine}
+\end{equation}
+
+TFLite dùng công thức này với trọng số $Z = 0$ theo từng kênh, và activation có
+$Z$ tùy ý theo từng tensor, vì activation thường lệch về một phía và zero point
+đổi lại được gần một bit độ phân giải~\cite{litertquant}. Một phép tích chập khi
+đó có dạng~\eqref{eq:conv}. Số hạng chứa $Z_x$ tách ra được thành hằng số, nhưng
+kernel 1$\times$1 của esp-nn cộng $Z_x$ vào đầu vào trước khi nhân, nên phải mở rộng
+lên 16 bit như đã nêu. Tổng tích lũy sau đó đổi về thang đầu ra bằng hệ số
+$M = S_x S_w / S_y$, thực hiện bằng một phép nhân số nguyên và một phép dịch
+bit~\cite{jacob2018}.
+\begin{equation}
+y = S_x S_w \sum_i (q_{x,i} - Z_x)\, q_{w,i}
+\label{eq:conv}
+\end{equation}
+
+ESP-DL trên ESP32-S3 dùng luật hẹp hơn: đối xứng, mỗi tensor một số mũ, bước lượng
+tử là lũy thừa của 2~\cite{espdlquant}, như công thức~\eqref{eq:pow2}.
+\begin{equation}
+r = 2^{e}\,q, \quad q \in [-128,\ 127]
+\label{eq:pow2}
+\end{equation}
+
+Với luật này $M = 2^{e_x + e_w - e_y}$ nên đổi thang chỉ còn là dịch bit, và không
+có zero point nên đầu vào giữ nguyên 8 bit. Luật đó đổi độ chính xác lấy tốc độ.
+Bước lũy thừa 2 chỉ chọn được theo bội 2, nên có thể phí gần một bit so với bước
+thực. Nặng hơn, cả tensor chung một số mũ, nên kênh có dải nhỏ bị làm tròn về 0
+khi đứng cạnh kênh có dải lớn~\cite{nagel2019}. Lượng tử theo kênh của TFLite không
+gặp chỗ này.
+
+\subsection{Các kỹ thuật bù sai số}
+\label{section:2.4.2}
+
+Cân bằng lớp dùng tính chất $f(cx) = c\,f(x)$ với $c > 0$ của ReLU và PReLU: chia
+trọng số kênh $i$ của lớp trước cho $c_i$ và nhân đầu vào tương ứng của lớp sau
+với $c_i$ thì hàm mạng không đổi, nhưng dải các kênh kéo về gần
+nhau~\cite{nagel2019}. Trên ESP-DL bước này bắt buộc: tắt nó, mô hình chống giả
+mạo chỉ giữ 40/62 mặt thật. Trên TFLite thì ngược lại. Trọng số đã theo kênh nên
+không cần cân, và phép cân đẩy dải activation của một lớp lên 3,1 lần, làm EER của
+MiniFASNetV2-SE tăng 53\% dù hàm FP32 không đổi. Sửa bias đi kèm, bù phần sai số
+trung bình mà phép làm tròn trọng số gây ra ở từng kênh đầu ra~\cite{nagel2019}.
+
+Dải của activation không nằm trong mô hình mà phải ước lượng trên ảnh mẫu, gọi là
+hiệu chuẩn. Đồ án thử đủ bốn cách: min-max lấy trọn dải nên nhạy với giá trị ngoại
+lai, percentile cắt phần đuôi, MSE chọn dải cho sai số bình phương nhỏ nhất, KL
+chọn dải giữ phân bố gần bản gốc nhất~\cite{wu2020,nagel2021}. Không cách nào thắng
+ở cả ba nhánh: phát hiện tốt nhất với MSE, nhận diện tốt nhất với KL.
+
+Lớp nhạy nhất có thể giữ ở 16 bit cả trọng số lẫn activation, xếp hạng theo SNR
+từng lớp do ESP-PPQ đo. Cấu hình \texttt{int16\_top1} của chống giả mạo có đúng một
+lớp như vậy, tốn khoảng 16~ms mà AUC chỉ tăng 0,002, mức nằm trong cỡ nhiễu của
+thước đo.
+
+Huấn luyện có lượng tử (QAT) học tiếp tham số trên đồ thị đã mô phỏng lượng
+tử~\cite{jacob2018}. Phép làm tròn $Q$ có đạo hàm bằng 0 gần như khắp nơi, nên lan
+truyền ngược coi nó như hàm đồng nhất, gọi là ước lượng đi
+thẳng~\cite{bengio2013}, công thức~\eqref{eq:ste}. Đây là bậc duy nhất cứu được
+phần nào mô hình nhận diện. TAR tại FAR $10^{-3}$ trên CFP-FP của bản FP32 là
+0,830, tốt nhất sau hiệu chuẩn là 0,775, và sau 2.000 bước QAT đạt 0,799. Mức này
+vẫn dưới cửa 0,822, tức sụt quá 1\% so với FP32, nên nhánh nhận diện chưa đạt tiêu
+chí đồ án tự đặt, và máy sẽ từ chối oan nhiều hơn với mặt nghiêng.
+\begin{equation}
+\frac{\partial L}{\partial r} \approx \frac{\partial L}{\partial Q(r)}
+\label{eq:ste}
+\end{equation}
+
+Các kỹ thuật trên ghép thành một thang bốn bậc mà mỗi nhánh đi trọn: (i)~lượng tử
+sau huấn luyện 8 bit với gộp BatchNorm, cân bằng lớp và sửa bias; (ii)~bốn cách
+hiệu chuẩn; (iii)~int16 cho các lớp nhạy nhất; (iv)~QAT. Luật chọn đặt chất lượng
+trước, rồi mới tới tốc độ trên chip. Mọi cấu hình được chấm bằng mô phỏng của
+ESP-PPQ, và \texttt{model->test()} kiểm trên chip rằng đầu ra khớp mô phỏng từng
+bit ở tensor int8. Bảng kết quả từng bậc nằm ở Chương~\ref{chapter:Experiment}.
+
+\subsection{Tối ưu đồ thị và kernel}
+\label{section:2.4.3}
+
+Sau lượng tử hóa, thời gian chạy phụ thuộc vào cách đồ thị đi qua bộ nhớ, và ở đây
+ESP-DL còn nhiều đường chậm: tensor trung gian ghi ra PSRAM rồi đọc lại, kênh lệch
+bội 16 chạy đường không căn, ReLU6 đứng riêng đọc ghi lại cả tensor. Đồ án sửa ở
+hai đầu của chuỗi trong Hình~\ref{fig:chuoi_quant}, chuỗi bắt đầu từ mô hình
+PyTorch~\cite{pytorch}. Phía Python, bước xuất tệp \texttt{.espdl} viết lại đồ thị
+của ESP-PPQ. Phía firmware, thành phần
+\texttt{ai\_engine} đăng ký thêm các phép toán ESP-DL không có, phần tính viết bằng
+lệnh PIE. Hai đầu đi thành cặp: một mẫu trên đồ thị được thay bằng một phép toán
+mới, và phép toán đó chạy đúng các lệnh mà kernel ESP-DL sẽ chạy nhưng ít lượt đọc
+ghi PSRAM hơn.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=6mm and 4mm,
+  box/.style={draw, align=center, text width=32mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (torch) {Mô hình PyTorch};
+\node[box, right=of torch] (onnx) {Xuất ONNX,\\so với PyTorch};
+\node[box, right=of onnx] (ppq) {ESP-PPQ: thang\\lượng tử bốn bậc};
+\node[box, right=of ppq] (patch) {Bản vá đồ thị,\\xuất \texttt{.espdl}};
+\node[box, below=of patch] (flash) {Phân vùng mô hình\\trên flash};
+\node[box, left=of flash] (run) {ESP-DL và kernel\\PIE của đồ án};
+\node[box, left=of run] (test) {\texttt{model->test()}\\so với mô phỏng};
+\node[box, left=of test] (lock) {Chọn cấu hình,\\khóa phiên bản};
+\draw[arr] (torch) -- (onnx);
+\draw[arr] (onnx) -- (ppq);
+\draw[arr] (ppq) -- (patch);
+\draw[arr] (patch) -- (flash);
+\draw[arr] (flash) -- (run);
+\draw[arr] (run) -- (test);
+\draw[arr] (test) -- (lock);
+\end{tikzpicture}
+\caption{Chuỗi đưa một mô hình từ PyTorch lên chip, hàng trên chạy trên máy tính.}
+\label{fig:chuoi_quant}
+\end{figure}
+
+Kỹ thuật chính là gộp phép toán và chia dải. Trong khối bottleneck ngược của
+MobileNetV2~\cite{mobilenetv2}, tích chập 1$\times$1 mở rộng ghi ra một tensor lớn
+rồi depthwise đọc lại nó. Phép toán \texttt{PointwiseDepthwise} của đồ án tính từng
+dải hàng của tensor đó vào một vùng đệm nằm gọn trong bộ đệm dữ liệu 64~KB rồi chạy
+depthwise ngay trên vùng đệm, nên tensor giữa không ra PSRAM. Chỗ cắt dải không đổi
+số nào, vì mỗi điểm ra chỉ đọc ô $k \times k$ của nó. Tích chập chiếu, ReLU6 và
+MaxPool đứng sau depthwise được nuốt vào cùng vòng đó khi thỏa điều kiện. Tích chập
+1$\times$1 có trọng số lớn hơn bộ đệm thì cắt theo kênh ra thành từng lát. Tích
+chập đầu trên ảnh RGB có 3 kênh, lệch bội 16 mà lệnh vector cần, nên trọng số ô
+3$\times$3$\times$3 được xếp thành vector 27 phần tử đệm lên 32, và kernel riêng
+đọc thẳng ba hàng ảnh.
+
+Các bản vá chia hai loại theo việc có đổi số nguyên hay không. Bản vá xuất giữ
+nguyên từng số nguyên của đồ thị, có kiểm thử so đầu ra có và không có bản vá, nên
+bật cho mọi cấu hình. Bản vá làm tròn đổi số: gộp PReLU vào tích chập làm nhánh âm
+làm tròn xuống thay cho làm tròn gần nhất, nên phần mô phỏng phải tính đúng như chip
+rồi cấu hình đó qua thang chấm lại. Một khuôn mặt qua cả ba mô hình đi từ 444,8~ms
+xuống 333,8~ms với riêng bản vá xuất, và 251,6~ms khi cộng cả bản vá làm tròn. Bản
+vá làm tròn lại không qua được cửa chất lượng ở hai nhánh: chống giả mạo chỉ còn
+giữ 49--50/62 mặt thật, nhận diện tụt về 0,783. Cấu hình cuối chỉ dùng loại này ở
+nhánh phát hiện và chạy 349,3~ms. Cách làm từng bước ở
+Chương~\ref{chapter:Implementation}, số đo ở Chương~\ref{chapter:Experiment}.
+
+\subsection{Chưng cất tri thức và cắt tỉa}
+\label{section:2.4.4}
+
+Hai hướng nén khác đã được xét và không đi vào bản chạy thật. Chưng cất tri thức
+dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Thiết kế ban đầu có
+một mạng thầy cho mỗi nhánh, nhưng ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn}
+chấm trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không
+có gì để chưng cất và đồ án bỏ hướng này. Khi đã có trọng số MiniFASNet nhập, một
+bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi
+đòn giấy khi thử trực tiếp, nên chỉ được giữ làm phương án nhẹ.
+
+Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Cắt tỉa thưa không
+giúp gì trên vi điều khiển vì không có kernel cho ma trận thưa, nên chỉ cắt theo
+kênh mới giảm được thời gian. Trọng số nhập có bộ kênh cố định, không cắt được nếu
+không huấn luyện lại, nên đồ án không dùng bước này.
+
 \section{Nền tảng nhúng và truyền thông IoT}
 \label{section:2.5}
 
-\section{Nghiệp vụ chấm công, nghỉ phép và tính lương}
+\subsection{ESP-IDF, FreeRTOS và lưu trữ trên flash}
+\label{section:2.5.1}
+
+Firmware viết trên ESP-IDF v6.0.2 với FreeRTOS đã sửa để chạy đối xứng trên hai
+lõi. Mỗi task ghim được vào một lõi bằng nhóm hàm \texttt{PinnedToCore}, còn
+\texttt{xTaskCreate} tạo task không ghim~\cite{espidffreertos}. Đồ án ghim riêng
+task AI vào lõi 1 và để mọi việc còn lại ở lõi 0, vì một lần chạy mô hình nhận
+diện chiếm CPU liên tục 246~ms: để chung thì giao diện đứng hình, Wi-Fi mất gói.
+
+Flash 16~MB chia theo bảng phân vùng. Hai khe ứng dụng 2,75~MB và hai khe mô hình
+2,25~MB cho phép cập nhật firmware và mô hình riêng rẽ qua OTA. ESP-IDF ghi bản
+mới vào khe không chạy, đổi \texttt{otadata}, và nếu bản mới không tự xác nhận
+hoạt động ở lần khởi động đầu thì bootloader quay về bản cũ~\cite{espidfota}. Bảng
+phân vùng là thứ không đổi được qua OTA, nên khi ESP-DL làm tệp ứng dụng
+vượt 2~MB, mọi máy đã lắp phải nạp lại qua USB.
+
+Dữ liệu ghi thường xuyên nằm trên LittleFS, phân vùng 4~MB. LittleFS chịu được mất
+điện đột ngột nhờ ghi kiểu copy-on-write, có cân bằng hao mòn và RAM bị chặn
+trên~\cite{littlefs}, nên được chọn cho bảng mẫu khuôn mặt và nhật ký lượt chấm.
+Mỗi lượt chấm là một bản ghi 48~B được đồng bộ xuống flash ngay, tốn khoảng
+10--20~ms, đổi lấy việc lượt chấm không mất khi cúp điện. Bảng mẫu thì ghi ra tệp
+tạm rồi đổi tên, nên mất điện giữa chừng chỉ còn bản cũ hoặc bản mới. Cấu hình nhỏ
+và JWT của máy nằm ở NVS, còn âm thanh chỉ đọc nằm ở SPIFFS. Driver camera, màn
+hình, cảm ứng và ứng dụng MQTT dùng các thành phần có sẵn của Espressif, TLS dùng
+mbedTLS.
+
+\subsection{Camera, ngoại vi và mạch đế}
+\label{section:2.5.2}
+
+OV5640 là cảm biến 5 megapixel cỡ 1/4 inch~\cite{ov5640}, nhưng đồ án không dùng
+độ phân giải đó. Khung 480$\times$320 RGB565 nặng 300~KB, với xung XCLK 27~MHz cho
+14,19 khung mỗi giây. Khung VGA nới tầm nhận diện lên 0,56~m nhưng gấp đôi số điểm
+ảnh phải đọc, đẩy tốc độ xuống dưới sàn 12 khung mỗi giây đồ án đặt ra.
+
+VL53L1X đo khoảng cách bằng thời gian bay của tia laser 940~nm, tới 4~m, qua
+I\textsuperscript{2}C~\cite{vl53l1x}. Máy chấm công dùng nó để biết có người lại
+gần. Sau 60~s không có dấu hiệu người, mô hình dừng, camera vào chế độ chờ và màn
+hình tắt, và cảm biến là nguồn đánh thức. Chế độ đo ngắn với tới 1,3~m đủ cho dải
+làm việc và chống nhiễu ánh sáng tốt nhất. Bảng~\ref{tab:ngoai_vi} liệt kê các
+ngoại vi của máy.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các ngoại vi của máy chấm công.}
+\label{tab:ngoai_vi}
+\begin{tabular}{|L{3.0cm}|L{3.0cm}|L{7.6cm}|}
+\hline
+\textbf{Linh kiện} & \textbf{Giao tiếp} & \textbf{Vai trò} \\
+\hline
+OV5640 & DVP & Camera \\
+\hline
+ST7796S & SPI & Màn hình 4 inch, 320$\times$480 \\
+\hline
+GT911 & I\textsuperscript{2}C & Cảm ứng \\
+\hline
+VL53L1X & I\textsuperscript{2}C & Khoảng cách, nguồn đánh thức \\
+\hline
+MAX98357A & I\textsuperscript{2}S & Khuếch đại loa, tiếng bíp khi mở cửa và khi giữ mẫu \\
+\hline
+SG90 & PWM 50~Hz & Servo gạt thanh chắn \\
+\hline
+PCF8574 & I\textsuperscript{2}C & Mở rộng chân GPIO \\
+\hline
+DS3231 & I\textsuperscript{2}C & Đồng hồ thời gian thực, nguồn giờ khi mất mạng \\
+\hline
+\end{tabular}
+\end{table}
+
+Giao diện trên màn hình tự vẽ, không dùng LVGL. Màn hình chính của máy chính là khung
+xem trước, nên LVGL sẽ là bộ vẽ thứ hai cùng ghi một panel SPI, phải xếp hàng sau
+một khóa chung, và mỗi lần chuyển màn là một lần bàn giao panel, chỗ dễ xé hình.
+Một bộ vẽ duy nhất tiết kiệm 48~KB heap, đổi lại đồ án phải tự viết bàn phím, danh
+sách và nút bấm.
+
+Các module nối với nhau trên một mạch đế hai lớp thiết kế bằng KiCad~\cite{kicad}
+bản 10.0.6. Sơ đồ và mạch in sinh ra từ bảng chân bằng script, nên bảng chân là
+nguồn duy nhất và kiểm được bằng ERC, DRC ở mỗi lần sinh lại.
+
+\subsection{MQTT, TLS và broker}
+\label{section:2.5.3}
+
+MQTT là giao thức xuất bản và đăng ký qua một máy trung gian gọi là
+broker~\cite{mqtt311}. Máy chấm công chủ động mở kết nối ra broker, nên máy chủ
+gửi được lệnh xuống mà mạng nơi đặt máy không phải mở cổng nào. Đồ án dùng bản
+3.1.1 với các cơ chế ở Bảng~\ref{tab:mqtt}.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các cơ chế MQTT 3.1.1 hệ thống dùng~\cite{mqtt311}.}
+\label{tab:mqtt}
+\begin{tabular}{|L{2.4cm}|L{5.6cm}|L{5.6cm}|}
+\hline
+\textbf{Cơ chế} & \textbf{Ý nghĩa} & \textbf{Bản tin dùng} \\
+\hline
+QoS 0 & Giao nhiều nhất một lần, có thể mất & Nhịp sống 30~s một lần \\
+\hline
+QoS 1 & Giao ít nhất một lần, có thể trùng & Lượt chấm, sự kiện, lệnh xuống máy \\
+\hline
+Retained & Broker giữ bản tin cuối cho người đăng ký sau & Nhịp sống, trạng thái máy \\
+\hline
+Last Will & Broker phát thay khi kết nối đứt bất thường & Trạng thái mất kết nối \\
+\hline
+\end{tabular}
+\end{table}
+
+Lượt chấm đi bằng QoS 1 và con trỏ gửi chỉ tiến sau khi broker xác nhận, nên mất
+điện giữa chừng làm gửi lại chứ không làm mất. Đồ án không dùng QoS 2 vì phần trùng
+đã được máy chủ xử lý bằng ràng buộc \texttt{unique(deviceId, localId)}. Lệnh mở
+cửa không bao giờ retained, vì một lệnh giữ lại sẽ chạy lại mỗi lần máy nối lại.
+Định dạng bản tin và bảng topic không viết tay ở từng phía: sáu lược đồ JSON Schema
+và một bảng topic sinh ra mã cho firmware, backend và frontend, và CI chặn khi mã
+sinh ra lệch nguồn.
+
+Kết nối chạy trên TLS 1.2 qua cổng 8883~\cite{tls12}. Chứng chỉ CA nhúng trong
+firmware, mật khẩu là JWT riêng của từng máy, và luật truy cập chỉ cho mỗi máy ghi
+nhánh \texttt{up/} và đọc nhánh \texttt{down/} của chính nó.
+
+Về broker, Mosquitto đủ các cơ chế ở Bảng~\ref{tab:mqtt} và chỉ tốn khoảng 5~MB RAM
+so với 382~MB đo được của EMQX. Đồ án vẫn chọn EMQX vì JWT của máy được xoay vòng.
+Mosquitto giữ mật khẩu trong tệp và phải nhận tín hiệu nạp lại khi tệp
+đổi~\cite{mosquitto}, tức backend phải điều khiển thêm một đường ngoài. EMQX hỏi
+thẳng API của backend qua HTTP mỗi lần có máy nối vào~\cite{emqxhttp}, nên đổi JWT
+không đụng tới broker.
+
+\section{Công nghệ máy chủ và web}
 \label{section:2.6}
 
-\section{Các công trình liên quan}
+Bảng~\ref{tab:may_chu} liệt kê các công nghệ phía máy chủ và giao diện. Các đoạn
+dưới đây chỉ bàn những chỗ lựa chọn ảnh hưởng tới hành vi của hệ thống.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Công nghệ máy chủ và web.}
+\label{tab:may_chu}
+\begin{tabular}{|L{3.0cm}|L{5.0cm}|L{5.6cm}|}
+\hline
+\textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Dùng vào việc} \\
+\hline
+API & NestJS 12, TypeScript~\cite{nestjs} & 27 phân hệ, mỗi phân hệ một module \\
+\hline
+Truy cập dữ liệu & Prisma 7~\cite{prisma} & Lược đồ khai báo, migration, truy vấn có kiểu \\
+\hline
+Cơ sở dữ liệu & PostgreSQL 16~\cite{pgconstraints} & Dữ liệu nghiệp vụ và các ràng buộc \\
+\hline
+Bộ đệm, hàng đợi & Redis 7, BullMQ 6~\cite{bullmq} & Cache, hạn mức, việc nền \\
+\hline
+Đẩy cập nhật & Socket.IO 4~\cite{socketio} & Làm mới các trang đang mở \\
+\hline
+Xác thực & JWT~\cite{jwt}, scrypt~\cite{scrypt}, TOTP~\cite{totp} & Phiên đăng nhập, băm mật khẩu, xác thực hai lớp \\
+\hline
+Giao diện web & Next.js 16, React 19~\cite{nextjs}, Kumo 2.14~\cite{kumo}, TailwindCSS 4 & Bảng điều khiển và cổng nhân viên dạng PWA \\
+\hline
+Dữ liệu ở trình duyệt & TanStack Query~\cite{tanstack} & Cache và đồng bộ dữ liệu máy chủ \\
+\hline
+Thông báo đẩy & Web Push~\cite{webpush} & Tin mới tới điện thoại khi app đang đóng \\
+\hline
+Ứng dụng Android & Trusted Web Activity~\cite{twa} & Vỏ Android mở đúng trang web \\
+\hline
+Triển khai & Docker Compose~\cite{compose}, Traefik v3~\cite{traefik} & Các dịch vụ chạy trên VPS \\
+\hline
+CI/CD & GitHub Actions~\cite{ghactions}, Vercel & Kiểm thử, dựng và phát hành \\
+\hline
+\end{tabular}
+\end{table}
+
+Hai ràng buộc của PostgreSQL gánh phần mà code không gánh được khi hai yêu cầu
+chạy song song~\cite{pgconstraints}. Ràng buộc unique trên cặp máy và mã lượt chấm
+biến việc gửi lại thành thao tác không đổi dữ liệu, đúng thứ QoS 1 cần. Ràng buộc
+loại trừ chặn hai đơn nghỉ chồng lên cùng một buổi, vì phép kiểm trong code sẽ cho
+qua cả hai khi hai yêu cầu tới cùng lúc.
+
+Redis giữ ba vai tách bạch: cache, hàng đợi và bộ đếm hạn mức. Mất khóa cache chỉ
+chậm đi một nhịp, mất việc trong hàng đợi là mất việc thật, nên mọi việc nền của
+BullMQ khai số lần thử và thời gian chờ tăng dần~\cite{bullmqretry}, và phải chạy
+lại được mà không đổi kết quả. Bảng công hằng đêm, kỳ lương và gửi phiếu lương đều
+đi đường này.
+
+Mỗi loại người dùng có cơ chế xác thực riêng. Người dùng web nhận access
+JWT~\cite{jwt} sống 15 phút và refresh token 7 ngày trong cookie httpOnly. Máy chấm
+công dùng JWT 90 ngày và tự đổi khi còn 7 ngày. Mật khẩu băm bằng
+scrypt~\cite{scrypt} với $N = 2^{14}$, $r = 8$, $p = 5$, tốn 16~MiB mỗi lần băm nên
+dò hàng loạt rất đắt. Ba vai quản trị, nhân sự và tiền lương phải nhập thêm mã
+TOTP~\cite{totp} sáu số đổi mỗi 30~s, khóa bí mật mã hóa AES-256-GCM khi lưu.
+Vector đặc trưng trên máy chủ cũng mã hóa khi lưu. Chỗ còn hở nằm ở phía máy chấm
+công: Flash Encryption, Secure Boot và mã hóa NVS chưa bật, vì đốt eFuse là thao tác
+một chiều, nên ai lấy được chip đọc được JWT và mẫu khuôn mặt.
+
+Giao diện dùng Kumo, thư viện thành phần mã nguồn mở của Cloudflare~\cite{kumo}.
+Phương án shadcn bị loại vì nó chép mã thành phần vào repo và đồ án phải tự bảo
+trì, còn Kumo là một gói npm ghim ở bản 2.14.0. Trên Android, Chrome không cho PWA
+đã cài vẽ ra sau thanh trạng thái và thanh điều hướng, và đo ngày 25/09/2026 trên
+điện thoại thật thì hai dải đó lóe khác màu mỗi lần chuyển ứng dụng. Đồ án bọc
+trang web trong một Trusted Web Activity, tức ứng dụng Android mở nội dung web toàn
+màn hình qua Chrome, xác thực với miền web bằng Digital Asset Links~\cite{twa}. Vỏ
+này không chứa mã nghiệp vụ, nên mọi thay đổi của web tới ứng dụng ngay.
+
+Trong trình duyệt, TanStack Query~\cite{tanstack} giữ dữ liệu máy chủ, còn Socket.IO
+chỉ báo tài nguyên nào vừa đổi để xóa cache tương ứng, nên trang đang mở tự cập nhật
+mà không phải tải lại. Service worker tự viết của PWA giữ bản đã xem theo từng tài
+khoản để mở được khi mất mạng, và đơn gửi lúc mất mạng xếp hàng, báo rõ đang chờ.
+Thông báo đẩy đi qua dịch vụ đẩy của trình duyệt~\cite{webpush}. Thân tin chỉ mang
+mã tham chiếu, không có tên hay tiền, và iOS chỉ nhận tin khi ứng dụng đã cài lên
+màn hình chính.
+
+Backend và các dịch vụ chạy bằng Docker Compose~\cite{compose} trên một VPS. Traefik
+nhận HTTPS, tự xin chứng chỉ và chuyển thẳng luồng TCP của cổng 8883 tới
+broker~\cite{traefik}. Đẩy lên nhánh main kích hoạt GitHub Actions~\cite{ghactions}:
+chạy kiểm thử, dựng image rồi SSH vào VPS triển khai, kiểm thử không qua thì không
+có gì rời repo. Frontend tách riêng lên Vercel, không nằm trong Docker.
+
+\section{Nghiệp vụ chấm công, nghỉ phép và tính lương}
 \label{section:2.7}
+
+Lượt chấm chỉ là sự kiện thô: người này, ở máy này, lúc này. Bảng lương cần thứ
+khác, nên hệ thống quy lượt chấm thành một dòng ngày công cho mỗi người mỗi ngày,
+gồm giờ vào đầu, giờ ra cuối, phút làm, phút muộn, phút về sớm và phút làm thêm
+theo ca áp dụng. Bộ luật Lao động giới hạn thời giờ làm việc bình thường ở 8 giờ
+một ngày và 48 giờ một tuần (Điều 105), làm thêm không quá 40 giờ một tháng và 200
+giờ một năm (Điều 107), với tiền lương làm thêm ít nhất 150\% ngày thường, 200\%
+ngày nghỉ hằng tuần và 300\% ngày lễ (Điều 98)~\cite{bll2019}. Giờ làm thêm chỉ
+được trả khi có đơn đã duyệt phủ lên ngày đó. Dòng ngày công dựng bằng việc nền
+chạy hằng đêm và dựng lại khi có lượt chấm tới trễ, chẳng hạn sau khi máy mất mạng
+vài hôm.
+
+Người lao động có 12 ngày phép năm trong điều kiện bình thường (Điều 113) và nghỉ
+không lương theo thỏa thuận (Điều 115)~\cite{bll2019}. Cái khó của phần phép nằm ở
+số dư. Đơn đang chờ phải giữ chỗ trong số dư, nếu không ba đơn gửi liền nhau cùng
+được duyệt. Đơn chỉ trừ ngày làm việc theo lịch của pháp nhân, nên nghỉ từ thứ Sáu
+tới thứ Hai tính hai ngày. Đơn vắt qua năm mới trừ vào số dư của từng năm trong
+cùng một giao dịch.
+
+Tiền lương một kỳ tính theo công thức~\eqref{eq:luong}, với $W$ là lương tháng,
+$d$ là số ngày có lương, $d_0$ là ngày công chuẩn (mặc định 26), $A$ là phụ cấp và
+$O$ là tiền làm thêm. Bảo hiểm người lao động đóng tính theo
+công thức~\eqref{eq:bao_hiem}, với $B$ là tiền lương đóng bảo hiểm, $R$ là mức
+tham chiếu và $V$ là lương tối thiểu vùng. Hệ số 9,5\% gồm BHXH 8\% và BHYT 1,5\%,
+hệ số 1\% là BHTN. Tháng người lao động không làm việc và không hưởng lương từ 14
+ngày làm việc trở lên thì không đóng~\cite{luatbhxh2024}. Thiếu quy tắc này, phiếu
+lương của người nghỉ không lương cả tháng sẽ ra số âm.
+\begin{equation}
+G = W\,\frac{d}{d_0} + A + O
+\label{eq:luong}
+\end{equation}
+\begin{equation}
+I = 9{,}5\% \cdot \min(B,\ 20R) + 1\% \cdot \min(B,\ 20V)
+\label{eq:bao_hiem}
+\end{equation}
+
+Thuế thu nhập cá nhân tính theo công thức~\eqref{eq:tntt} và~\eqref{eq:thue}, với
+$T$ là thu nhập chịu thuế sau khi loại các khoản miễn, $D_0$ là giảm trừ bản thân,
+$D_1$ là giảm trừ mỗi người phụ thuộc, $n$ là số người phụ thuộc, và $t_k$, $M_k$ là
+thuế suất và mốc trên của bậc $k$ ở Bảng~\ref{tab:bieu_thue}, $M_0 = 0$. Thuế tính
+theo từng lát thu nhập rơi vào mỗi bậc, biến đổi đại số ra công thức rút gọn ở cột
+cuối của bảng. Hai cách tính đi hai đường khác nhau tới cùng một số, nên bộ kiểm thử
+dùng chúng đối chiếu nhau, và giá trị hai bậc liền nhau phải bằng nhau tại mốc: $10\%
+\cdot 30 - 0{,}5 = 20\% \cdot 30 - 3{,}5 = 2{,}5$ triệu đồng. Ví dụ một người có
+thu nhập chịu thuế 30 triệu đồng, lương đóng bảo hiểm 20 triệu đồng và một người phụ
+thuộc đóng 2,1 triệu đồng bảo hiểm, có thu nhập tính thuế $30 - 2{,}1 - 15{,}5 -
+6{,}2 = 6{,}2$ triệu đồng, và nộp 0,31 triệu đồng thuế.
+\begin{equation}
+C = \max(0,\ T - I - D_0 - n\,D_1)
+\label{eq:tntt}
+\end{equation}
+\begin{equation}
+\text{Thuế} = \sum_{k=1}^{5} t_k \cdot \max\bigl(0,\ \min(C, M_k) - M_{k-1}\bigr)
+\label{eq:thue}
+\end{equation}
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Biểu thuế lũy tiến từng phần theo tháng~\cite{luattncn2025}.}
+\label{tab:bieu_thue}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Bậc} & \textbf{Thu nhập tính thuế (triệu đồng)} & \textbf{Thuế suất} & \textbf{Rút gọn (triệu đồng)} \\
+\hline
+1 & Đến 10 & 5\% & $5\% \cdot C$ \\
+\hline
+2 & Trên 10 đến 30 & 10\% & $10\% \cdot C - 0{,}5$ \\
+\hline
+3 & Trên 30 đến 60 & 20\% & $20\% \cdot C - 3{,}5$ \\
+\hline
+4 & Trên 60 đến 100 & 30\% & $30\% \cdot C - 9{,}5$ \\
+\hline
+5 & Trên 100 & 35\% & $35\% \cdot C - 14{,}5$ \\
+\hline
+\end{tabular}
+\end{table}
+
+Các tham số của những công thức trên đổi theo văn bản pháp luật, có khi giữa năm.
+Bảng~\ref{tab:phap_ly} ghi các mức dùng cho năm 2026. Mức tham chiếu đổi từ
+01/07/2026 nên trần đóng của tháng 6 và tháng 7 khác nhau, và giảm trừ bản thân
+vừa tăng từ 11 lên 15,5 triệu đồng. Hệ thống vì thế không ghi các số này trong
+code mà lưu thành dòng chính sách có ngày hiệu lực. Phép tính hỏi chính sách tại
+ngày cuối kỳ, nên tính lại một kỳ cũ vẫn ra đúng số cũ, và văn bản mới chỉ là một
+dòng dữ liệu mới. Tiền lưu bằng số nguyên đồng để tránh sai số dấu phẩy động.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các mức pháp lý dùng cho năm 2026.}
+\label{tab:phap_ly}
+\begin{tabular}{|L{5.6cm}|L{4.8cm}|L{3.2cm}|}
+\hline
+\textbf{Đại lượng} & \textbf{Giá trị} & \textbf{Văn bản} \\
+\hline
+Giảm trừ bản thân, người phụ thuộc & 15,5 triệu, 6,2 triệu đồng mỗi tháng & \cite{nq1102025} \\
+\hline
+Người lao động đóng BHXH, BHYT, BHTN & 8\%, 1,5\%, 1\% & \cite{luatbhxh2024,nd1882025,luatvieclam2025} \\
+\hline
+Doanh nghiệp đóng BHXH, BHYT, BHTN & 17,5\%, 3\%, 1\% & \cite{luatbhxh2024,nd1882025,luatvieclam2025} \\
+\hline
+Mức tham chiếu & 2.340.000 đồng, từ 01/07/2026 là 2.530.000 đồng & \cite{nd1612026} \\
+\hline
+Trần đóng BHXH, BHYT & 20 lần mức tham chiếu: 46,8 rồi 50,6 triệu đồng & \cite{luatbhxh2024} \\
+\hline
+Lương tối thiểu vùng I & 5.310.000 đồng & \cite{nd2932025} \\
+\hline
+Trần đóng BHTN & 20 lần lương tối thiểu vùng & \cite{luatvieclam2025} \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Các công trình liên quan}
+\label{section:2.8}
+
+Bảng~\ref{tab:cong_trinh} so sánh đồ án với các công trình gần nhất tìm được. Ô ghi
+\emph{không nêu} nghĩa là tài liệu không đề cập, chưa hẳn là công trình không có.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{So sánh với các công trình liên quan.}
+\label{tab:cong_trinh}
+\begin{tabular}{|L{2.5cm}|L{2.4cm}|L{2.2cm}|L{1.6cm}|L{1.4cm}|L{2.2cm}|}
+\hline
+\textbf{Công trình} & \textbf{Phần cứng} & \textbf{Nơi nhận diện} & \textbf{Chống giả mạo} & \textbf{Số đo} & \textbf{Nơi lưu kết quả} \\
+\hline
+ESP-WHO~\cite{espwho} & ESP32-S3, ESP32-P4 & Trên chip & Không nêu & Không nêu & Không nêu \\
+\hline
+Gharib, Abusamra~\cite{gharib2024} & ESP32-CAM & Trên board & Không nêu & Không nêu & MySQL qua HTTP \\
+\hline
+Zainuddin và cộng sự~\cite{zainuddin2024} & ESP32-S3, có bàn tới Raspberry Pi 3B & Không nói rõ & Không nêu & Không nêu & Không nêu \\
+\hline
+Kumaran, Huong~\cite{kumaran2023} & Module camera ESP32, máy tính & Python, OpenCV, Dlib & Không nêu & 76,92\% & Tệp Excel \\
+\hline
+Đồ án & ESP32-S3, 8~MB PSRAM & Trên chip, ba mô hình & Có, một khung & Đo trên board & PostgreSQL, tính lương \\
+\hline
+\end{tabular}
+\end{table}
+
+ESP-WHO của Espressif gần đồ án nhất về phần cứng và thư viện: đây là khung phát
+hiện và nhận diện khuôn mặt chạy trên ESP-DL. Nó là thư viện chứ chưa phải hệ thống
+chấm công, và README không nêu chống giả mạo~\cite{espwho}. Gharib và Abusamra so
+ảnh chụp với ảnh lưu trong ESP32-CAM rồi gửi kết quả qua HTTP tới MySQL, và trang
+bài báo không nêu độ chính xác~\cite{gharib2024}. Kumaran và Huong dùng module
+camera ESP32 với chương trình Python, OpenCV và Dlib, ghi điểm danh ra Excel, và báo
+độ chính xác 76,92\% cho bài toán nhận diện người đeo khẩu trang~\cite{kumaran2023}.
+Zainuddin và cộng sự lập trình ESP32-S3 bằng ESP-IDF cho điểm danh, nhưng tóm tắt
+không nói thiết bị nào chạy nhận diện~\cite{zainuddin2024}.
+
+Trong các tài liệu tìm được, chưa có công trình nào trên ESP32 nêu chống giả mạo
+chạy trên chip, số đo cả chuỗi trên board, hay phần nhân sự đi từ lượt chấm tới
+phiếu lương.
+
+Các lựa chọn của chương này ràng buộc nhau ở bộ nhớ. SRAM chỉ còn 28.675~B lúc
+thấp nhất nên mọi thứ lớn nằm ở PSRAM, băng thông PSRAM làm một lượt chậm thêm
+14,9\% khi có xem trước, và luật lượng tử 8 bit đổi tốc độ lấy độ chính xác, để lại
+hai chỗ chưa đạt là TAR 0,799 trên CFP-FP và đòn giấy chưa có số đo. Phía máy chủ,
+lượt chấm đi qua MQTT QoS 1 với ràng buộc chống trùng, còn các mức pháp lý là dữ
+liệu có ngày hiệu lực. Chương~\ref{chapter:Design} dựa trên những ràng buộc này để
+phân tích yêu cầu và thiết kế hệ thống.
 
 \end{document}
