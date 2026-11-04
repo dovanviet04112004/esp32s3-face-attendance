@@ -1,8 +1,92 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
-\chapter{BẢNG THAM CHIẾU}
+\chapter{BẢNG CHÂN GPIO}
+\label{appendix:chan}
 
-\textit{Bổ sung khi viết các chương sau.}
+Bảng~\ref{tab:chan} liệt kê chân của board ESP32-S3-CAM, lấy từ tệp \texttt{app\_config.h}
+của thành phần \texttt{bsp\_board}. Ba đường cuối nằm trên PCF8574 chứ không trên chip.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Phân bổ chân của máy chấm công.}
+\label{tab:chan}
+\begin{tabular}{|L{3.2cm}|L{4.4cm}|L{5.9cm}|}
+\hline
+\textbf{Khối} & \textbf{Tín hiệu} & \textbf{Chân} \\
+\hline
+OV5640 & SIOD, SIOC & GPIO4, GPIO5 \\
+\hline
+OV5640 & VSYNC, HREF, PCLK, XCLK & GPIO6, GPIO7, GPIO13, GPIO15 \\
+\hline
+OV5640 & D0--D7 & GPIO11, 9, 8, 10, 12, 18, 17, 16 \\
+\hline
+ST7796S & SCK, MOSI, SDO & GPIO42, GPIO41, GPIO43 \\
+\hline
+ST7796S & CS, DC, RST, đèn nền & GPIO47, GPIO39, GPIO40, GPIO21 \\
+\hline
+Bus I\textsuperscript{2}C & SDA, SCL & GPIO1, GPIO2 \\
+\hline
+GT911 & INT & GPIO14 \\
+\hline
+VL53L1X & GPIO1 của cảm biến & GPIO3 \\
+\hline
+MAX98357A & BCLK, LRC, DIN & GPIO45, GPIO44, GPIO46 \\
+\hline
+SG90 & PWM & GPIO38 \\
+\hline
+LED WS2812 & Đèn báo trạng thái & GPIO48 \\
+\hline
+Nút BOOT & Khôi phục mặc định, giữ 5~s & GPIO0 \\
+\hline
+GT911 & RST & PCF8574 P0 \\
+\hline
+VL53L1X & XSHUT & PCF8574 P1 \\
+\hline
+MAX98357A & SD & PCF8574 P3 \\
+\hline
+\end{tabular}
+\end{table}
+
+\chapter{BẢN GHI LƯỢT CHẤM}
+\label{appendix:ban_ghi}
+
+Bảng~\ref{tab:ban_ghi} là bố cục bản ghi 48~B trong nhật ký lượt chấm. Bố cục này khai ở
+tệp \mbox{\texttt{storage\_format.h}} của thành phần \texttt{sys\_storage}.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Bố cục bản ghi lượt chấm.}
+\label{tab:ban_ghi}
+\begin{tabular}{|c|c|L{3.8cm}|L{6.4cm}|}
+\hline
+\textbf{Vị trí} & \textbf{Cỡ} & \textbf{Trường} & \textbf{Ý nghĩa} \\
+\hline
+0 & 4 & \texttt{magic} & Hằng \texttt{ATTD} \\
+\hline
+4 & 8 & \texttt{local\_id} & Số lần khởi động ghép số thứ tự trong phiên \\
+\hline
+12 & 4 & \texttt{employee\_id} & Mã nhân viên do máy chủ cấp \\
+\hline
+16 & 8 & \texttt{ts\_ms} & Giờ chấm, mili giây từ epoch \\
+\hline
+24 & 1 & \texttt{direction} & 0 là vào, 1 là ra \\
+\hline
+25 & 2 & \texttt{match\_score} & Điểm so khớp, dạng Q8.8 \\
+\hline
+27 & 2 & \texttt{liveness\_score} & Điểm sống, dạng Q8.8 \\
+\hline
+29 & 1 & \texttt{flags} & Đã mở thanh chắn, thu lúc mất mạng, giờ chưa đồng bộ NTP \\
+\hline
+30 & 2 & \texttt{model\_version} & Luôn ghi 1, máy chủ kiểm rồi bỏ \\
+\hline
+32 & 12 & \texttt{reserved} & Để dành \\
+\hline
+44 & 4 & \texttt{crc32} & Kiểm tra toàn vẹn \\
+\hline
+\end{tabular}
+\end{table}
 
 \end{document}

@@ -1,25 +1,1208 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
+Chương này đi từ yêu cầu tới thiết kế. Mục~\ref{section:3.1} đặt các tác nhân, ca
+sử dụng và yêu cầu, mỗi yêu cầu mang một mã để các mục sau viện dẫn lại. Các mục
+còn lại trình bày kiến trúc tổng thể, phần cứng, pipeline AI, firmware, bản tin
+MQTT, cơ sở dữ liệu, API và giao diện. Chương này nói hệ thống gồm những gì và vì
+sao, còn cách làm nằm ở Chương~\ref{chapter:Implementation}.
+
 \section{Phân tích yêu cầu}
 \label{section:3.1}
+
+\subsection{Tác nhân và ca sử dụng}
+\label{section:3.1.1}
+
+Hệ thống có năm nhóm người dùng và một tác nhân là máy chấm công, liệt kê ở
+Bảng~\ref{tab:tac_nhan}. Vai quản lý không ai giao tay mà tự tính từ cây báo cáo: ai
+có người dưới quyền thì mang vai đó. Tài khoản chưa ai giao việc mang vai thứ sáu,
+\texttt{VIEWER}, và chỉ thấy chính mình.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các tác nhân của hệ thống.}
+\label{tab:tac_nhan}
+\begin{tabular}{|L{3.2cm}|L{2.4cm}|L{7.9cm}|}
+\hline
+\textbf{Tác nhân} & \textbf{Vai} & \textbf{Việc chính} \\
+\hline
+Nhân viên & \texttt{EMPLOYEE} & Chấm công tại máy, xem công, phép, phiếu lương của mình, gửi đơn \\
+\hline
+Quản lý & \texttt{MANAGER} & Duyệt đơn và xem người trong cây dưới quyền, không xem lương và giấy tờ riêng của họ \\
+\hline
+Nhân sự & \texttt{HR} & Hồ sơ, hợp đồng, ca làm, bảng công, phép, mở lượt đăng ký khuôn mặt \\
+\hline
+Kế toán lương & \texttt{PAYROLL} & Kỳ lương, chốt kỳ, phiếu lương \\
+\hline
+Quản trị & \texttt{ADMIN} & Máy chấm công, bản phát hành, tài khoản, nhật ký \\
+\hline
+Máy chấm công & Không có & Gửi lượt chấm và trạng thái, nhận lệnh, danh sách người và bản cập nhật \\
+\hline
+\end{tabular}
+\end{table}
+
+Hình~\ref{fig:use_case} là sơ đồ ca sử dụng tổng quát. Bên trái là việc của nhân viên,
+quản lý và nhân sự, bên phải là việc của kế toán lương và quản trị. Ca đăng ký khuôn
+mặt có hai tác nhân vì nhân sự mở lượt còn nhân viên đứng trước máy. Ca duyệt đơn có hai
+tác nhân vì đơn đi tới quản lý hoặc nhân sự.
+
+\newcommand{\actor}[3]{%
+  \begin{scope}[shift={(#1)}]
+    \draw (0,0.42) circle (0.13);
+    \draw (0,0.29) -- (0,-0.08);
+    \draw (-0.2,0.16) -- (0.2,0.16);
+    \draw (0,-0.08) -- (-0.15,-0.36);
+    \draw (0,-0.08) -- (0.15,-0.36);
+    \node[below, align=center] at (0,-0.36) {#3};
+    \coordinate (#2) at (0,0.1);
+  \end{scope}}
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  uc/.style={draw, ellipse, align=center, minimum width=33mm, minimum height=9mm, inner sep=0pt}]
+\draw (-3.5,-3.8) rectangle (3.95,4.0);
+\node[anchor=north west] at (-3.45,3.97) {Hệ thống chấm công};
+\node[uc] (a1) at (-1.65,2.85) {Chấm công tại máy};
+\node[uc] (a3) at (-1.65,1.65) {Gửi đơn nghỉ,\\đơn làm thêm};
+\node[uc] (a2) at (-1.65,0.45) {Xem công, phép,\\phiếu lương};
+\node[uc] (a5) at (-1.65,-0.75) {Đăng ký khuôn mặt\\tại máy};
+\node[uc] (a4) at (-1.65,-1.95) {Duyệt đơn};
+\node[uc] (b1) at (-1.65,-3.15) {Quản lý hồ sơ,\\ca, bảng công};
+\node[uc] (b2) at (2.15,2.1) {Chạy và chốt\\kỳ lương};
+\node[uc] (b3) at (2.15,0.5) {Duyệt máy mới};
+\node[uc] (b4) at (2.15,-1.0) {Theo dõi, ra lệnh\\cho máy};
+\node[uc] (b5) at (2.15,-2.5) {Phát hành bản\\cập nhật OTA};
+\actor{-6.1,2.0}{e}{Nhân viên}
+\actor{-6.1,-0.4}{m}{Quản lý}
+\actor{-6.1,-2.8}{h}{Nhân sự}
+\actor{6.2,2.0}{p}{Kế toán lương}
+\actor{6.2,-1.1}{q}{Quản trị}
+\draw (e) -- (a1.west);
+\draw (e) -- (a2.west);
+\draw (e) -- (a3.west);
+\draw (e) -- (a5.west);
+\draw (m) -- (a2.west);
+\draw (m) -- (a4.west);
+\draw (h) -- (a4.west);
+\draw (h) -- (a5.west);
+\draw (h) -- (b1.west);
+\draw (p) -- (b2.east);
+\draw (q) -- (b3.east);
+\draw (q) -- (b4.east);
+\draw (q) -- (b5.east);
+\end{tikzpicture}
+\caption{Sơ đồ ca sử dụng tổng quát.}
+\label{fig:use_case}
+\end{figure}
+
+Năm bảng dưới đặc tả các ca có nhiều bên tham gia nhất. Bảng~\ref{tab:uc_cham} là ca
+chính của máy chấm công. Máy ghi lượt xuống flash trước khi gửi, nên ca này không phụ
+thuộc mạng (F5).
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đặc tả ca sử dụng Chấm công tại máy.}
+\label{tab:uc_cham}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Tác nhân} & Nhân viên \\
+\hline
+\textbf{Tiền điều kiện} & Người đó đã có mẫu khuôn mặt trên máy, máy đã nạp được gói mô hình \\
+\hline
+\textbf{Luồng chính} & (1)~Người bước vào tầm cảm biến, máy thức. (2)~Máy phát hiện mặt trong khung ngắm và chờ hộp mặt ổn định qua 2 lần phát hiện. (3)~Máy chấm mặt là thật. (4)~Máy tạo vector đặc trưng, so với các mẫu, điểm cao nhất từ 0,45 trở lên. (5)~Máy mở thanh chắn, kêu bíp, hiện tên. (6)~Máy ghi lượt chấm xuống flash rồi gửi lên máy chủ \\
+\hline
+\textbf{Luồng rẽ} & Mặt giả: sau 3 lần thử, máy báo từ chối. Không nhận ra: sau 2 lần thử, máy báo chưa nhận ra. Người vừa chấm rời đi rồi quay lại trong 5 phút: thanh chắn vẫn mở, không sinh lượt mới. Mất mạng: lượt nằm trong flash, có mạng thì gửi \\
+\hline
+\textbf{Hậu điều kiện} & Có một lượt chấm trên flash, sau đó có đúng một dòng trên máy chủ \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:uc_dang_ky} là ca nối máy với máy chủ qua khuôn mặt. Người vận hành chọn tên
+trên màn hình, không gõ mã, vì gõ nhầm là buộc khuôn mặt người này vào hồ sơ người kia và
+lỗi đó chỉ lộ ra khi đối chiếu bảng lương.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đặc tả ca sử dụng Đăng ký khuôn mặt tại máy.}
+\label{tab:uc_dang_ky}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Tác nhân} & Nhân sự, nhân viên, máy chấm công \\
+\hline
+\textbf{Tiền điều kiện} & Nhân viên đã đồng ý cho xử lý dữ liệu sinh trắc \\
+\hline
+\textbf{Luồng chính} & (1)~Nhân sự gán người vào máy trên dashboard, máy chủ đẩy tên xuống danh sách chờ của máy. (2)~Trên máy, người vận hành chọn tên ở màn Thêm người. (3)~Người được chụp nhìn thẳng, nghiêng trái, nghiêng phải; mỗi mẫu giữ được máy kêu một tiếng bíp. (4)~Đủ 3 mẫu, máy ghi bảng mẫu xuống flash. (5)~Máy gửi từng mẫu lên máy chủ tới khi broker xác nhận. (6)~Máy chủ mã hóa mẫu và đánh dấu cặp máy, người đã đăng ký \\
+\hline
+\textbf{Luồng rẽ} & Chưa có đồng ý: máy chủ từ chối gán với mã \texttt{BIOMETRIC\_CONSENT\_MISSING}. Bỏ dở: các mẫu đã lấy bị xóa. Mất mạng: mẫu mang cờ chưa báo và được gửi khi nối lại \\
+\hline
+\textbf{Hậu điều kiện} & Máy nhận ra người đó, máy chủ biết người đó đã có mặt trên máy nào \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:uc_don} là ca đơn nghỉ. Số dư bị giữ chỗ ngay lúc gửi, nên hai đơn cùng chờ
+duyệt không tiêu quá số ngày còn lại.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đặc tả ca sử dụng Gửi và duyệt đơn nghỉ.}
+\label{tab:uc_don}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Tác nhân} & Nhân viên, quản lý hoặc nhân sự \\
+\hline
+\textbf{Tiền điều kiện} & Đã khai loại phép, người gửi có hồ sơ \\
+\hline
+\textbf{Luồng chính} & (1)~Nhân viên chọn loại phép và ngày. (2)~Biểu mẫu hiện số ngày làm việc bị trừ và số dư sau đơn do máy chủ tính. (3)~Nhân viên gửi đơn, số dư giữ chỗ trong \texttt{pending}. (4)~Người duyệt thấy đơn ở hộp chờ duyệt kèm số dư và người đang nghỉ. (5)~Người duyệt chấp nhận, số ngày chuyển sang \texttt{taken} và ghi vào ngày công \\
+\hline
+\textbf{Luồng rẽ} & Thiếu số dư: mã \texttt{LEAVE\_BALANCE\_SHORT}. Chồng ngày: mã \texttt{LEAVE\_OVERLAP}. Tự duyệt đơn của mình: mã \texttt{SELF\_DECISION}. Từ chối hoặc hủy: trả lại phần giữ chỗ \\
+\hline
+\textbf{Hậu điều kiện} & Số dư và ngày công thay đổi trong cùng một giao dịch \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:uc_luong} là ca kỳ lương. Mỗi kỳ thuộc đúng một pháp nhân, vì lương, bảo hiểm,
+thuế và chuyển khoản đều đi theo bên đứng tên hợp đồng. Một kỳ chạy được nhiều lượt nháp,
+nhưng chỉ khi chốt thì phiếu mới là bản chính thức.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đặc tả ca sử dụng Chạy và chốt kỳ lương.}
+\label{tab:uc_luong}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Tác nhân} & Kế toán lương \\
+\hline
+\textbf{Tiền điều kiện} & Tháng lương đã bắt đầu, pháp nhân có chính sách hiệu lực \\
+\hline
+\textbf{Luồng chính} & (1)~Mở kỳ cho một pháp nhân. (2)~Chạy một lượt tính, việc nền sinh phiếu nháp. (3)~Soát phiếu, sửa đầu vào rồi chạy lại nếu cần. (4)~Sau khi hết tháng, chốt kỳ: đầu vào đóng băng, phiếu mang bản chép tài khoản ngân hàng. (5)~Xuất tệp ngân hàng, đánh dấu đã trả, gửi phiếu cho nhân viên \\
+\hline
+\textbf{Luồng rẽ} & Thiếu chính sách: lượt không chạy và báo mã lỗi kèm đường sửa. Tháng chưa hết: mã \texttt{PERIOD\_NOT\_ENDED}. Lượt chấm tới sau khi chốt: chờ nhân sự duyệt và chỉ sửa bảng công; khoản chênh, nếu có, đi qua khiếu nại lương và vào kỳ sau như một khoản truy lĩnh \\
+\hline
+\textbf{Hậu điều kiện} & Phiếu lương chính thức không đổi nữa, mỗi người mỗi tháng đúng một phiếu thường \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:uc_duyet_may} là ca đưa một máy mới vào hệ thống. Mọi máy nhận đúng cùng một
+ảnh firmware, nên token lô không phân biệt được máy thật với máy giả. Mã nhận máy chỉ đọc
+được trên màn hình thật, nên người duyệt phải đứng trước đúng cái máy đó.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Đặc tả ca sử dụng Duyệt máy mới.}
+\label{tab:uc_duyet_may}
+\begin{tabular}{|L{2.8cm}|L{10.8cm}|}
+\hline
+\textbf{Tác nhân} & Quản trị, máy chấm công \\
+\hline
+\textbf{Tiền điều kiện} & Máy có Wi-Fi và chạy firmware mang token của lô \\
+\hline
+\textbf{Luồng chính} & (1)~Máy gọi \texttt{POST /devices/register} kèm token lô, \texttt{deviceId} và mã nhận máy 6 số, đồng thời hiện mã trên màn hình. (2)~Máy chủ tạo dòng \texttt{PENDING}. (3)~Quản trị đọc mã trên màn hình, gõ vào dashboard, đặt tên và vị trí. (4)~Lần hỏi kế tiếp, máy nhận JWT 90 ngày và nối broker \\
+\hline
+\textbf{Luồng rẽ} & Sai mã: không duyệt. Trong lúc chờ, máy vẫn chấm công và giữ lượt trong flash \\
+\hline
+\textbf{Hậu điều kiện} & Máy ở trạng thái \texttt{APPROVED}, có JWT riêng \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Yêu cầu chức năng}
+\label{section:3.1.2}
+
+Bảng~\ref{tab:yc_chuc_nang} liệt kê yêu cầu chức năng, tách từ bốn sản phẩm đã nêu ở
+Mục~\ref{section:1.2}. F1--F6 thuộc máy chấm công, F7--F9 thuộc phần quản lý máy từ xa,
+F10--F13 thuộc hệ thống nhân sự, F14 và F15 thuộc cổng nhân viên.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Yêu cầu chức năng.}
+\label{tab:yc_chuc_nang}
+\begin{tabular}{|c|L{3.2cm}|L{9.6cm}|}
+\hline
+\textbf{Mã} & \textbf{Nhóm} & \textbf{Yêu cầu} \\
+\hline
+F1 & Máy chấm công & Chấm công bằng khuôn mặt không tiếp xúc, xử lý trên chip \\
+\hline
+F2 & Máy chấm công & Chặn ảnh in và ảnh hoặc video phát trên màn hình \\
+\hline
+F3 & Máy chấm công & Đăng ký khuôn mặt tại máy theo danh sách máy chủ giao \\
+\hline
+F4 & Máy chấm công & Tự thức khi có người, tự nghỉ khi không có ai \\
+\hline
+F5 & Máy chấm công & Vẫn chấm công khi mất mạng, tự gửi bù khi nối lại \\
+\hline
+F6 & Máy chấm công & Mở thanh chắn và phát tiếng báo \\
+\hline
+F7 & Quản lý máy & Duyệt máy mới bằng mã hiện trên màn hình, thu hồi máy \\
+\hline
+F8 & Quản lý máy & Theo dõi trạng thái, ra lệnh từ xa \\
+\hline
+F9 & Quản lý máy & Cập nhật firmware và mô hình qua OTA, tự quay về bản cũ khi hỏng \\
+\hline
+F10 & Nhân sự & Hồ sơ nhân viên, cơ cấu tổ chức, vai và phạm vi nhìn thấy \\
+\hline
+F11 & Nhân sự & Ca làm, ngày công, bảng công, sửa tay có vết \\
+\hline
+F12 & Nhân sự & Đơn nghỉ, đơn làm thêm, luồng duyệt, số dư phép \\
+\hline
+F13 & Nhân sự & Kỳ lương, tính thuế và bảo hiểm, phiếu lương, báo cáo \\
+\hline
+F14 & Cổng nhân viên & Xem công, phép, phiếu lương và gửi đơn trên điện thoại \\
+\hline
+F15 & Cổng nhân viên & Nhận thông báo đẩy, xem lại dữ liệu đã tải khi mất mạng \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Yêu cầu phi chức năng và ràng buộc}
+\label{section:3.1.3}
+
+Bảng~\ref{tab:yc_phi_chuc_nang} đặt các ràng buộc kiểm tra được. Phần lớn sinh ra từ
+phần cứng và từ việc người chấm công chỉ đứng trước máy 1--2~s. Kết quả đo nằm ở
+Chương~\ref{chapter:Experiment}. NF9 chưa có con số, vì đồ án chưa lập bảng giá linh
+kiện.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Yêu cầu phi chức năng.}
+\label{tab:yc_phi_chuc_nang}
+\begin{tabular}{|c|L{2.6cm}|L{10.2cm}|}
+\hline
+\textbf{Mã} & \textbf{Nhóm} & \textbf{Mục tiêu} \\
+\hline
+NF1 & Độ trễ & Một lượt chạy ba mô hình không quá 360~ms \\
+\hline
+NF2 & Bộ nhớ & Đáy SRAM trống từ 24~KB trở lên khi chạy đủ tính năng; ba mô hình vừa khe 2,25~MB \\
+\hline
+NF3 & Độ chính xác & Phát hiện: AP từ 0,90 trở lên trên mặt từ 38~px. Lượng tử hóa không làm thước chính của mỗi nhánh sụt quá 1\%. Chống giả mạo chặn mọi khung giả của tập OV5640 \\
+\hline
+NF4 & Riêng tư & Ảnh khuôn mặt không rời máy chấm công; vector đặc trưng được mã hóa khi lưu trên máy chủ \\
+\hline
+NF5 & Bền dữ liệu & Không mất lượt chấm khi mất điện hay mất mạng; gửi lại nhiều lần cũng chỉ thành một bản ghi \\
+\hline
+NF6 & Bảo mật & Mã hóa đường truyền, mỗi máy một danh tính, phân quyền theo dòng dữ liệu, xác thực hai lớp cho vai bàn giấy \\
+\hline
+NF7 & Quy mô & Dùng được với 5.000 nhân viên: danh sách có tìm, lọc, phân trang, truy vấn không quét cả bảng \\
+\hline
+NF8 & Khả dụng & Tiếng Việt và tiếng Anh ở cả máy lẫn web; cổng nhân viên dùng được trên điện thoại \\
+\hline
+NF9 & Chi phí & Máy chỉ dùng một vi điều khiển và các module bán sẵn \\
+\hline
+\end{tabular}
+\end{table}
 
 \section{Kiến trúc tổng thể}
 \label{section:3.2}
 
+Hệ thống gồm ba phần như Hình~\ref{fig:kien_truc}. Máy chấm công tự quyết định tại
+chỗ: nhận diện, mở thanh chắn và ghi lượt chấm mà không cần mạng (F1, F5). Máy chủ chạy
+trên một VPS bằng Docker Compose, giữ danh tính và nghiệp vụ. Người dùng làm việc qua
+ứng dụng Next.js triển khai trên Vercel, và trình duyệt gọi thẳng API qua REST và
+WebSocket. Mọi lưu lượng vào VPS đi qua Traefik, gồm cả cổng 8883 của MQTT. Máy nối
+vào EMQX, EMQX hỏi API xem JWT của máy có hợp lệ không, và API nhận bản tin qua một tài
+khoản dịch vụ của broker.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, align=center, minimum height=9mm, inner sep=2pt},
+  lab/.style={font=\scriptsize, align=center},
+  arr/.style={-{Latex[length=2mm]}},
+  both/.style={{Latex[length=2mm]}-{Latex[length=2mm]}}]
+\node[box, text width=26mm, minimum height=32mm] (k) at (0,0) {Máy chấm công\\ESP32-S3\\[1mm]ba mô hình,\\bảng mẫu,\\nhật ký lượt chấm};
+\draw[dashed] (2.75,-2.45) rectangle (9.85,2.45);
+\node[anchor=north west] at (2.8,2.42) {VPS, Docker Compose};
+\node[box, text width=11mm, minimum height=38mm] (t) at (3.6,-0.1) {Traefik};
+\node[box, text width=20mm] (e) at (6.0,1.05) {EMQX};
+\node[box, text width=20mm] (a) at (6.0,-0.75) {API NestJS};
+\node[box, text width=19mm] (p) at (8.7,0.35) {PostgreSQL};
+\node[box, text width=19mm] (r) at (8.7,-0.95) {Redis,\\BullMQ};
+\node[box, text width=23mm] (v) at (12.3,1.1) {Next.js\\trên Vercel};
+\node[box, text width=23mm] (u) at (12.3,-1.1) {Trình duyệt,\\PWA, Android};
+\draw[arr] ([yshift=7mm]k.east) -- node[lab, above] {MQTTS} ([yshift=8mm]t.west);
+\draw[arr] ([yshift=-7mm]k.east) -- node[lab, below] {HTTPS} ([yshift=-6mm]t.west);
+\draw[arr] ([yshift=11.5mm]t.east) -- (e.west);
+\draw[arr] ([yshift=-6.5mm]t.east) -- (a.west);
+\draw[both] (e) -- node[lab, right] {bản tin,\\kiểm JWT} (a);
+\draw[arr] (a.east) -- (p.west);
+\draw[arr] (a.east) -- (r.west);
+\draw[arr] (u) -- node[lab, right] {tải trang} (v);
+\draw[arr] (u.west) -- ++(-0.45,0) |- node[lab, pos=0.75, below] {REST, WebSocket} ([yshift=-16mm]t.east);
+\end{tikzpicture}
+\caption{Kiến trúc tổng thể của hệ thống.}
+\label{fig:kien_truc}
+\end{figure}
+
+Quyết định lớn nhất của phần này là ai giữ thứ gì, tóm tắt ở Bảng~\ref{tab:noi_giu}.
+Máy chủ giữ danh tính vì một người tồn tại trong công ty nhiều năm, còn mẫu khuôn mặt
+gắn với một máy cụ thể và mất khi máy hỏng. Hai lần thử để máy tự đặt mã nhân viên đều
+hỏng. Mã tăng dần làm hai máy cùng sinh mã 1 cho hai người. Mã ở dải riêng thì vượt kiểu
+\texttt{Int} của máy chủ: đo ngày 24/09/2026 trên production, 125 bản ghi bị PostgreSQL
+từ chối trong khi máy vẫn thấy broker đã nhận. Từ đó máy chỉ đăng ký người máy chủ đã
+giao.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Nơi giữ từng loại dữ liệu.}
+\label{tab:noi_giu}
+\begin{tabular}{|L{4.0cm}|L{3.9cm}|L{5.6cm}|}
+\hline
+\textbf{Dữ liệu} & \textbf{Nguồn gốc} & \textbf{Bản ở nơi khác} \\
+\hline
+Nhân viên, mã, tên & Máy chủ & Mã và tên trong bảng mẫu của máy \\
+\hline
+Ảnh khuôn mặt & Bộ nhớ máy, chỉ khi xử lý & Không lưu, không gửi đi (NF4) \\
+\hline
+Mẫu khuôn mặt & Máy chụp & Bản mã hóa AES-256-GCM trên máy chủ, đẩy xuống các máy khác \\
+\hline
+Lượt chấm & Flash của máy & Máy chủ, chống trùng theo cặp máy và mã lượt \\
+\hline
+Ngưỡng mô hình & Tiêu đề gói mô hình & Đổi cùng mô hình, không có bản sao \\
+\hline
+Ngưỡng nghiệp vụ & NVS của máy & Đổi được bằng lệnh \texttt{SET\_CONFIG} \\
+\hline
+Chính sách lương & Máy chủ & Phiếu lương ghi dòng chính sách đã dùng \\
+\hline
+\end{tabular}
+\end{table}
+
+Máy và máy chủ viết bằng hai ngôn ngữ nên dễ lệch hợp đồng. Thư mục
+\mbox{\texttt{contracts/}} là nguồn duy nhất của định dạng bản tin, bảng topic và phiên bản
+mô hình. Công cụ sinh mã phát ra kiểu C cho firmware và kiểu TypeScript cho backend,
+frontend, và CI chặn khi mã sinh ra lệch nguồn. Mã nguồn đặt trong một kho chung gồm
+\texttt{firmware}, \texttt{ml}, \texttt{backend}, \texttt{frontend}, \texttt{android},
+\mbox{\texttt{contracts}}, \texttt{deploy} và \texttt{hardware}.
+
 \section{Thiết kế phần cứng}
 \label{section:3.3}
+
+\subsection{Sơ đồ khối và phân bổ bus}
+\label{section:3.3.1}
+
+Hình~\ref{fig:khoi_phan_cung} là sơ đồ khối của máy, linh kiện và lý do chọn đã nêu ở
+Bảng~\ref{tab:ngoai_vi}. Board ESP32-S3-CAM mang sẵn module N16R8 và camera OV5640, các
+module còn lại cắm lên một mạch đế. Camera chiếm 14 chân, màn hình 7 chân, và sau khi gán
+hết ngoại vi thì board không còn chân GPIO thường nào. Ba đường ít đổi trạng thái là reset
+cảm ứng, XSHUT của cảm biến khoảng cách và SD của bộ khuếch đại vì thế đi qua PCF8574.
+Chân của PCF8574 lên mức cao lúc cấp nguồn, nên nó chỉ nhận những việc mà mức cao lúc khởi
+động là vô hại: RST và XSHUT thả cao thì chip chạy, SD cao thì bộ khuếch đại thức nhưng
+chưa có dữ liệu I\textsuperscript{2}S. Bảng chân đầy đủ nằm ở Phụ lục~\ref{appendix:chan}.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, align=center, text width=28mm, minimum height=8mm, inner sep=2pt},
+  lab/.style={font=\scriptsize, above},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[draw, align=center, text width=31mm, minimum height=46mm] (c) at (0,0) {ESP32-S3-CAM\\[1mm]\mbox{WROOM-1 N16R8}\\flash 16~MB\\PSRAM 8~MB};
+\node[box] (cam) at (-5.2,1.65) {OV5640};
+\node[box] (lcd) at (-5.2,0.35) {ST7796S, 4 inch};
+\node[box] (amp) at (-5.2,-0.95) {MAX98357A và loa};
+\node[box] (srv) at (-5.2,-2.25) {Servo SG90};
+\draw[arr] (cam.east) -- node[lab] {DVP, 14 chân} ([yshift=16.5mm]c.west);
+\draw[arr] ([yshift=3.5mm]c.west) -- node[lab] {SPI 80~MHz} (lcd.east);
+\draw[arr] ([yshift=-9.5mm]c.west) -- node[lab] {I\textsuperscript{2}S} (amp.east);
+\draw[arr] ([yshift=-22.5mm]c.west) -- node[lab] {PWM 50~Hz} (srv.east);
+\draw[thick] (3.0,2.1) -- (3.0,-2.4);
+\draw (c.east) -- node[lab] {I\textsuperscript{2}C} (3.0,0);
+\node[box] (gt) at (5.2,1.95) {GT911};
+\node[box] (tof) at (5.2,0.65) {VL53L1X};
+\node[box] (io) at (5.2,-0.65) {PCF8574:\\RST, XSHUT, SD};
+\node[box] (rtc) at (5.2,-1.95) {DS3231};
+\draw (3.0,1.95) -- (gt.west);
+\draw (3.0,0.65) -- (tof.west);
+\draw (3.0,-0.65) -- (io.west);
+\draw (3.0,-1.95) -- (rtc.west);
+\end{tikzpicture}
+\caption{Sơ đồ khối phần cứng của máy chấm công.}
+\label{fig:khoi_phan_cung}
+\end{figure}
+
+Bus I\textsuperscript{2}C chạy 400~kHz và do bốn thiết bị dùng chung. Mỗi đường có đúng một
+điện trở kéo lên: SDA dùng R1 4,7~k$\Omega$ trên mạch đế, SCL dùng điện trở có sẵn của
+module cảm ứng. GT911, VL53L1X và DS3231 đều đạt 400~kHz, nhưng datasheet của PCF8574 chỉ
+ghi tối đa 100~kHz~\cite{pcf8574}. Bài kiểm tra bus ngày 12/09/2026 đạt 7/7 ca ở 400~kHz
+với đủ thiết bị, nên thiết kế giữ mức này. Đây là một điểm nằm ngoài đặc tả: kết quả đo
+chỉ nói về linh kiện đang dùng, đổi lô PCF8574 thì phải chạy lại bài kiểm tra.
+
+\subsection{Nguồn điện}
+\label{section:3.3.2}
+
+Máy dùng hai đường 5~V chung mass, tóm tắt ở Bảng~\ref{tab:nguon}. Hai đường tách nhau
+vì hai đỉnh dòng trùng nhau: máy phát tiếng đúng lúc mở thanh chắn. Đặt chung một đường
+thì đỉnh 1,34~A cộng 0,7~A của servo đủ kéo sụt áp và làm ESP32 khởi động lại. Đường 2
+không được là sạc dự phòng, vì sạc tự ngắt khi tải nhỏ mà servo đứng yên gần như không
+ăn dòng. Đo ngày 10/09/2026, servo không quay dù xung ở GPIO38 đúng từng micro giây, chỉ
+vì sạc đã tắt.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các đường nguồn của máy chấm công.}
+\label{tab:nguon}
+\begin{tabular}{|L{2.3cm}|L{2.2cm}|L{4.3cm}|L{2.0cm}|L{1.7cm}|}
+\hline
+\textbf{Đường} & \textbf{Mức} & \textbf{Tải} & \textbf{Điển hình} & \textbf{Đỉnh} \\
+\hline
+Đường 1 & 5~V, 2~A & ESP32-S3, camera, màn hình, khuếch đại, cảm biến & 375~mA & 1,34~A \\
+\hline
+Đường 2 & 5~V, từ 1~A & Servo SG90 & 150~mA & 700~mA \\
+\hline
+\texttt{+3V3\_LCD} & 3,3~V, từ đường 1 & Tấm màn hình & 100~mA & 150~mA \\
+\hline
+\end{tabular}
+\end{table}
+
+Tấm màn hình có đường 3,3~V riêng qua module ổn áp U2. Dãy LED đèn nền không tự ổn áp nên
+độ sáng bám theo điện áp đặt vào, trong khi đường 3,3~V của board còn nuôi lõi 240~MHz và
+PSRAM. Ngày 19/09/2026, màn hình nhấp nháy thấy rõ trên nền trắng khi chung đường đó, còn
+mọi thanh ghi đọc từ ST7796S đều phẳng. Cho panel ngủ hẳn mà đèn nền vẫn nháy, nên nguyên
+nhân nằm ở gợn trên đường nuôi dãy LED. Đất của màn hình vì thế đóng lại ngay tại chân
+đất U2. Các tụ lọc gồm 1000~$\mu$F gần đầu vào, 470~$\mu$F gần bộ khuếch đại, gần servo và
+ở đầu vào U2, 100~$\mu$F ở đầu ra U2.
+
+Hình~\ref{fig:nguon} vẽ cây nguồn. Board ESP32-S3-CAM và bộ khuếch đại nhận 5~V bằng hai nhánh
+riêng từ J10. U2 là tải duy nhất được mượn nhánh của tải khác, vì nó ăn 100~mA đều đặn, không có
+đỉnh để đẩy sang ai. Ba cảm biến I\textsuperscript{2}C và R1 vẫn ở đường 3,3~V của board.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, align=center, text width=33mm, minimum height=9mm, inner sep=2pt},
+  lab/.style={font=\scriptsize, above},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (j10) at (0,0.35) {J10: đường 1\\5~V, 2~A};
+\node[box] (u1) at (4.8,1.75) {U1: \mbox{ESP32-S3-CAM}};
+\node[box] (u2) at (4.8,0.35) {U2: ổn áp 3,3~V};
+\node[box] (j7) at (4.8,-1.05) {J7: MAX98357A};
+\node[box] (sen) at (10.1,1.75) {Cảm biến I\textsuperscript{2}C, R1\\(J4, J5, J6)};
+\node[box] (j3) at (10.1,0.35) {J3: tấm màn hình};
+\node[box] (j11) at (0,-2.3) {J11: đường 2\\5~V, từ 1~A};
+\node[box] (j9) at (4.8,-2.3) {J9: SG90};
+\draw[arr] (j10.east) -- (u1.west);
+\draw[arr] (j10.east) -- (j7.west);
+\draw[arr] (u1) -- (u2);
+\draw[arr] (u1) -- node[lab] {\texttt{+3V3}} (sen);
+\draw[arr] (u2) -- node[lab] {\texttt{+3V3\_LCD}} (j3);
+\draw[arr] (j11) -- (j9);
+\end{tikzpicture}
+\caption{Cây nguồn của máy chấm công.}
+\label{fig:nguon}
+\end{figure}
+
+\subsection{Sơ đồ nguyên lý và mạch in}
+\label{section:3.3.3}
+
+Hình~\ref{fig:nguyen_ly} là sơ đồ nguyên lý của mạch đế. U1 là board ESP32-S3-CAM, J3 là
+module màn hình kèm cảm ứng, J4 là VL53L1X, J5 và J13 là hai hàng chân của PCF8574, J6 là
+DS3231, J7 là MAX98357A, J9 là servo, còn J10 và J11 là hai đầu vào nguồn. J14 chừa sẵn lỗ
+cho khe thẻ nhớ của màn hình, chưa nối dây. Mạch đế không có linh kiện dán: mọi chân đều
+xuyên lỗ, các module cắm qua đế nên một module hỏng thì thay được ngay. Sơ đồ và mạch in
+được sinh bằng script từ bảng chân, nên bảng chân là nguồn duy nhất.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=\textwidth, trim=38 150 38 65, clip]{../../../hardware/export/kiosk_schematic_1eb1707.pdf}
+\caption{Sơ đồ nguyên lý mạch đế.}
+\label{fig:nguyen_ly}
+\end{figure}
+
+Hình~\ref{fig:mach_in} là mạch in. Mạch rộng 158~mm, cao 121~mm, hai lớp. Chiều cao đặt
+theo tấm màn hình 108,04~mm cộng chỗ cho tên chân ở hai đầu. Vùng nét đứt là chỗ thân
+module nằm: màn hình ở giữa, board ESP32-S3-CAM bên trái, hai đầu vào nguồn ở góc dưới bên
+phải. Dây nguồn rộng 1,0~mm đi mặt sau, dây tín hiệu 0,25~mm đi mặt trước, tổng cộng 46
+via. Via nguồn khoan 0,6~mm vì lỗ 0,4~mm chỉ chịu 0,87~A theo IPC-2221, dưới 0,91~A của via
+mass nặng nhất. Bản hiện tại đạt 0 lỗi ERC và 0 vi phạm DRC.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.9\textwidth, trim=189 142 190 141, clip]{../../../hardware/export/pcb_top.png}
+\caption{Mạch đế, ảnh dựng từ KiCad.}
+\label{fig:mach_in}
+\end{figure}
+
+Sơ đồ nguyên lý chỉ khai được rằng mọi chân GND cùng một nút, còn đồng thì có điện trở:
+700~mA của servo chạy qua một đoạn đồng tạo hiệu điện thế trên đoạn đó, và MAX98357A khuếch
+đại nhấp nhô ấy ra loa. Việc đi dây vì thế có luật riêng: (i)~hai mass gặp nhau tại đúng
+một điểm cạnh hai đầu vào nguồn; (ii)~servo và bộ khuếch đại về thẳng đầu vào của mình;
+(iii)~board ESP32-S3-CAM và bộ khuếch đại nhận 5~V bằng hai nhánh song song, vì nối chuỗi
+thì đỉnh dòng của bộ khuếch đại chạy qua đoạn đồng nuôi chip; (iv)~tụ 470~$\mu$F đặt sát
+chân tải.
 
 \section{Thiết kế pipeline AI trên chip}
 \label{section:3.4}
 
+Pipeline xử lý từng khung theo Hình~\ref{fig:pipeline}, còn ba vùng ảnh của ba mô hình đã
+vẽ ở Hình~\ref{fig:vung_anh}. Bộ phát hiện chạy trên mỗi khung AI lấy được, 32,9~ms một
+lần. Hai mô hình sau tốn 73,3~ms và 246,4~ms nên chỉ chạy khi hộp mặt đã đứng yên qua 2 lần
+phát hiện với IoU từ 0,5 trở lên (NF1). Kết quả của các cổng được báo ra ngay sau bước
+phát hiện, trước hai mô hình chậm, qua một hàm quan sát. Đo trên board ngày 18/09/2026, khi
+trạng thái chỉ báo sau khi cả bước xong, dòng Đang nhận diện gần như không bao giờ hiện và
+màn hình nhảy thẳng từ Lại gần hơn sang kết quả.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=9mm and 3mm,
+  box/.style={draw, align=center, text width=17mm, minimum height=12mm, inner sep=1.5pt},
+  res/.style={draw, rounded corners, align=center, text width=18mm, minimum height=12mm, inner sep=1pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (f) {Khung mới};
+\node[box, right=of f] (d) {YuNet};
+\node[box, right=of d] (g) {Bốn cổng hình học};
+\node[box, right=of g] (s) {Ổn định qua 2 lần};
+\node[box, right=of s] (l) {Chống giả mạo};
+\node[box, right=of l] (r) {Nhận diện, so mẫu};
+\node[box, right=of r] (m) {Báo khớp};
+\node[res, below=of g] (o1) {Nhắc đưa mặt vào khung, lại gần};
+\node[res, below=of l] (o2) {3 lần thử thì báo giả mạo};
+\node[res, below=of r] (o3) {2 lần thử thì báo chưa nhận ra};
+\draw[arr] (f) -- (d);
+\draw[arr] (d) -- (g);
+\draw[arr] (g) -- (s);
+\draw[arr] (s) -- (l);
+\draw[arr] (l) -- (r);
+\draw[arr] (r) -- (m);
+\draw[arr] (g) -- node[font=\scriptsize, right] {không đạt} (o1);
+\draw[arr] (l) -- node[font=\scriptsize, right] {dưới 0,50} (o2);
+\draw[arr] (r) -- node[font=\scriptsize, right] {dưới 0,45} (o3);
+\end{tikzpicture}
+\caption{Luồng xử lý một khung của pipeline AI.}
+\label{fig:pipeline}
+\end{figure}
+
+Bốn cổng hình học lọc mặt trước khi tốn thời gian cho hai mô hình sau: (i)~điểm phát hiện
+từ 0,35; (ii)~ít nhất một nửa diện tích hộp mặt nằm trong khung ngắm; (iii)~mặt rộng từ
+100~px trong khung; (iv)~ô vuông quanh mặt lọt trong khung. Cổng khung ngắm có mặt vì camera
+chụp 480 cột còn màn hình chỉ hiện 213 cột giữa. Thiếu cổng này thì mặt nằm ngoài màn hình
+vẫn giành được lượt của người đứng giữa khung, vì mặt mới được chọn theo cỡ lớn nhất. Mặt
+đang bám chỉ tính là rời khung khi phần nằm trong khung xuống dưới 25\%, nên người đứng lấp
+lửng ở mép không bị đóng mở lượt liên tục.
+
+Máy bám một mặt chính. Mặt đang bám được giữ nếu lần phát hiện sau còn hộp trùng nó, nên
+người thứ hai to hơn bước vào không cướp lượt của người đang được xác thực. Bộ phát hiện
+trượt lẻ tẻ ngay cả trên mặt đứng yên, nên máy chỉ bỏ mặt đang bám sau 2 lần trượt liên tiếp.
+
+Hai kết luận xấu có số lần thử khác nhau. Mặt thật thỉnh thoảng rơi dưới ngưỡng sống trên
+một khung đơn lẻ, nên máy thử 3 lần mới báo giả mạo, mỗi lần thử cách nhau 3 lần phát hiện.
+Không nhận ra thì thử 2 lần. Ba ngưỡng 0,35, 0,50 và 0,45 nằm trong tiêu đề gói mô hình nên
+đổi cùng mô hình, và không đưa lên dashboard, vì hạ ngưỡng nhận diện là cho người lạ mở
+thanh chắn. Các ngưỡng nghiệp vụ như cỡ mặt, tỉ lệ khung ngắm và thời gian chống trùng thì
+nằm ở NVS.
+
+Đăng ký đi qua chính đường xác thực này. Chống giả mạo chạy trước nhận diện, nên ảnh giơ lên
+lúc đăng ký bị từ chối trước khi có vector đặc trưng và không mẫu giả nào vào được bảng. Máy
+đo góc quay bằng năm điểm mốc: chiếu vector từ trung điểm hai mắt tới mũi lên trục hai mắt.
+Mốc nhìn thẳng lấy trung bình của chính người đó, vì đo trên board ngày 19/09/2026 thì mốc
+lệch khoảng 0,06 so với 0, gần một phần ba ngưỡng quay 0,20. Nhờ phép đo này, người đứng yên
+không thể lấy đủ ba mẫu chính diện gần trùng nhau.
+
+Ba mô hình đóng chung một gói. Tiêu đề gói mang phiên bản, vị trí, sha256 và ba ngưỡng, và
+gói nằm ở một trong hai phân vùng \texttt{models\_0}, \texttt{models\_1}. Hậu xử lý gồm giải
+mã, NMS, căn chỉnh và chuẩn hóa viết bằng C++ trong \texttt{ai\_engine} và kiểm bằng bộ vector
+vàng do Python sinh ở \texttt{contracts/golden/}, nên hai phía không lệch nhau.
+
 \section{Thiết kế firmware}
 \label{section:3.5}
+
+\subsection{Phân tầng}
+\label{section:3.5.1}
+
+Firmware gồm 22 thành phần và \texttt{main}, chia tám tầng như Hình~\ref{fig:tang}. Luật
+chính là phụ thuộc chỉ đi xuống, không đi ngang, và công cụ \texttt{check\_layers.py} chặn
+trong CI. Đây là phân tầng nới: một tầng được gọi thẳng các tầng thấp hơn, không nhất thiết
+qua tầng liền kề, và \texttt{common} là cột dùng chung cho mọi tầng. \texttt{ui\_kiosk} và
+\texttt{svc\_attendance} không gọi nhau mà gặp qua hàng đợi do \texttt{main} nối. Driver và
+tầng mạng viết bằng C. Các thành phần \texttt{svc\_*}, \texttt{ai\_engine} và
+\texttt{ui\_kiosk} viết bằng C++, tắt ngoại lệ và RTTI, không cấp phát sau khi khởi động
+xong, và header công khai chỉ chứa cú pháp C.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  row/.style={draw, align=center, text width=104mm, minimum height=7.6mm, inner sep=3pt},
+  tag/.style={anchor=east}]
+\node[row] (l7) at (0,0) {\texttt{main}: khởi động, nối dây, tạo task};
+\node[row, below=0.8mm of l7] (l6) {\texttt{ui\_kiosk}};
+\node[row, below=0.8mm of l6] (l5) {\texttt{svc\_attendance}, \texttt{svc\_sync}};
+\node[row, below=0.8mm of l5] (l4) {\texttt{svc\_vision}, \texttt{svc\_door}};
+\node[row, below=0.8mm of l4] (l3) {\texttt{ai\_engine}, \texttt{svc\_facedb}, \texttt{drv\_touch}, \texttt{drv\_tof}, \texttt{drv\_audio},\\\texttt{net\_wifi}, \texttt{net\_mqtt}, \texttt{net\_ota}, \texttt{net\_provision}};
+\node[row, below=0.8mm of l3] (l2) {\texttt{drv\_camera}, \texttt{drv\_lcd}, \texttt{drv\_servo}, \texttt{drv\_ioexp},\\\texttt{sys\_storage}, \texttt{sys\_time}};
+\node[row, below=0.8mm of l2] (l1) {\texttt{bsp\_board}: chân, bus, \texttt{app\_config.h}};
+\node[tag] at (l7.west) {L7};
+\node[tag] at (l6.west) {L6};
+\node[tag] at (l5.west) {L5};
+\node[tag] at (l4.west) {L4};
+\node[tag] at (l3.west) {L3};
+\node[tag] at (l2.west) {L2};
+\node[tag] at (l1.west) {L1};
+\draw ([xshift=1.5mm]l7.north east) rectangle ([xshift=11mm]l1.south east);
+\path ([xshift=6.25mm]l7.north east) -- node[rotate=90] {L0: \texttt{common}} ([xshift=6.25mm]l1.south east);
+\end{tikzpicture}
+\caption{Các tầng của firmware.}
+\label{fig:tang}
+\end{figure}
+
+\subsection{Task và đồng bộ}
+\label{section:3.5.2}
+
+Bảng~\ref{tab:task} liệt kê các task của ứng dụng. Lõi 1 chỉ chạy task AI: một lượt mô hình
+chiếm CPU liên tục, riêng nhận diện 246~ms, nên để chung thì giao diện đứng cả phần tư giây
+và Wi-Fi mất gói. Mọi ưu tiên đều dưới 18 để không chèn ngăn xếp Wi-Fi. Task có hạn cứng
+như camera, cảm biến, âm thanh đặt cao hơn giao diện và việc nền.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các task của ứng dụng.}
+\label{tab:task}
+\begin{tabular}{|L{1.8cm}|c|c|L{3.2cm}|L{5.3cm}|}
+\hline
+\textbf{Task} & \textbf{Lõi} & \textbf{Ưu tiên} & \textbf{Kích hoạt} & \textbf{Việc} \\
+\hline
+\texttt{cam} & 0 & 7 & Mỗi khung & Lấy khung, vẽ xem trước kèm lớp phủ, đưa khung cho AI \\
+\hline
+\texttt{tof} & 0 & 6 & Ngắt, hoặc 100~ms & Đọc khoảng cách, báo có người \\
+\hline
+\texttt{audio} & 0 & 6 & Chờ hàng đợi & Phát tiếng bíp \\
+\hline
+\texttt{touch} & 0 & 5 & Ngắt GT911 & Đọc điểm chạm \\
+\hline
+\texttt{ai} & 1 & 5 & Chờ khung & Chạy pipeline \\
+\hline
+\texttt{ui} & 0 & 4 & 20~ms & Dựng lớp phủ, xử lý chạm \\
+\hline
+\texttt{attend} & 0 & 4 & Chờ kết quả & Máy trạng thái, ghi lượt, mở thanh chắn \\
+\hline
+\texttt{mqtt} & 0 & 3 & Thư viện esp-mqtt & Gửi nhận qua TLS \\
+\hline
+\texttt{ota} & 0 & 3 & Lệnh, mốc đổi JWT & Tải bản cập nhật, xin và đổi JWT \\
+\hline
+\texttt{net} & 0 & 3 & Một lần lúc khởi động & Chờ Wi-Fi, nối broker, mở SNTP \\
+\hline
+\texttt{sync} & 0 & 2 & 5~s hoặc có dữ liệu & Gửi bù, nhịp sống, áp lệnh \\
+\hline
+\end{tabular}
+\end{table}
+
+Khung camera đi tới AI qua hàng đợi độ sâu 1, và người gửi lấy khung cũ ra rồi mới gửi, nên
+AI luôn xử lý khung mới nhất và trễ không tích lũy. Khung không đi tới task giao diện:
+\texttt{cam} vẽ ngay tại chỗ nó đang cầm khung, còn \texttt{ui} chỉ đưa xuống một ảnh lớp
+phủ. Chỉ \texttt{cam} ghi vào panel, kể cả các màn phủ kín, nên panel không cần khóa và không
+có lượt bàn giao nào gây xé hình. Điểm chạm và phán quyết hiển thị là mức, người đọc chỉ cần
+giá trị mới nhất, nên hai thứ này đi bằng biến nguyên tử và ô chung có khóa ngắn.
+
+Bốn khóa \texttt{m\_facedb\_io}, \texttt{m\_facedb}, \texttt{m\_littlefs}, \texttt{m\_i2c}
+luôn lấy theo đúng thứ tự đó, và mọi lần chờ khóa đều có thời hạn. Ghi 576~KB bảng mẫu xuống
+flash mất 1,8--2,3~s, lâu hơn hạn 200~ms của lượt tra bảng. Giữ \texttt{m\_facedb} suốt phép
+ghi thì lượt tra hết hạn và mặt quen bị báo không nhận ra, nên phép ghi chạy dưới khóa riêng
+\texttt{m\_facedb\_io}. Ngắt chỉ gọi các hàm \texttt{FromISR} rồi nhường CPU.
+
+\subsection{Máy trạng thái chấm công}
+\label{section:3.5.3}
+
+Nghiệp vụ ở máy là một bảng chuyển trạng thái nằm trong flash, gồm năm trạng thái ở
+Hình~\ref{fig:may_trang_thai}. Đồ án cố ý không dùng mẫu State: mẫu đó tốn năm lớp, năm bảng
+hàm ảo, và không cho nhìn toàn bộ sơ đồ ở một chỗ. Sự kiện không có trong bảng thì bị bỏ. Các
+đường từ \texttt{Idle} và \texttt{Cooldown} thẳng tới \texttt{Granted}, \texttt{Denied} cũng
+có mặt, để một phán quyết đến đúng lúc máy đang rảnh không bị nuốt; hình chỉ vẽ các đường
+chính.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  st/.style={draw, rounded corners, align=center, text width=22mm, minimum height=9mm, inner sep=1.5pt},
+  lab/.style={font=\scriptsize, align=center},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[st] (i) at (0,0) {\texttt{Idle}};
+\node[st] (d) at (5.0,0) {\texttt{Detecting}};
+\node[st] (g) at (10.4,1.35) {\texttt{Granted}};
+\node[st] (n) at (10.4,-1.35) {\texttt{Denied}};
+\node[st] (c) at (5.0,-2.7) {\texttt{Cooldown}};
+\draw[arr] ([yshift=2mm]i.east) -- node[lab, above] {có người, mặt còn xa} ([yshift=2mm]d.west);
+\draw[arr] ([yshift=-2mm]d.west) -- node[lab, below] {hết mặt, hết người} ([yshift=-2mm]i.east);
+\draw[arr] (d.east) -- node[lab, above, sloped] {khớp} (g.west);
+\draw[arr] (d.east) -- node[lab, below, sloped] {giả, chưa nhận ra} (n.west);
+\draw[arr] ([xshift=-3mm]g.south) -- node[lab, left] {giả, chưa nhận ra} ([xshift=-3mm]n.north);
+\draw[arr] ([xshift=3mm]n.north) -- node[lab, right] {khớp} ([xshift=3mm]g.south);
+\draw[arr] (g.east) -- ++(0.55,0) |- node[lab, pos=0.75, below] {hết 2,5~s} ([yshift=-2.5mm]c.east);
+\draw[arr] (n.south) |- node[lab, pos=0.75, above] {hết 2~s} ([yshift=2.5mm]c.east);
+\draw[arr] (c.west) -| node[lab, pos=0.25, below] {hết 1,5~s, hết người} (i.south);
+\end{tikzpicture}
+\caption{Máy trạng thái chấm công, các đường chính.}
+\label{fig:may_trang_thai}
+\end{figure}
+
+Máy cấp quyền theo lần đến của một người. Thiếu luật này, đo trên board ngày 14/09/2026,
+thanh chắn mở lại và loa kêu lại khoảng mỗi 4~s suốt lúc người ta còn đứng đó. Cùng người
+trong vòng 5 phút mà chưa rời đi thì máy im lặng: không mở thanh chắn, không ghi, không kêu.
+Đã rời khung ngắm rồi quay lại trong 5 phút thì thanh chắn vẫn mở nhưng không sinh bản ghi
+mới, vì người ta quét lại thường do thanh chắn chưa kịp mở. Người khác bước tới được cấp ngay
+mà không phải chờ thanh chắn của người trước đóng.
+
+\subsection{Bộ nhớ và lưu trữ}
+\label{section:3.5.4}
+
+Bảng~\ref{tab:phan_vung} là bảng phân vùng 16~MB. Khe ứng dụng 2,75~MB vì riêng thư viện ESP-DL
+thêm 858~KB, đưa ảnh firmware lên 2.679.488~B, quá khe 2~MB trước đó. Hai khe mô hình tách khỏi
+khe ứng dụng nên mô hình cập nhật được độc lập và có đường lùi riêng (F9). Lần chia lại đó giữ
+nguyên địa chỉ của \texttt{storage}, nên bảng mẫu và nhật ký lượt chấm không mất. Bảng phân vùng
+không đi qua OTA được: đổi nó thì phải nạp lại qua USB.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Bảng phân vùng flash 16~MB.}
+\label{tab:phan_vung}
+\begin{tabular}{|L{3.1cm}|c|L{7.9cm}|}
+\hline
+\textbf{Phân vùng} & \textbf{Cỡ} & \textbf{Chứa} \\
+\hline
+\texttt{nvs} & 24~KB & Wi-Fi, JWT, cấu hình \\
+\hline
+\texttt{ota\_0}, \texttt{ota\_1} & 2 $\times$ 2,75~MB & Hai khe firmware \\
+\hline
+\texttt{models\_0}, \texttt{models\_1} & 2 $\times$ 2,25~MB & Hai khe gói mô hình, đọc qua mmap \\
+\hline
+\texttt{assets} & 1,5~MB & Âm thanh, chỉ đọc \\
+\hline
+\texttt{storage} & 4~MB & LittleFS: bảng mẫu, nhật ký lượt chấm \\
+\hline
+\texttt{coredump} & 64~KB & Bản chụp khi firmware sập \\
+\hline
+\end{tabular}
+\end{table}
+
+Nhật ký lượt chấm chỉ ghi thêm, mỗi bản ghi 48~B có CRC32 (Phụ lục~\ref{appendix:ban_ghi}).
+Phân vùng 4~MB chứa khoảng 87.000 bản ghi, thừa cho vài tháng mất mạng. Nhật ký chia thành các
+tệp 256~KB, và tệp cũ chỉ bị xóa khi con trỏ gửi đã vượt qua nó. Bản ghi dở dang do mất điện bị
+cắt ở lần ghi sau, về đúng mốc 32 + $k \times$ 48 byte, vì để lại vài byte lẻ thì mọi bản ghi
+sau đó đọc sai.
+
+Mã lượt \texttt{local\_id} ghép số lần khởi động với số thứ tự trong phiên. Một mã lặp sẽ bị máy
+chủ bỏ như bản trùng mà không báo gì, nên số lần khởi động giữ ở NVS và tệp \texttt{boot.bin}. Lúc
+khởi động, máy lấy số lớn nhất trong hai chỗ đó và bản ghi cuối của nhật ký rồi cộng một, và máy
+chủ còn trả lại mốc lớn nhất khi cấp JWT. Khe còn lại là máy mất NVS đúng lần đầu chạy firmware có
+\texttt{boot.bin} trong khi nhật ký đang rỗng: các lượt làm ra trước lần duyệt lại có thể trùng số
+đã gửi.
+
+Bảng mẫu giữ tối đa 1.000 bản ghi 576~B, tức khoảng 333 người với ba mẫu mỗi người, nạp lên PSRAM
+để quét. Phép ghi đi qua tệp tạm rồi đổi tên, nên mất điện giữa chừng chỉ còn bản cũ hoặc bản mới,
+và CRC sai thì rơi về tệp \texttt{.bak}.
+
+\subsection{Đường lượt chấm khi mất mạng}
+\label{section:3.5.5}
+
+Hình~\ref{fig:luot_cham} là đường đi của một lượt chấm, thiết kế cho NF5. Bản ghi xuống flash trước
+khi có ai biết tới nó, hàng đợi trong RAM chỉ là lời nhắc. Con trỏ đã gửi chỉ tiến sau khi broker
+trả PUBACK, nên mất điện giữa chừng làm gửi lại chứ không làm mất, và máy chủ bỏ bản trùng bằng ràng
+buộc unique. Đây là giao ít nhất một lần, có chủ ý. API nghe broker bằng một phiên bền và chỉ trả ack
+sau khi ghi xong, nên lượt tới lúc API khởi động lại nằm chờ ở broker. Broker không lưu phiên xuống
+đĩa, nên chính EMQX khởi động lại thì mất những tin đang chờ, tối đa 10.000 tin mỗi phiên.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  lab/.style={font=\scriptsize, above, align=center},
+  arr/.style={-{Latex[length=2mm]}}]
+\foreach \x/\n in {0/\texttt{attend}, 3.15/LittleFS, 6.3/\texttt{sync}, 9.45/EMQX, 12.6/Backend} {
+  \node[draw, text width=19mm, align=center, minimum height=7mm, inner sep=1pt] at (\x,0) {\n};
+  \draw[densely dashed] (\x,-0.35) -- (\x,-5.5);
+}
+\draw[arr] (0,-0.9) -- node[lab] {ghi 48~B, đồng bộ} (3.15,-0.9);
+\draw[arr] (0,-1.6) -- node[lab, pos=0.75] {nhắc qua \texttt{q\_uplink}} (6.3,-1.6);
+\draw[arr] (3.15,-2.3) -- node[lab] {đọc từ con trỏ} (6.3,-2.3);
+\draw[arr] (6.3,-3.0) -- node[lab] {PUBLISH, QoS 1} (9.45,-3.0);
+\draw[arr] (9.45,-3.6) -- node[lab] {chuyển bản tin} (12.6,-3.6);
+\draw[arr] (9.45,-4.2) -- node[lab] {PUBACK} (6.3,-4.2);
+\draw[arr] (6.3,-4.9) -- node[lab] {đẩy con trỏ} (3.15,-4.9);
+\node[font=\scriptsize, align=center, fill=white, inner sep=1pt] at (11.9,-4.65) {bỏ bản trùng theo\\(deviceId, localId)};
+\end{tikzpicture}
+\caption{Đường đi của một lượt chấm từ máy tới máy chủ.}
+\label{fig:luot_cham}
+\end{figure}
+
+Giờ của lượt chấm có ba nguồn theo thứ tự tin cậy tăng dần: DS3231 đọc ngay lúc khởi động, header
+\texttt{Date} của API, rồi NTP. Giờ không đến từ một đồng hồ đã từng được NTP đặt thì bản ghi bật cờ
+giờ chưa đồng bộ. Máy chủ không tin một mốc giờ vô lý: lượt mang giờ trước năm 2020 hoặc đi trước giờ
+nhận quá một ngày được lưu với cờ nghi vấn và chờ nhân sự sửa. Lượt cũ hơn 7 ngày hay rơi vào kỳ
+lương đã chốt thì chờ duyệt mới được tính.
+
+\subsection{Nghỉ, khởi động và cập nhật}
+\label{section:3.5.6}
+
+Máy có đúng hai mức (F4). Sau 60~s không có nguồn đánh thức nào, mô hình dừng, đèn nền tắt, màn hình
+và camera vào chế độ chờ. VL53L1X thấy người trong 700~mm hay một lần chạm đưa máy về mức thức. Đồ án
+bỏ mức giữa vì cho mô hình nghỉ sớm mà màn hình còn sáng là một vùng chết: người dùng thấy máy đang
+sống nhưng không mô hình nào nhìn khung hình, trong khi camera 120~mA và đèn nền 100~mA vẫn bật. Mức
+điện cắt được chưa đo trên board.
+
+Lúc khởi động, ngoại vi chia hai nhóm. Lưu trữ, màn hình, camera, servo mà hỏng thì dừng, vì không có
+chúng thì không chấm công được và cũng không báo được cho người dùng biết vì sao. Mô hình, cảm ứng,
+cảm biến, loa, Wi-Fi hỏng thì máy ghi lỗi và chạy tiếp ở mức suy giảm, và tầng trên phải hỏi trạng
+thái trước khi dùng.
+
+Bản cập nhật đi bằng lệnh \texttt{down/ota} mang địa chỉ, cỡ và sha256. Địa chỉ là link ký riêng cho
+máy đó, hết hạn sau 24 giờ, và máy chỉ tải từ đúng gốc API đã biên dịch sẵn, vì sha256 đi cùng chính
+lời mời nên tự nó không chặn được một lời mời giả. Task OTA tải qua HTTPS, ghi vào khe không chạy,
+kiểm sha256 rồi đổi khe. Firmware mới phải tự xác nhận hoạt động ở lần khởi động đầu, nếu không
+bootloader quay về bản cũ (F9). Bản firmware do CI đưa lên khi số phiên bản tăng, bản mô hình do máy
+huấn luyện đưa lên, và người vận hành chỉ bấm chọn máy. Mô hình nhận diện mới đổi không gian vector,
+nên sau khi cập nhật mọi người phải đăng ký lại, và bước phát hành đòi xác nhận riêng cho trường hợp
+này.
 
 \section{Thiết kế bản tin MQTT, cơ sở dữ liệu và API}
 \label{section:3.6}
 
+\subsection{Bản tin MQTT}
+\label{section:3.6.1}
+
+Tám topic ở Bảng~\ref{tab:topic} đều bắt đầu bằng \texttt{kiosk/\{deviceId\}/}. Mọi thứ máy gửi nằm
+dưới \texttt{up/}, mọi thứ máy nghe nằm dưới \texttt{down/}, kể cả Last Will, nên luật truy cập chỉ
+cần cho máy ghi nhánh \texttt{up/} và đọc nhánh \texttt{down/} của chính nó. Một JWT bị đọc trộm vì
+thế không ghi được lệnh giả lên \texttt{down/}. Tài khoản dịch vụ của backend làm ngược lại và bị
+cấm ghi lên \texttt{up/}, vì bản tin trên đó là lời khai của máy chấm công và trở thành bằng chứng ai
+có mặt lúc mấy giờ.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Bảng topic MQTT.}
+\label{tab:topic}
+\begin{tabular}{|L{3.4cm}|c|c|L{7.0cm}|}
+\hline
+\textbf{Topic} & \textbf{QoS} & \textbf{Retained} & \textbf{Nội dung} \\
+\hline
+\texttt{up/attendance} & 1 & Không & Một lượt chấm \\
+\hline
+\texttt{up/heartbeat} & 0 & Có & Nhịp sống mỗi 30~s: firmware, Wi-Fi, bộ nhớ, số lượt chờ gửi \\
+\hline
+\texttt{up/event} & 1 & Không & Mặt giả, lỗi phần cứng, mở thanh chắn tay, kết quả lệnh \\
+\hline
+\texttt{up/status} & 1 & Có & \texttt{online}, hoặc \texttt{offline} do broker phát thay \\
+\hline
+\texttt{up/enroll} & 1 & Không & Mẫu vừa chụp tại máy \\
+\hline
+\texttt{down/cmd} & 1 & Không & \texttt{OPEN\_DOOR}, \texttt{REBOOT}, \texttt{SET\_CONFIG} \\
+\hline
+\texttt{down/enroll} & 1 & Không & Thêm hoặc xóa mẫu \\
+\hline
+\texttt{down/ota} & 1 & Không & Đề nghị cập nhật \\
+\hline
+\end{tabular}
+\end{table}
+
+Bản tin là JSON theo lược đồ trong \texttt{contracts/schema/}. Bảng~\ref{tab:ban_tin} là các trường
+của bản tin lượt chấm. Không có trường nào chứa ảnh (NF4). \texttt{localId} là chuỗi vì số 64 bit
+vượt miền số nguyên chính xác của JSON ở phía người đọc.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các trường của bản tin lượt chấm.}
+\label{tab:ban_tin}
+\begin{tabular}{|L{3.8cm}|L{2.6cm}|L{7.1cm}|}
+\hline
+\textbf{Trường} & \textbf{Kiểu} & \textbf{Ý nghĩa} \\
+\hline
+\texttt{deviceId} & Chuỗi & Danh tính máy, trùng với topic \\
+\hline
+\texttt{localId} & Chuỗi số & Mã lượt, cùng \texttt{deviceId} tạo khóa chống trùng \\
+\hline
+\texttt{employeeId} & Số nguyên & Mã nhân viên, trong dải \texttt{Int} của máy chủ \\
+\hline
+\texttt{ts} & Số nguyên & Giờ chấm, mili giây từ epoch, UTC \\
+\hline
+\texttt{direction} & \texttt{IN}, \texttt{OUT} & Hướng vào hoặc ra \\
+\hline
+\texttt{matchScore} & Số thực & Độ tương đồng cosine với mẫu khớp \\
+\hline
+\texttt{livenessScore} & Số thực & Điểm sống, từ 0 tới 1 \\
+\hline
+\texttt{modelVersion} & Số nguyên & Phiên bản mô hình \\
+\hline
+\texttt{doorOpened} & Logic & Thanh chắn đã mở \\
+\hline
+\texttt{capturedOffline} & Logic & Chấm lúc không tới được broker \\
+\hline
+\texttt{clockUnsynced} & Logic & Giờ chưa đồng bộ NTP, chỉ là gần đúng \\
+\hline
+\end{tabular}
+\end{table}
+
+Danh sách người trên máy hội tụ theo số phiên bản: máy mang số phiên bản danh sách trong nhịp sống,
+máy chủ thấy số cũ thì đẩy phần còn thiếu, kể cả các lượt xóa. Áp từng thay đổi thì một lệnh xóa gửi
+lúc máy mất mạng sẽ không bao giờ tới, và khuôn mặt người đã nghỉ việc vẫn mở được thanh chắn.
+
+Vòng đời máy đi qua \texttt{PENDING}, \texttt{APPROVED}, \texttt{REVOKED}. Thu hồi làm ba việc theo
+thứ tự: ghi dòng, xóa cache của broker, rồi đá phiên. Ba việc đó cần thiết vì broker chỉ kiểm JWT lúc
+nối: đo trên production ngày 24/09/2026, máy đã thu hồi vẫn gửi 16 nhịp sống trong 15 phút qua phiên
+cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
+
+\subsection{Cơ sở dữ liệu}
+\label{section:3.6.2}
+
+Cơ sở dữ liệu có 60 bảng, 46 kiểu liệt kê và 102 migration. Hình~\ref{fig:er} vẽ các bảng lõi. Mọi
+phân hệ gắn vào \texttt{Employee} và không phân hệ nào giữ bản sao hồ sơ. Bên trái là phần máy chấm
+công và lượt chấm, ở giữa là tổ chức và thời gian, bên phải là lương.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  e/.style={draw, align=center, text width=27mm, minimum height=6.5mm, inner sep=1pt},
+  k/.style={e, thick, fill=black!8},
+  arr/.style={-{Latex[length=1.6mm]}}]
+\node[e] (dev) at (0,0) {Device};
+\node[e] (enr) at (0,-1.25) {DeviceEnrollment};
+\node[e] (rec) at (0,-2.5) {AttendanceRecord};
+\node[e] (ftp) at (0,-3.75) {FaceTemplate};
+\node[e] (day) at (0,-5.0) {AttendanceDay};
+\node[e] (leg) at (3.75,0) {LegalEntity};
+\node[e] (dep) at (3.75,-1.25) {Department};
+\node[k] (emp) at (3.75,-2.5) {Employee};
+\node[e] (req) at (3.75,-3.75) {Request};
+\node[e] (bal) at (3.75,-5.0) {LeaveBalance};
+\node[e] (lty) at (3.75,-6.25) {LeaveType};
+\node[e] (usr) at (7.5,0) {User};
+\node[e] (cmp) at (7.5,-1.25) {CompensationRecord};
+\node[e] (asg) at (7.5,-2.5) {ShiftAssignment};
+\node[e] (shf) at (7.5,-3.75) {Shift};
+\node[e] (pol) at (11.25,0) {PayrollPolicy};
+\node[e] (tax) at (11.25,-1.25) {TaxBracket};
+\node[e] (per) at (11.25,-2.5) {PayrollPeriod};
+\node[e] (run) at (11.25,-3.75) {PayrollRun};
+\node[e] (psl) at (11.25,-5.0) {Payslip};
+\node[e] (lin) at (11.25,-6.25) {PayslipLine};
+\draw[arr] (enr) -- (dev);
+\draw[arr] (enr.south east) -- (emp.north west);
+\draw[arr] (rec.north west) to[bend left=35] (dev.south west);
+\draw[arr] (rec) -- (emp);
+\draw[arr] (ftp.north east) -- (emp.south west);
+\draw[arr] (day.north east) -- ([xshift=4mm]emp.south west);
+\draw[arr] (dep) -- (leg);
+\draw[arr] (emp) -- (dep);
+\draw[arr] (usr.south west) -- (emp.north east);
+\draw[arr] (cmp.south west) -- ([xshift=-4mm]emp.north east);
+\draw[arr] (asg) -- (emp);
+\draw[arr] (asg) -- (shf);
+\draw[arr] (req) -- (emp);
+\draw[arr] (req.west) -- ++(-0.3,0) |- (lty.west);
+\draw[arr] (bal) -- (lty);
+\draw[arr] (bal.east) -- ++(0.2,0) |- ([yshift=-0.7mm]emp.east);
+\draw[arr] (psl.west) -| ([xshift=4mm,yshift=-1.9mm]emp.east) -- ([yshift=-1.9mm]emp.east);
+\draw[arr] (tax) -- (pol);
+\draw[arr] (pol.north) -- ++(0,0.3) -| ([xshift=3mm]leg.north);
+\draw[arr] (per.east) -- ++(0.3,0) -- ++(0,3.4) -| ([xshift=-3mm]leg.north);
+\draw[arr] (run) -- (per);
+\draw[arr] (psl) -- (run);
+\draw[arr] (lin) -- (psl);
+\end{tikzpicture}
+\caption{Các bảng lõi, mũi tên đi từ bảng chứa khóa ngoại.}
+\label{fig:er}
+\end{figure}
+
+Năm quyết định chi phối các bảng này: (i)~dữ liệu có thời hạn không bị sửa đè,
+\texttt{CompensationRecord} và \texttt{PayrollPolicy} mang ngày hiệu lực, tăng lương là thêm một dòng,
+nên phiếu tháng cũ vẫn tính được đúng; (ii)~lượt chấm thô tách khỏi ngày công,
+\texttt{AttendanceRecord} là sự kiện còn \texttt{AttendanceDay} là kết quả, mỗi người mỗi ngày một
+dòng; (iii)~phiếu lương chép lại những gì nó dựa vào, gồm tài khoản ngân hàng và dòng chính sách đã
+dùng, nên đổi hồ sơ về sau không đổi phiếu đã phát; (iv)~luật quan trọng nằm trong cơ sở dữ liệu, gồm
+ràng buộc unique trên cặp máy và mã lượt, ràng buộc loại trừ chặn đơn nghỉ chồng ngày, và \texttt{CHECK}
+cho số ngày phép và số tiền trên dòng phiếu; (v)~tiền lưu bằng số nguyên đồng, tỉ lệ lưu bằng phần vạn.
+\texttt{PayslipLine} giữ mỗi khoản một dòng, để câu hỏi như quý này trả bao nhiêu tiền tăng ca trả lời
+được bằng một phép gộp SQL.
+
+\subsection{API và phân quyền}
+\label{section:3.6.3}
+
+API theo kiểu REST, 260 đường trong 27 module, gom nhóm ở Bảng~\ref{tab:api}. Mọi đường có tài liệu
+Swagger và trả lỗi bằng mã, frontend mới đổi mã thành câu theo ngôn ngữ người dùng (NF8). Danh sách
+phân trang bằng con trỏ, và số đếm có trần để một phép đếm không quét cả bảng (NF7). Việc nặng như tính
+lương, dựng bảng công, gửi thông báo đi qua hàng đợi và phải chạy lại được mà không đổi kết quả.
+Trang đang mở nhận tin thay đổi qua Socket.IO, nên người dùng không phải tải lại.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các nhóm API.}
+\label{tab:api}
+\begin{tabular}{|L{3.8cm}|L{7.9cm}|c|}
+\hline
+\textbf{Nhóm} & \textbf{Module} & \textbf{Số đường} \\
+\hline
+Xác thực, tài khoản & \texttt{auth}, \texttt{users} & 23 \\
+\hline
+Tổ chức và hồ sơ & \texttt{employees}, \texttt{org}, \texttt{profile}, \texttt{certificates}, \texttt{documents}, \texttt{onboarding}, \texttt{assets} & 81 \\
+\hline
+Thời gian & \texttt{attendance}, \texttt{timesheet}, \texttt{shifts}, \texttt{leave} & 40 \\
+\hline
+Lương & \texttt{payroll}, \texttt{compensation}, \texttt{policy}, \texttt{disputes} & 52 \\
+\hline
+Máy chấm công & \texttt{devices}, \texttt{enrollment}, \texttt{models} & 32 \\
+\hline
+Báo cáo, tiện ích & \texttt{reports}, \texttt{notifications}, \texttt{search}, \texttt{audit}, \texttt{health} & 32 \\
+\hline
+\end{tabular}
+\end{table}
+
+Phân quyền tính tới từng dòng dữ liệu: cùng một đường API trả về tập dòng khác nhau theo người gọi
+(NF6). Bảng~\ref{tab:quyen} tóm tắt phạm vi của từng vai. Mọi đường đọc đi qua một dịch vụ phạm vi
+chung, và đường có mã đối tượng trả 404 khi đối tượng nằm ngoài phạm vi, để người dò không biết đối
+tượng có tồn tại hay không. Tài khoản nhân sự và lương có thể giới hạn theo pháp nhân. Không ai tự
+duyệt đơn hay tự sửa lương của mình, và mọi thao tác ghi để lại nhật ký.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Phạm vi dữ liệu theo vai.}
+\label{tab:quyen}
+\begin{tabular}{|L{2.3cm}|L{6.0cm}|L{5.2cm}|}
+\hline
+\textbf{Vai} & \textbf{Thấy} & \textbf{Sửa} \\
+\hline
+\texttt{VIEWER} & Chỉ chính mình, vai mặc định & Không gì \\
+\hline
+\texttt{EMPLOYEE} & Hồ sơ, công, phép, phiếu của mình & Đơn của mình, vài ô liên lạc \\
+\hline
+\texttt{MANAGER} & Thêm cây dưới quyền, không có lương và giấy tờ riêng & Duyệt đơn của cây \\
+\hline
+\texttt{HR} & Toàn bộ hồ sơ, công, phép trong pháp nhân phụ trách & Hồ sơ, hợp đồng, phép, phân ca \\
+\hline
+\texttt{PAYROLL} & Như \texttt{HR}, thêm lương và phiếu lương & Chạy kỳ lương, chốt kỳ \\
+\hline
+\texttt{ADMIN} & Tất cả, thêm máy chấm công và tài khoản & Tất cả \\
+\hline
+\end{tabular}
+\end{table}
+
 \section{Thiết kế giao diện}
 \label{section:3.7}
+
+\subsection{Giao diện máy chấm công}
+\label{section:3.7.1}
+
+Máy có chín màn hình nối với nhau như Hình~\ref{fig:man_hinh}. Màn quét là màn chính và luôn có khung
+xem trước. Menu có đúng ba dòng Thêm người, Danh sách, Cài đặt, là ba việc người vận hành mở ra để làm,
+và Wi-Fi nằm trong Cài đặt. Màn hình không có nút xóa người hay chụp lại, vì menu không khóa và ai đứng
+trước máy cũng chạm được; hai việc đó chỉ làm từ dashboard bởi tài khoản đã qua xác thực hai lớp.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=6mm and 8mm,
+  s/.style={draw, rounded corners, align=center, text width=24mm, minimum height=9mm, inner sep=1.5pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[s] (scan) {Quét};
+\node[s, right=of scan] (menu) {Menu};
+\node[s, right=of menu] (enrol) {Thêm người};
+\node[s, right=of enrol] (cap) {Chụp mẫu};
+\node[s, below=of enrol] (ppl) {Danh sách};
+\node[s, below=of ppl] (set) {Cài đặt};
+\node[s, right=of set, yshift=7mm] (wifi) {Wi-Fi};
+\node[s, right=of set, yshift=-7mm] (devi) {Thiết bị của tôi};
+\node[s, below=of scan] (upd) {Cập nhật};
+\draw[arr] (scan) -- (menu);
+\draw[arr] (menu) -- (enrol);
+\draw[arr] (enrol) -- (cap);
+\draw[arr] (menu.south) |- (ppl.west);
+\draw[arr] (menu.south) |- (set.west);
+\draw[arr] (set.east) -- (wifi.west);
+\draw[arr] (set.east) -- (devi.west);
+\draw[arr] (scan) -- node[font=\scriptsize, right] {khi cập nhật} (upd);
+\end{tikzpicture}
+\caption{Bản đồ màn hình của máy chấm công.}
+\label{fig:man_hinh}
+\end{figure}
+
+Khi một màn của người vận hành đang mở, mô hình nghỉ và chấm công dừng hẳn, vì người thao tác đứng ngay
+trước camera và để chấm công chạy ngầm là chấm chính họ. Giá phải trả là không ai chấm công được ở máy đó
+trong lúc ấy, nên các màn này tự về màn quét sau 30~s không chạm.
+
+Máy tự vẽ giao diện bằng một \texttt{Canvas}, không dùng thư viện LVGL. Màn hình chính là video xem trước,
+và thêm LVGL là có hai bộ vẽ cùng ghi một panel SPI. Cái giá là nút, danh sách, thanh trượt, bàn phím phải
+tự viết, và không có gì chặn chữ tràn: đo bảng chữ cũ, dòng Đưa khuôn mặt vào khung rộng 331~px trên panel
+320~px. Nên mọi màn vẽ qua hai tầng bắt buộc, \texttt{theme} giữ bảng màu, thang chữ, nấc giãn cách, còn
+\texttt{widgets} giữ các phần tử lặp lại và phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId},
+nên thiếu một bản dịch thì không biên dịch được. Tiếng Việt là mặc định.
+
+Khung ngắm vẽ theo chính cổng cỡ mặt của pipeline. Đường xem trước phóng khung camera lên panel với hệ số
+1,502, nên cổng 100~px ứng với 150~px trên panel. Người ta lấp khung bằng cả cái đầu, mà tỉ lệ đầu trên mặt
+đo được là 1,48, nên khung rộng 240 $\times$ 296~px: đầu lấp kín khung cho hộp mặt 108~px trong khung camera,
+dư 8~px trên cổng. Khung trắng khi chờ, hổ phách khi cần người dùng sửa, xanh dương khi pipeline đang làm
+việc, xanh lá khi đạt. Dòng nhắc dưới khung đi theo đúng các cổng: Đưa khuôn mặt vào khung, Lại gần hơn, Lùi
+lại một chút, Đang nhận diện. Kết quả đạt hiện thành thẻ 1,5~s. Máy chỉ phát tiếng khi một việc đã xong là
+mở thanh chắn hoặc giữ được một mẫu đăng ký, vì người đang quay đầu không đọc được màn hình.
+
+\subsection{Giao diện web}
+\label{section:3.7.2}
+
+Web chia màn hình theo việc người ta đang làm, tránh một thanh bên hai mươi mục ngang hàng theo tên phân
+hệ. Bốn loại màn hình ở bốn nơi: việc nằm ở trang chủ và mang số đếm trên thanh bên, tra cứu nằm ở thanh
+bên chính, cấu hình nằm sau mục Thiết lập, báo cáo đứng riêng. Một bản Next.js phục vụ mọi vai với 46 trang,
+và trang chủ đổi theo vai như Bảng~\ref{tab:trang_chu}.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Trang chủ theo vai.}
+\label{tab:trang_chu}
+\begin{tabular}{|L{3.0cm}|L{2.9cm}|L{7.6cm}|}
+\hline
+\textbf{Vai} & \textbf{Trang chủ} & \textbf{Nội dung chính} \\
+\hline
+Nhân viên & Trang của tôi & Hôm nay: ca, các lượt chấm, đúng giờ hay muộn; việc cần làm \\
+\hline
+Quản lý & Trang của tôi & Thêm việc chờ duyệt và tình hình nhóm hôm nay \\
+\hline
+Nhân sự, quản trị & Tổng quan & Việc chờ duyệt, hợp đồng và thử việc sắp hết, ngày lệch giờ \\
+\hline
+Kế toán lương & Tổng quan & Kỳ đang mở theo năm bước: chạy, soát, chốt, trả, gửi phiếu \\
+\hline
+\end{tabular}
+\end{table}
+
+Mỗi trang gồm năm tầng từ trên xuống: thanh bên, thanh trên, thanh tab phụ, đầu trang, thân trang. Nội dung
+rộng tối đa 1.400~px. Ở các danh sách, cả dòng mở được bản ghi, bộ lọc nằm ngay trên bảng và giữ trong URL,
+số trên trang chủ bấm được và dẫn tới đúng danh sách có số đó. Hành động không đảo ngược được như chốt kỳ
+phải xác nhận, còn việc lặp lại nhiều như duyệt đơn thì không.
+
+Thiết kế giả định công nhân, nhân viên kho, lái xe, bảo vệ chỉ có điện thoại, nên cổng nhân viên dựng riêng
+cho màn hẹp (F14). Thanh bên đổi thành thanh tab dưới đáy với đúng năm ô: Trang chủ, Lịch ca, Chấm công, Đơn
+từ, Lương. Bảng đổi thành thẻ, bộ lọc đổi thành tấm trượt từ đáy, hành động chính neo ở đáy trong tầm ngón
+cái. Điện thoại cố ý không chấm công được: vị trí GPS giả được bằng phần mềm, nên thêm đường đó là bỏ qua chống
+giả mạo và so mẫu khuôn mặt của máy chấm công.
+
+Mạng yếu được coi là trạng thái thường (F15). Dữ liệu đã xem nằm trong ngăn riêng của tài khoản và
+bị xóa khi đăng xuất, đơn gửi lúc mất mạng xếp hàng và báo rõ là đang chờ gửi. Trên Android, ứng
+dụng là một vỏ Trusted Web Activity~\cite{twa} mở đúng trang web đó, vì Chrome không cho PWA đã cài
+tô hai thanh hệ thống theo màu của ứng dụng.
+
+Chương này chốt 15 yêu cầu chức năng và 9 yêu cầu phi chức năng. Phần cứng là mạch đế 158 $\times$ 121~mm với
+hai đường 5~V. Firmware có 22 thành phần và \texttt{main} trên tám tầng, 11 task, lõi 1 dành riêng cho AI, và
+lượt chấm đi qua flash trước khi lên MQTT. Máy chủ có 60 bảng và 260 đường API.
+Chương~\ref{chapter:Implementation} trình bày cách hiện thực các thiết kế này.
 
 \end{document}
