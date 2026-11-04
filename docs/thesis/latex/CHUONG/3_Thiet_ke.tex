@@ -444,7 +444,8 @@ chỉ nói về linh kiện đang dùng, đổi lô PCF8574 thì phải chạy l
 \subsection{Nguồn điện}
 \label{section:3.3.2}
 
-Máy dùng hai đường 5~V chung mass, tóm tắt ở Bảng~\ref{tab:nguon}. Hai đường tách nhau
+Máy dùng hai đường 5~V chung mass, tóm tắt ở Bảng~\ref{tab:nguon}, lấy từ hai adapter hoặc từ
+khối pin ở Mục~\ref{section:4.2}. Hai đường tách nhau
 vì hai đỉnh dòng trùng nhau: máy phát tiếng đúng lúc mở thanh chắn. Đặt chung một đường
 thì đỉnh 1,34~A cộng 0,7~A của servo đủ kéo sụt áp và làm ESP32 khởi động lại. Đường 2
 không được là sạc dự phòng, vì sạc tự ngắt khi tải nhỏ mà servo đứng yên gần như không
@@ -510,6 +511,7 @@ riêng từ J10. U2 là tải duy nhất được mượn nhánh của tải kh�
 \subsection{Sơ đồ nguyên lý và mạch in}
 \label{section:3.3.3}
 
+Mạch đế mới dừng ở bản thiết kế, bản đang chạy lắp trên breadboard (Mục~\ref{section:4.2}).
 Hình~\ref{fig:nguyen_ly} là sơ đồ nguyên lý của mạch đế. U1 là board ESP32-S3-CAM, J3 là
 module màn hình kèm cảm ứng, J4 là VL53L1X, J5 và J13 là hai hàng chân của PCF8574, J6 là
 DS3231, J7 là MAX98357A, J9 là servo, còn J10 và J11 là hai đầu vào nguồn. J14 chừa sẵn lỗ
@@ -1190,8 +1192,8 @@ số trên trang chủ bấm được và dẫn tới đúng danh sách có số
 phải xác nhận, còn việc lặp lại nhiều như duyệt đơn thì không.
 
 Thiết kế giả định công nhân, nhân viên kho, lái xe, bảo vệ chỉ có điện thoại, nên cổng nhân viên dựng riêng
-cho màn hẹp (F14). Thanh bên đổi thành thanh tab dưới đáy với đúng năm ô: Trang chủ, Lịch ca, Chấm công, Đơn
-từ, Lương. Bảng đổi thành thẻ, bộ lọc đổi thành tấm trượt từ đáy, hành động chính neo ở đáy trong tầm ngón
+cho màn hẹp (F14). Thanh bên đổi thành thanh tab dưới đáy với đúng năm ô: Trang của tôi, Lịch ca, Công của tôi,
+Đơn từ, Phiếu lương. Vai có thêm việc đổi ô cuối thành Thêm. Bảng đổi thành thẻ, bộ lọc đổi thành tấm trượt từ đáy, hành động chính neo ở đáy trong tầm ngón
 cái. Điện thoại cố ý không chấm công được: vị trí GPS giả được bằng phần mềm, nên thêm đường đó là bỏ qua chống
 giả mạo và so mẫu khuôn mặt của máy chấm công.
 
