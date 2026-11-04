@@ -776,18 +776,87 @@ chỉ có float32.
 \subsection{Kiểm thử tải}
 \label{section:5.6.2}
 
-Dữ liệu quy mô sinh bằng \texttt{make be-demo}: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 dòng ngày công, 51.209 phiếu lương, 59.731 đơn,
-879~MB. \texttt{check\_plans.py} chạy EXPLAIN 11 câu đọc nặng trên bộ dữ liệu này và không báo lỗi nào. Câu gộp công một tháng quét đúng một mảnh
-tháng của \texttt{AttendanceDay}, các bảng lớn khác đi bằng chỉ mục. Phép kiểm này đọc kế hoạch truy vấn chứ không đo thời gian, nên nó ít phụ thuộc máy chạy
-hơn các số ở Bảng~\ref{tab:quy_mo}.
+Dữ liệu quy mô sinh bằng \texttt{make be-demo}: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 dòng ngày công, 51.209 phiếu lương, 59.731 đơn. \texttt{check\_plans.py} chạy
+EXPLAIN 11 câu đọc nặng trên bộ dữ liệu này và không báo lỗi nào, câu gộp công một tháng quét đúng một mảnh tháng của \texttt{AttendanceDay}. Phép kiểm này chỉ đọc kế hoạch của
+các câu có trong danh sách, và phép đo dưới đây tìm ra một câu nằm ngoài danh sách.
 
-Bảng~\ref{tab:quy_mo} là các phép đo thời gian ở quy mô 5.000 người. Mọi số trong bảng đo trên máy phát triển 20 lõi, PostgreSQL chạy trong Docker
-qua WSL2. Máy chủ thật có 1 vCPU và 2~GB RAM, nên số tuyệt đối không áp được cho máy chủ. Thứ bảng chứng minh được là tỉ lệ giữa hai cách làm.
+Phép đo tải chạy trên chính VPS, 1 vCPU Xeon 2,1~GHz, 2~GB RAM, với một stack riêng cạnh stack thật: PostgreSQL, Redis và container API cùng image đang chạy, không nối broker
+thật, không gửi mail hay thông báo đẩy. Tải gọi từ máy khác qua đường hầm SSH, độ trễ nền khoảng 78~ms, không qua Traefik. Mỗi phiên ảo mở trang rồi nghỉ 2,5--7,5~s, và mỗi lượt
+mở trang bắn đúng các lượt GET mà màn hình gửi, bắt từ trình duyệt thật: trang chủ của nhân viên là 13 lượt gọi. Mỗi bậc đo 60~s, 10 phiên gồm 7 nhân viên, 1 quản lý và 2 bàn
+giấy. Một bộ canh gọi \texttt{/health} của API thật mỗi 2~s và dừng phép đo khi API thật chậm quá 3~s ba lần liền.
+
+Bảng~\ref{tab:tai_vps} là lượt đo đầu, khi VPS còn rảnh. Hệ thống chịu được 10 phiên: 14,5 lượt gọi mỗi giây, mở trang p50 210~ms, p95 1,48~s. Tới 20 phiên thì sập, p95 lên 28,5~s
+và API trả lỗi 500, vì các câu chậm giữ hết 10 kết nối của pool. Theo ước lượng chưa đo, 5.000 người mà 20\% mở ứng dụng trong 15 phút là khoảng 1,1 lượt mở trang mỗi giây, cỡ
+14 lượt gọi mỗi giây, tức đúng ngưỡng này, chưa có chỗ dư.
 
 \begin{table}[!htb]
 \centering
 \small
-\caption{Phép đo ở quy mô 5.000 nhân viên, trên máy phát triển.}
+\caption{Tải trên VPS với dữ liệu 5.000 người, lượt đầu (ms).}
+\label{tab:tai_vps}
+\begin{tabular}{|c|c|c|c|c|c|c|}
+\hline
+\textbf{Phiên} & \textbf{Gọi/s} & \textbf{Gọi p50} & \textbf{Gọi p95} & \textbf{Mở trang p50} & \textbf{Mở trang p95} & \textbf{Lỗi} \\
+\hline
+5 & 7,4 & 157 & 802 & 188 & 1.321 & 0 \\
+\hline
+10 & 14,5 & 161 & 1.356 & 210 & 1.478 & 0 \\
+\hline
+20 & 18,1 & 290 & 26.285 & 558 & 28.544 & 12 \\
+\hline
+40 & 5,2 & 31.608 & 63.601 & 53.131 & 97.176 & 49 \\
+\hline
+\end{tabular}
+\end{table}
+
+Sau lần quá tải đó VPS không trở lại như cũ. Bảng~\ref{tab:tai_sau} là lượt đo cuối, chia theo nhóm người dùng. Cùng 5 phiên hỗn hợp, p95 từ 802~ms lên 9,3~s, và 1 phiên bàn giấy đã có
+mở trang p95 8,1~s. Mỗi bậc chỉ đo một lượt 60~s, nên 6 phiên điện thoại xấu hơn 8 phiên là nhiễu của mẫu.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Tải trên VPS sau khi đã quá tải một lần (ms).}
+\label{tab:tai_sau}
+\begin{tabular}{|L{4.2cm}|c|c|c|c|c|c|}
+\hline
+\textbf{Nhóm} & \textbf{Phiên} & \textbf{Gọi/s} & \textbf{Gọi p50} & \textbf{Gọi p95} & \textbf{Trang p95} & \textbf{Lỗi} \\
+\hline
+Điện thoại & 2 & 2,5 & 267 & 4.055 & 6.083 & 1 \\
+\hline
+Điện thoại & 4 & 4,7 & 171 & 3.996 & 7.210 & 1 \\
+\hline
+Điện thoại & 6 & 6,2 & 2.672 & 9.522 & 11.520 & 10 \\
+\hline
+Điện thoại & 8 & 9,9 & 1.136 & 6.787 & 7.347 & 1 \\
+\hline
+Bàn giấy & 1 & 0,6 & 448 & 8.054 & 8.055 & 0 \\
+\hline
+Hỗn hợp & 5 & 4,5 & 1.722 & 9.298 & 9.350 & 3 \\
+\hline
+Bàn giấy, thêm chỉ mục & 1 & 0,8 & 706 & 4.423 & 4.614 & 0 \\
+\hline
+Hỗn hợp, thêm chỉ mục & 5 & 5,3 & 1.804 & 5.594 & 6.823 & 0 \\
+\hline
+\end{tabular}
+\end{table}
+
+Phép đo chỉ ra ba nguyên nhân. (i)~Câu đếm lượt chấm chờ duyệt quét cả bảng 456.149 dòng. Prisma gửi điều kiện dưới dạng \texttt{review = CAST(\$1::text AS "PunchReview")}, nên planner
+không chứng minh được nó khớp chỉ mục từng phần \texttt{WHERE review = 'PENDING'}. Câu này mất 1,65--3,26~s trên VPS rảnh, viết bằng hằng chỉ 2,4~ms, và chạy ở mọi trang của bàn giấy.
+Thử thêm chỉ mục \texttt{WHERE review IS NOT NULL} trên cơ sở dữ liệu đo thì còn 0,08~ms, và hai hàng cuối của Bảng~\ref{tab:tai_sau} cho thấy p95 giảm. \texttt{check\_plans.py} không bắt được
+vì nó không có câu này và viết hằng ở chỗ service gửi tham số. (ii)~Healthcheck của EMQX dựng một máy ảo Erlang mỗi 10~s, tốn khoảng 7~s CPU, vượt timeout 5~s từ lúc quá tải. Lúc stack đo
+rảnh, VPS vẫn bận trung bình 32,4\%, 15 trong 60 giây bận trên 80\%, và \texttt{/health} của API thật có p95 từ 153~ms lên 966--2.507~ms. (iii)~Mỗi lượt gọi đắt so với một vCPU chia cho
+Node, PostgreSQL, Redis, Traefik, EMQX và MinIO: 9,9 lượt gọi mỗi giây đã chiếm 57\% CPU.
+
+Hai việc nặng cho kết quả xấu hơn. Chạy lương 4.776 người mất 403,8~s một lượt, so với 11,3~s trên máy phát triển, rồi BullMQ mất khóa, chạy lại lượt thứ hai 388,9~s và đánh dấu thất bại với
+\texttt{job stalled more than allowable limit}. Chốt kỳ 4.804 phiếu mất 92,6~s. Đây là điểm không đạt lớn nhất của phần máy chủ: với dữ liệu 5.000 người, kỳ lương chưa chạy xong trên VPS này.
+
+Bảng~\ref{tab:quy_mo} so các cách viết truy vấn ở quy mô 5.000 người. Các số này đo trên máy phát triển 20 lõi, nên chỉ tỉ lệ giữa hai cách làm là có nghĩa. Số trên chuông đo lại trên VPS là 4,9~ms
+so với 2,4~ms, tức các câu đi đúng chỉ mục vẫn nhanh ở đây.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{So các cách viết truy vấn ở quy mô 5.000 nhân viên, trên máy phát triển.}
 \label{tab:quy_mo}
 \begin{tabular}{|L{5.0cm}|L{4.2cm}|L{4.2cm}|}
 \hline
@@ -803,13 +872,8 @@ Chèn một lượt giữa hai trang & \texttt{OFFSET} lặp 1 dòng & Con trỏ
 \hline
 Chốt kỳ 5.000 phiếu, nhà cung cấp đẩy giả trả lời sau 20~ms & Một câu \texttt{INSERT}: vượt trần 65.535 tham số, 0 dòng & Lô 1.000 dòng: 3.446~ms, 5.000 dòng, đẩy xong sau 9,1~s \\
 \hline
-Số trên chuông, 558.223 dòng thông báo & & 2,4~ms với 11.675 dòng chưa đọc \\
-\hline
 \end{tabular}
 \end{table}
-
-Thời gian phản hồi p50, p95 của API khi nhiều phiên gọi cùng lúc chưa đo. Số này chỉ có nghĩa khi đo trên chính VPS, mà VPS đang phục vụ
-hệ thống thật, nên phép đo cần một cơ sở dữ liệu riêng và một khung giờ không ai dùng. Việc này còn thiếu so với nhiệm vụ kiểm thử tải.
 
 \section{Kiểm thử toàn hệ thống}
 \label{section:5.7}
@@ -866,8 +930,6 @@ Bảng~\ref{tab:chua_do} liệt kê các phép thử đã có kế hoạch mà c
 \hline
 FAR, FRR với nhiều người trên máy & Người tham gia, khung giấy và thẻ \\
 \hline
-p50, p95 của API dưới tải trên VPS & Cơ sở dữ liệu riêng, khung giờ không ai dùng \\
-\hline
 Ngắt mạng 1 giờ, đối chiếu số bản ghi & Một phiên trên máy thật có người chấm \\
 \hline
 Rút điện 20 lần & Một phiên thao tác tay với ứng dụng \texttt{storage} \\
@@ -894,7 +956,7 @@ Tải trang trên máy Android tầm thấp & Một máy tầm thấp, mạng 3G
 \end{table}
 
 Bảng~\ref{tab:doi_chieu_f} đối chiếu yêu cầu chức năng, Bảng~\ref{tab:doi_chieu_nf} đối chiếu yêu cầu phi chức năng. Đạt nghĩa là có bằng chứng ở
-các mục trên. Một phần nghĩa là có bằng chứng nhưng còn phép thử chưa chạy.
+các mục trên. Một phần nghĩa là có bằng chứng nhưng còn phép thử chưa chạy hoặc còn phần chưa đạt.
 
 \begin{table}[!htb]
 \centering
@@ -929,7 +991,7 @@ F11 & Một phần & 105 ca công và đơn; chưa có ca làm qua nửa đêm \
 \hline
 F12 & Đạt & 105 ca công và đơn \\
 \hline
-F13 & Một phần & 133 ca lương; tiền làm thêm giờ còn lệch văn bản mới \\
+F13 & Một phần & 133 ca lương; tiền làm thêm giờ còn lệch văn bản mới, chạy lương 4.776 người thất bại trên VPS \\
 \hline
 F14 & Đạt & Trang điện thoại đo ở 390~px, 93 trang không lỗi \\
 \hline
@@ -959,7 +1021,7 @@ NF5 & Một phần & Gửi lại chỉ thành một dòng; rút điện và ng�
 \hline
 NF6 & Một phần & TLS, JWT riêng từng máy, phạm vi theo dòng, TOTP; Secure Boot và mã hóa flash chưa bật \\
 \hline
-NF7 & Một phần & 5.006 người, 11 câu truy vấn không lỗi, 17 ca phân trang; chưa có p50, p95 dưới tải trên VPS \\
+NF7 & Không đạt & Tìm, lọc, phân trang có đủ; nhưng một câu quét cả bảng, 20 phiên sập, chạy lương 4.776 người thất bại trên VPS \\
 \hline
 NF8 & Đạt & Hai ngôn ngữ ở máy và web, thiếu bản dịch là lỗi lúc build \\
 \hline
@@ -995,7 +1057,7 @@ Lượt chấm không mất, không trùng & Mạng giao ít nhất một lần,
 \hline
 Cập nhật từ xa không làm chết máy & Gói mô hình hỏng vẫn boot được & OTA 74~s, xóa \texttt{models\_0} máy vẫn chạy và báo lỗi \\
 \hline
-Nghiệp vụ trên máy chủ nhỏ & Gom ở Node lấy 586~MB heap & Gộp ở PostgreSQL thêm 3~MB, 82~ms \\
+Nghiệp vụ trên máy chủ nhỏ & Gom ở Node lấy 586~MB heap & Gộp ở PostgreSQL thêm 3~MB; trên VPS chịu 10 phiên, chưa chạy xong lương \\
 \hline
 \end{tabular}
 \end{table}
@@ -1207,11 +1269,12 @@ trỏ trên cặp khóa có thứ tự toàn phần, nên trang 1.000 rẻ ngang
 Con trỏ có một bẫy đáng ghi. Chỉ mục phải phủ đúng cặp khóa, và phép so phải thành điều kiện chỉ mục chứ không thành bộ lọc: dạng \texttt{ts < x OR (ts = x AND id < y)} mà ORM
 phát ra cho bộ lọc 14,98~ms, thêm một vế \texttt{ts <= x} trông thừa thì còn 0,99~ms, vì đó là vế thành được điều kiện chỉ mục.
 
-Gộp ở PostgreSQL mất 82~ms với heap thêm 3~MB, nhanh hơn 40 lần, nhưng thứ quyết định là bộ nhớ. Con trỏ giữ 1,36~ms ở trang 1.000. 11 câu đọc nặng không lỗi trên 5.006 người. Các
-tỉ lệ này đến từ máy phát triển, nên phần chưa chứng minh là thời gian phản hồi trên chính VPS (Mục~\ref{section:5.6.2}).
+Gộp ở PostgreSQL mất 82~ms với heap thêm 3~MB, nhanh hơn 40 lần, nhưng thứ quyết định là bộ nhớ. Con trỏ giữ 1,36~ms ở trang 1.000. Các số này đến từ máy phát triển. Phép đo trên chính VPS ở
+Mục~\ref{section:5.6.2} cho thấy năm luật chưa đủ: hệ thống chịu được 10 phiên, sập ở 20 phiên, và chạy lương 4.776 người thất bại. Giá trị của các luật là giữ cho các câu đi đúng chỉ mục nhanh như số
+trên chuông 4,9~ms. Chỗ hỏng nằm ở câu lọt khỏi luật và ở phần việc dài chạy trên một vCPU.
 
-Ba mô hình chạy một lượt trong 353,6~ms lúc rảnh và 406,2~ms khi có xem trước, nhanh hơn TFLite Micro + esp-nn 10,51 lần, với đáy RAM nội 28.675~B
-và 971/971 ca e2e qua. Hai yêu cầu không đạt trọn: NF1 ở điểm vận hành và nhận diện sụt 3,7\% sau lượng tử hóa. Các phép đo FAR, FRR với nhiều người và thời gian phản hồi dưới tải
-trên VPS còn thiếu, cùng các phép thử ở Bảng~\ref{tab:chua_do}. Phần Kết luận tổng hợp những việc đã làm, hạn chế và hướng phát triển.
+Ba mô hình chạy một lượt trong 353,6~ms lúc rảnh và 406,2~ms khi có xem trước, nhanh hơn TFLite Micro + esp-nn 10,51 lần, với đáy RAM nội 28.675~B và 971/971 ca e2e qua. Ba yêu cầu không đạt trọn: NF1 ở
+điểm vận hành, nhận diện sụt 3,7\% sau lượng tử hóa, và NF7 khi VPS sập ở 20 phiên, chạy lương 4.776 người thất bại. FAR, FRR với nhiều người còn thiếu, cùng các phép thử ở Bảng~\ref{tab:chua_do}. Phần Kết
+luận tổng hợp những việc đã làm, hạn chế và hướng phát triển.
 
 \end{document}
