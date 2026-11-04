@@ -186,6 +186,8 @@ Một lượt chấm đi qua ba mô hình nối tiếp như Hình~\ref{fig:chuoi
 cùng một khung camera 480$\times$320 ở ba cỡ khác nhau, và mỗi khâu chỉ chạy khi
 khâu trước đạt: không có mặt thì không chống giả mạo, mặt giả thì không nhận
 diện. Thời gian trong hình là trung vị đo trên board lúc máy rảnh.
+Hình~\ref{fig:vung_anh} vẽ theo tỉ lệ ba vùng ảnh đó khi mặt ở mức nhỏ nhất máy chấp
+nhận.
 
 \begin{figure}[H]
 \centering
@@ -220,6 +222,25 @@ diện. Thời gian trong hình là trung vị đo trên board lúc máy rảnh.
 \end{tikzpicture}
 \caption{Chuỗi ba mô hình trên máy chấm công.}
 \label{fig:chuoi}
+\end{figure}
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\footnotesize, x=0.16mm, y=0.16mm]
+\draw (0,0) rectangle (480,320);
+\node[anchor=north west] at (2,318) {Khung 480$\times$320};
+\draw[dashed] (87.5,7.5) rectangle (392.5,312.5);
+\draw[thick] (183.5,103.5) rectangle (296.5,216.5);
+\node at (240,160) {Mặt 113~px};
+\draw (392.5,262) -- (505,262);
+\draw (296.5,160) -- (505,160);
+\draw (480,58) -- (505,58);
+\node[anchor=west, align=left] at (510,262) {Vùng cắt 2,7 lần, cạnh 305~px,\\thu về 80$\times$80 cho MiniFASNetV1SE};
+\node[anchor=west, align=left] at (510,160) {Hộp mặt, căn chỉnh về 112$\times$112\\cho MobileFaceNet-ECA};
+\node[anchor=west, align=left] at (510,58) {Cả khung thu về 160$\times$120 cho\\YuNet, mặt còn 38~px};
+\end{tikzpicture}
+\caption{Ba vùng ảnh của ba mô hình trên một khung camera, vẽ theo tỉ lệ.}
+\label{fig:vung_anh}
 \end{figure}
 
 \subsection{Phát hiện khuôn mặt}
@@ -343,7 +364,42 @@ Bản đồ án dùng là MobileFaceNet-ECA của FRBench~\cite{frbench}: 1,20 t
 số, vector 512 chiều và 15 khối ECA. Khối ECA làm cùng việc với khối SE ở
 công thức~\eqref{eq:se} nhưng bỏ phần thắt nút, thay bằng tích chập một chiều cỡ
 $k$ dọc trục kênh, nên chỉ thêm $k$ tham số và không giảm số
-chiều~\cite{ecanet}.
+chiều~\cite{ecanet}. Hình~\ref{fig:se_eca} đặt hai khối cạnh nhau.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=13mm and 3mm,
+  box/.style={draw, align=center, text width=20mm, minimum height=11mm, inner sep=2pt},
+  wide/.style={draw, align=center, text width=44.4mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (si) {Khối SE:\\tensor $C$ kênh};
+\node[box, right=of si] (sp) {Gộp trung bình};
+\node[box, right=of sp] (s1) {Kết nối đầy đủ giảm chiều, ReLU};
+\node[box, right=of s1] (s2) {Kết nối đầy đủ trả chiều};
+\node[box, right=of s2] (ss) {Sigmoid};
+\node[box, right=of ss] (sm) {Nhân vào từng kênh};
+\node[box, below=of si] (ei) {Khối ECA:\\tensor $C$ kênh};
+\node[box, right=of ei] (ep) {Gộp trung bình};
+\node[wide, right=of ep] (e1) {Tích chập một chiều cỡ $k$ dọc trục kênh};
+\node[box, right=of e1] (es) {Sigmoid};
+\node[box, right=of es] (em) {Nhân vào từng kênh};
+\draw[arr] (si) -- (sp);
+\draw[arr] (sp) -- (s1);
+\draw[arr] (s1) -- (s2);
+\draw[arr] (s2) -- (ss);
+\draw[arr] (ss) -- (sm);
+\draw[arr] (ei) -- (ep);
+\draw[arr] (ep) -- (e1);
+\draw[arr] (e1) -- (es);
+\draw[arr] (es) -- (em);
+\draw[arr] (si.north) -- ++(0,3mm) -| (sm.north);
+\draw[arr] (ei.south) -- ++(0,-3mm) -| (em.south);
+\end{tikzpicture}
+\caption{Khối SE và khối ECA~\cite{senet,ecanet}.}
+\label{fig:se_eca}
+\end{figure}
 
 Trọng số nhập từ FRBench được huấn luyện trên MS-Celeb-1M~\cite{ms1m} bằng hàm mất
 mát ArcFace, công thức~\eqref{eq:arcface}~\cite{arcface}. Trong đó $\theta_j$ là góc
@@ -437,10 +493,34 @@ r = 2^{e}\,q, \quad q \in [-128,\ 127]
 
 Với luật này $M = 2^{e_x + e_w - e_y}$ nên đổi thang chỉ còn là dịch bit, và không
 có zero point nên đầu vào giữ nguyên 8 bit. Luật đó đổi độ chính xác lấy tốc độ.
-Bước lũy thừa 2 chỉ chọn được theo bội 2, nên có thể phí gần một bit so với bước
-thực. Nặng hơn, cả tensor chung một số mũ, nên kênh có dải nhỏ bị làm tròn về 0
+Với activation lệch về phía dương, nửa âm của lưới đối xứng gần như bỏ trống nên
+bước lượng tử thô đi gần gấp đôi, như Hình~\ref{fig:hai_luat}. Bước lũy thừa 2 lại
+chỉ chọn được theo bội 2, có thể phí thêm gần một bit so với bước thực. Nặng hơn, cả tensor chung một số mũ, nên kênh có dải nhỏ bị làm tròn về 0
 khi đứng cạnh kênh có dải lớn~\cite{nagel2019}. Lượng tử theo kênh của TFLite không
 gặp chỗ này.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\footnotesize, x=1mm, y=1mm]
+\node[anchor=west] at (0,23) {Luật affine};
+\fill[black!15] (58,16) rectangle (130,19);
+\foreach \i in {0,...,16} \draw (58+4.5*\i,16) -- (58+4.5*\i,19);
+\node[below] at (56,16) {$q = -128$};
+\node[above] at (65,19) {$q = Z$};
+\draw (65,19) -- (65,16);
+\node[below] at (130,16) {$q = 127$};
+\node[anchor=west] at (0,10.5) {Luật đối xứng};
+\draw (0,0) rectangle (130,3);
+\fill[black!15] (58,0) rectangle (130,3);
+\foreach \i in {0,...,16} \draw (8.125*\i,0) -- (8.125*\i,3);
+\node[below] at (0,0) {$q = -128$};
+\node[below] at (65,0) {$q = 0$};
+\node[below] at (130,0) {$q = 127$};
+\node at (29,5) {lưới không có dữ liệu};
+\end{tikzpicture}
+\caption{Cùng một dải activation trên hai luật lượng tử, mỗi ô là 16 mức.}
+\label{fig:hai_luat}
+\end{figure}
 
 \subsection{Các kỹ thuật bù sai số}
 \label{section:2.4.2}
@@ -499,7 +579,7 @@ lệnh PIE. Hai đầu đi thành cặp: một mẫu trên đồ thị được 
 mới, và phép toán đó chạy đúng các lệnh mà kernel ESP-DL sẽ chạy nhưng ít lượt đọc
 ghi PSRAM hơn.
 
-\begin{figure}[H]
+\begin{figure}[!htb]
 \centering
 \begin{tikzpicture}[
   font=\footnotesize,
@@ -606,33 +686,36 @@ VL53L1X đo khoảng cách bằng thời gian bay của tia laser 940~nm, tới 
 I\textsuperscript{2}C~\cite{vl53l1x}. Máy chấm công dùng nó để biết có người lại
 gần. Sau 60~s không có dấu hiệu người, mô hình dừng, camera vào chế độ chờ và màn
 hình tắt, và cảm biến là nguồn đánh thức. Chế độ đo ngắn với tới 1,3~m đủ cho dải
-làm việc và chống nhiễu ánh sáng tốt nhất. Bảng~\ref{tab:ngoai_vi} liệt kê các
-ngoại vi của máy.
+làm việc và chống nhiễu ánh sáng tốt nhất. Bảng~\ref{tab:ngoai_vi} liệt kê linh kiện
+của máy. Sơ đồ khối, sơ đồ nguyên lý và mạch in nằm ở Chương~\ref{chapter:Design}, ảnh
+máy thật nằm ở Chương~\ref{chapter:Implementation}.
 
 \begin{table}[!htb]
 \centering
 \small
-\caption{Các ngoại vi của máy chấm công.}
+\caption{Linh kiện của máy chấm công, thông số theo datasheet.}
 \label{tab:ngoai_vi}
-\begin{tabular}{|L{3.0cm}|L{3.0cm}|L{7.6cm}|}
+\begin{tabular}{|L{3.4cm}|L{1.7cm}|L{4.5cm}|L{3.6cm}|}
 \hline
-\textbf{Linh kiện} & \textbf{Giao tiếp} & \textbf{Vai trò} \\
+\textbf{Linh kiện} & \textbf{Giao tiếp} & \textbf{Thông số chính} & \textbf{Vai trò} \\
 \hline
-OV5640 & DVP & Camera \\
+ESP32-S3-WROOM-1 N16R8~\cite{wroom} & Wi-Fi 2,4~GHz & Flash 16~MB, PSRAM octal 8~MB & Bộ xử lý, nằm trên board ESP32-S3-CAM \\
 \hline
-ST7796S & SPI & Màn hình 4 inch, 320$\times$480 \\
+OV5640~\cite{ov5640} & DVP, SCCB & 5 megapixel, cỡ 1/4 inch & Camera \\
 \hline
-GT911 & I\textsuperscript{2}C & Cảm ứng \\
+ST7796S~\cite{st7796s} & SPI & 320$\times$480, 262K màu, có bộ nhớ khung & Màn hình 4 inch \\
 \hline
-VL53L1X & I\textsuperscript{2}C & Khoảng cách, nguồn đánh thức \\
+GT911~\cite{gt911} & I\textsuperscript{2}C & Cảm ứng điện dung 5 điểm, 100~Hz & Thao tác trên màn hình \\
 \hline
-MAX98357A & I\textsuperscript{2}S & Khuếch đại loa, tiếng bíp khi mở cửa và khi giữ mẫu \\
+VL53L1X~\cite{vl53l1x} & I\textsuperscript{2}C & Laser 940~nm, tới 4~m, tới 50~Hz & Biết có người, đánh thức máy \\
 \hline
-SG90 & PWM 50~Hz & Servo gạt thanh chắn \\
+MAX98357A~\cite{max98357} & I\textsuperscript{2}S & Khuếch đại lớp D, 3,2~W vào 4~$\Omega$ ở 5~V & Tiếng bíp khi mở cửa và khi giữ mẫu \\
 \hline
-PCF8574 & I\textsuperscript{2}C & Mở rộng chân GPIO \\
+SG90~\cite{sg90} & PWM 50~Hz & Mô-men 1,8~kgf$\cdot$cm, quay khoảng 180° & Gạt thanh chắn \\
 \hline
-DS3231 & I\textsuperscript{2}C & Đồng hồ thời gian thực, nguồn giờ khi mất mạng \\
+PCF8574~\cite{pcf8574} & I\textsuperscript{2}C & 8 chân vào ra mở rộng & Thêm chân cho reset, tắt loa \\
+\hline
+DS3231~\cite{ds3231} & I\textsuperscript{2}C & Sai số $\pm$2~ppm ở 0--40~°C, có pin dự phòng & Giữ giờ khi mất mạng và mất điện \\
 \hline
 \end{tabular}
 \end{table}
@@ -652,8 +735,28 @@ nguồn duy nhất và kiểm được bằng ERC, DRC ở mỗi lần sinh lạ
 
 MQTT là giao thức xuất bản và đăng ký qua một máy trung gian gọi là
 broker~\cite{mqtt311}. Máy chấm công chủ động mở kết nối ra broker, nên máy chủ
-gửi được lệnh xuống mà mạng nơi đặt máy không phải mở cổng nào. Đồ án dùng bản
-3.1.1 với các cơ chế ở Bảng~\ref{tab:mqtt}.
+gửi được lệnh xuống mà mạng nơi đặt máy không phải mở cổng nào, như
+Hình~\ref{fig:mqtt}. Đồ án dùng bản 3.1.1 với các cơ chế ở Bảng~\ref{tab:mqtt}.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  box/.style={draw, align=center, text width=26mm, minimum height=24mm, inner sep=2pt},
+  lab/.style={font=\scriptsize, align=center},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (k) {Máy chấm công\\ESP32-S3};
+\node[box, right=33mm of k] (b) {Broker EMQX\\cổng 8883, TLS};
+\node[box, right=33mm of b] (a) {Backend\\NestJS};
+\draw[arr] ([yshift=6mm]k.east) -- node[lab, above] {\texttt{up/}: lượt chấm,\\nhịp sống, Last Will} ([yshift=6mm]b.west);
+\draw[arr] ([yshift=-6mm]b.west) -- node[lab, below] {\texttt{down/}: lệnh,\\danh sách, OTA} ([yshift=-6mm]k.east);
+\draw[arr] ([yshift=8mm]b.east) -- node[lab, above] {bản tin \texttt{up/}} ([yshift=8mm]a.west);
+\draw[arr] ([yshift=0mm]a.west) -- node[lab, above] {bản tin \texttt{down/}} ([yshift=0mm]b.east);
+\draw[arr] ([yshift=-8mm]b.east) -- node[lab, below] {HTTP: kiểm JWT\\khi máy nối vào} ([yshift=-8mm]a.west);
+\end{tikzpicture}
+\caption{Đường bản tin giữa máy chấm công, broker và backend.}
+\label{fig:mqtt}
+\end{figure}
 
 \begin{table}[!htb]
 \centering
@@ -787,13 +890,37 @@ có gì rời repo. Frontend tách riêng lên Vercel, không nằm trong Docker
 Lượt chấm chỉ là sự kiện thô: người này, ở máy này, lúc này. Bảng lương cần thứ
 khác, nên hệ thống quy lượt chấm thành một dòng ngày công cho mỗi người mỗi ngày,
 gồm giờ vào đầu, giờ ra cuối, phút làm, phút muộn, phút về sớm và phút làm thêm
-theo ca áp dụng. Bộ luật Lao động giới hạn thời giờ làm việc bình thường ở 8 giờ
+theo ca áp dụng, như Hình~\ref{fig:chuoi_luong}. Mỗi ca mang giờ vào, giờ ra và thời
+gian ân hạn, ví dụ ca 08:00--17:30 với 10 phút ân hạn. Bộ luật Lao động giới hạn thời giờ làm việc bình thường ở 8 giờ
 một ngày và 48 giờ một tuần (Điều 105), làm thêm không quá 40 giờ một tháng và 200
 giờ một năm (Điều 107), với tiền lương làm thêm ít nhất 150\% ngày thường, 200\%
 ngày nghỉ hằng tuần và 300\% ngày lễ (Điều 98)~\cite{bll2019}. Giờ làm thêm chỉ
 được trả khi có đơn đã duyệt phủ lên ngày đó. Dòng ngày công dựng bằng việc nền
 chạy hằng đêm và dựng lại khi có lượt chấm tới trễ, chẳng hạn sau khi máy mất mạng
 vài hôm.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=7mm and 5mm,
+  box/.style={draw, align=center, text width=31mm, minimum height=11mm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}}]
+\node[box] (p) {Lượt chấm\\từ máy chấm công};
+\node[box, right=of p] (d) {Ngày công\\mỗi người mỗi ngày};
+\node[box, right=of d] (r) {Lượt chạy\\của kỳ lương};
+\node[box, right=of r] (s) {Phiếu lương\\sau khi chốt kỳ};
+\node[box, above=of d] (i) {Ca làm, ngày lễ,\\đơn nghỉ, đơn làm thêm};
+\node[box, above=of r] (c) {Mức lương, chính sách\\theo ngày hiệu lực};
+\draw[arr] (p) -- (d);
+\draw[arr] (d) -- (r);
+\draw[arr] (r) -- (s);
+\draw[arr] (i) -- (d);
+\draw[arr] (c) -- (r);
+\end{tikzpicture}
+\caption{Chuỗi từ lượt chấm tới phiếu lương.}
+\label{fig:chuoi_luong}
+\end{figure}
 
 Người lao động có 12 ngày phép năm trong điều kiện bình thường (Điều 113) và nghỉ
 không lương theo thỏa thuận (Điều 115)~\cite{bll2019}. Cái khó của phần phép nằm ở
