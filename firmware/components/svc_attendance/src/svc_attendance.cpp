@@ -92,6 +92,16 @@ bool same_arrival(const svc_vision_result_t *result, int64_t now_ms)
     return !s_left_since_grant && stamped_recently(result->employee_id, now_ms);
 }
 
+// Low half of the heartbeat's img- digest; the record keeps 16 bits (KEHOACH 6.2.5).
+uint16_t running_models()
+{
+    const storage_models_header_t *header = nullptr;
+    if (sys_storage_models_open(&header) != ESP_OK || header == nullptr) {
+        return 0;
+    }
+    return (uint16_t)(header->crc32 & 0xFFFFu);
+}
+
 esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool door_opened)
 {
     // Source first: a clock landing in between leaves bit2 on a true time, never off a boot count.
@@ -107,7 +117,7 @@ esp_err_t write_record(const svc_vision_result_t *result, int64_t now_ms, bool d
     record.flags = (uint8_t)((door_opened ? STORAGE_ATTEND_FLAG_DOOR : 0) |
                              (s_link_up.load() ? 0 : STORAGE_ATTEND_FLAG_OFFLINE) |
                              (ntp ? 0 : STORAGE_ATTEND_FLAG_NO_NTP));
-    record.model_version = 1;
+    record.model_version = running_models();
     record.crc32 = sys_storage_crc32(&record, offsetof(storage_attend_record_t, crc32));
 
     const esp_err_t err = sys_storage_attend_append(&record);

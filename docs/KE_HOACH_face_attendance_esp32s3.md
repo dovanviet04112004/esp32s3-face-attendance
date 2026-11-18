@@ -6523,7 +6523,7 @@ Header file **giống hệt khuôn của `faces.bin`** (magic `'ALG1'`, `record_
 | 25 | 2 | `match_score` Q8.8 |
 | 27 | 2 | `liveness_score` Q8.8 |
 | 29 | 1 | `flags` (bit0 đã mở cửa, bit1 thu lúc mất mạng, bit2 giờ chưa đồng bộ NTP) |
-| 30 | 2 | `model_version` u16 — firmware ghi 1 ở mọi bản ghi; server kiểm theo hợp đồng nhưng không lưu |
+| 30 | 2 | `model_version` u16 = 16 bit thấp của `crc32` header ảnh ở ngăn model đang chạy, tức bốn chữ số hex cuối của digest `img-…` mà heartbeat khai (§4.6); 0 khi không mở được ảnh. Server kiểm theo hợp đồng nhưng không lưu |
 | 32 | 12 | `reserved` |
 | 44 | 4 | `crc32` |
 
