@@ -448,31 +448,7 @@ chung nằm ở \texttt{src/common/}: guard xác thực và vai, \texttt{ScopeSe
 thay đổi, bộ ghi CSV. Mọi biến môi trường đọc ở một tệp \texttt{env.schema.ts} và kiểm bằng zod lúc khởi động,
 thiếu là dừng ngay. Mỗi route khai vai bằng \texttt{@Roles} hoặc \texttt{@CurrentViewer}, và
 \texttt{check\_routes.py} chặn route thiếu khai báo. \texttt{check\_error\_codes.py} kiểm mọi mã lỗi có câu ở
-cả hai ngôn ngữ. Hình~\ref{fig:luong_cong} là đường dữ liệu từ lượt chấm tới phiếu lương, các mục dưới đi theo
-hình này.
-
-\begin{figure}[!htb]
-\centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=6mm and 7mm,
-  box/.style={draw, align=center, text width=30mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (r) {AttendanceRecord\\lượt chấm thô};
-\node[box, right=of r] (d) {AttendanceDay\\ngày công};
-\node[box, right=of d] (p) {PayrollRun\\lượt tính};
-\node[box, right=of p] (s) {Payslip\\phiếu lương};
-\node[box, below=of d] (q) {Request\\đơn nghỉ, giải trình};
-\node[box, below=of p] (c) {PayrollPolicy,\\mức lương};
-\draw[arr] (r) -- (d);
-\draw[arr] (d) -- (p);
-\draw[arr] (p) -- (s);
-\draw[arr] (q) -- (d);
-\draw[arr] (c) -- (p);
-\end{tikzpicture}
-\caption{Đường dữ liệu từ lượt chấm tới phiếu lương.}
-\label{fig:luong_cong}
-\end{figure}
+cả hai ngôn ngữ.
 
 \subsection{Nhận lượt chấm qua MQTT}
 \label{section:4.5.2}
@@ -491,13 +467,52 @@ phát tin cho dashboard qua Socket.IO~\cite{socketio}, vì dashboard trả lời
 \subsection{Ngày công, ca làm và giải trình công}
 \label{section:4.5.3}
 
+Hình~\ref{fig:mot_ngay} là chuỗi xử lý một ngày công, từ lúc máy ghi lượt tới lúc kỳ lương đọc ngày công.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  node distance=4mm and 4.5mm,
+  box/.style={draw, align=center, text width=22mm, minimum height=15mm, inner sep=1.5pt},
+  note/.style={draw, rounded corners=1.5mm, align=center, text width=22mm, minimum height=11mm, inner sep=1.5pt},
+  when/.style={font=\scriptsize\bfseries, above=0.5mm},
+  arr/.style={-{Latex[length=1.8mm]}}]
+\node[box] (k) {Máy ghi lượt xuống flash, gửi khi có mạng};
+\node[box, right=of k] (r) {Máy chủ nhận: bỏ, lưu có nghi vấn, giữ chờ duyệt, hoặc tính};
+\node[box, right=of r] (b) {Dựng ngày hôm qua: lượt đầu, lượt cuối, ca, ngày lễ, đơn};
+\node[box, right=of b] (d) {Một dòng ngày công cho mỗi người};
+\node[box, right=of d] (p) {Lượt tính lương đọc ngày công của kỳ};
+\node[when] at (k.north) {Trong ngày};
+\node[when] at (r.north) {Khi lượt tới};
+\node[when] at (b.north) {00:30};
+\node[when] at (p.north) {Khi chạy lương};
+\node[note, below=9mm of r] (rb) {Lượt của ngày đã qua: dựng lại ngày đó};
+\node[note, below=9mm of d] (fx) {Đơn duyệt muộn, giải trình, sửa tay};
+\node[note, below=9mm of b] (ex) {Mở việc: vắng, muộn, về sớm, thiếu lượt};
+\node[note, below=4mm of ex] (ps) {08:30 báo nhân viên; 5:00--11:00 tóm tắt cho quản lý};
+\draw[arr] (k) -- (r);
+\draw[arr] (r) -- (b);
+\draw[arr] (b) -- (d);
+\draw[arr] (d) -- (p);
+\draw[arr] (r) -- (rb);
+\draw[arr] (rb.north east) -- (b.south west);
+\draw[arr] (fx) -- (d);
+\draw[arr] (b) -- (ex);
+\draw[arr] (ex) -- (ps);
+\end{tikzpicture}
+\caption{Chuỗi xử lý một ngày công.}
+\label{fig:mot_ngay}
+\end{figure}
+
 Việc dựng ngày chạy lúc 00:30 theo múi giờ công ty cho ngày hôm qua. Hàm \texttt{dayOf} lấy lượt đầu và lượt cuối
 của ngày, tính phút làm, phút muộn sau ân hạn, phút về sớm và phút tăng ca so với ca của người đó. Ngày không có
 lượt thì tra lịch: ngày lễ, cuối tuần, phép đã duyệt, công tác đã duyệt, còn lại là vắng. Phút tăng ca chỉ được đếm,
 chỉ phần có đơn duyệt mới thành tiền. Nghỉ nửa ngày dời một đầu của ca về điểm giữa ca, ví dụ ca 08:00--17:30 có
 điểm giữa 12:45. Ngày nhân sự đã sửa tay không bị dựng đè, và dòng ngày giữ người sửa, lý do, phút máy đo.
 
-Ngày lệch sinh một việc cho chính người đó. Từ đó họ gửi đơn giải trình công, là một \texttt{Request} loại
+Ngày lệch sinh một việc cho chính người đó: 08:30 người đó nhận thông báo về thiếu lượt và vắng, còn quản lý nhận
+tóm tắt của đội mỗi 15 phút từ 5:00 tới 11:00. Từ đó họ gửi đơn giải trình công, là một \texttt{Request} loại
 \texttt{ATTENDANCE\_FIX} điền sẵn ngày ấy, hoặc bấm không cần giải trình. Đơn được duyệt thì \texttt{applyFix} sửa
 ngày công trong cùng giao dịch với lượt duyệt. Ca qua nửa đêm chưa có thiết kế: ca có giờ ra không đứng sau giờ vào
 bị từ chối với mã \texttt{SHIFT\_CROSSES\_MIDNIGHT}, vì mọi phép tính trên đặt cả ca vào một ngày lịch.
@@ -674,7 +689,7 @@ trong khi cả stack lúc chạy chỉ khoảng 390~MB. Khóa SSH của GitHub b
 \node[box, right=of t] (i) {Job \texttt{image}};
 \node[box, right=of i] (s) {Job \texttt{ship}:\\\texttt{deploy.sh}};
 \node[box, below=of s] (h) {Chờ \texttt{/health}\\tối đa 120~s};
-\node[box, left=of h] (d) {Ghi \texttt{.deployed},\\dọn ảnh cũ};
+\node[box, left=12mm of h] (d) {Ghi \texttt{.deployed},\\dọn ảnh cũ};
 \node[box, below=of h] (r) {Lùi về sha\\ở \texttt{.deployed}};
 \draw[arr] (p) -- (t);
 \draw[arr] (t) -- (i);
