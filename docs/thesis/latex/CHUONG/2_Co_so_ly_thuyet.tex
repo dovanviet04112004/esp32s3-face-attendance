@@ -322,9 +322,9 @@ chiều và $\mathbf{W}_2$ trả lại số chiều ban đầu.
 \end{equation}
 
 Khó khăn lớn nhất của bài toán là lệch miền: mô hình học trên một bộ camera và
-kiểu tấn công thường kém đi trên miền chưa thấy~\cite{yu2023fas}. Một bản tự huấn luyện đạt kết quả tốt trên các tập công khai, nhưng với 13 khung thật và 21 khung giả của
-OV5640 thì AUC chỉ còn 0,6960. Điểm sống trung vị của khung giả là 0,984, sát
-0,998 của khung thật, và ở ngưỡng 0,75 có 85,7\% khung giả lọt. Truy nguyên thì
+kiểu tấn công thường kém đi trên miền chưa thấy~\cite{yu2023fas}. Một bản tự huấn luyện trên các tập công khai, chấm trên 13 khung thật và 21 khung giả của
+OV5640, chỉ đạt AUC 0,6960. Điểm sống trung vị của khung giả là 0,984, sát
+0,998 của khung thật, và ở ngưỡng 0,75 có 85,7\% khung giả lọt. Nguyên nhân là
 mô hình học vết chụp lại như moiré và vân giấy. Ở cự ly làm việc, ống kính OV5640
 không phân giải được lưới điểm ảnh của màn hình, nên ảnh thẻ trên điện thoại hiện
 ra mịn và sáng đều, và mô hình đọc thành ảnh nguyên bản.
@@ -613,7 +613,7 @@ chập đầu trên ảnh RGB có 3 kênh, lệch bội 16 mà lệnh vector c�
 3$\times$3$\times$3 được xếp thành vector 27 phần tử đệm lên 32, và kernel riêng
 đọc thẳng ba hàng ảnh.
 
-Các bản vá chia hai loại theo việc có đổi số nguyên hay không. Bản vá xuất giữ
+Các bản vá chia hai loại, tùy có đổi số nguyên hay không. Bản vá xuất giữ
 nguyên từng số nguyên của đồ thị, có kiểm thử so đầu ra có và không có bản vá, nên
 bật cho mọi cấu hình. Bản vá làm tròn đổi số: gộp PReLU vào tích chập làm nhánh âm
 làm tròn xuống thay cho làm tròn gần nhất, nên phần mô phỏng phải tính đúng như chip
@@ -630,7 +630,7 @@ Chương~\ref{chapter:Implementation}, số đo ở Chương~\ref{chapter:Experi
 Hai hướng nén khác đã được xét và không đi vào bản chạy thật. Chưng cất tri thức
 dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn} trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không có gì để chưng cất và đồ án không dùng hướng này. Khi đã có trọng số MiniFASNet nhập, một
 bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi
-đòn giấy khi thử trực tiếp, nên chỉ được giữ làm phương án nhẹ.
+ảnh in khi thử trực tiếp, nên chỉ được giữ làm phương án nhẹ.
 
 Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Cắt tỉa thưa không
 giúp gì trên vi điều khiển vì không có kernel cho ma trận thưa, nên chỉ cắt theo
@@ -660,7 +660,7 @@ Dữ liệu ghi thường xuyên nằm trên LittleFS, phân vùng 4~MB. LittleF
 điện đột ngột nhờ ghi kiểu copy-on-write, có cân bằng hao mòn và RAM bị chặn
 trên~\cite{littlefs}, nên được chọn cho bảng mẫu khuôn mặt và nhật ký lượt chấm.
 Mỗi lượt chấm là một bản ghi 48~B được đồng bộ xuống flash ngay, tốn khoảng
-10--20~ms, đổi lấy việc lượt chấm không mất khi cúp điện. Bảng mẫu thì ghi ra tệp
+10--20~ms, để lượt chấm không mất khi cúp điện. Bảng mẫu thì ghi ra tệp
 tạm rồi đổi tên, nên mất điện giữa chừng chỉ còn bản cũ hoặc bản mới. Cấu hình nhỏ
 và JWT của máy nằm ở NVS, còn âm thanh chỉ đọc nằm ở SPIFFS. Driver camera, màn
 hình, cảm ứng và ứng dụng MQTT dùng các thành phần có sẵn của Espressif, TLS dùng
@@ -833,11 +833,11 @@ CI/CD & GitHub Actions~\cite{ghactions}, Vercel & Kiểm thử, dựng và phát
 
 Hai ràng buộc của PostgreSQL gánh phần mà code không gánh được khi hai yêu cầu
 chạy song song~\cite{pgconstraints}. Ràng buộc unique trên cặp máy và mã lượt chấm
-biến việc gửi lại thành thao tác không đổi dữ liệu, đúng thứ QoS 1 cần. Ràng buộc
+biến mỗi lần gửi lại thành thao tác không đổi dữ liệu, đúng thứ QoS 1 cần. Ràng buộc
 loại trừ chặn hai đơn nghỉ chồng lên cùng một buổi, vì phép kiểm trong code sẽ cho
 qua cả hai khi hai yêu cầu tới cùng lúc.
 
-Redis giữ ba vai tách bạch: cache, hàng đợi và bộ đếm hạn mức. Mất khóa cache chỉ
+Trong Redis, cache, hàng đợi và bộ đếm hạn mức là ba vai tách bạch. Mất khóa cache chỉ
 chậm đi một nhịp, mất việc trong hàng đợi là mất việc thật, nên mọi việc nền của
 BullMQ khai số lần thử và thời gian chờ tăng dần~\cite{bullmqretry}, và phải chạy
 lại được mà không đổi kết quả. Bảng công hằng đêm, kỳ lương và gửi phiếu lương đều
@@ -1058,7 +1058,7 @@ phiếu lương.
 Các lựa chọn của chương này ràng buộc nhau ở bộ nhớ. SRAM chỉ còn 28.675~B lúc
 thấp nhất nên mọi thứ lớn nằm ở PSRAM, băng thông PSRAM làm một lượt chậm thêm
 14,9\% khi có xem trước, và luật lượng tử 8 bit đổi tốc độ lấy độ chính xác, để lại
-hai chỗ chưa đạt là TAR 0,799 trên CFP-FP và đòn giấy chưa có số đo. Phía máy chủ,
+hai chỗ chưa đạt là TAR 0,799 trên CFP-FP và ảnh in chưa có số đo. Phía máy chủ,
 lượt chấm đi qua MQTT QoS 1 với ràng buộc chống trùng, còn các mức pháp lý là dữ
 liệu có ngày hiệu lực. Chương~\ref{chapter:Design} dựa trên những ràng buộc này để
 phân tích yêu cầu và thiết kế hệ thống.

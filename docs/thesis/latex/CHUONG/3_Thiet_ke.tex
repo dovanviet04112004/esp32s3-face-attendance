@@ -591,7 +591,7 @@ F15 & Cổng nhân viên & Nhận thông báo đẩy, xem lại dữ liệu đã
 \label{section:3.1.3}
 
 Bảng~\ref{tab:yc_phi_chuc_nang} đặt các ràng buộc kiểm tra được. Phần lớn sinh ra từ
-phần cứng và từ việc người chấm công chỉ đứng trước máy 1--2~s. Kết quả đo nằm ở
+phần cứng và từ chỗ người chấm công chỉ đứng trước máy 1--2~s. Kết quả đo nằm ở
 Chương~\ref{chapter:Experiment}. NF9 chưa có con số, vì đồ án chưa lập bảng giá linh
 kiện.
 
@@ -1199,10 +1199,10 @@ mà không phải chờ thanh chắn của người trước đóng.
 \subsection{Bộ nhớ và lưu trữ}
 \label{section:3.5.4}
 
-Bảng~\ref{tab:phan_vung} là bảng phân vùng 16~MB. Khe ứng dụng 2,75~MB vì riêng thư viện ESP-DL
-thêm 858~KB, đưa ảnh firmware lên 2.679.488~B, quá khe 2~MB trước đó. Hai khe mô hình tách khỏi
-khe ứng dụng nên mô hình cập nhật được độc lập và có đường lùi riêng (F9). Lần chia lại đó giữ
-nguyên địa chỉ của \texttt{storage}, nên bảng mẫu và nhật ký lượt chấm không mất. Bảng phân vùng
+Bảng~\ref{tab:phan_vung} là bảng phân vùng 16~MB. Khe ứng dụng rộng 2,75~MB vì riêng thư viện ESP-DL
+thêm 858~KB, đưa ảnh firmware lên 2.679.488~B, không vừa khe 2~MB. Hai khe mô hình tách khỏi
+khe ứng dụng nên mô hình cập nhật được độc lập và có đường lùi riêng (F9). Phân vùng \texttt{storage} giữ
+một địa chỉ cố định qua mọi bảng phân vùng, nên đổi bảng không làm mất bảng mẫu và nhật ký lượt chấm. Bảng phân vùng
 không đi qua OTA được: đổi nó thì phải nạp lại qua USB.
 
 \begin{table}[!htb]
@@ -1280,8 +1280,8 @@ sau khi ghi xong, nên lượt tới lúc API khởi động lại nằm chờ �
 \label{fig:luot_cham}
 \end{figure}
 
-Giờ của lượt chấm có ba nguồn theo thứ tự tin cậy tăng dần: DS3231 đọc ngay lúc khởi động, header
-\texttt{Date} của API, rồi NTP. Giờ không đến từ một đồng hồ đã từng được NTP đặt thì bản ghi bật cờ
+Giờ của lượt chấm lấy từ DS3231 ngay lúc khởi động, rồi được header
+\texttt{Date} của API và sau cùng NTP đặt lại, theo thứ tự tin cậy tăng dần. Giờ không đến từ một đồng hồ đã từng được NTP đặt thì bản ghi bật cờ
 giờ chưa đồng bộ. Máy chủ không tin một mốc giờ vô lý: lượt mang giờ trước năm 2020 hoặc đi trước giờ
 nhận quá một ngày được lưu với cờ nghi vấn và chờ nhân sự sửa. Lượt cũ hơn 7 ngày hay rơi vào kỳ
 lương đã chốt thì chờ duyệt mới được tính.
@@ -1461,8 +1461,8 @@ người đó không phải đứng chụp lại ở từng máy.
 \label{fig:td_dang_ky}
 \end{figure}
 
-Vòng đời máy đi qua \texttt{PENDING}, \texttt{APPROVED}, \texttt{REVOKED}. Thu hồi làm ba việc theo
-thứ tự: ghi dòng, xóa cache của broker, rồi đá phiên. Ba việc đó cần thiết vì broker chỉ kiểm JWT lúc nối, nên không đá phiên thì máy đã thu hồi vẫn gửi tin qua phiên cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
+Vòng đời máy đi qua \texttt{PENDING}, \texttt{APPROVED}, \texttt{REVOKED}. Thu hồi ghi dòng, xóa cache
+của broker rồi đá phiên, theo đúng thứ tự đó. Phải đá phiên vì broker chỉ kiểm JWT lúc nối, nên không đá thì máy đã thu hồi vẫn gửi tin qua phiên cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
 
 Hình~\ref{fig:td_duyet_may} là trình tự đưa một máy mới vào hệ thống. Trước khi được duyệt, máy nhận 202 ở mỗi lần hỏi và vẫn chấm công,
 giữ lượt trong flash. Broker không tự kiểm JWT mà hỏi API ở mỗi lần nối, nên máy đã bị thu hồi không nối lại được.
@@ -1565,7 +1565,7 @@ Năm quyết định chi phối các bảng này: (i)~dữ liệu có thời h�
 nên phiếu tháng cũ vẫn tính được đúng; (ii)~lượt chấm thô tách khỏi ngày công,
 \texttt{AttendanceRecord} là sự kiện còn \texttt{AttendanceDay} là kết quả, mỗi người mỗi ngày một
 dòng; (iii)~phiếu lương chép lại những gì nó dựa vào, gồm tài khoản ngân hàng và dòng chính sách đã
-dùng, nên đổi hồ sơ về sau không đổi phiếu đã phát; (iv)~luật quan trọng nằm trong cơ sở dữ liệu, gồm
+dùng, nên đổi hồ sơ về sau không đổi phiếu đã phát; (iv)~luật mà vi phạm là sai công hay sai tiền thì đặt thành ràng buộc của cơ sở dữ liệu, gồm
 ràng buộc unique trên cặp máy và mã lượt, ràng buộc loại trừ chặn đơn nghỉ chồng ngày, và \texttt{CHECK}
 cho số ngày phép và số tiền trên dòng phiếu; (v)~tiền lưu bằng số nguyên đồng, tỉ lệ lưu bằng phần vạn.
 \texttt{PayslipLine} giữ mỗi khoản một dòng, để câu hỏi như quý này trả bao nhiêu tiền tăng ca trả lời
@@ -1679,9 +1679,9 @@ trước camera và để chấm công chạy ngầm là chấm chính họ. Gi�
 trong lúc ấy, nên các màn này tự về màn quét sau 30~s không chạm.
 
 Máy tự vẽ giao diện bằng một \texttt{Canvas}, không dùng thư viện LVGL. Màn hình chính là video xem trước,
-và thêm LVGL là có hai bộ vẽ cùng ghi một panel SPI. Cái giá là nút, danh sách, thanh trượt, bàn phím phải
-tự viết, và không có gì tự chặn chữ tràn khỏi panel 320~px. Nên mọi màn vẽ qua hai tầng bắt buộc, \texttt{theme} giữ bảng màu, thang chữ, nấc giãn cách, còn
-\texttt{widgets} giữ các phần tử lặp lại và phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId},
+và thêm LVGL là có hai bộ vẽ cùng ghi một panel SPI. Vì vậy nút, danh sách, thanh trượt, bàn phím đều
+tự viết, và không có gì tự chặn chữ tràn khỏi panel 320~px, nên mọi màn bắt buộc vẽ qua tầng \texttt{theme}, giữ bảng màu, thang chữ, nấc giãn cách,
+và tầng \texttt{widgets}, giữ các phần tử lặp lại cùng phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId},
 nên thiếu một bản dịch thì không biên dịch được. Tiếng Việt là mặc định.
 
 Khung ngắm vẽ theo chính cổng cỡ mặt của pipeline. Đường xem trước phóng khung camera lên panel với hệ số
@@ -1695,8 +1695,8 @@ mở thanh chắn hoặc giữ được một mẫu đăng ký, vì người đa
 \label{section:3.7.2}
 
 Web chia màn hình theo việc người ta đang làm, tránh một thanh bên hai mươi mục ngang hàng theo tên phân
-hệ. Bốn loại màn hình ở bốn nơi: việc nằm ở trang chủ và mang số đếm trên thanh bên, tra cứu nằm ở thanh
-bên chính, cấu hình nằm sau mục Thiết lập, báo cáo đứng riêng. Một bản Next.js phục vụ mọi vai với 46 trang,
+hệ. Việc cần làm nằm ở trang chủ và mang số đếm trên thanh bên, tra cứu nằm ở thanh
+bên chính, cấu hình nằm sau mục Thiết lập, còn báo cáo đứng riêng. Một bản Next.js phục vụ mọi vai với 46 trang,
 và trang chủ đổi theo vai như Bảng~\ref{tab:trang_chu}.
 
 \begin{table}[!htb]

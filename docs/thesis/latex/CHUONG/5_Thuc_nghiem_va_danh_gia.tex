@@ -327,7 +327,7 @@ Bảng~\ref{tab:ram_may} đọc từ heartbeat của máy thật, 30~s một l�
 Đáy 28.675~B cao hơn mốc 24~KB của NF2 4.099~B. Ba tệp mô hình chiếm 2.115,8~KB trong khe 2,25~MB, còn 188,2~KB. Ảnh firmware bản
 \texttt{prod} là 2.328.032~B, còn 19\% khe 2,75~MB. Đồ án đặt thêm một mốc 2.000~KB cho đáy PSRAM, và số đo nằm dưới mốc này:
 PSRAM trống 1.788~KB, trong khi heartbeat không mang đáy nên đáy thật bằng hoặc thấp hơn. Phần hụt chủ yếu do hàng
-\texttt{int16\_top1} của chống giả mạo, lúc dựng chiếm 1.137.644~B so với 811.276~B của hàng int8 trước đó.
+\texttt{int16\_top1} của chống giả mạo, lúc dựng chiếm 1.137.644~B so với 811.276~B của hàng toàn int8.
 
 Trong \texttt{bench\_ai}, một lượt ba mô hình dùng đỉnh stack 2.812~B và heap không đổi sau 50 lượt, cả RAM nội lẫn PSRAM. Lượt đo
 16 phút không ghi lại có người đứng trước máy hay không, nên nó chưa thay được bài chạy liên tục 24 giờ, bài này chưa thực hiện
@@ -420,7 +420,7 @@ input vào vùng đệm ở mỗi lượt. ESP-DL lượng tử hóa đối xứ
 án tự viết ở Bảng~\ref{tab:phep_toan} cộng thêm phần còn lại, đưa mức dùng phép nhân lên 3,38 MAC mỗi chu kỳ. Với TFLite Micro + esp-nn,
 máy cần 3,7~s cho một lượt, tức dài hơn cả thời gian người đứng trước máy, nên phương án này không dùng được cho luồng chấm công.
 
-Tốc độ đó phải trả bằng bộ nhớ. Bảng~\ref{tab:so_tai_nguyen} là tài nguyên của ba cấu hình. Ảnh ứng dụng của ESP-DL lớn gấp 3,3 lần vì
+Bảng~\ref{tab:so_tai_nguyen} là tài nguyên của ba cấu hình. Ảnh ứng dụng của ESP-DL lớn gấp 3,3 lần vì
 thư viện esp-dl chiếm 598,1~KB và \texttt{ai\_engine} chiếm 218,8~KB. PSRAM lớn gấp 3,1 lần vì mỗi mô hình giữ khối riêng và trọng số
 được chép sang PSRAM, trong khi TFLite Micro dùng chung hai arena 186~KB và 972~KB, trọng số đọc từ flash. Dựng ba mô hình lâu gấp 3,0
 lần, nhưng chỉ xảy ra một lần lúc khởi động. ESP-DL cũng nhạy với tải hơn: chậm đi 14,9\% so với 4,0\% của TFLite Micro + esp-nn, vì
@@ -710,7 +710,7 @@ $9{,}80\cdot10^{-7}$. Bảng~\ref{tab:nguoi_la} quy số này ra máy. Đây là
 
 LFW là ảnh báo chí của người nổi tiếng, gần chính diện, khác khung OV5640, nên các số trên không thay được FAR đo trên máy. Danh tính trùng
 giữa tập huấn luyện MS1M và LFW chưa được kiểm, và nếu có trùng thì số trên lạc quan. Về phía FRR, trên OV5640 mới có một phép đo với một
-người, 50 khung, mô hình nhận diện trước đó chạy float trên máy tính: ở 0,45 nhận 41/49 khung, các khung rớt chủ yếu là mặt chìm trong
+người, 50 khung, dùng một mô hình nhận diện khác chạy float trên máy tính: ở 0,45 nhận 41/49 khung, các khung rớt chủ yếu là mặt chìm trong
 bóng. Số này không dùng cho hàng \texttt{qat}.
 
 Phép đo trên máy cần ba việc. Đăng ký nhiều người bằng đúng luồng ba tư thế. Mỗi người chấm nhiều lượt trong dải 0,25--0,42~m, ghi số
@@ -809,7 +809,7 @@ và API trả lỗi 500, vì các câu chậm giữ hết 10 kết nối của p
 \end{tabular}
 \end{table}
 
-Sau lần quá tải đó VPS không trở lại như cũ. Bảng~\ref{tab:tai_sau} là lượt đo cuối, chia theo nhóm người dùng. Cùng 5 phiên hỗn hợp, p95 từ 802~ms lên 9,3~s, và 1 phiên bàn giấy đã có
+Một lần quá tải làm VPS chậm hẳn đi, vì nguyên nhân (ii) dưới đây. Bảng~\ref{tab:tai_sau} là lượt đo trong trạng thái đó, chia theo nhóm người dùng. Cùng 5 phiên hỗn hợp, p95 từ 802~ms lên 9,3~s, và 1 phiên bàn giấy đã có
 mở trang p95 8,1~s. Mỗi bậc chỉ đo một lượt 60~s, nên 6 phiên điện thoại xấu hơn 8 phiên là nhiễu của mẫu.
 
 \begin{table}[!htb]
@@ -1097,21 +1097,21 @@ khớp được, phần số thực của mô phỏng chép theo mã máy đọc
 tính.
 
 Hình~\ref{fig:chuoi_toi_uu} là kết quả: 444,8~ms xuống 333,8~ms không đổi một bit, bộ chạy thật 349,3~ms. So với TFLite Micro + esp-nn, ESP-DL đã vá nhanh hơn
-10,51 lần, với 3,38 MAC mỗi chu kỳ so với 0,32. Giá phải trả là ảnh ứng dụng lớn gấp 3,3 lần, và các hợp đồng giữa bản vá với module gắn chặt với esp-dl 3.3.11,
+10,51 lần, với 3,38 MAC mỗi chu kỳ so với 0,32. ESP-DL làm ảnh ứng dụng lớn gấp 3,3 lần, và các hợp đồng giữa bản vá với module gắn chặt với esp-dl 3.3.11,
 nâng phiên bản là phải soát lại cả bảy phép toán.
 
 \subsection{Chọn lượng tử bằng thước của máy}
 \label{section:5.8.2}
 
-Thước công khai và thứ máy cần có thể lệch nhau. Hàng gộp PReLU của chống giả mạo có AUC 0,8217 trên CelebA-Spoof, cao hơn mô hình float, và biến thể của nó chạy
+Hàng gộp PReLU của chống giả mạo có AUC 0,8217 trên CelebA-Spoof, cao hơn mô hình float, và biến thể của nó chạy
 khoảng 39,6~ms so với 72,63~ms của hàng đã chọn. Nhìn thước công khai thì đó là hàng nên lấy. Trên khung OV5640 nó chỉ giữ 49/62 mặt thật, tức 21\% khung mặt thật
 bị chặn.
 
 Đồ án cố định ba thứ trước khi chạy thang: (i)~mỗi nhánh đi trọn bốn bậc kể cả khi bậc đầu đã đạt; (ii)~cửa chất lượng gồm cả thước công khai lẫn tập OV5640;
-(iii)~luật chọn viết thành lệnh \texttt{quant-choose}, nên hàng được chọn không phụ thuộc người đọc bảng. Thời gian lấy trên chip và độ chính xác lấy trên đồ thị đã
+(iii)~luật chọn viết thành mã chạy tự động, nên hàng được chọn không phụ thuộc người đọc bảng. Thời gian lấy trên chip và độ chính xác lấy trên đồ thị đã
 vá, nên mọi số trong bảng là số của đúng tệp nạp lên máy.
 
-Đi trọn thang có giá trị rõ nhất ở nhánh khó. Nhận diện với \texttt{minmax} chỉ có TAR 0,607 trên CFP-FP, cách hiệu chuẩn tốt nhất lên 0,775, QAT lên 0,799. Với
+Ở nhận diện, mỗi bậc kéo thêm được một đoạn: \texttt{minmax} chỉ có TAR 0,607 trên CFP-FP, cách hiệu chuẩn tốt nhất lên 0,775, QAT lên 0,799. Với
 phát hiện, bậc 3 và bậc 4 không thêm gì, và bảng ghi lại điều đó để không ai phải thử lại.
 
 33 hàng của ba nhánh đi qua cùng một luật. Phát hiện đạt AP 0,9544 ở 31,58~ms. Chống giả mạo giữ 59/62 và chặn 25/25 ở 72,63~ms. Nhận diện không có hàng nào qua,
@@ -1121,7 +1121,7 @@ và mọi mẫu khuôn mặt phải đăng ký lại sau khi nạp.
 \subsection{Chống giả mạo cho OV5640}
 \label{section:5.8.3}
 
-Mô hình tự huấn luyện đạt kết quả tốt trên tập công khai nhưng trên 85 khung OV5640 chỉ có AUC 0,6473, và để lọt 81,0\% khung giả khi chỉ cho chặn oan 5\%. Đo độ
+Mô hình tự huấn luyện trên tập công khai, chấm trên 85 khung OV5640, chỉ có AUC 0,6473, và để lọt 81,0\% khung giả khi chỉ cho chặn oan 5\%. Đo độ
 nét bề mặt chỉ ra nguyên nhân: trong tập huấn luyện ảnh giả nét hơn mặt thật, tỉ số thật trên giả 0,915, còn trên máy mặt thật nét hơn, tỉ số 1,591. Phép làm mờ là
 phép nhân nên giữ nguyên tỉ số, và không hiệu chỉnh mù nhãn nào lật được dấu. Bão hòa màu của mặt thật cũng lệch 1,82 lần, 0,6556 trên máy và 0,3606 trong tập huấn
 luyện. Mô hình càng khớp tập huấn luyện càng học chặt quan hệ ngược dấu đó.
@@ -1166,11 +1166,10 @@ p5 mặt thật và p95 khung giả, còn chữ nhật kéo giãn của kho gố
 +0,365.
 
 Hai quyết định nữa giữ mô hình đúng với dữ liệu đang có. Đồ án không căn bias theo tập OV5640: hằng số +5,0051 nâng mặt thật lên nhưng đẩy tờ tiền từ tối đa 0,321 lên
-0,41--0,99, vì bộ căn chỉ có màn điện thoại kề ống kính. Và vì điểm của một mặt thật có thể nhảy từ 0,023 lên 0,877 trong chưa đầy một giây, máy thử 3 lần mới báo giả
+0,41--0,99, vì bộ căn chỉ có màn điện thoại kề ống kính. Vì điểm của một mặt thật có thể nhảy từ 0,023 lên 0,877 trong chưa đầy một giây, máy thử 3 lần mới báo giả
 mạo.
 
-Kết quả là AUC 1,0000, giữ 59/62 và chặn 25/25 trên tập OV5640, với cả bốn giới hạn đã nêu ở Mục~\ref{section:5.4}. Cách làm dùng lại được cho camera rẻ khác: chấm trên
-đúng đường ảnh của chip trước khi tin số của tập công khai.
+Kết quả là AUC 1,0000, giữ 59/62 và chặn 25/25 trên tập OV5640, với cả bốn giới hạn đã nêu ở Mục~\ref{section:5.4}. 
 
 \subsection{Giữ RAM nội cho Wi-Fi và DMA}
 \label{section:5.8.4}

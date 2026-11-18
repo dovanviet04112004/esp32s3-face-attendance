@@ -313,7 +313,7 @@ rồi nghỉ hai khung cho cảm biến bắt kịp. Thời gian phơi lấy the
 đèn 50~Hz, phần lẻ bù bằng gain 1--4 lần.
 
 Ghi một khung màn hình mất 31,7~ms ở SPI 80~MHz, lâu hơn chu kỳ quét 57~Hz của panel, nên tia quét
-vượt con trỏ ghi và ảnh động bị khấc ngang. \texttt{drv\_lcd} sửa bằng hai việc. Thanh ghi
+vượt con trỏ ghi và ảnh động bị khấc ngang. \texttt{drv\_lcd} chặn hiện tượng này bằng hai cách. Thanh ghi
 \texttt{FRMCTR1} hạ tần số quét xuống 23,26~Hz, chu kỳ 42,98~ms, dài hơn thời gian ghi. Trước mỗi lượt
 ghi, driver đọc dòng quét qua chân SDO và chỉ bắt đầu khi bộ đếm ở đoạn 160--200, nên con trỏ ghi có
 ít nhất 7,2~ms chạy đà. Tốc độ khung của ảnh không đổi, vì camera mới là thứ quyết định nhịp đó. Lần
@@ -330,7 +330,7 @@ PCF8574 và các thiết bị khác trên bus đi qua khóa \texttt{m\_i2c}.
 
 Hình~\ref{fig:duong_khung} là đường đi của một khung. Hàng đợi chỉ chở con trỏ 4 byte, nên 300~KB
 điểm ảnh nằm yên ở chỗ DMA đã ghi và ba mô hình cùng đọc tại đó. Mỗi lúc chỉ một task giữ khung nên
-không cần khóa. Cái giá là AI giữ khung suốt lượt chạy, tới khoảng 350~ms, nên camera cần 4 bộ đệm: một
+không cần khóa. AI giữ khung suốt lượt chạy, tới khoảng 350~ms, nên camera cần 4 bộ đệm: một
 cho AI, một nằm chờ trong hàng đợi, một cho \texttt{cam} đang vẽ, một cho cảm biến đang ghi. Với 3 bộ
 đệm, xem trước tụt từ 14,18~fps xuống 8,1~fps.
 
@@ -599,8 +599,8 @@ Hình~\ref{fig:web_may} là danh sách máy chấm công với trạng thái, ph
 Cổng nhân viên là chính ứng dụng web ở bề ngang hẹp, Hình~\ref{fig:dien_thoai}. Bảng đổi thành thẻ từ cùng một bộ cột,
 mỗi cột mang mức ưu tiên để bảng tự bỏ cột theo bề rộng thật. Ứng dụng cài được như PWA với \texttt{manifest.webmanifest} và
 \texttt{sw.js}. Service worker giữ dữ liệu đã tải trong ngăn của từng tài khoản và xóa khi đăng xuất. Đơn gửi lúc mất mạng
-nằm trong IndexedDB ở \texttt{lib/outbox.ts} và được thử lại ở ba lúc: khi trình duyệt báo có mạng, khi mở lại ứng dụng, và
-một nhịp chậm trong lúc mở. Đồ án không dùng Background Sync vì Safari trên iOS không có. Thông báo đẩy đi qua Web
+nằm trong IndexedDB ở \texttt{lib/outbox.ts} và được thử lại khi trình duyệt báo có mạng, khi mở lại ứng dụng, và
+theo một nhịp chậm trong lúc ứng dụng mở. Đồ án không dùng Background Sync vì Safari trên iOS không có. Thông báo đẩy đi qua Web
 Push~\cite{webpush} với khóa VAPID, nửa riêng không rời VPS.
 
 \begin{figure}[!htb]
@@ -617,7 +617,7 @@ Push~\cite{webpush} với khóa VAPID, nửa riêng không rời VPS.
 \subsection{Ứng dụng Android}
 \label{section:4.6.3}
 
-Trên Android, Chrome không cho PWA đã cài tô hai thanh hệ thống theo màu ứng dụng, nên hai dải đó lóe khác màu mỗi lần mở. Đồ án vì thế bọc đúng trang web trong một vỏ Trusted Web Activity~\cite{twa}, gói
+Ứng dụng Android là vỏ Trusted Web Activity~\cite{twa} bọc đúng trang web như thiết kế ở Mục~\ref{section:3.7.2}, gói
 \texttt{vn.io.cckiosk.nhanluc}, dựng bằng Bubblewrap từ \texttt{twa-manifest.json}. Vỏ không mang code nghiệp vụ nào, nên mọi
 thay đổi của web tới ứng dụng như tới trình duyệt. Tệp \texttt{assetlinks.json} trên miền web mang dấu SHA-256 của khóa ký,
 thiếu nó thì Chrome hiện thanh địa chỉ. Tệp APK phát qua GitHub Releases, còn iPhone dùng PWA vì iOS không cài APK.
@@ -632,8 +632,8 @@ Máy chủ chạy bằng Docker Compose~\cite{compose} gồm Traefik~\cite{traef
 lưu. Frontend không nằm ở đây mà build trên Vercel mỗi lần push, dưới tên miền \texttt{app.cckiosk.io.vn}, cùng site với
 \texttt{api.cckiosk.io.vn}, để cookie làm mới là cookie bên thứ nhất và Safari không đăng xuất người dùng iPhone.
 
-EMQX mặc định mở, nên \texttt{emqx.conf} phải đóng lại ba thứ: xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
-\texttt{POST /mqtt/auth}~\cite{emqxhttp}; ACL theo tên đăng nhập; chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM và mất hết khi broker khởi động lại, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
+EMQX mặc định mở, nên \texttt{emqx.conf} đóng nó bằng xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
+\texttt{POST /mqtt/auth}~\cite{emqxhttp}, cùng ACL theo tên đăng nhập và chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM và mất hết khi broker khởi động lại, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
 tồn tại. Đường \texttt{/mqtt/auth} không ra internet: router của Traefik loại tiền tố đó không phân biệt hoa thường, vì Express
 định tuyến không phân biệt mà \texttt{PathPrefix} thì có.
 
