@@ -87,6 +87,20 @@ tác nhân vì đơn đi tới quản lý hoặc nhân sự.
   \draw (#1,#2) rectangle (#3,#4);
   \node[font=\scriptsize, anchor=north west, inner sep=2pt] (sqf) at (#1,#2) {#5};
   \draw (sqf.south west) -- ([xshift=-1.2mm]sqf.south east) -- ([yshift=1.2mm]sqf.south east) -- (sqf.north east);}
+\newcommand{\bcehead}[3]{%
+  \draw (#1,0.15) circle (0.22);
+  \node[font=\scriptsize, below, align=center, inner sep=1pt] at (#1,-0.1) {#2};
+  \draw[densely dashed] (#1,-0.85) -- (#1,#3);}
+\newcommand{\bceboundary}[3]{%
+  \bcehead{#1}{#2}{#3}
+  \draw ({#1-0.42},-0.05) -- ({#1-0.42},0.35);
+  \draw ({#1-0.42},0.15) -- ({#1-0.22},0.15);}
+\newcommand{\bcecontrol}[3]{%
+  \bcehead{#1}{#2}{#3}
+  \draw ({#1+0.08},0.45) -- ({#1-0.03},0.37) -- ({#1+0.08},0.29);}
+\newcommand{\bceentity}[3]{%
+  \bcehead{#1}{#2}{#3}
+  \draw ({#1-0.22},-0.07) -- ({#1+0.22},-0.07);}
 
 \begin{figure}[!htb]
 \centering
@@ -368,6 +382,53 @@ phải chờ lượt dựng đêm sau. Nhân viên hủy đơn khi chưa ai duy�
 \end{tikzpicture}
 \caption{Quy trình gửi và duyệt đơn nghỉ.}
 \label{fig:hd_don}
+\end{figure}
+
+Hình~\ref{fig:td_duyet_don} là bước duyệt của ca này, vẽ theo ba loại lớp phân tích. Lớp biên (boundary) là chỗ tác nhân thao tác,
+tức hộp chờ duyệt trên dashboard. Lớp điều khiển (control) giữ luật của ca, gồm \texttt{LeaveController} nhận yêu cầu và
+\texttt{LeaveService} kiểm quyền rồi ghi. Lớp thực thể (entity) là các bảng mà phép duyệt ghi vào. Lệnh đổi trạng thái chỉ khớp khi đơn
+còn \texttt{PENDING}, nên hai người cùng bấm duyệt thì người sau nhận mã \texttt{REQUEST\_ALREADY\_DECIDED} và số dư không bị trừ hai
+lần. Lệnh này cùng phép trừ số dư và phép đổi ngày công chạy trong một giao dịch.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\footnotesize]
+\sqactor{0}{Người duyệt}{-11.4}
+\bceboundary{2.05}{Hộp chờ\\duyệt}{-11.4}
+\bcecontrol{4.1}{\texttt{Leave}\\\texttt{Controller}}{-11.4}
+\bcecontrol{6.15}{\texttt{Leave}\\\texttt{Service}}{-11.4}
+\bceentity{8.2}{\texttt{Request}}{-11.4}
+\bceentity{10.25}{\texttt{Leave}\\\texttt{Balance}}{-11.4}
+\bceentity{12.3}{\texttt{Attendance}\\\texttt{Day}}{-11.4}
+\sqexec{2.05}{-1.3}{-11.1}
+\sqexec{4.1}{-2.3}{-10.6}
+\sqexec{6.15}{-2.9}{-10.1}
+\draw[sqsync] (0,-1.3) -- node[sqlab] {bấm Duyệt} (1.97,-1.3);
+\draw[sqsync] (2.13,-2.3) -- node[sqlab] {\texttt{POST}\\\texttt{/requests/}\\\texttt{:id/decide}} (4.02,-2.3);
+\draw[sqsync] (4.18,-2.9) -- node[sqlab] {\texttt{decide()}} (6.07,-2.9);
+\sqexec{8.2}{-3.5}{-3.95}
+\draw[sqsync] (6.23,-3.5) -- node[sqlab] {đọc đơn} (8.12,-3.5);
+\draw[sqreply] (8.12,-3.95) -- node[sqlab] {đơn} (6.23,-3.95);
+\sqselfr[0]{6.15}{-4.35}{kiểm quyền}
+\sqexec{8.2}{-5.8}{-6.25}
+\draw[sqsync] (6.23,-5.8) -- node[sqlab] {đổi trạng thái\\nếu \texttt{PENDING}} (8.12,-5.8);
+\draw[sqreply] (8.12,-6.25) -- node[sqlab] {1 dòng} (6.23,-6.25);
+\sqfrag{5.45}{-6.6}{13.1}{-9.75}{alt}
+\node[sqnote, anchor=west] at (6.3,-6.85) {[duyệt]};
+\sqexec{10.25}{-7.45}{-7.8}
+\draw[sqsync] (6.23,-7.45) -- node[sqlab, pos=0.75] {\texttt{pending} giảm,\\\texttt{taken} tăng} (10.17,-7.45);
+\sqexec{12.3}{-8.1}{-8.45}
+\draw[sqsync] (6.23,-8.1) -- node[sqlab, pos=0.86] {ngày vắng\\thành nghỉ} (12.22,-8.1);
+\draw[densely dashed] (5.45,-8.7) -- (13.1,-8.7);
+\node[sqnote, anchor=west] at (6.3,-8.9) {[từ chối]};
+\sqexec{10.25}{-9.25}{-9.55}
+\draw[sqsync] (6.23,-9.25) -- node[sqlab, pos=0.75] {\texttt{pending} giảm} (10.17,-9.25);
+\draw[sqreply] (6.07,-10.1) -- node[sqlab] {đơn đã quyết} (4.18,-10.1);
+\draw[sqreply] (4.02,-10.6) -- node[sqlab] {201} (2.13,-10.6);
+\draw[sqreply] (1.97,-11.1) -- node[sqlab] {báo đã duyệt} (0,-11.1);
+\end{tikzpicture}
+\caption{Trình tự duyệt một đơn nghỉ theo lớp biên, điều khiển và thực thể.}
+\label{fig:td_duyet_don}
 \end{figure}
 
 Bảng~\ref{tab:uc_luong} là ca kỳ lương. Mỗi kỳ thuộc đúng một pháp nhân, vì lương, bảo hiểm,
@@ -956,8 +1017,8 @@ loại phép toán mà ESP-DL có kernel 8 bit. Nhận diện tốn nhiều phé
 \label{section:3.5.1}
 
 Firmware gồm 22 thành phần và \texttt{main}, chia tám tầng như Hình~\ref{fig:tang}. Luật
-chính là phụ thuộc chỉ đi xuống, không đi ngang, và công cụ \texttt{check\_layers.py} chặn
-trong CI. Đây là phân tầng nới: một tầng được gọi thẳng các tầng thấp hơn, không nhất thiết
+chính là phụ thuộc chỉ đi xuống, không đi ngang, và CI chặn mọi phụ thuộc sai luật
+này. Đây là phân tầng nới: một tầng được gọi thẳng các tầng thấp hơn, không nhất thiết
 qua tầng liền kề, và \texttt{common} là cột dùng chung cho mọi tầng. \texttt{ui\_kiosk} và
 \texttt{svc\_attendance} không gọi nhau mà gặp qua hàng đợi do \texttt{main} nối. Driver và
 tầng mạng viết bằng C. Các thành phần \texttt{svc\_*}, \texttt{ai\_engine} và
@@ -1344,13 +1405,13 @@ vượt miền số nguyên chính xác của JSON ở phía người đọc.
 \hline
 \texttt{ts} & Số nguyên & Giờ chấm, mili giây từ epoch, UTC \\
 \hline
-\texttt{direction} & \texttt{IN}, \texttt{OUT} & Hướng vào hoặc ra \\
+\texttt{direction} & \texttt{IN}, \texttt{OUT} & Máy luôn gửi \texttt{IN}; vào hay ra do máy chủ suy từ lượt đầu và lượt cuối trong ngày \\
 \hline
 \texttt{matchScore} & Số thực & Độ tương đồng cosine với mẫu khớp \\
 \hline
 \texttt{livenessScore} & Số thực & Điểm sống, từ 0 tới 1 \\
 \hline
-\texttt{modelVersion} & Số nguyên & Phiên bản mô hình \\
+\texttt{modelVersion} & Số nguyên & Máy ghi cố định 1; phiên bản gói mô hình đi trong nhịp sống \\
 \hline
 \texttt{doorOpened} & Logic & Thanh chắn đã mở \\
 \hline

@@ -164,40 +164,37 @@ ba tầng ở các mốc 16 và 48~px, được 61,1\%, 33,6\% và 5,3\% số m�
 \subsection{Nhập trọng số}
 \label{section:4.3.3}
 
-Script \texttt{import\_minifasnet.py} dựng lại kiến trúc rồi gấp các khác biệt tiền xử lý vào
+Với MiniFASNet, đồ án dựng lại kiến trúc rồi gấp các khác biệt tiền xử lý vào
 trọng số, để code trên chip không phải biết gì về kho gốc. Kho gốc đọc ảnh BGR thang 0--255 nên
-script đảo trục kênh vào và nhân 255 vào tích chập đầu, rồi hoán vị đầu ra để lớp sống đứng ở
+bước nhập đảo trục kênh vào và nhân 255 vào tích chập đầu, rồi hoán vị đầu ra để lớp sống đứng ở
 chỉ số 0. Nhờ vậy mô hình nhận ảnh RGB thang 0--1 đúng như đường tiền xử lý sẵn có.
 
-Script \texttt{import\_frbench.py} nạp trọng số MobileFaceNet-ECA bằng \texttt{load\_state\_dict}
+Trọng số MobileFaceNet-ECA được nạp bằng \texttt{load\_state\_dict}
 chế độ chặt, giữ đúng tên thuộc tính của kho gốc. Chỗ duy nhất khác kho gốc là khối ECA. Bản gốc
 gọi \texttt{expand\_as} trước khi nhân, ONNX ghi bước đó thành phép toán \texttt{Expand}, mà ESP-DL
-3.3.11 không có module tương ứng và cũng không có đường dự phòng: đồ thị như vậy làm máy khởi động lặp. Phép nhân vốn tự phát sóng trên kênh, nên bỏ \texttt{expand\_as} vẫn ra cùng hàm. \texttt{espdl\_op\_check.py} đối chiếu phép toán của
-mô hình với đúng bản esp-dl trước khi nạp.
+3.3.11 không có module tương ứng và cũng không có đường dự phòng: đồ thị như vậy làm máy khởi động lặp. Phép nhân vốn tự phát sóng trên kênh, nên bỏ \texttt{expand\_as} vẫn ra cùng hàm. Trước khi nạp, một bước kiểm đối chiếu
+phép toán của mô hình với đúng bản ESP-DL đang dùng.
 
 \subsection{Lượng tử hóa và tối ưu kernel}
 \label{section:4.3.4}
 
-Mỗi nhánh đi theo chuỗi ở Hình~\ref{fig:chuoi_quant}, chia bốn bước. Mỗi bước là một lệnh
-\texttt{make} có điều kiện qua, chưa qua thì không sang bước sau.
+Mỗi nhánh đi theo chuỗi ở Hình~\ref{fig:chuoi_quant}, chia bốn bước. Mỗi bước có điều kiện
+qua riêng, chưa qua thì không sang bước sau.
 
-Bước đúng kiểm chip tính như mô phỏng. \texttt{make quant-timing} dựng một đồ thị thử, rồi
-đồ thị đó được nạp lên board bằng \texttt{make ai-unit}. Bước này qua khi \texttt{model->test()} khớp ở cả đồ thị
+Bước đúng kiểm chip tính như mô phỏng: đồ án dựng một đồ thị thử rồi nạp nó lên board. Bước này qua khi \texttt{model->test()} khớp ở cả đồ thị
 lẫn các bản cắt giữa đồ thị, và đồ thị khớp mô phỏng từng bit trên khung OV5640 thật. Lệch thì chia
 đôi bằng các bản cắt tới phép toán đầu tiên lệch rồi sửa mô phỏng.
 
-Bước nhanh lặp \texttt{make speed}: chạy bản dò trên board, in thời gian từng module, rồi
-\texttt{espdl\_profile.py} gắn nhãn các đường chậm kèm bản vá xử lý nó. Bản vá được giữ khi bản dò
+Bước nhanh là một vòng lặp: chạy bản dò trên board, in thời gian từng module, rồi một công cụ
+phân tích gắn nhãn các đường chậm kèm bản vá xử lý nó. Bản vá được giữ khi bản dò
 vẫn khớp từng bit và thời gian giảm. Bước này dừng khi bảng xếp hạng chỉ còn nhãn không có bản vá.
 
-Bước chất lượng dựng bốn bậc của thang bằng \texttt{quant-ptq}, \texttt{quant-int16},
-\texttt{quant-qat}, dựng các hàng có bản vá làm tròn bằng \texttt{quant-variants}, rồi
-\texttt{quant-choose} áp luật chọn. Bước chốt chạy lại bản dò trên hàng đã chọn, và
-\texttt{quant-deploy} chép tệp vào \texttt{firmware/models/} rồi khóa phiên bản trong
-\texttt{models.lock.json}.
+Bước chất lượng dựng đủ bốn bậc của thang ở Mục~\ref{section:2.4.2}, thêm các hàng có bản vá
+làm tròn, rồi áp luật chọn. Bước chốt chạy lại bản dò trên hàng đã chọn, chép tệp vào
+\texttt{firmware/models/} và khóa phiên bản trong \texttt{models.lock.json}.
 
-Bản dò ghi đè board, nên mỗi phiên mở bằng \texttt{make board-save} và đóng bằng
-\texttt{make board-restore}. NVS không bao giờ được lưu hay trả lại, vì một số lần khởi động cũ
+Bản dò ghi đè board, nên đầu mỗi phiên đồ án lưu bootloader, bảng phân vùng, hai khe firmware và
+hai khe mô hình, cuối phiên nạp trả lại. NVS không bao giờ được lưu hay trả lại, vì một số lần khởi động cũ
 làm mã lượt lặp (Mục~\ref{section:3.5.4}).
 
 Bước nhanh sinh ra bảy phép toán tự viết ở Bảng~\ref{tab:phep_toan}. Mỗi phép toán là một cặp: bản
@@ -243,7 +240,7 @@ cùng ba lần huấn luyện, lượng tử hóa ở mức Q1 và chạy bằng
 \subsection{Đưa mô hình lên chip}
 \label{section:4.3.5}
 
-\texttt{make pack} gói ba tệp \texttt{.espdl} thành một ảnh có tiêu đề và ghi vào phân vùng
+Bước đóng gói gộp ba tệp \texttt{.espdl} thành một ảnh có tiêu đề và ghi vào phân vùng
 \texttt{models\_0} hoặc \texttt{models\_1}. Lúc khởi động, \texttt{ai\_engine\_init} ánh xạ phân
 vùng bằng mmap, không tốn RAM, rồi ESP-DL dựng từng mô hình qua ba bước: đọc đồ thị, chép trọng số
 sang PSRAM, lập kế hoạch bộ nhớ tensor. Trọng số được chép vì PSRAM chạy bus 8 dây còn flash chạy 4 dây, nên mô hình nhanh hơn từ 3\% tới 25\%. Tensor nào không sống cùng
@@ -433,8 +430,8 @@ chia thẻ nhóm gồm ngôn ngữ, Wi-Fi, độ sáng, âm lượng và trang t
 \label{section:4.4.7}
 
 Firmware có 29 ứng dụng kiểm thử, 25 ứng dụng nằm trong từng thành phần và 4 ứng dụng chung
-\texttt{bench\_ai}, \texttt{bench\_mem}, \texttt{parity}, \texttt{soak}, tổng 266 ca Unity. \texttt{make fw-app-test} nạp
-ứng dụng và chạy kịch bản pytest trên board. Bộ vector vàng ở \texttt{contracts/golden/} giữ hậu xử lý C++
+\texttt{bench\_ai}, \texttt{bench\_mem}, \texttt{parity}, \texttt{soak}, tổng 266 ca Unity. Mỗi ứng dụng được
+nạp lên board và chạy bằng một kịch bản pytest. Bộ vector vàng ở \texttt{contracts/golden/} giữ hậu xử lý C++
 khớp bản Python. Kịch bản đếm cả số lần khởi động, vì dòng tổng kết có thể báo đủ ca đạt trong khi phía trên có panic.
 
 \section{Xây dựng backend và các phân hệ nhân sự}
@@ -446,9 +443,8 @@ khớp bản Python. Kịch bản đếm cả số lần khởi động, vì dò
 Backend là một ứng dụng NestJS~\cite{nestjs} gồm 27 module, nối PostgreSQL qua Prisma~\cite{prisma}. Phần dùng
 chung nằm ở \texttt{src/common/}: guard xác thực và vai, \texttt{ScopeService}, interceptor ghi nhật ký và phát tin
 thay đổi, bộ ghi CSV. Mọi biến môi trường đọc ở một tệp \texttt{env.schema.ts} và kiểm bằng zod lúc khởi động,
-thiếu là dừng ngay. Mỗi route khai vai bằng \texttt{@Roles} hoặc \texttt{@CurrentViewer}, và
-\texttt{check\_routes.py} chặn route thiếu khai báo. \texttt{check\_error\_codes.py} kiểm mọi mã lỗi có câu ở
-cả hai ngôn ngữ.
+thiếu là dừng ngay. Mỗi route khai vai bằng \texttt{@Roles} hoặc \texttt{@CurrentViewer}. CI chặn route thiếu khai báo
+và mã lỗi thiếu câu ở một trong hai ngôn ngữ.
 
 \subsection{Nhận lượt chấm qua MQTT}
 \label{section:4.5.2}
@@ -707,8 +703,8 @@ trong khi cả stack lúc chạy chỉ khoảng 390~MB. Khóa SSH của GitHub b
 trong khi bind mount một tệp lẻ vẫn cầm inode cũ, nên dịch vụ chạy tiếp cấu hình cũ mà không báo gì. Container API chạy
 \texttt{prisma migrate deploy} trước khi nghe, và lùi bản an toàn nhờ luật nở rồi co: bản cũ vẫn chạy được trên lược đồ mới.
 
-Firmware và mô hình đi đường khác. \texttt{make release} tăng số phiên bản, dựng ảnh như CI, commit và theo lượt CI tới khi máy chủ có
-bản mới. \texttt{make models-release} chạy trên máy huấn luyện, vì trọng số không vào kho mã.
+Firmware và mô hình đi đường khác. Lệnh phát hành firmware tăng số phiên bản, dựng ảnh như CI, commit và theo lượt CI tới khi máy chủ
+có bản mới. Lệnh phát hành mô hình chạy trên máy huấn luyện, vì trọng số không vào kho mã.
 
 \subsection{Sao lưu}
 \label{section:4.7.3}
@@ -716,7 +712,7 @@ bản mới. \texttt{make models-release} chạy trên máy huấn luyện, vì 
 Mỗi đêm container sao lưu viết một bản logic, một bản logic riêng cho mẫu khuôn mặt và một bản gốc vật lý, còn PostgreSQL đẩy WAL liên
 tục với \texttt{archive\_timeout} 5 phút. Hai loại cần nhau vì WAL chỉ phát lại được lên bản gốc vật lý. Tệp được nén rồi mã hóa bằng
 khóa công khai của \texttt{age} trước khi chạm đĩa, nên ai chiếm được máy chủ cũng không đọc lại được lịch sử. Mỗi 5 phút tệp mới được
-chép sang một bucket ngoài máy, có khóa 5 ngày chống xóa. Script \texttt{restore-drill.sh} dựng lại cả hai loại vào một PostgreSQL vứt đi
+chép sang một bucket ngoài máy, có khóa 5 ngày chống xóa. Bài diễn tập khôi phục dựng lại cả hai loại vào một PostgreSQL vứt đi
 và bấm giờ, cứ 15 phút API hỏi trạng thái đẩy WAL và gửi mail cho quản trị khi có chuỗi cũ quá 26 giờ. Trong 7 ngày gần nhất hệ thống mất
 tối đa 5 phút dữ liệu, cũ hơn thì mất tối đa một ngày.
 

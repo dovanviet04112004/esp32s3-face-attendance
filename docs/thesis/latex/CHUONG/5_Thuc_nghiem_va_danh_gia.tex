@@ -723,7 +723,7 @@ giả mạo. Khung thu được phải lưu có nhãn, vì phép thử trực ti
 \subsection{Kiểm thử e2e}
 \label{section:5.6.1}
 
-Bộ e2e gồm 78 tệp, chạy bằng \texttt{make be-e2e} như CI: clone sạch, PostgreSQL 16, Redis 7 và EMQX 6.3.1 trong container vứt đi, ba tệp
+Bộ e2e gồm 78 tệp, chạy đúng như CI: clone sạch, PostgreSQL 16, Redis 7 và EMQX 6.3.1 trong container vứt đi, ba tệp
 chạy song song. Lượt mới nhất qua 971/971 ca, gồm 905 ca chạy song song trong 112,2~s và 66 ca phải chạy riêng trong 57,9~s vì đổi trạng thái
 toàn cục. Bảng~\ref{tab:e2e} gom các ca theo nhóm.
 
@@ -755,7 +755,7 @@ Tổng & 971 & \\
 \end{tabular}
 \end{table}
 
-Về phân quyền, \texttt{check\_routes.py} kiểm 260 route và không route nào thiếu khai báo vai. Các ca e2e kiểm từng route chỉ mở cho đúng vai,
+Về phân quyền, bước kiểm route của CI quét 260 route và không route nào thiếu khai báo vai. Các ca e2e kiểm từng route chỉ mở cho đúng vai,
 người ngoài phạm vi không đọc được dòng dữ liệu kể cả khi hỏi thẳng bằng id, và quản lý xem được công việc của cấp dưới mà không xem được
 lương. Tám ca chặn tự quyết: không ai duyệt đơn của chính mình, trả lời khiếu nại về phiếu lương của mình, duyệt người phụ thuộc làm giảm
 thuế của mình hay tự ký hợp đồng của mình.
@@ -768,7 +768,7 @@ Về tính lương, 16 ca của phép tính kiểm thuế lũy tiến theo từn
 thuế, mức đóng bảo hiểm dừng ở 20 lần mức tham chiếu, nghỉ không lương đủ 14 ngày thì không đóng, tạm ứng trừ sau thuế, và thu nhập trừ mọi
 khoản bằng đúng thực lĩnh. Điểm lệch về tiền làm thêm giờ ở Mục~\ref{section:4.5.5} vẫn còn, nên ca kiểm thử phần này khớp luật cũ.
 
-Ngoài backend, 455 ca pytest của phần học máy qua trong 50,8~s, và \texttt{check\_error\_codes.py} kiểm 222 mã lỗi khớp giữa backend và hai
+Ngoài backend, 455 ca pytest của phần học máy qua trong 50,8~s, và bước kiểm mã lỗi xác nhận 222 mã lỗi khớp giữa backend và hai
 tệp ngôn ngữ của dashboard. Firmware có 266 ca Unity trong 29 ứng dụng, chạy riêng từng ứng dụng trên board. Bộ vector vàng kiểm sáu hàm hậu xử lý
 C++ với bản Python qua 24 ca: năm hàm khớp tuyệt đối hoặc tới sáu chữ số, \texttt{align\_face} lệch tối đa 2 bậc trên thang 0--255 vì board
 chỉ có float32.
@@ -776,7 +776,7 @@ chỉ có float32.
 \subsection{Kiểm thử tải}
 \label{section:5.6.2}
 
-Dữ liệu quy mô sinh bằng \texttt{make be-demo}: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 dòng ngày công, 51.209 phiếu lương, 59.731 đơn. \texttt{check\_plans.py} chạy
+Dữ liệu quy mô do bộ sinh dữ liệu demo tạo: 5.006 nhân viên, 456.149 lượt chấm, 1.094.193 dòng ngày công, 51.209 phiếu lương, 59.731 đơn. Bộ kiểm kế hoạch truy vấn chạy
 EXPLAIN 11 câu đọc nặng trên bộ dữ liệu này và không báo lỗi nào, câu gộp công một tháng quét đúng một mảnh tháng của \texttt{AttendanceDay}. Phép kiểm này chỉ đọc kế hoạch của
 các câu có trong danh sách, và phép đo dưới đây tìm ra một câu nằm ngoài danh sách.
 
@@ -842,8 +842,8 @@ Hỗn hợp, thêm chỉ mục & 5 & 5,3 & 1.804 & 5.594 & 6.823 & 0 \\
 
 Phép đo chỉ ra ba nguyên nhân. (i)~Câu đếm lượt chấm chờ duyệt quét cả bảng 456.149 dòng. Prisma gửi điều kiện dưới dạng \texttt{review = CAST(\$1::text AS "PunchReview")}, nên planner
 không chứng minh được nó khớp chỉ mục từng phần \texttt{WHERE review = 'PENDING'}. Câu này mất 1,65--3,26~s trên VPS rảnh, viết bằng hằng chỉ 2,4~ms, và chạy ở mọi trang của bàn giấy.
-Thử thêm chỉ mục \texttt{WHERE review IS NOT NULL} trên cơ sở dữ liệu đo thì còn 0,08~ms, và hai hàng cuối của Bảng~\ref{tab:tai_sau} cho thấy p95 giảm. \texttt{check\_plans.py} không bắt được
-vì nó không có câu này và viết hằng ở chỗ service gửi tham số. (ii)~Healthcheck của EMQX dựng một máy ảo Erlang mỗi 10~s, tốn khoảng 7~s CPU, vượt timeout 5~s từ lúc quá tải. Lúc stack đo
+Thử thêm chỉ mục \texttt{WHERE review IS NOT NULL} trên cơ sở dữ liệu đo thì còn 0,08~ms, và hai hàng cuối của Bảng~\ref{tab:tai_sau} cho thấy p95 giảm. Bộ kiểm kế hoạch truy vấn không bắt
+được vì nó không có câu này và viết hằng ở chỗ service gửi tham số. (ii)~Healthcheck của EMQX dựng một máy ảo Erlang mỗi 10~s, tốn khoảng 7~s CPU, vượt timeout 5~s từ lúc quá tải. Lúc stack đo
 rảnh, VPS vẫn bận trung bình 32,4\%, 15 trong 60 giây bận trên 80\%, và \texttt{/health} của API thật có p95 từ 153~ms lên 966--2.507~ms. (iii)~Mỗi lượt gọi đắt so với một vCPU chia cho
 Node, PostgreSQL, Redis, Traefik, EMQX và MinIO: 9,9 lượt gọi mỗi giây đã chiếm 57\% CPU.
 
