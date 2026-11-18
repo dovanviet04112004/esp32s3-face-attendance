@@ -1,6 +1,40 @@
 \documentclass[../DoAn.tex]{subfiles}
 \begin{document}
 
-\textit{Viết sau cùng.}
+Đồ án làm ra một hệ thống chấm công nhận diện khuôn mặt chạy trên ESP32-S3, gồm máy chấm công, máy chủ quản trị nhân sự
+trên VPS, dashboard web và cổng nhân viên trên điện thoại. Máy chấm công phát hiện, chống giả mạo và nhận diện khuôn mặt
+ngay trên chip, ảnh khuôn mặt không rời máy, và máy vẫn chấm công khi mất mạng. Máy chủ đi từ lượt chấm tới ngày công,
+đơn từ, kỳ lương và phiếu lương có thuế thu nhập cá nhân và bảo hiểm theo các mức pháp lý năm 2026.
+
+Phần trên chip được đo trên board thật. Một lượt ba mô hình mất 353,6~ms lúc rảnh và 406,2~ms khi có xem trước, nhanh hơn
+TFLite Micro dùng esp-nn 10,51 lần. Khoảng cách này đến từ luật lượng tử của ESP-DL và các phép toán đồ án tự viết; riêng
+các bản vá giữ nguyên số nguyên đã giảm 25,0\% thời gian mà đầu ra không đổi một bit. Đáy RAM nội là 28.675~B, trên mốc
+24~KB. Bộ phát hiện đạt AP 0,9544 trên mặt từ 38~px. Nhánh chống giả mạo chặn 25/25 khung giả và giữ 59/62 mặt thật trên
+87 khung OV5640, vì mô hình được chọn bằng chính đường ảnh của chip: bản tự huấn luyện chỉ đạt AUC 0,6473 trên
+85 khung cùng loại.
+
+Đường lượt chấm ghi flash trước, gửi QoS 1, chống trùng bằng ràng buộc unique trên cặp máy và mã lượt, và xả 604 bản ghi
+tồn qua TLS không lỗi. Firmware và gói mô hình đều có hai khe, bản mới tự xác nhận sau 30~s chạy thử, và chín bản kê
+khai sai đều bị từ chối đúng tên. Backend qua 971/971 ca e2e, gồm phân quyền theo dòng dữ liệu, tính công và tính
+lương.
+
+Hệ thống còn năm hạn chế. (i)~NF1 chỉ đạt lúc rảnh: ở điểm vận hành, bus PSRAM dùng chung với đường xem trước kéo một lượt
+lên 406,2~ms. (ii)~Nhận diện sụt 3,7\% TAR trên CFP-FP sau lượng tử hóa dù đã qua QAT, nên máy từ chối oan nhiều hơn với
+mặt nghiêng; trọng số nhận diện học trên MS-Celeb-1M chỉ được dùng cho nghiên cứu. (iii)~Tập OV5640 đã dùng để chọn mô
+hình, cả 25 khung giả đều là màn hình điện thoại, chưa có khung ảnh in có nhãn, và FAR, FRR với nhiều người chưa đo. (iv)~Trên
+VPS 1 vCPU, 2~GB với dữ liệu 5.000 nhân viên, hệ thống chịu được 10 phiên nhưng sập ở 20 phiên, và lượt lương 4.776 người
+thất bại vì BullMQ mất khóa; ba nguyên nhân ở Mục~\ref{section:5.6.2} chưa được sửa. (v)~Máy còn lắp trên breadboard,
+mạch đế chưa in, chưa có vỏ và thanh chắn; Flash Encryption và Secure Boot chưa bật, nên người có máy trong tay đọc được JWT.
+
+Việc trước mắt là sửa ba lỗi của máy chủ rồi đo lại trên VPS: thêm chỉ mục \texttt{WHERE review IS NOT NULL}, với câu đếm
+lượt chờ duyệt còn 0,08~ms trên dữ liệu đo; thay healthcheck của EMQX bằng một phép kiểm không dựng máy ảo Erlang; sửa việc
+nền tính lương để BullMQ không mất khóa khi lượt chạy kéo dài. Tiếp theo là thu khung OV5640 có nhãn của ảnh in và thẻ,
+đo FAR, FRR với nhiều người trên một tập không dùng để chọn mô hình, và chạy các phép thử còn lại ở
+Bảng~\ref{tab:chua_do}. Nhánh nhận diện cần huấn luyện lại trên dữ liệu được phép dùng thương mại, và thử QAT dài hơn
+2.000 bước để đưa TAR lên cửa 0,822.
+
+Về phần cứng, mạch đế cần được in, máy cần vỏ và thanh chắn thật, rồi đo dòng tiêu thụ và thời gian chạy bằng pin. Bước
+cuối trước khi lắp đặt là bật Flash Encryption, Secure Boot và mã hóa NVS. Về nghiệp vụ, ca làm qua nửa đêm chưa có thiết
+kế và hiện bị từ chối với mã \texttt{SHIFT\_CROSSES\_MIDNIGHT}, nên doanh nghiệp có ca vắt qua 0 giờ chưa dùng được hệ thống.
 
 \end{document}

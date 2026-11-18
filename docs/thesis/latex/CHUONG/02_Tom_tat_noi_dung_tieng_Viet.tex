@@ -6,8 +6,21 @@
 \end{center}
 \vspace{1cm}
 
-% Viết sau cùng, 200-350 từ, khi đã có đủ kết quả Chương 5.
-\textit{Phần này viết sau cùng, khi đã có đủ kết quả của Chương~\ref{chapter:Experiment}.}
+Máy chấm công bằng khuôn mặt phải chặn được ảnh giả và không nên gửi ảnh khuôn mặt ra khỏi máy, trong khi ba mô hình phát
+hiện, chống giả mạo và nhận diện sau lượng tử hóa vẫn nặng hơn bốn lần SRAM của một vi điều khiển. Đồ án xây dựng một hệ
+thống chấm công gồm máy chấm công trên ESP32-S3, máy chủ quản trị nhân sự và cổng nhân viên trên điện thoại.
+
+Máy chấm công chạy YuNet, MiniFASNetV1SE và MobileFaceNet-ECA trên thư viện ESP-DL. Mỗi nhánh đi qua một thang lượng tử hóa
+bốn bậc, và cấu hình được chọn bằng thước của chính máy. Các phép toán tự viết bằng lệnh vector của chip đưa một lượt ba mô
+hình từ 444,8~ms xuống 333,8~ms mà đầu ra không đổi một bit. Bản đang chạy mất 353,6~ms lúc rảnh và 406,2~ms khi có xem
+trước, nhanh hơn TFLite Micro 10,51 lần. Lượt chấm được ghi xuống flash trước rồi mới gửi qua MQTT QoS 1, và máy chủ bỏ
+bản trùng bằng ràng buộc unique, nên mất mạng không làm mất lượt chấm. Máy chủ NestJS và PostgreSQL đi từ lượt chấm tới
+ngày công, nghỉ phép, thuế thu nhập cá nhân, bảo hiểm và phiếu lương, kèm dashboard web, PWA và ứng dụng Android.
+
+Trên 87 khung chụp bằng camera OV5640 của máy, nhánh chống giả mạo chặn 25/25 khung giả và giữ 59/62 mặt thật. Bộ phát hiện
+đạt AP 0,9544 trên mặt từ 38~px. Backend qua 971/971 ca kiểm thử e2e. Phần chưa đạt được ghi cùng số đo: nhận diện sụt
+3,7\% sau lượng tử hóa, chưa có khung ảnh in để đo và chưa đo FAR, FRR với nhiều người. Trên VPS 1 vCPU với dữ liệu 5.000
+nhân viên, máy chủ chịu được 10 phiên đồng thời nhưng sập ở 20 phiên, và lượt tính lương cho 4.776 người chưa chạy xong.
 
 \vspace{1cm}
 \begin{flushright}
