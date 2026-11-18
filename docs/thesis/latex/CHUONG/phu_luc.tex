@@ -80,7 +80,7 @@ tệp \mbox{\texttt{storage\_format.h}} của thành phần \texttt{sys\_storage
 \hline
 29 & 1 & \texttt{flags} & Đã mở thanh chắn, thu lúc mất mạng, giờ chưa đồng bộ NTP \\
 \hline
-30 & 2 & \texttt{model\_version} & Luôn ghi 1, máy chủ kiểm rồi bỏ \\
+30 & 2 & \texttt{model\_version} & 16 bit thấp của crc32 tiêu đề gói mô hình đang chạy, máy chủ kiểm rồi bỏ \\
 \hline
 32 & 12 & \texttt{reserved} & Để dành \\
 \hline

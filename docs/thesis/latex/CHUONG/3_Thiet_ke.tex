@@ -1411,7 +1411,7 @@ vượt miền số nguyên chính xác của JSON ở phía người đọc.
 \hline
 \texttt{livenessScore} & Số thực & Điểm sống, từ 0 tới 1 \\
 \hline
-\texttt{modelVersion} & Số nguyên & Máy ghi cố định 1; phiên bản gói mô hình đi trong nhịp sống \\
+\texttt{modelVersion} & Số nguyên & 16 bit thấp của crc32 tiêu đề gói mô hình đang chạy, khớp bốn chữ số cuối của mã gói trong nhịp sống \\
 \hline
 \texttt{doorOpened} & Logic & Thanh chắn đã mở \\
 \hline
