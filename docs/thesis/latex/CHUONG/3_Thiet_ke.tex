@@ -515,8 +515,7 @@ thì đầu vào mới bị đóng băng. Sau khi chốt, sai lệch không sử
 \end{figure}
 
 Bảng~\ref{tab:uc_duyet_may} là ca đưa một máy mới vào hệ thống. Mọi máy nhận đúng cùng một
-ảnh firmware, nên token lô không phân biệt được máy thật với máy giả. Mã nhận máy chỉ đọc
-được trên màn hình thật, nên người duyệt phải đứng trước đúng cái máy đó.
+ảnh firmware, nên token lô không phân biệt được máy thật với máy giả. Mã nhận máy chỉ hiện trên màn hình thật, buộc người duyệt đứng trước đúng cái máy đó.
 
 \begin{table}[!htb]
 \centering
@@ -947,8 +946,7 @@ vẫn giành được lượt của người đứng giữa khung, vì mặt m�
 lửng ở mép không bị đóng mở lượt liên tục.
 
 Máy bám một mặt chính. Mặt đang bám được giữ nếu lần phát hiện sau còn hộp trùng nó, nên
-người thứ hai to hơn bước vào không cướp lượt của người đang được xác thực. Bộ phát hiện
-trượt lẻ tẻ ngay cả trên mặt đứng yên, nên máy chỉ bỏ mặt đang bám sau 2 lần trượt liên tiếp.
+người thứ hai to hơn bước vào không cướp lượt của người đang được xác thực. Bộ phát hiện trượt lẻ tẻ ngay cả trên mặt đứng yên. Máy chỉ bỏ mặt đang bám sau 2 lần trượt liên tiếp.
 
 Hai kết luận xấu có số lần thử khác nhau. Mặt thật thỉnh thoảng rơi dưới ngưỡng sống trên
 một khung đơn lẻ, nên máy thử 3 lần mới báo giả mạo, mỗi lần thử cách nhau 3 lần phát hiện.
@@ -1097,9 +1095,7 @@ như camera, cảm biến, âm thanh đặt cao hơn giao diện và việc nề
 Khung camera đi tới AI qua hàng đợi độ sâu 1, và người gửi lấy khung cũ ra rồi mới gửi, nên
 AI luôn xử lý khung mới nhất và trễ không tích lũy. Khung không đi tới task giao diện:
 \texttt{cam} vẽ ngay tại chỗ nó đang cầm khung, còn \texttt{ui} chỉ đưa xuống một ảnh lớp
-phủ. Chỉ \texttt{cam} ghi vào panel, kể cả các màn phủ kín, nên panel không cần khóa và không
-có lượt bàn giao nào gây xé hình. Điểm chạm và phán quyết hiển thị là mức, người đọc chỉ cần
-giá trị mới nhất, nên hai thứ này đi bằng biến nguyên tử và ô chung có khóa ngắn.
+phủ. Chỉ \texttt{cam} ghi vào panel, kể cả các màn phủ kín: panel không cần khóa và không có lượt bàn giao nào gây xé hình. Điểm chạm và phán quyết hiển thị là mức, người đọc chỉ cần giá trị mới nhất; hai thứ này đi bằng biến nguyên tử và ô chung có khóa ngắn.
 
 Hình~\ref{fig:task} vẽ các task nối với nhau ra sao. Mỗi mũi tên liền là một hàng đợi, số trong ngoặc là mức ưu tiên. Task AI đứng một
 mình ở lõi 1 và chỉ nhận khung mới nhất. Kết quả của nó, tín hiệu có người từ ToF và lệnh từ máy chủ đều đổ về các task ở lõi 0 qua hàng
@@ -1252,9 +1248,7 @@ và CRC sai thì rơi về tệp \texttt{.bak}.
 Hình~\ref{fig:luot_cham} là đường đi của một lượt chấm, thiết kế cho NF5. Bản ghi xuống flash trước
 khi có ai biết tới nó, hàng đợi trong RAM chỉ là lời nhắc. Con trỏ đã gửi chỉ tiến sau khi broker
 trả PUBACK, nên mất điện giữa chừng làm gửi lại chứ không làm mất, và máy chủ bỏ bản trùng bằng ràng
-buộc unique. Đây là giao ít nhất một lần, có chủ ý. API nghe broker bằng một phiên bền và chỉ trả ack
-sau khi ghi xong, nên lượt tới lúc API khởi động lại nằm chờ ở broker. Broker không lưu phiên xuống
-đĩa, nên chính EMQX khởi động lại thì mất những tin đang chờ, tối đa 10.000 tin mỗi phiên.
+buộc unique. Đây là giao ít nhất một lần, có chủ ý. API nghe broker bằng một phiên bền và chỉ trả ack sau khi ghi xong. Lượt tới lúc API đang khởi động lại vì thế nằm chờ ở broker. Broker không lưu phiên xuống đĩa: chính EMQX khởi động lại thì mất những tin đang chờ, tối đa 10.000 tin mỗi phiên.
 
 \begin{figure}[!htb]
 \centering
@@ -1427,8 +1421,7 @@ máy chủ thấy số cũ thì đẩy phần còn thiếu, kể cả các lư�
 lúc máy mất mạng sẽ không bao giờ tới, và khuôn mặt người đã nghỉ việc vẫn mở được thanh chắn.
 
 Hình~\ref{fig:td_dang_ky} là trình tự đăng ký một khuôn mặt. Máy chỉ xóa cờ chưa báo của một mẫu khi broker trả PUBACK, nên mẫu chụp lúc
-mất mạng được gửi lại khi nối lại. Máy chủ giữ bản mã hóa và đẩy mẫu xuống các máy khác của người đó chạy cùng phiên bản mô hình, nên
-người đó không phải đứng chụp lại ở từng máy.
+mất mạng được gửi lại khi nối lại. Máy chủ giữ bản mã hóa và đẩy mẫu xuống các máy khác của người đó chạy cùng phiên bản mô hình; người đó không phải đứng chụp lại ở từng máy.
 
 \begin{figure}[!htb]
 \centering
@@ -1462,7 +1455,7 @@ người đó không phải đứng chụp lại ở từng máy.
 \end{figure}
 
 Vòng đời máy đi qua \texttt{PENDING}, \texttt{APPROVED}, \texttt{REVOKED}. Thu hồi ghi dòng, xóa cache
-của broker rồi đá phiên, theo đúng thứ tự đó. Phải đá phiên vì broker chỉ kiểm JWT lúc nối, nên không đá thì máy đã thu hồi vẫn gửi tin qua phiên cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, nên phiên sót lại không ghi được gì.
+của broker rồi đá phiên, theo đúng thứ tự đó. Phải đá phiên vì broker chỉ kiểm JWT lúc nối, nên không đá thì máy đã thu hồi vẫn gửi tin qua phiên cũ. Máy chủ còn chỉ nhận bản tin từ máy \texttt{APPROVED}, và phiên sót lại không ghi được gì.
 
 Hình~\ref{fig:td_duyet_may} là trình tự đưa một máy mới vào hệ thống. Trước khi được duyệt, máy nhận 202 ở mỗi lần hỏi và vẫn chấm công,
 giữ lượt trong flash. Broker không tự kiểm JWT mà hỏi API ở mỗi lần nối, nên máy đã bị thu hồi không nối lại được.
@@ -1561,8 +1554,7 @@ công và lượt chấm, ở giữa là tổ chức và thời gian, bên phả
 \end{figure}
 
 Năm quyết định chi phối các bảng này: (i)~dữ liệu có thời hạn không bị sửa đè,
-\texttt{CompensationRecord} và \texttt{PayrollPolicy} mang ngày hiệu lực, tăng lương là thêm một dòng,
-nên phiếu tháng cũ vẫn tính được đúng; (ii)~lượt chấm thô tách khỏi ngày công,
+\texttt{CompensationRecord} và \texttt{PayrollPolicy} mang ngày hiệu lực, tăng lương là thêm một dòng và phiếu tháng cũ vẫn tính được đúng; (ii)~lượt chấm thô tách khỏi ngày công,
 \texttt{AttendanceRecord} là sự kiện còn \texttt{AttendanceDay} là kết quả, mỗi người mỗi ngày một
 dòng; (iii)~phiếu lương chép lại những gì nó dựa vào, gồm tài khoản ngân hàng và dòng chính sách đã
 dùng, nên đổi hồ sơ về sau không đổi phiếu đã phát; (iv)~luật mà vi phạm là sai công hay sai tiền thì đặt thành ràng buộc của cơ sở dữ liệu, gồm
@@ -1681,11 +1673,9 @@ trong lúc ấy, nên các màn này tự về màn quét sau 30~s không chạm
 Máy tự vẽ giao diện bằng một \texttt{Canvas}, không dùng thư viện LVGL. Màn hình chính là video xem trước,
 và thêm LVGL là có hai bộ vẽ cùng ghi một panel SPI. Vì vậy nút, danh sách, thanh trượt, bàn phím đều
 tự viết, và không có gì tự chặn chữ tràn khỏi panel 320~px, nên mọi màn bắt buộc vẽ qua tầng \texttt{theme}, giữ bảng màu, thang chữ, nấc giãn cách,
-và tầng \texttt{widgets}, giữ các phần tử lặp lại cùng phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId},
-nên thiếu một bản dịch thì không biên dịch được. Tiếng Việt là mặc định.
+và tầng \texttt{widgets}, giữ các phần tử lặp lại cùng phép xếp dọc. Chuỗi hiển thị khai bằng \texttt{enum class StrId}, và thiếu một bản dịch là lỗi biên dịch. Tiếng Việt là mặc định.
 
-Khung ngắm vẽ theo chính cổng cỡ mặt của pipeline. Đường xem trước phóng khung camera lên panel với hệ số
-1,502, nên cổng 100~px ứng với 150~px trên panel. Người ta lấp khung bằng cả cái đầu, mà tỉ lệ đầu trên mặt là 1,48, nên khung rộng 240 $\times$ 296~px: đầu lấp kín khung cho hộp mặt 108~px trong khung camera,
+Khung ngắm vẽ theo chính cổng cỡ mặt của pipeline. Đường xem trước phóng khung camera lên panel với hệ số 1,502: cổng 100~px ứng với 150~px trên panel. Người ta lấp khung bằng cả cái đầu, mà tỉ lệ đầu trên mặt là 1,48, nên khung rộng 240 $\times$ 296~px: đầu lấp kín khung cho hộp mặt 108~px trong khung camera,
 dư 8~px trên cổng. Khung trắng khi chờ, hổ phách khi cần người dùng sửa, xanh dương khi pipeline đang làm
 việc, xanh lá khi đạt. Dòng nhắc dưới khung đi theo đúng các cổng: Đưa khuôn mặt vào khung, Lại gần hơn, Lùi
 lại một chút, Đang nhận diện. Kết quả đạt hiện thành thẻ 1,5~s. Máy chỉ phát tiếng khi một việc đã xong là
@@ -1727,7 +1717,7 @@ phải xác nhận, còn việc lặp lại nhiều như duyệt đơn thì khô
 Thiết kế giả định công nhân, nhân viên kho, lái xe, bảo vệ chỉ có điện thoại, nên cổng nhân viên dựng riêng
 cho màn hẹp (F14). Thanh bên đổi thành thanh tab dưới đáy với đúng năm ô: Trang của tôi, Lịch ca, Công của tôi,
 Đơn từ, Phiếu lương. Vai có thêm việc đổi ô cuối thành Thêm. Bảng đổi thành thẻ, bộ lọc đổi thành tấm trượt từ đáy, hành động chính neo ở đáy trong tầm ngón
-cái. Điện thoại cố ý không chấm công được: vị trí GPS giả được bằng phần mềm, nên thêm đường đó là bỏ qua chống
+cái. Điện thoại cố ý không chấm công được: vị trí GPS giả được bằng phần mềm, và thêm đường đó là bỏ qua chống
 giả mạo và so mẫu khuôn mặt của máy chấm công.
 
 Mạng yếu được coi là trạng thái thường (F15). Dữ liệu đã xem nằm trong ngăn riêng của tài khoản và

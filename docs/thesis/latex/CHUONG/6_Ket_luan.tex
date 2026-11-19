@@ -24,7 +24,7 @@ mặt nghiêng; trọng số nhận diện học trên MS-Celeb-1M chỉ đượ
 hình, cả 25 khung giả đều là màn hình điện thoại, chưa có khung ảnh in có nhãn, và FAR, FRR với nhiều người chưa đo. (iv)~Trên
 VPS 1 vCPU, 2~GB với dữ liệu 5.000 nhân viên, hệ thống chịu được 10 phiên nhưng sập ở 20 phiên, và lượt lương 4.776 người
 thất bại vì BullMQ mất khóa; ba nguyên nhân ở Mục~\ref{section:5.6.2} chưa được sửa. (v)~Máy còn lắp trên breadboard,
-mạch đế chưa in, chưa có vỏ và thanh chắn; Flash Encryption và Secure Boot chưa bật, nên người có máy trong tay đọc được JWT.
+mạch đế chưa in, chưa có vỏ và thanh chắn; khi Flash Encryption và Secure Boot chưa bật, người có máy trong tay đọc được JWT.
 
 Việc trước mắt là sửa ba lỗi của máy chủ rồi đo lại trên VPS: thêm chỉ mục \texttt{WHERE review IS NOT NULL}, với câu đếm
 lượt chờ duyệt còn 0,08~ms trên dữ liệu đo; thay healthcheck của EMQX bằng một phép kiểm không dựng máy ảo Erlang; sửa việc

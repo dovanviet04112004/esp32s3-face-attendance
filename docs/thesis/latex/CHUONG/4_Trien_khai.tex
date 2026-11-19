@@ -144,8 +144,7 @@ Nhận diện & Nhập MobileFaceNet-ECA của FRBench~\cite{frbench} & MS-Celeb
 
 Dữ liệu đi qua ba tầng: thư mục \texttt{raw/} chỉ đọc, \texttt{interim/} đã chuẩn hóa, và tệp
 chia tập ghi kèm seed và sha256. Mỗi lần huấn luyện ghi vào một thư mục mang ngày, mã commit
-và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên mỗi kết quả truy được về đúng lần huấn luyện. Script nhập trọng số viết ra thư mục cùng cấu
-trúc đó, nên lượng tử hóa không phân biệt mô hình tự huấn luyện hay nhập.
+và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên mỗi kết quả truy được về đúng lần huấn luyện. Script nhập trọng số viết ra thư mục cùng cấu trúc đó, để bước lượng tử hóa không phải phân biệt mô hình tự huấn luyện hay nhập.
 
 \subsection{Huấn luyện YuNet}
 \label{section:4.3.2}
@@ -244,7 +243,7 @@ Bước đóng gói gộp ba tệp \texttt{.espdl} thành một ảnh có tiêu 
 \texttt{models\_0} hoặc \texttt{models\_1}. Lúc khởi động, \texttt{ai\_engine\_init} ánh xạ phân
 vùng bằng mmap, không tốn RAM, rồi ESP-DL dựng từng mô hình qua ba bước: đọc đồ thị, chép trọng số
 sang PSRAM, lập kế hoạch bộ nhớ tensor. Trọng số được chép vì PSRAM chạy bus 8 dây còn flash chạy 4 dây, nên mô hình nhanh hơn từ 3\% tới 25\%. Tensor nào không sống cùng
-lúc thì xếp chồng lên cùng một chỗ, nên mỗi mô hình chỉ cần một khối. Bảng~\ref{tab:bo_nho_mo_hinh} là bộ nhớ và thời gian dựng của từng mô hình.
+lúc thì xếp chồng lên cùng một chỗ, và mỗi mô hình chỉ cần một khối. Bảng~\ref{tab:bo_nho_mo_hinh} là bộ nhớ và thời gian dựng của từng mô hình.
 
 \begin{table}[!htb]
 \centering
@@ -315,9 +314,8 @@ rồi nghỉ hai khung cho cảm biến bắt kịp. Thời gian phơi lấy the
 Ghi một khung màn hình mất 31,7~ms ở SPI 80~MHz, lâu hơn chu kỳ quét 57~Hz của panel, nên tia quét
 vượt con trỏ ghi và ảnh động bị khấc ngang. \texttt{drv\_lcd} chặn hiện tượng này bằng hai cách. Thanh ghi
 \texttt{FRMCTR1} hạ tần số quét xuống 23,26~Hz, chu kỳ 42,98~ms, dài hơn thời gian ghi. Trước mỗi lượt
-ghi, driver đọc dòng quét qua chân SDO và chỉ bắt đầu khi bộ đếm ở đoạn 160--200, nên con trỏ ghi có
-ít nhất 7,2~ms chạy đà. Tốc độ khung của ảnh không đổi, vì camera mới là thứ quyết định nhịp đó. Lần
-đọc đầu ngay sau một lượt ghi luôn ra giá trị ngoài dải, nên driver đọc lại tối đa 4 lần. Không đọc lại thì 616/1.260 khung ghi lệch nhịp.
+ghi, driver đọc dòng quét qua chân SDO và chỉ bắt đầu khi bộ đếm ở đoạn 160--200, để con trỏ ghi có ít nhất 7,2~ms chạy đà. Tốc độ khung của ảnh không đổi, vì camera mới là thứ quyết định nhịp đó. Lần
+đọc đầu ngay sau một lượt ghi luôn ra giá trị ngoài dải, và driver đọc lại tối đa 4 lần. Không đọc lại thì 616/1.260 khung ghi lệch nhịp.
 
 Các driver còn lại mỏng hơn. \texttt{drv\_touch} chạy trình tự chọn địa chỉ GT911 rồi đọc điểm chạm theo
 ngắt. \texttt{drv\_tof} đặt cực tính ngắt và trả khoảng cách, task \texttt{tof} đổi nó thành hai cạnh có
@@ -328,7 +326,7 @@ PCF8574 và các thiết bị khác trên bus đi qua khóa \texttt{m\_i2c}.
 \subsection{Đường đi của một khung}
 \label{section:4.4.3}
 
-Hình~\ref{fig:duong_khung} là đường đi của một khung. Hàng đợi chỉ chở con trỏ 4 byte, nên 300~KB
+Hình~\ref{fig:duong_khung} là đường đi của một khung. Hàng đợi chỉ chở con trỏ 4 byte; 300~KB
 điểm ảnh nằm yên ở chỗ DMA đã ghi và ba mô hình cùng đọc tại đó. Mỗi lúc chỉ một task giữ khung nên
 không cần khóa. AI giữ khung suốt lượt chạy, tới khoảng 350~ms, nên camera cần 4 bộ đệm: một
 cho AI, một nằm chờ trong hàng đợi, một cho \texttt{cam} đang vẽ, một cho cảm biến đang ghi. Với 3 bộ
@@ -519,8 +517,7 @@ bị từ chối với mã \texttt{SHIFT\_CROSSES\_MIDNIGHT}, vì mọi phép t�
 Số dư giữ chỗ bằng một câu \texttt{UPDATE} có điều kiện, kiểm và giữ trong cùng một lệnh, vì hai đơn đọc cùng một số
 dư sẽ cùng qua phép kiểm tách rời. Câu lệnh không chạm dòng nào thì trả \texttt{LEAVE\_BALANCE\_SHORT}. Đơn chồng ngày
 do ràng buộc loại trừ của PostgreSQL chặn. Lượt duyệt cũng là ghi có điều kiện \texttt{state = PENDING}, nên hai người
-duyệt cùng lúc thì người sau nhận \texttt{REQUEST\_ALREADY\_DECIDED}. Đơn mang \texttt{clientKey} do máy gửi sinh ra,
-nên điện thoại gửi lại lúc mạng yếu chỉ nhận về đơn đã có, không thành hai đơn.
+duyệt cùng lúc thì người sau nhận \texttt{REQUEST\_ALREADY\_DECIDED}. Đơn mang \texttt{clientKey} do máy gửi sinh ra; điện thoại gửi lại lúc mạng yếu chỉ nhận về đơn đã có, không thành hai đơn.
 
 \subsection{Tính lương}
 \label{section:4.5.5}
@@ -537,8 +534,7 @@ sách tại ngày cuối kỳ, nên mức tham chiếu đổi giữa năm 2026 l
 đường độc lập: liên tục tại mọi ranh giới bậc, và khớp công thức rút gọn của từng bậc.
 
 Bấm chạy thì \texttt{execute} kiểm trước những gì chắc chắn làm lượt hỏng, rồi xếp việc vào hàng đợi. \texttt{runNow}
-chia 500 người một lô, mỗi lô một giao dịch, nên không có phiếu nào thiếu dòng. Khóa đặt trên dòng pháp nhân, dòng kỳ
-và dòng lượt, nên hai tài khoản bấm cùng lúc gặp đúng một luật. Một điểm còn lệch: hàm này chỉ miễn phần chênh của tiền
+chia 500 người một lô, mỗi lô một giao dịch, nên không có phiếu nào thiếu dòng. Khóa đặt trên dòng pháp nhân, dòng kỳ và dòng lượt, để hai tài khoản bấm cùng lúc gặp đúng một luật. Một điểm còn lệch: hàm này chỉ miễn phần chênh của tiền
 làm thêm giờ theo Thông tư 111/2013, trong khi văn bản hướng dẫn Luật Thuế thu nhập cá nhân
 2025~\cite{luattncn2025} được cho là miễn toàn bộ. Đồ án chưa đọc được nguyên văn nên chưa sửa code.
 
@@ -632,7 +628,7 @@ Máy chủ chạy bằng Docker Compose~\cite{compose} gồm Traefik~\cite{traef
 lưu. Frontend không nằm ở đây mà build trên Vercel mỗi lần push, dưới tên miền \texttt{app.cckiosk.io.vn}, cùng site với
 \texttt{api.cckiosk.io.vn}, để cookie làm mới là cookie bên thứ nhất và Safari không đăng xuất người dùng iPhone.
 
-EMQX mặc định mở, nên \texttt{emqx.conf} đóng nó bằng xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
+EMQX mặc định mở; \texttt{emqx.conf} đóng nó bằng xác thực hai tầng, tầng đầu cho tài khoản dịch vụ, tầng sau hỏi
 \texttt{POST /mqtt/auth}~\cite{emqxhttp}, cùng ACL theo tên đăng nhập và chứng thư thật do CA riêng ký. Retained mặc định nằm ở RAM và mất hết khi broker khởi động lại, nên phải đặt ghi xuống đĩa, nếu không máy đang tắt sẽ trông như chưa từng
 tồn tại. Đường \texttt{/mqtt/auth} không ra internet: router của Traefik loại tiền tố đó không phân biệt hoa thường, vì Express
 định tuyến không phân biệt mà \texttt{PathPrefix} thì có.

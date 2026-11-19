@@ -400,8 +400,7 @@ Trọng số nhập từ FRBench được huấn luyện trên MS-Celeb-1M~\cite
 mát ArcFace, công thức~\eqref{eq:arcface}~\cite{arcface}. Trong đó $\theta_j$ là góc
 giữa vector đặc trưng và tâm lớp $j$, $y$ là lớp đúng, $s$ là hệ số tỉ lệ và $m$
 là biên góc; bài báo gốc dùng $s = 64$, $m = 0{,}5$. Cộng $m$ vào góc của lớp đúng
-buộc mạng đẩy các lớp xa nhau trên mặt cầu, nên lúc chạy không cần lớp phân loại
-nữa, chỉ cần so góc giữa hai vector. Bản nhập vượt mọi bản tự huấn luyện sau
+buộc mạng đẩy các lớp xa nhau trên mặt cầu. Lúc chạy, máy bỏ lớp phân loại và chỉ so góc giữa hai vector. Bản nhập vượt mọi bản tự huấn luyện sau
 lượng tử hóa: TAR tại FAR $10^{-3}$ trên AgeDB-30~\cite{agedb} đạt 0,841 so với
 0,599. Đổi lại, MS-Celeb-1M chỉ dành cho nghiên cứu, nên muốn thương mại hóa phải
 huấn luyện lại trên dữ liệu khác.
@@ -541,8 +540,7 @@ lớp như vậy, tốn khoảng 16~ms mà AUC chỉ tăng 0,002, mức nằm tr
 thước đo.
 
 Huấn luyện có lượng tử (QAT) học tiếp tham số trên đồ thị đã mô phỏng lượng
-tử~\cite{jacob2018}. Phép làm tròn $Q$ có đạo hàm bằng 0 gần như khắp nơi, nên lan
-truyền ngược coi nó như hàm đồng nhất, gọi là ước lượng đi
+tử~\cite{jacob2018}. Phép làm tròn $Q$ có đạo hàm bằng 0 gần như khắp nơi, và lan truyền ngược coi nó như hàm đồng nhất để gradient đi qua được, gọi là ước lượng đi
 thẳng~\cite{bengio2013}, công thức~\eqref{eq:ste}. Đây là bậc duy nhất cứu được
 phần nào mô hình nhận diện. TAR tại FAR $10^{-3}$ trên CFP-FP của bản FP32 là
 0,830, tốt nhất sau hiệu chuẩn là 0,775, và sau 2.000 bước QAT đạt 0,799. Mức này
@@ -604,8 +602,7 @@ ghi PSRAM hơn.
 Kỹ thuật chính là gộp phép toán và chia dải. Trong khối bottleneck ngược của
 MobileNetV2~\cite{mobilenetv2}, tích chập 1$\times$1 mở rộng ghi ra một tensor lớn
 rồi depthwise đọc lại nó. Phép toán \texttt{PointwiseDepthwise} của đồ án tính từng
-dải hàng của tensor đó vào một vùng đệm nằm gọn trong bộ đệm dữ liệu 64~KB rồi chạy
-depthwise ngay trên vùng đệm, nên tensor giữa không ra PSRAM. Chỗ cắt dải không đổi
+dải hàng của tensor đó vào một vùng đệm nằm gọn trong bộ đệm dữ liệu 64~KB rồi chạy depthwise ngay trên vùng đệm; tensor giữa không bao giờ ra PSRAM. Chỗ cắt dải không đổi
 số nào, vì mỗi điểm ra chỉ đọc ô $k \times k$ của nó. Tích chập chiếu, ReLU6 và
 MaxPool đứng sau depthwise được nuốt vào cùng vòng đó khi thỏa điều kiện. Tích chập
 1$\times$1 có trọng số lớn hơn bộ đệm thì cắt theo kênh ra thành từng lát. Tích
@@ -614,8 +611,7 @@ chập đầu trên ảnh RGB có 3 kênh, lệch bội 16 mà lệnh vector c�
 đọc thẳng ba hàng ảnh.
 
 Các bản vá chia hai loại, tùy có đổi số nguyên hay không. Bản vá xuất giữ
-nguyên từng số nguyên của đồ thị, có kiểm thử so đầu ra có và không có bản vá, nên
-bật cho mọi cấu hình. Bản vá làm tròn đổi số: gộp PReLU vào tích chập làm nhánh âm
+nguyên từng số nguyên của đồ thị, có kiểm thử so đầu ra có và không có bản vá, và được bật cho mọi cấu hình. Bản vá làm tròn đổi số: gộp PReLU vào tích chập làm nhánh âm
 làm tròn xuống thay cho làm tròn gần nhất, nên phần mô phỏng phải tính đúng như chip
 rồi cấu hình đó qua thang chấm lại. Một khuôn mặt qua cả ba mô hình đi từ 444,8~ms
 xuống 333,8~ms với riêng bản vá xuất, và 251,6~ms khi cộng cả bản vá làm tròn. Bản
@@ -629,12 +625,9 @@ Chương~\ref{chapter:Implementation}, số đo ở Chương~\ref{chapter:Experi
 
 Hai hướng nén khác đã được xét và không đi vào bản chạy thật. Chưng cất tri thức
 dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn} trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không có gì để chưng cất và đồ án không dùng hướng này. Khi đã có trọng số MiniFASNet nhập, một
-bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi
-ảnh in khi thử trực tiếp, nên chỉ được giữ làm phương án nhẹ.
+bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi ảnh in khi thử trực tiếp; bản này chỉ được giữ làm phương án nhẹ.
 
-Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Cắt tỉa thưa không
-giúp gì trên vi điều khiển vì không có kernel cho ma trận thưa, nên chỉ cắt theo
-kênh mới giảm được thời gian. Trọng số nhập có bộ kênh cố định, không cắt được nếu
+Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Vi điều khiển không có kernel cho ma trận thưa, và chỉ cắt theo kênh mới giảm được thời gian. Trọng số nhập có bộ kênh cố định, không cắt được nếu
 không huấn luyện lại, nên đồ án không dùng bước này.
 
 \section{Nền tảng nhúng và truyền thông IoT}
@@ -660,8 +653,7 @@ Dữ liệu ghi thường xuyên nằm trên LittleFS, phân vùng 4~MB. LittleF
 điện đột ngột nhờ ghi kiểu copy-on-write, có cân bằng hao mòn và RAM bị chặn
 trên~\cite{littlefs}, nên được chọn cho bảng mẫu khuôn mặt và nhật ký lượt chấm.
 Mỗi lượt chấm là một bản ghi 48~B được đồng bộ xuống flash ngay, tốn khoảng
-10--20~ms, để lượt chấm không mất khi cúp điện. Bảng mẫu thì ghi ra tệp
-tạm rồi đổi tên, nên mất điện giữa chừng chỉ còn bản cũ hoặc bản mới. Cấu hình nhỏ
+10--20~ms, để lượt chấm không mất khi cúp điện. Bảng mẫu thì ghi ra tệp tạm rồi đổi tên; mất điện giữa chừng chỉ để lại bản cũ hoặc bản mới. Cấu hình nhỏ
 và JWT của máy nằm ở NVS, còn âm thanh chỉ đọc nằm ở SPIFFS. Driver camera, màn
 hình, cảm ứng và ứng dụng MQTT dùng các thành phần có sẵn của Espressif, TLS dùng
 mbedTLS.
@@ -858,8 +850,7 @@ Phương án shadcn bị loại vì nó chép mã thành phần vào repo và đ
 trì, còn Kumo là một gói npm ghim ở bản 2.14.0. Trên Android, Chrome không cho PWA
 đã cài vẽ ra sau thanh trạng thái và thanh điều hướng, nên hai dải đó lóe khác màu mỗi lần chuyển ứng dụng. Đồ án bọc
 trang web trong một Trusted Web Activity, tức ứng dụng Android mở nội dung web toàn
-màn hình qua Chrome, xác thực với miền web bằng Digital Asset Links~\cite{twa}. Vỏ
-này không chứa mã nghiệp vụ, nên mọi thay đổi của web tới ứng dụng ngay.
+màn hình qua Chrome, xác thực với miền web bằng Digital Asset Links~\cite{twa}. Vỏ này không chứa mã nghiệp vụ, và mọi thay đổi của web tới ứng dụng ngay.
 
 Trong trình duyệt, TanStack Query~\cite{tanstack} giữ dữ liệu máy chủ, còn Socket.IO
 chỉ báo tài nguyên nào vừa đổi để xóa cache tương ứng, nên trang đang mở tự cập nhật

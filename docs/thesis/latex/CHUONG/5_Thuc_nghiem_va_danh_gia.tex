@@ -117,7 +117,7 @@ Một lượt ba mô hình & 353,6 & 406,2 & 411,4 & +14,9\% \\
 
 Lúc rảnh một lượt mất 353,6~ms, dưới mức 360~ms của NF1 6,4~ms. Có tải thì 406,2~ms, vượt 46,2~ms. Trong lượt chấm thật máy luôn vẽ
 xem trước, nên 406,2~ms mới là số ở điểm vận hành, và NF1 chỉ đạt ở điều kiện rảnh. Phần chậm đi đến từ bus PSRAM mà mô hình và
-đường xem trước cùng dùng: đặt mô hình sang lõi 0 chung với tải vẫn mất 404,1~ms, nên đổi lõi không gỡ được. Người chấm công đứng
+đường xem trước cùng dùng: đặt mô hình sang lõi 0 chung với tải vẫn mất 404,1~ms, tức đổi lõi không gỡ được. Người chấm công đứng
 trước máy 1--2~s, tức 2 tới 4 lượt ở tốc độ này, còn chỗ cho các lần thử lại ở Mục~\ref{section:3.4}.
 
 Nhận diện chiếm 69,7\% một lượt lúc rảnh. Phát hiện chạy 30,41 khung mỗi giây, gấp đôi nhịp 14,19~fps của camera, và hai mô hình sau
@@ -325,7 +325,7 @@ Bảng~\ref{tab:ram_may} đọc từ heartbeat của máy thật, 30~s một l�
 \end{table}
 
 Đáy 28.675~B cao hơn mốc 24~KB của NF2 4.099~B. Ba tệp mô hình chiếm 2.115,8~KB trong khe 2,25~MB, còn 188,2~KB. Ảnh firmware bản
-\texttt{prod} là 2.328.032~B, còn 19\% khe 2,75~MB. Đồ án đặt thêm một mốc 2.000~KB cho đáy PSRAM, và số đo nằm dưới mốc này:
+\texttt{prod} là 2.324.432~B, còn 19\% khe 2,75~MB. Đồ án đặt thêm một mốc 2.000~KB cho đáy PSRAM, và số đo nằm dưới mốc này:
 PSRAM trống 1.788~KB, trong khi heartbeat không mang đáy nên đáy thật bằng hoặc thấp hơn. Phần hụt chủ yếu do hàng
 \texttt{int16\_top1} của chống giả mạo, lúc dựng chiếm 1.137.644~B so với 811.276~B của hàng toàn int8.
 
@@ -418,7 +418,7 @@ ESP-DL nhanh hơn TFLite Micro + esp-nn 10,51 lần và hơn bản C 48,83 lần
 hóa activation bất đối xứng, có zero point, nên esp-nn phải nhân ở 16 bit, kênh lẻ rơi về kernel C, và depthwise chép filter cùng
 input vào vùng đệm ở mỗi lượt. ESP-DL lượng tử hóa đối xứng với thang lũy thừa 2 và nhân thẳng 8 bit bằng lệnh PIE. Các phép toán đồ
 án tự viết ở Bảng~\ref{tab:phep_toan} cộng thêm phần còn lại, đưa mức dùng phép nhân lên 3,38 MAC mỗi chu kỳ. Với TFLite Micro + esp-nn,
-máy cần 3,7~s cho một lượt, tức dài hơn cả thời gian người đứng trước máy, nên phương án này không dùng được cho luồng chấm công.
+máy cần 3,7~s cho một lượt, dài hơn cả thời gian người đứng trước máy; phương án này không dùng được cho luồng chấm công.
 
 Bảng~\ref{tab:so_tai_nguyen} là tài nguyên của ba cấu hình. Ảnh ứng dụng của ESP-DL lớn gấp 3,3 lần vì
 thư viện esp-dl chiếm 598,1~KB và \texttt{ai\_engine} chiếm 218,8~KB. PSRAM lớn gấp 3,1 lần vì mỗi mô hình giữ khối riêng và trọng số
@@ -534,7 +534,7 @@ Bốn điều làm hẹp kết quả trên. (i)~Cả 25 khung giả là màn hì
 ảnh in của F2 chưa có số trên máy. Một phép thử trực tiếp bằng tờ tiền trên bản TFLite Micro cùng trọng số cho 19 lần chấm với điểm cao
 nhất 0,321, dưới ngưỡng, nhưng đó không phải phép đo có nhãn. (ii)~Tập này đã dùng để chọn mô hình và hàng lượng tử, nên AUC 1,0000 là số
 lạc quan. (iii)~Qua đúng cổng của firmware, tức mặt từ 100~px và ô vuông lọt trong khung, chỉ còn 48 mặt thật và 3 khung giả. 22 khung giả
-kia là điện thoại kề sát ống kính, máy bảo lùi lại và không chấm, nên 25/25 là kết quả của cổng và mô hình cộng lại. (iv)~Vùng cắt đạt
+kia là điện thoại kề sát ống kính, máy bảo lùi lại và không chấm; 25/25 vì thế là kết quả của cổng và mô hình cộng lại. (iv)~Vùng cắt đạt
 được của hai phía gần như tách rời: mặt thật 2,0--2,7 lần, khung giả 0,8--1,7 lần. Một phần của khe có thể đến từ cỡ mặt, và chỉ khung
 giả chụp ở xa mới tách được.
 
@@ -1108,8 +1108,7 @@ khoảng 39,6~ms so với 72,63~ms của hàng đã chọn. Nhìn thước công
 bị chặn.
 
 Đồ án cố định ba thứ trước khi chạy thang: (i)~mỗi nhánh đi trọn bốn bậc kể cả khi bậc đầu đã đạt; (ii)~cửa chất lượng gồm cả thước công khai lẫn tập OV5640;
-(iii)~luật chọn viết thành mã chạy tự động, nên hàng được chọn không phụ thuộc người đọc bảng. Thời gian lấy trên chip và độ chính xác lấy trên đồ thị đã
-vá, nên mọi số trong bảng là số của đúng tệp nạp lên máy.
+(iii)~luật chọn viết thành mã chạy tự động, nên hàng được chọn không phụ thuộc người đọc bảng. Thời gian lấy trên chip và độ chính xác lấy trên đồ thị đã vá: mọi số trong bảng là số của đúng tệp nạp lên máy.
 
 Ở nhận diện, mỗi bậc kéo thêm được một đoạn: \texttt{minmax} chỉ có TAR 0,607 trên CFP-FP, cách hiệu chuẩn tốt nhất lên 0,775, QAT lên 0,799. Với
 phát hiện, bậc 3 và bậc 4 không thêm gì, và bảng ghi lại điều đó để không ai phải thử lại.
@@ -1247,7 +1246,7 @@ Máy đặt ở cổng, không cắm cáp. Một bản firmware hay gói mô hì
 rồi không nhận ra ai.
 
 Đồ án có hai khe firmware và hai khe mô hình, đường ghi luôn nhắm khe đang không chạy. Mọi điều quyết được bằng số học đều quyết trước khi đụng flash: địa chỉ có đúng gốc API,
-digest có đúng dạng, ảnh có vừa khe, nên bản kê khai sai không tốn một lần xóa khe 3~MB. sha256 phải băm từ chính luồng byte đang tải, nên đồ án tải bằng
+digest có đúng dạng, ảnh có vừa khe; bản kê khai sai không tốn một lần xóa khe 3~MB. sha256 phải băm từ chính luồng byte đang tải, nên đồ án tải bằng
 \texttt{esp\_http\_client}, vì \texttt{esp\_https\_ota} ghi thẳng xuống khe và không cho thấy dữ liệu. Bản mới chạy ở trạng thái thử tới khi đủ 30~s và mô hình đã nạp. Gói mô
 hình không nạp được thì máy lùi khe đúng một lần, chốt bằng một khóa trong NVS, vì không có chốt thì hai gói cùng hỏng sẽ đá nhau mãi. Gói đang dùng hỏng ngoài lượt thử thì máy vẫn chạy tiếp
 không có AI và báo mã lỗi về máy chủ, để còn nhận được bản kế tiếp.
