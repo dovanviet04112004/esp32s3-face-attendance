@@ -9,7 +9,7 @@ SHELL := /bin/bash
         release release-notes models-release release-status \
         quant-ptq quant-int16 quant-qat quant-variants quant-timing quant-same-int8 quant-choose quant-deploy quant-table \
         ai-probe ai-unit ai-profile speed board-save board-restore \
-        usb-list usb-attach usb-detach hw-gen hw-check hw-export hw-fab thesis \
+        usb-list usb-attach usb-detach hw-gen hw-check hw-export hw-fab thesis thesis-figs \
         be-dev be-build be-prisma be-migrate be-seed be-demo be-plans be-backfill fe-dev fe-build fe-remove \
         up down ml-docker ml-clean
 
@@ -26,6 +26,10 @@ DOCKER ?= $(or $(shell command -v docker 2>/dev/null),/mnt/c/Program Files/Docke
 KICAD_CLI ?= $(or $(shell command -v kicad-cli 2>/dev/null),/mnt/d/KiCad/bin/kicad-cli.exe)
 kpath = $(if $(filter %.exe,$(KICAD_CLI)),"$$(wslpath -w $(CURDIR)/$(1))",$(1))
 HW_BOARD := hardware/kicad/kiosk
+# draw.io Desktop lives on Windows too and reads Windows paths the same way.
+DRAWIO ?= $(or $(shell command -v drawio 2>/dev/null),$(shell ls /mnt/c/Users/*/AppData/Local/Programs/draw.io/draw.io.exe 2>/dev/null | head -1),/mnt/c/Program Files/draw.io/draw.io.exe)
+dpath = $(if $(filter %.exe,$(DRAWIO)),"$$(wslpath -w $(CURDIR)/$(1))",$(1))
+THESIS_FIGS := $(patsubst %.drawio,%.pdf,$(wildcard docs/thesis/latex/Hinhve/drawio/*.drawio))
 # The e2e clone stays outside the tree: the repo's backend/.env would otherwise reach the suites.
 E2E_DIR ?= $(HOME)/.cache/kiosk-e2e
 CONC ?= 3
@@ -778,6 +782,11 @@ board-restore: idf ## Write back and verify what board-save kept in DIR; NVS nev
 	$(esptool_board) verify-flash $$(awk '{print $$1, "$(BOARD_DIR)/" $$3 ".bin"}' $(BOARD_DIR)/regions)
 
 ##@ Thesis
+thesis-figs: $(THESIS_FIGS) ## Export each thesis diagram whose .drawio changed to the PDF beside it
+
+docs/thesis/latex/Hinhve/drawio/%.pdf: docs/thesis/latex/Hinhve/drawio/%.drawio
+	"$(DRAWIO)" --export --format pdf --crop --output $(call dpath,$@) $(call dpath,$<)
+
 thesis: ## Build the thesis into docs/thesis/latex/build/DoAn.pdf
 	cd docs/thesis/latex && latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=build DoAn.tex
 
