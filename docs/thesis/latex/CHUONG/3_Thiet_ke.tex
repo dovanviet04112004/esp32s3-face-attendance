@@ -47,97 +47,9 @@ quản lý và nhân sự, bên phải là việc của kế toán lương và q
 mặt có hai tác nhân vì nhân sự mở lượt còn nhân viên đứng trước máy. Ca duyệt đơn có hai
 tác nhân vì đơn đi tới quản lý hoặc nhân sự.
 
-\newcommand{\actor}[3]{%
-  \begin{scope}[shift={(#1)}]
-    \draw (0,0.42) circle (0.13);
-    \draw (0,0.29) -- (0,-0.08);
-    \draw (-0.2,0.16) -- (0.2,0.16);
-    \draw (0,-0.08) -- (-0.15,-0.36);
-    \draw (0,-0.08) -- (0.15,-0.36);
-    \node[below, align=center] at (0,-0.36) {#3};
-    \coordinate (#2) at (0,0.1);
-  \end{scope}}
-
-\tikzset{
-  sqsync/.style={-{Triangle[length=1.8mm, width=1.4mm]}},
-  sqasync/.style={-{Straight Barb[length=1.8mm, width=2mm]}},
-  sqreply/.style={densely dashed, -{Straight Barb[length=1.8mm, width=2mm]}},
-  sqlab/.style={font=\scriptsize, above, align=center, fill=white, inner sep=1.5pt},
-  sqnote/.style={font=\scriptsize, fill=white, inner sep=1pt},
-  incl/.style={densely dashed, -{Straight Barb[length=1.8mm, width=2mm]}},
-  erfk/.style={preaction={draw, arrows=-}, {Straight Barb[reversed, length=1.6mm, width=2.6mm] Circle[open, fill=white, length=1.2mm, sep=0.6mm]}-{Bar[width=2.4mm, sep=0.8mm] Bar[width=2.4mm]}},
-  erfkopt/.style={preaction={draw, arrows=-}, {Straight Barb[reversed, length=1.6mm, width=2.6mm] Circle[open, fill=white, length=1.2mm, sep=0.6mm]}-{Circle[open, fill=white, length=1.2mm, sep=0.6mm] Bar[width=2.4mm]}},
-  eroo/.style={{Bar[width=2.4mm, sep=0.6mm] Circle[open, fill=white, length=1.2mm]}-{Circle[open, fill=white, length=1.2mm, sep=0.6mm] Bar[width=2.4mm]}}}
-\newcommand{\sqobj}[4]{%
-  \node[draw, fill=white, text width=#2, align=center, minimum height=7mm, inner sep=1pt] at (#1,0) {#3};
-  \draw[densely dashed] (#1,-0.35) -- (#1,#4);}
-\newcommand{\sqactor}[3]{%
-  \actor{#1,0.25}{sqa}{#2}
-  \draw[densely dashed] (#1,-0.55) -- (#1,#3);}
-\newcommand{\sqexec}[3]{\draw[fill=white] ({#1-0.08},#2) rectangle ({#1+0.08},#3);}
-\newcommand{\sqselfr}[4][1]{%
-  \ifnum#1=1 \sqexec{#2}{#3+0.1}{#3-0.42}\fi
-  \draw[sqsync] ({#2+0.08},#3) -- ({#2+0.5},#3) -- ({#2+0.5},{#3-0.32}) -- ({#2+0.08},{#3-0.32});
-  \node[sqnote, anchor=west, align=left] at ({#2+0.55},{#3-0.16}) {#4};}
-\newcommand{\sqselfl}[4][1]{%
-  \ifnum#1=1 \sqexec{#2}{#3+0.1}{#3-0.42}\fi
-  \draw[sqsync] ({#2-0.08},#3) -- ({#2-0.5},#3) -- ({#2-0.5},{#3-0.32}) -- ({#2-0.08},{#3-0.32});
-  \node[sqnote, anchor=east, align=right] at ({#2-0.55},{#3-0.16}) {#4};}
-\newcommand{\sqfrag}[5]{%
-  \draw (#1,#2) rectangle (#3,#4);
-  \node[font=\scriptsize, anchor=north west, inner sep=2pt] (sqf) at (#1,#2) {#5};
-  \draw (sqf.south west) -- ([xshift=-1.2mm]sqf.south east) -- ([yshift=1.2mm]sqf.south east) -- (sqf.north east);}
-\newcommand{\bcehead}[3]{%
-  \draw (#1,0.15) circle (0.22);
-  \node[font=\scriptsize, below, align=center, inner sep=1pt] at (#1,-0.1) {#2};
-  \draw[densely dashed] (#1,-0.85) -- (#1,#3);}
-\newcommand{\bceboundary}[3]{%
-  \bcehead{#1}{#2}{#3}
-  \draw ({#1-0.42},-0.05) -- ({#1-0.42},0.35);
-  \draw ({#1-0.42},0.15) -- ({#1-0.22},0.15);}
-\newcommand{\bcecontrol}[3]{%
-  \bcehead{#1}{#2}{#3}
-  \draw ({#1+0.08},0.45) -- ({#1-0.03},0.37) -- ({#1+0.08},0.29);}
-\newcommand{\bceentity}[3]{%
-  \bcehead{#1}{#2}{#3}
-  \draw ({#1-0.22},-0.07) -- ({#1+0.22},-0.07);}
-
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  uc/.style={draw, ellipse, align=center, minimum width=33mm, minimum height=9mm, inner sep=0pt}]
-\draw (-3.5,-3.8) rectangle (3.95,4.0);
-\node[anchor=north west] at (-3.45,3.97) {Hệ thống chấm công};
-\node[uc] (a1) at (-1.65,2.85) {Chấm công tại máy};
-\node[uc] (a3) at (-1.65,1.65) {Gửi đơn nghỉ,\\đơn làm thêm};
-\node[uc] (a2) at (-1.65,0.45) {Xem công, phép,\\phiếu lương};
-\node[uc] (a5) at (-1.65,-0.75) {Đăng ký khuôn mặt\\tại máy};
-\node[uc] (a4) at (-1.65,-1.95) {Duyệt đơn};
-\node[uc] (b1) at (-1.65,-3.15) {Quản lý hồ sơ,\\ca, bảng công};
-\node[uc] (b2) at (2.15,2.1) {Chạy và chốt\\kỳ lương};
-\node[uc] (b3) at (2.15,0.5) {Duyệt máy mới};
-\node[uc] (b4) at (2.15,-1.0) {Theo dõi, ra lệnh\\cho máy};
-\node[uc] (b5) at (2.15,-2.5) {Phát hành bản\\cập nhật OTA};
-\actor{-6.1,2.0}{e}{Nhân viên}
-\actor{-6.1,-0.4}{m}{Quản lý}
-\actor{-6.1,-2.8}{h}{Nhân sự}
-\actor{6.2,2.0}{p}{Kế toán lương}
-\actor{6.2,-1.1}{q}{Quản trị}
-\draw (e) -- (a1.west);
-\draw (e) -- (a2.west);
-\draw (e) -- (a3.west);
-\draw (e) -- (a5.west);
-\draw (m) -- (a2.west);
-\draw (m) -- (a4.west);
-\draw (h) -- (a4.west);
-\draw (h) -- (a5.west);
-\draw (h) -- (b1.west);
-\draw (p) -- (b2.east);
-\draw (q) -- (b3.east);
-\draw (q) -- (b4.east);
-\draw (q) -- (b5.east);
-\end{tikzpicture}
+\includegraphics{drawio/use_case}
 \caption{Sơ đồ ca sử dụng tổng quát.}
 \label{fig:use_case}
 \end{figure}
@@ -149,36 +61,7 @@ bản cập nhật. Nhân viên phải đồng ý xử lý dữ liệu khuôn m�
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  uc/.style={draw, ellipse, align=center, minimum width=30mm, minimum height=8.5mm, inner sep=0pt}]
-\draw (-3.65,-4.3) rectangle (5.5,4.35);
-\node[anchor=north west] at (-3.6,4.32) {Máy chấm công và quản lý máy};
-\node[uc] (c1) at (-2.0,3.45) {Chấm công tại máy};
-\node[uc] (c3) at (-2.0,1.05) {Đăng ký khuôn mặt\\tại máy};
-\node[uc] (c2) at (-2.0,2.25) {Xác thực khuôn mặt};
-\node[uc] (c5) at (-2.0,-0.8) {Đồng ý hoặc rút\\đồng ý dữ liệu mặt};
-\node[uc] (c4) at (-2.0,-2.9) {Gán người vào máy};
-\node[uc] (d3) at (3.85,3.55) {Theo dõi trạng thái};
-\node[uc] (d4) at (3.85,2.4) {Gửi lệnh tới máy};
-\node[uc] (d5) at (3.85,1.25) {Đồng bộ lại\\danh sách người};
-\node[uc] (d2) at (3.85,0.1) {Thu hồi máy};
-\node[uc] (d1) at (3.85,-1.05) {Duyệt máy mới};
-\node[uc] (d6) at (3.85,-2.2) {Phát hành bản\\cập nhật OTA};
-\node[uc] (d7) at (3.85,-3.45) {Gửi lượt chấm,\\nhịp sống};
-\actor{-5.4,2.0}{e}{Nhân viên}
-\actor{-5.4,-3.0}{h}{Nhân sự}
-\actor{7.0,1.6}{q}{Quản trị}
-\actor{7.0,-3.0}{k}{Máy chấm\\công}
-\draw (e) -- (c1.west);
-\draw (e) -- (c3.west);
-\draw (e) -- (c5.west);
-\draw (h) -- (c4.west);
-\draw[incl] (c1) -- node[font=\scriptsize, right] {$\ll$include$\gg$} (c2);
-\draw[incl] (c3) -- node[font=\scriptsize, right] {$\ll$include$\gg$} (c2);
-\foreach \u in {d3,d4,d5,d2,d1,d6} {\draw (q) -- (\u.east);}
-\foreach \u in {d1,d6,d7} {\draw (k) -- (\u.east);}
-\end{tikzpicture}
+\includegraphics{drawio/uc_may}
 \caption{Phân rã ca sử dụng của máy chấm công và quản lý máy.}
 \label{fig:uc_may}
 \end{figure}
@@ -189,37 +72,7 @@ cùng cấp. Quản lý chỉ duyệt đơn và xem công của người trong c
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  uc/.style={draw, ellipse, align=center, minimum width=31mm, minimum height=8.5mm, inner sep=0pt}]
-\draw (-3.5,-6.6) rectangle (5.6,4.85);
-\node[anchor=north west] at (-3.45,4.82) {Nhân sự, chấm công và lương};
-\node[uc] (l1) at (-1.75,3.85) {Duyệt đơn};
-\node[uc] (l2) at (-1.75,2.8) {Xem công của đội};
-\node[uc] (l3) at (-1.75,1.75) {Quản lý hồ sơ, nhận\\việc, nghỉ việc};
-\node[uc] (l4) at (-1.75,0.7) {Đổi mức lương};
-\node[uc] (l5) at (-1.75,-0.35) {Duyệt đề nghị\\sửa hồ sơ};
-\node[uc] (l6) at (-1.75,-1.4) {Khai ca, ngày lễ,\\loại phép};
-\node[uc] (l7) at (-1.75,-2.45) {Xem và sửa\\bảng công};
-\node[uc] (l8) at (-1.75,-3.5) {Duyệt lượt chấm\\bị giữ};
-\node[uc] (l9) at (-1.75,-4.55) {Duyệt tạm ứng};
-\node[uc] (l10) at (-1.75,-5.6) {Phát hành tài liệu\\cần ký};
-\node[uc] (l11) at (1.95,-5.6) {Cấp giấy xác nhận};
-\node[uc] (r1) at (3.85,3.85) {Khai chính sách\\lương, phụ cấp};
-\node[uc] (r2) at (3.85,2.8) {Chạy và chốt\\kỳ lương};
-\node[uc] (r3) at (3.85,1.75) {Chi tạm ứng};
-\node[uc] (r4) at (3.85,0.7) {Trả lời khiếu nại\\phiếu lương};
-\node[uc] (r5) at (3.85,-0.35) {Duyệt người\\phụ thuộc};
-\node[uc] (r6) at (3.85,-1.4) {Xuất báo cáo\\bảo hiểm, thuế};
-\actor{-5.6,3.2}{m}{Quản lý}
-\actor{-5.6,-1.6}{h}{Nhân sự}
-\actor{7.3,-3.6}{p}{Kế toán lương}
-\draw (m) -- (l1.west);
-\draw (m) -- (l2.west);
-\foreach \u in {l1,l3,l4,l5,l6,l7,l8,l9,l10,l11} {\draw (h) -- (\u.west);}
-\foreach \u in {r1,r2,r3,r4,r5,r6} {\draw (p) -- (\u.east);}
-\draw (p) -- (l11.east);
-\end{tikzpicture}
+\includegraphics{drawio/uc_ban_giay}
 \caption{Phân rã ca sử dụng của các vai bàn giấy.}
 \label{fig:uc_ban_giay}
 \end{figure}
@@ -229,30 +82,7 @@ chung một ca vì chúng đi cùng một luồng gửi và duyệt.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  uc/.style={draw, ellipse, align=center, minimum width=52mm, minimum height=7.6mm, inner sep=0pt}]
-\draw (-2.15,-10.35) rectangle (4.05,0.55);
-\node[anchor=north west] at (-1.95,0.52) {Cổng nhân viên};
-\foreach \y/\n/\t in {
-  -0.4/u1/{Xem trang của tôi},
-  -1.3/u2/{Xem công của tôi},
-  -2.2/u3/{Xem lịch ca},
-  -3.1/u4/{Gửi đơn: nghỉ, làm thêm,\\giải trình, công tác, từ xa},
-  -4.0/u5/{Xin tạm ứng lương},
-  -4.9/u6/{Xin giấy xác nhận},
-  -5.8/u7/{Đề nghị sửa hồ sơ},
-  -6.7/u8/{Xem phiếu lương},
-  -7.6/u9/{Khiếu nại phiếu lương},
-  -8.5/u10/{Đọc và ký tài liệu},
-  -9.4/u11/{Nhận thông báo đẩy}} {
-  \node[uc] (\n) at (0.95,\y) {\t};
-}
-\actor{-4.6,-3.4}{e}{Nhân viên}
-\actor{-4.6,-7.6}{m}{Quản lý}
-\foreach \u in {u1,u2,u3,u4,u5,u6,u7,u8,u9,u10,u11} {\draw (e) -- (\u.west);}
-\draw[-{Triangle[open, length=2.6mm, width=2.4mm]}] (-4.6,-7.25) -- (-4.6,-4.4);
-\end{tikzpicture}
+\includegraphics{drawio/uc_nhan_vien}
 \caption{Phân rã ca sử dụng của nhân viên trên điện thoại.}
 \label{fig:uc_nhan_vien}
 \end{figure}
@@ -334,52 +164,7 @@ phải chờ lượt dựng đêm sau. Nhân viên hủy đơn khi chưa ai duy�
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  act/.style={draw, rounded corners=2mm, align=center, text width=40mm, minimum height=8mm, inner sep=2pt},
-  dec/.style={draw, diamond, aspect=1.6, inner sep=1pt, minimum width=7mm},
-  arr/.style={-{Latex[length=2mm]}},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}]
-\foreach \x/\t in {0/Nhân viên, 4.8/Máy chủ, 9.6/Người duyệt} {
-  \node at (\x,0.55) {\textbf{\t}};
-}
-\draw (-2.4,0.95) rectangle (12.0,-10.2);
-\draw (-2.4,0.2) -- (12.0,0.2);
-\draw[densely dashed] (2.4,0.95) -- (2.4,-10.2);
-\draw[densely dashed] (7.2,0.95) -- (7.2,-10.2);
-\fill (0,-0.3) circle (1.3mm);
-\node[act] (a1) at (0,-1.2) {Chọn loại phép và ngày};
-\node[act] (a2) at (4.8,-1.2) {Tính số ngày làm việc\\và số dư sau đơn};
-\node[act] (a3) at (0,-2.5) {Gửi đơn};
-\node[act] (a4) at (4.8,-2.5) {Kiểm số dư và\\đơn chồng ngày};
-\node[dec] (d1) at (4.8,-3.65) {};
-\node[act] (a5) at (0,-3.65) {Nhận mã lỗi};
-\node[act] (a6) at (4.8,-5.0) {Giữ chỗ số dư, gửi đơn\\tới quản lý, người được\\ủy quyền hoặc nhân sự};
-\node[act] (a7) at (9.6,-5.0) {Xem đơn kèm số dư\\và người đang nghỉ};
-\node[dec] (d2) at (9.6,-6.35) {};
-\node[act] (a8) at (4.8,-7.2) {Chuyển giữ chỗ sang\\đã dùng, đổi ngày\\đã dựng};
-\node[act] (a9) at (4.8,-8.5) {Trả lại phần giữ chỗ};
-\node[dec] (m1) at (0,-7.85) {};
-\node[act] (a11) at (0,-8.9) {Nhận thông báo\\kết quả};
-\draw (0,-4.55) circle (1.3mm); \fill (0,-4.55) circle (0.8mm);
-\draw (0,-9.8) circle (1.3mm); \fill (0,-9.8) circle (0.8mm);
-\draw[arr] (0,-0.43) -- (a1);
-\draw[arr] (a1) -- (a2);
-\draw[arr] (a2.south west) -- (a3.north east);
-\draw[arr] (a3) -- (a4);
-\draw[arr] (a4) -- (d1);
-\draw[arr] (d1) -- node[lab, above] {[không đạt]} (a5);
-\draw[arr] (a5) -- (0,-4.42);
-\draw[arr] (d1) -- node[lab, right, pos=0.4] {[đạt]} (a6);
-\draw[arr] (a6) -- (a7);
-\draw[arr] (a7) -- (d2);
-\draw[arr] (d2) |- node[lab, pos=0.3, right] {[duyệt]} (a8);
-\draw[arr] (d2.east) -- ++(0.75,0) |- node[lab, pos=0.25, right] {[từ chối]} (a9);
-\draw[arr] (a8.west) -| (m1.north);
-\draw[arr] (a9.west) -- ++(-0.45,0) |- (m1.east);
-\draw[arr] (m1) -- (a11);
-\draw[arr] (a11) -- (0,-9.67);
-\end{tikzpicture}
+\includegraphics{drawio/hd_don}
 \caption{Quy trình gửi và duyệt đơn nghỉ.}
 \label{fig:hd_don}
 \end{figure}
@@ -392,41 +177,7 @@ lần. Lệnh này cùng phép trừ số dư và phép đổi ngày công chạ
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize]
-\sqactor{0}{Người duyệt}{-11.4}
-\bceboundary{2.05}{Hộp chờ\\duyệt}{-11.4}
-\bcecontrol{4.1}{\texttt{Leave}\\\texttt{Controller}}{-11.4}
-\bcecontrol{6.15}{\texttt{Leave}\\\texttt{Service}}{-11.4}
-\bceentity{8.2}{\texttt{Request}}{-11.4}
-\bceentity{10.25}{\texttt{Leave}\\\texttt{Balance}}{-11.4}
-\bceentity{12.3}{\texttt{Attendance}\\\texttt{Day}}{-11.4}
-\sqexec{2.05}{-1.3}{-11.1}
-\sqexec{4.1}{-2.3}{-10.6}
-\sqexec{6.15}{-2.9}{-10.1}
-\draw[sqsync] (0,-1.3) -- node[sqlab] {bấm Duyệt} (1.97,-1.3);
-\draw[sqsync] (2.13,-2.3) -- node[sqlab] {\texttt{POST}\\\texttt{/requests/}\\\texttt{:id/decide}} (4.02,-2.3);
-\draw[sqsync] (4.18,-2.9) -- node[sqlab] {\texttt{decide()}} (6.07,-2.9);
-\sqexec{8.2}{-3.5}{-3.95}
-\draw[sqsync] (6.23,-3.5) -- node[sqlab] {đọc đơn} (8.12,-3.5);
-\draw[sqreply] (8.12,-3.95) -- node[sqlab] {đơn} (6.23,-3.95);
-\sqselfr[0]{6.15}{-4.35}{kiểm quyền}
-\sqexec{8.2}{-5.8}{-6.25}
-\draw[sqsync] (6.23,-5.8) -- node[sqlab] {đổi trạng thái\\nếu \texttt{PENDING}} (8.12,-5.8);
-\draw[sqreply] (8.12,-6.25) -- node[sqlab] {1 dòng} (6.23,-6.25);
-\sqfrag{5.45}{-6.6}{13.1}{-9.75}{alt}
-\node[sqnote, anchor=west] at (6.3,-6.85) {[duyệt]};
-\sqexec{10.25}{-7.45}{-7.8}
-\draw[sqsync] (6.23,-7.45) -- node[sqlab, pos=0.75] {\texttt{pending} giảm,\\\texttt{taken} tăng} (10.17,-7.45);
-\sqexec{12.3}{-8.1}{-8.45}
-\draw[sqsync] (6.23,-8.1) -- node[sqlab, pos=0.86] {ngày vắng\\thành nghỉ} (12.22,-8.1);
-\draw[densely dashed] (5.45,-8.7) -- (13.1,-8.7);
-\node[sqnote, anchor=west] at (6.3,-8.9) {[từ chối]};
-\sqexec{10.25}{-9.25}{-9.55}
-\draw[sqsync] (6.23,-9.25) -- node[sqlab, pos=0.75] {\texttt{pending} giảm} (10.17,-9.25);
-\draw[sqreply] (6.07,-10.1) -- node[sqlab] {đơn đã quyết} (4.18,-10.1);
-\draw[sqreply] (4.02,-10.6) -- node[sqlab] {201} (2.13,-10.6);
-\draw[sqreply] (1.97,-11.1) -- node[sqlab] {báo đã duyệt} (0,-11.1);
-\end{tikzpicture}
+\includegraphics{drawio/td_duyet_don}
 \caption{Trình tự duyệt một đơn nghỉ theo lớp biên, điều khiển và thực thể.}
 \label{fig:td_duyet_don}
 \end{figure}
@@ -460,56 +211,7 @@ thì đầu vào mới bị đóng băng. Sau khi chốt, sai lệch không sử
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  act/.style={draw, rounded corners=2mm, align=center, text width=40mm, minimum height=8mm, inner sep=2pt},
-  dec/.style={draw, diamond, aspect=1.6, inner sep=1pt, minimum width=7mm},
-  arr/.style={-{Latex[length=2mm]}},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}]
-\foreach \x/\t in {0/Kế toán lương, 4.8/Máy chủ, 9.6/Nhân viên} {
-  \node at (\x,0.55) {\textbf{\t}};
-}
-\draw (-2.7,0.95) rectangle (12.0,-11.15);
-\draw (-2.7,0.2) -- (12.0,0.2);
-\draw[densely dashed] (2.4,0.95) -- (2.4,-11.15);
-\draw[densely dashed] (7.2,0.95) -- (7.2,-11.15);
-\fill (0,-0.3) circle (1.3mm);
-\node[act] (b1) at (0,-1.15) {Mở kỳ cho một\\pháp nhân};
-\node[dec] (m1) at (0,-2.12) {};
-\node[act] (b2) at (0,-3.0) {Chạy lượt tính};
-\node[act] (b3) at (4.8,-3.0) {Tính theo lô 500 người,\\sinh phiếu nháp};
-\node[act] (b4) at (0,-4.25) {Soát phiếu và danh\\mục cần xử lý};
-\node[dec] (d1) at (0,-5.35) {};
-\node[act] (b5) at (0,-6.45) {Chốt kỳ sau\\khi hết tháng};
-\node[act] (b6) at (4.8,-6.45) {Đóng băng đầu vào,\\phát phiếu, chép tài\\khoản ngân hàng};
-\node[act] (b7) at (0,-7.8) {Xuất tệp ngân hàng,\\đánh dấu đã trả};
-\node[act] (b8) at (4.8,-7.8) {Gửi phiếu, báo\\cho từng người};
-\node[act] (b9) at (9.6,-7.8) {Xem phiếu lương};
-\node[dec] (d2) at (9.6,-8.9) {};
-\node[act] (b10) at (9.6,-10.0) {Gửi khiếu nại};
-\node[act] (b11) at (0,-10.0) {Trả lời, hạn 5 ngày};
-\node[act] (b12) at (4.8,-10.0) {Ghi khoản chênh\\vào kỳ sau};
-\draw (11.6,-8.9) circle (1.3mm); \fill (11.6,-8.9) circle (0.8mm);
-\draw (7.0,-10.0) circle (1.3mm); \fill (7.0,-10.0) circle (0.8mm);
-\draw[arr] (0,-0.43) -- (b1);
-\draw[arr] (b1) -- (m1);
-\draw[arr] (m1) -- (b2);
-\draw[arr] (b2) -- (b3);
-\draw[arr] (b3.south west) -- (b4.north east);
-\draw[arr] (b4) -- (d1);
-\draw[arr] (d1) -- node[lab, right] {[ổn]} (b5);
-\draw[arr] (d1.west) -- node[lab, above] {[cần sửa]} ++(-2.0,0) |- (m1.west);
-\draw[arr] (b5) -- (b6);
-\draw[arr] (b6.south west) -- (b7.north east);
-\draw[arr] (b7) -- (b8);
-\draw[arr] (b8) -- (b9);
-\draw[arr] (b9) -- (d2);
-\draw[arr] (d2) -- node[lab, above] {[đúng]} (11.47,-8.9);
-\draw[arr] (d2) -- node[lab, right] {[sai]} (b10);
-\draw[arr] (b10.south) -- ++(0,-0.4) -| (b11.south);
-\draw[arr] (b11) -- (b12);
-\draw[arr] (b12) -- (6.87,-10.0);
-\end{tikzpicture}
+\includegraphics{drawio/hd_luong}
 \caption{Quy trình chạy, chốt kỳ lương và khiếu nại.}
 \label{fig:hd_luong}
 \end{figure}
@@ -637,32 +339,7 @@ khoản dịch vụ của broker.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  box/.style={draw, align=center, minimum height=9mm, inner sep=2pt},
-  lab/.style={font=\scriptsize, align=center},
-  arr/.style={-{Latex[length=2mm]}},
-  both/.style={{Latex[length=2mm]}-{Latex[length=2mm]}}]
-\node[box, text width=26mm, minimum height=32mm] (k) at (0,0) {Máy chấm công\\ESP32-S3\\[1mm]ba mô hình,\\bảng mẫu,\\nhật ký lượt chấm};
-\draw[dashed] (2.75,-2.45) rectangle (9.85,2.45);
-\node[anchor=north west] at (2.8,2.42) {VPS, Docker Compose};
-\node[box, text width=11mm, minimum height=38mm] (t) at (3.6,-0.1) {Traefik};
-\node[box, text width=20mm] (e) at (6.0,1.05) {EMQX};
-\node[box, text width=20mm] (a) at (6.0,-0.75) {API NestJS};
-\node[box, text width=19mm] (p) at (8.7,0.35) {PostgreSQL};
-\node[box, text width=19mm] (r) at (8.7,-0.95) {Redis,\\BullMQ};
-\node[box, text width=23mm] (v) at (12.3,1.1) {Next.js\\trên Vercel};
-\node[box, text width=23mm] (u) at (12.3,-1.1) {Trình duyệt,\\PWA, Android};
-\draw[arr] ([yshift=7mm]k.east) -- node[lab, above] {MQTTS} ([yshift=8mm]t.west);
-\draw[arr] ([yshift=-7mm]k.east) -- node[lab, below] {HTTPS} ([yshift=-6mm]t.west);
-\draw[arr] ([yshift=11.5mm]t.east) -- (e.west);
-\draw[arr] ([yshift=-6.5mm]t.east) -- (a.west);
-\draw[both] (e) -- node[lab, right] {bản tin,\\kiểm JWT} (a);
-\draw[arr] (a.east) -- (p.west);
-\draw[arr] (a.east) -- (r.west);
-\draw[arr] (u) -- node[lab, right] {tải trang} (v);
-\draw[arr] (u.west) -- ++(-0.45,0) |- node[lab, pos=0.75, below] {REST, WebSocket} ([yshift=-16mm]t.east);
-\end{tikzpicture}
+\includegraphics{drawio/kien_truc}
 \caption{Kiến trúc tổng thể của hệ thống.}
 \label{fig:kien_truc}
 \end{figure}
@@ -710,32 +387,7 @@ báo và realtime. Không module nào tự đọc biến môi trường hay mở
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  grp/.style={draw, align=center, text width=40mm, minimum height=19mm, inner sep=2pt},
-  ext/.style={draw, rounded corners=2mm, align=center, minimum height=8mm, inner sep=3pt},
-  arr/.style={-{Latex[length=2mm]}},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}]
-\node[ext, text width=40mm] (web) at (2.2,3.25) {Trình duyệt, PWA, ứng dụng Android};
-\node[ext, text width=40mm] (kio) at (6.8,3.25) {Máy chấm công qua EMQX};
-\node[grp] (g1) at (2.2,1.2) {\textbf{Danh tính và quyền}\\[1mm]{\scriptsize\ttfamily auth, users, audit}};
-\node[grp] (g2) at (6.8,1.2) {\textbf{Máy chấm công}\\[1mm]{\scriptsize\ttfamily devices, enrollment,\\models, mqtt, attendance}};
-\node[grp] (g3) at (11.4,1.2) {\textbf{Thời gian}\\[1mm]{\scriptsize\ttfamily shifts, timesheet, leave}};
-\node[grp] (g4) at (2.2,-1.25) {\textbf{Nhân sự}\\[1mm]{\scriptsize\ttfamily employees, org, onboarding,\\profile, documents,\\certificates, assets, search}};
-\node[grp] (g5) at (6.8,-1.25) {\textbf{Lương}\\[1mm]{\scriptsize\ttfamily payroll, compensation,\\policy, disputes}};
-\node[grp] (g6) at (11.4,-1.25) {\textbf{Thông báo, báo cáo}\\[1mm]{\scriptsize\ttfamily notifications, realtime,\\reports}};
-\node[draw, align=center, text width=128mm, minimum height=10mm, inner sep=2pt] (base) at (6.8,-3.35) {\textbf{Nền dùng chung}: guard và vai, phạm vi dữ liệu, interceptor nhật ký và sự kiện, cache;\\Prisma; hàng đợi BullMQ; kiểm biến môi trường; {\scriptsize\ttfamily health}};
-\node[ext, text width=24mm] (pg) at (4.6,-4.95) {PostgreSQL};
-\node[ext, text width=24mm] (rd) at (9.0,-4.95) {Redis};
-\draw[arr] (web) -- node[lab, right] {REST, WebSocket} (g1);
-\draw[arr] (kio) -- node[lab, right] {bản tin MQTT} (g2);
-\draw[arr] (g2) -- node[lab, above] {lượt chấm} (g3);
-\draw[arr] (g3.south west) -- node[lab, right, pos=0.4] {ngày công} (g5.north east);
-\draw[arr] (g4) -- node[lab, above] {hồ sơ} (g5);
-\draw[arr] (g5) -- node[lab, above] {sự kiện} (g6);
-\draw[arr] (base) -- (pg);
-\draw[arr] (base) -- (rd);
-\end{tikzpicture}
+\includegraphics{drawio/module_be}
 \caption{Các nhóm module của backend.}
 \label{fig:module_be}
 \end{figure}
@@ -757,31 +409,7 @@ chưa có dữ liệu I\textsuperscript{2}S. Bảng chân đầy đủ nằm ở
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  box/.style={draw, align=center, text width=28mm, minimum height=8mm, inner sep=2pt},
-  lab/.style={font=\scriptsize, above},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[draw, align=center, text width=31mm, minimum height=46mm] (c) at (0,0) {ESP32-S3-CAM\\[1mm]\mbox{WROOM-1 N16R8}\\flash 16~MB\\PSRAM 8~MB};
-\node[box] (cam) at (-5.2,1.65) {OV5640};
-\node[box] (lcd) at (-5.2,0.35) {ST7796S, 4 inch};
-\node[box] (amp) at (-5.2,-0.95) {MAX98357A và loa};
-\node[box] (srv) at (-5.2,-2.25) {Servo SG90};
-\draw[arr] (cam.east) -- node[lab] {DVP, 14 chân} ([yshift=16.5mm]c.west);
-\draw[arr] ([yshift=3.5mm]c.west) -- node[lab] {SPI 80~MHz} (lcd.east);
-\draw[arr] ([yshift=-9.5mm]c.west) -- node[lab] {I\textsuperscript{2}S} (amp.east);
-\draw[arr] ([yshift=-22.5mm]c.west) -- node[lab] {PWM 50~Hz} (srv.east);
-\draw[thick] (3.0,2.1) -- (3.0,-2.4);
-\draw (c.east) -- node[lab] {I\textsuperscript{2}C} (3.0,0);
-\node[box] (gt) at (5.2,1.95) {GT911};
-\node[box] (tof) at (5.2,0.65) {VL53L1X};
-\node[box] (io) at (5.2,-0.65) {PCF8574:\\RST, XSHUT, SD};
-\node[box] (rtc) at (5.2,-1.95) {DS3231};
-\draw (3.0,1.95) -- (gt.west);
-\draw (3.0,0.65) -- (tof.west);
-\draw (3.0,-0.65) -- (io.west);
-\draw (3.0,-1.95) -- (rtc.west);
-\end{tikzpicture}
+\includegraphics{drawio/khoi_phan_cung}
 \caption{Sơ đồ khối phần cứng của máy chấm công.}
 \label{fig:khoi_phan_cung}
 \end{figure}
@@ -832,26 +460,7 @@ riêng từ J10. U2 là tải duy nhất được mượn nhánh của tải kh�
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  box/.style={draw, align=center, text width=33mm, minimum height=9mm, inner sep=2pt},
-  lab/.style={font=\scriptsize, above},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (j10) at (0,0.35) {J10: đường 1\\5~V, 2~A};
-\node[box] (u1) at (4.8,1.75) {U1: \mbox{ESP32-S3-CAM}};
-\node[box] (u2) at (4.8,0.35) {U2: ổn áp 3,3~V};
-\node[box] (j7) at (4.8,-1.05) {J7: MAX98357A};
-\node[box] (sen) at (10.1,1.75) {Cảm biến I\textsuperscript{2}C, R1\\(J4, J5, J6)};
-\node[box] (j3) at (10.1,0.35) {J3: tấm màn hình};
-\node[box] (j11) at (0,-2.3) {J11: đường 2\\5~V, từ 1~A};
-\node[box] (j9) at (4.8,-2.3) {J9: SG90};
-\draw[arr] (j10.east) -- (u1.west);
-\draw[arr] (j10.east) -- (j7.west);
-\draw[arr] (u1) -- (u2);
-\draw[arr] (u1) -- node[lab] {\texttt{+3V3}} (sen);
-\draw[arr] (u2) -- node[lab] {\texttt{+3V3\_LCD}} (j3);
-\draw[arr] (j11) -- (j9);
-\end{tikzpicture}
+\includegraphics{drawio/nguon}
 \caption{Cây nguồn của máy chấm công.}
 \label{fig:nguon}
 \end{figure}
@@ -907,32 +516,7 @@ phát hiện, trước hai mô hình chậm, qua một hàm quan sát. Nếu ch�
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=9mm and 3mm,
-  box/.style={draw, align=center, text width=17mm, minimum height=12mm, inner sep=1.5pt},
-  res/.style={draw, rounded corners, align=center, text width=18mm, minimum height=12mm, inner sep=1pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (f) {Khung mới};
-\node[box, right=of f] (d) {YuNet};
-\node[box, right=of d] (g) {Bốn cổng hình học};
-\node[box, right=of g] (s) {Ổn định qua 2 lần};
-\node[box, right=of s] (l) {Chống giả mạo};
-\node[box, right=of l] (r) {Nhận diện, so mẫu};
-\node[box, right=of r] (m) {Báo khớp};
-\node[res, below=of g] (o1) {Nhắc đưa mặt vào khung, lại gần};
-\node[res, below=of l] (o2) {3 lần thử thì báo giả mạo};
-\node[res, below=of r] (o3) {2 lần thử thì báo chưa nhận ra};
-\draw[arr] (f) -- (d);
-\draw[arr] (d) -- (g);
-\draw[arr] (g) -- (s);
-\draw[arr] (s) -- (l);
-\draw[arr] (l) -- (r);
-\draw[arr] (r) -- (m);
-\draw[arr] (g) -- node[font=\scriptsize, right] {không đạt} (o1);
-\draw[arr] (l) -- node[font=\scriptsize, right] {dưới 0,50} (o2);
-\draw[arr] (r) -- node[font=\scriptsize, right] {dưới 0,45} (o3);
-\end{tikzpicture}
+\includegraphics{drawio/pipeline}
 \caption{Luồng xử lý một khung của pipeline AI.}
 \label{fig:pipeline}
 \end{figure}
@@ -972,38 +556,7 @@ loại phép toán mà ESP-DL có kernel 8 bit. Nhận diện tốn nhiều phé
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\scriptsize,
-  node distance=3.5mm,
-  blk/.style={draw, align=center, text width=19.5mm, minimum height=13mm, inner sep=1.5pt},
-  io/.style={blk, rounded corners=1.5mm},
-  mname/.style={align=left, text width=25.5mm, anchor=east},
-  arr/.style={-{Latex[length=1.6mm]}}]
-\node[io] (a0) at (0,0) {Ảnh 160$\times$120$\times$3};
-\node[blk, right=of a0] (a1) {6 tầng tích chập 3$\times$3 và depthwise, gộp giữa các tầng};
-\node[blk, right=of a1] (a2) {TinyFPN gộp 3 mức: stride 8, 16, 32};
-\node[blk, right=of a2] (a3) {Mỗi mức: điểm, hộp, 5 điểm mốc};
-\node[io, right=of a3] (a4) {Giải mã, NMS bằng C++};
-\node[mname] at ([xshift=-2mm]a0.west) {\textbf{YuNet}\\0,07~M tham số\\25,2~M MAC};
-\node[io] (b0) at (0,-2.0) {Vùng 80$\times$80$\times$3, cắt 2,7 lần mặt};
-\node[blk, right=of b0] (b1) {Tích chập 3$\times$3 bước 2, depthwise};
-\node[blk, right=of b1] (b2) {3 nhóm khối dư, khối cuối mỗi nhóm có SE; bản đồ 40, 20, 10, 5};
-\node[blk, right=of b2] (b3) {1$\times$1, depthwise 5$\times$5 toàn bản đồ, FC};
-\node[io, right=of b3] (b4) {Softmax 3 lớp, lấy xác suất lớp thật};
-\node[mname] at ([xshift=-2mm]b0.west) {\textbf{MiniFASNetV1SE}\\0,43~M tham số\\40,9~M MAC};
-\node[io] (c0) at (0,-4.0) {Mặt đã căn chỉnh 112$\times$112$\times$3};
-\node[blk, right=of c0] (c1) {Tích chập 3$\times$3 bước 2, depthwise, 64 kênh};
-\node[blk, right=of c1] (c2) {15 khối cổ chai có ECA; bản đồ 56, 28, 14, 7};
-\node[blk, right=of c2] (c3) {1$\times$1 lên 512 kênh, GDC 7$\times$7, FC};
-\node[io, right=of c3] (c4) {Vector đặc trưng 512 chiều, chuẩn hóa L2};
-\node[mname] at ([xshift=-2mm]c0.west) {\textbf{MobileFaceNet-ECA}\\1,18~M tham số\\221,2~M MAC};
-\foreach \r in {a,b,c} {
-  \draw[arr] (\r0) -- (\r1);
-  \draw[arr] (\r1) -- (\r2);
-  \draw[arr] (\r2) -- (\r3);
-  \draw[arr] (\r3) -- (\r4);
-}
-\end{tikzpicture}
+\includegraphics{drawio/kien_truc_mo_hinh}
 \caption{Kiến trúc ba mô hình ở mức khối.}
 \label{fig:kien_truc_mo_hinh}
 \end{figure}
@@ -1025,27 +578,7 @@ xong, và header công khai chỉ chứa cú pháp C.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  row/.style={draw, align=center, text width=104mm, minimum height=7.6mm, inner sep=3pt},
-  tag/.style={anchor=east}]
-\node[row] (l7) at (0,0) {\texttt{main}: khởi động, nối dây, tạo task};
-\node[row, below=0.8mm of l7] (l6) {\texttt{ui\_kiosk}};
-\node[row, below=0.8mm of l6] (l5) {\texttt{svc\_attendance}, \texttt{svc\_sync}};
-\node[row, below=0.8mm of l5] (l4) {\texttt{svc\_vision}, \texttt{svc\_door}};
-\node[row, below=0.8mm of l4] (l3) {\texttt{ai\_engine}, \texttt{svc\_facedb}, \texttt{drv\_touch}, \texttt{drv\_tof}, \texttt{drv\_audio},\\\texttt{net\_wifi}, \texttt{net\_mqtt}, \texttt{net\_ota}, \texttt{net\_provision}};
-\node[row, below=0.8mm of l3] (l2) {\texttt{drv\_camera}, \texttt{drv\_lcd}, \texttt{drv\_servo}, \texttt{drv\_ioexp},\\\texttt{sys\_storage}, \texttt{sys\_time}};
-\node[row, below=0.8mm of l2] (l1) {\texttt{bsp\_board}: chân, bus, \texttt{app\_config.h}};
-\node[tag] at (l7.west) {L7};
-\node[tag] at (l6.west) {L6};
-\node[tag] at (l5.west) {L5};
-\node[tag] at (l4.west) {L4};
-\node[tag] at (l3.west) {L3};
-\node[tag] at (l2.west) {L2};
-\node[tag] at (l1.west) {L1};
-\draw ([xshift=1.5mm]l7.north east) rectangle ([xshift=11mm]l1.south east);
-\path ([xshift=6.25mm]l7.north east) -- node[rotate=90] {L0: \texttt{common}} ([xshift=6.25mm]l1.south east);
-\end{tikzpicture}
+\includegraphics{drawio/tang}
 \caption{Các tầng của firmware.}
 \label{fig:tang}
 \end{figure}
@@ -1103,41 +636,7 @@ mình ở lõi 1 và chỉ nhận khung mới nhất. Kết quả của nó, tí
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  tk/.style={draw, align=center, text width=19mm, minimum height=8mm, inner sep=1pt},
-  q/.style={-{Latex[length=2mm]}},
-  sh/.style={densely dashed, -{Latex[length=2mm]}},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}]
-\draw[densely dashed] (-0.1,2.3) rectangle (9.75,-6.75);
-\node[anchor=north west, font=\scriptsize] at (-0.05,2.27) {Lõi 0};
-\draw[densely dashed] (10.2,2.3) rectangle (13.2,0.35);
-\node[anchor=north west, font=\scriptsize] at (10.25,2.27) {Lõi 1};
-\node[tk] (cam) at (1.1,1.3) {\texttt{cam} (7)};
-\node[tk] (ai) at (11.7,1.3) {\texttt{ai} (5)};
-\node[tk] (tof) at (1.1,-0.4) {\texttt{tof} (6)};
-\node[tk] (att) at (8.1,-0.4) {\texttt{attend} (4)};
-\node[tk] (touch) at (1.1,-2.1) {\texttt{touch} (5)};
-\node[tk] (ui) at (4.6,-2.1) {\texttt{ui} (4)};
-\node[tk] (aud) at (8.1,-2.1) {\texttt{audio} (6)};
-\node[tk] (net) at (1.1,-4.4) {\texttt{net} (3)};
-\node[tk] (mq) at (4.6,-4.4) {\texttt{mqtt} (3)};
-\node[tk] (sy) at (8.1,-4.4) {\texttt{sync} (2)};
-\node[tk] (ota) at (4.6,-6.0) {\texttt{ota} (3)};
-\draw[q] (cam) -- node[lab, above] {\texttt{q\_frame\_ai}, sâu 1} (ai);
-\draw[q] (ai.south) |- node[lab, pos=0.75, above] {\texttt{q\_result}} ([yshift=1.5mm]att.east);
-\draw[q] (tof) -- node[lab, above] {\texttt{q\_presence}} (att);
-\draw[q] (att) -- node[lab, right] {\texttt{q\_audio}} (aud);
-\draw[q] (ui) -- node[lab, above] {\texttt{q\_audio}} (aud);
-\draw[sh] (touch) -- node[lab, above] {điểm chạm} (ui);
-\draw[sh] (ui.north) -- node[lab, sloped, below, pos=0.55] {ảnh lớp phủ} (cam.south east);
-\draw[q] ([yshift=-1.5mm]att.east) -- ++(0.4,0) |- node[lab, pos=0.25, right] {\texttt{q\_uplink}} (sy.east);
-\draw[q] (ui.south) -- ++(0,-0.55) -| node[lab, pos=0.25, above] {\texttt{q\_roster}} (sy.north);
-\draw[q] ([yshift=1.5mm]mq.east) -- node[lab, above, align=center] {\texttt{q\_cmd},\\\texttt{q\_roster}} ([yshift=1.5mm]sy.west);
-\draw[q] ([yshift=-1.5mm]sy.west) -- node[lab, below] {gửi qua TLS} ([yshift=-1.5mm]mq.east);
-\draw[q] (net) -- node[lab, above] {nối broker} (mq);
-\draw[q] (mq) -- node[lab, right] {\texttt{q\_ota}} (ota);
-\end{tikzpicture}
+\includegraphics{drawio/task}
 \caption{Các task của firmware và hàng đợi nối chúng.}
 \label{fig:task}
 \end{figure}
@@ -1160,28 +659,7 @@ chính.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  st/.style={draw, rounded corners, align=center, text width=22mm, minimum height=9mm, inner sep=1.5pt},
-  lab/.style={font=\scriptsize, align=center},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[st] (i) at (0,0) {\texttt{Idle}};
-\node[st] (d) at (5.0,0) {\texttt{Detecting}};
-\node[st] (g) at (10.4,1.35) {\texttt{Granted}};
-\node[st] (n) at (10.4,-1.35) {\texttt{Denied}};
-\node[st] (c) at (5.0,-2.7) {\texttt{Cooldown}};
-\fill (-1.95,0) circle (1.3mm);
-\draw[arr] (-1.82,0) -- (i.west);
-\draw[arr] ([yshift=2mm]i.east) -- node[lab, above] {có người, mặt còn xa} ([yshift=2mm]d.west);
-\draw[arr] ([yshift=-2mm]d.west) -- node[lab, below] {hết mặt, hết người} ([yshift=-2mm]i.east);
-\draw[arr] (d.east) -- node[lab, above, sloped] {khớp} (g.west);
-\draw[arr] (d.east) -- node[lab, below, sloped] {giả, chưa nhận ra} (n.west);
-\draw[arr] ([xshift=-3mm]g.south) -- node[lab, left] {giả, chưa nhận ra} ([xshift=-3mm]n.north);
-\draw[arr] ([xshift=3mm]n.north) -- node[lab, right] {khớp} ([xshift=3mm]g.south);
-\draw[arr] (g.east) -- ++(0.55,0) |- node[lab, pos=0.75, below] {hết 2,5~s} ([yshift=-2.5mm]c.east);
-\draw[arr] (n.south) |- node[lab, pos=0.75, above] {hết 2~s} ([yshift=2.5mm]c.east);
-\draw[arr] (c.west) -| node[lab, pos=0.25, below] {hết 1,5~s, hết người} (i.south);
-\end{tikzpicture}
+\includegraphics{drawio/may_trang_thai}
 \caption{Máy trạng thái chấm công, các đường chính.}
 \label{fig:may_trang_thai}
 \end{figure}
@@ -1252,24 +730,7 @@ buộc unique. Đây là giao ít nhất một lần, có chủ ý. API nghe bro
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize]
-\foreach \x/\n in {0/\texttt{attend}, 2.9/LittleFS, 5.8/\texttt{sync}, 8.7/EMQX, 12.0/Backend} {
-  \sqobj{\x}{19mm}{\n}{-6.85}
-}
-\sqexec{2.9}{-0.9}{-1.25}
-\draw[sqsync] (0,-0.9) -- node[sqlab] {ghi 48~B, đồng bộ} (2.82,-0.9);
-\draw[sqasync] (0,-1.7) -- node[sqlab, pos=0.75] {nhắc qua \texttt{q\_uplink}} (5.8,-1.7);
-\sqexec{2.9}{-2.3}{-2.8}
-\draw[sqsync] (5.8,-2.3) -- node[sqlab] {đọc từ con trỏ} (2.98,-2.3);
-\draw[sqreply] (2.98,-2.8) -- node[sqlab] {bản ghi} (5.8,-2.8);
-\draw[sqasync] (5.8,-3.4) -- node[sqlab] {PUBLISH, QoS 1} (8.7,-3.4);
-\draw[sqasync] (8.7,-3.95) -- node[sqlab] {PUBACK} (5.8,-3.95);
-\sqexec{2.9}{-4.5}{-4.85}
-\draw[sqsync] (5.8,-4.5) -- node[sqlab] {đẩy con trỏ} (2.98,-4.5);
-\draw[sqasync] (8.7,-5.1) -- node[sqlab] {chuyển bản tin} (12.0,-5.1);
-\sqselfl{12.0}{-5.5}{ghi dòng,\\bỏ bản trùng}
-\draw[sqasync] (12.0,-6.5) -- node[sqlab] {PUBACK} (8.7,-6.5);
-\end{tikzpicture}
+\includegraphics{drawio/luot_cham}
 \caption{Đường đi của một lượt chấm từ máy tới máy chủ.}
 \label{fig:luot_cham}
 \end{figure}
@@ -1308,31 +769,7 @@ mọi lần khởi động lại đều đưa máy về bản cũ, và máy báo
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize]
-\sqactor{0}{Quản trị}{-11.0}
-\foreach \x/\w/\n in {3.7/20mm/API, 7.4/20mm/EMQX, 11.1/27mm/Máy chấm công} {
-  \sqobj{\x}{\w}{\n}{-11.0}
-}
-\sqexec{3.7}{-1.0}{-1.9}
-\draw[sqsync] (0,-1.0) -- node[sqlab] {chọn bản và máy} (3.62,-1.0);
-\draw[sqasync] (3.78,-1.6) -- node[sqlab] {\texttt{down/ota}} (7.4,-1.6);
-\draw[sqasync] (7.4,-2.3) -- node[sqlab] {link ký 24 giờ, cỡ, sha256} (11.1,-2.3);
-\sqselfl{11.1}{-2.75}{kiểm gốc API,\\cỡ vừa khe}
-\sqexec{3.7}{-3.75}{-4.3}
-\draw[sqsync] (11.1,-3.75) -- node[sqlab, pos=0.75] {GET qua HTTPS} (3.78,-3.75);
-\draw[sqreply] (3.78,-4.3) -- node[sqlab, pos=0.75] {luồng byte} (11.1,-4.3);
-\sqselfl{11.1}{-4.75}{ghi khe không chạy,\\băm sha256 khi tải}
-\sqselfl{11.1}{-5.75}{khớp thì đổi khe,\\khởi động lại}
-\draw[sqasync] (11.1,-6.75) -- node[sqlab, pos=0.7] {nhịp sống qua EMQX,\\đang chạy thử} (3.7,-6.75);
-\sqfrag{-0.9}{-7.1}{11.6}{-10.75}{alt}
-\node[sqnote, anchor=west] at (-0.15,-7.35) {[đủ 30~s và mô hình đã nạp]};
-\sqselfl{11.1}{-7.75}{xác nhận khe}
-\draw[sqasync] (11.1,-8.5) -- node[sqlab, pos=0.7] {nhịp sống qua EMQX,\\đã lên} (3.7,-8.5);
-\draw[densely dashed] (-0.9,-8.9) -- (11.6,-8.9);
-\node[sqnote, anchor=west] at (-0.8,-9.15) {[không xác nhận được]};
-\sqselfl{11.1}{-9.5}{bootloader quay\\về bản cũ}
-\draw[sqasync] (11.1,-10.45) -- node[sqlab, pos=0.7] {\texttt{up/event}:\\\texttt{OTA\_ROLLED\_BACK}} (3.7,-10.45);
-\end{tikzpicture}
+\includegraphics{drawio/td_ota}
 \caption{Trình tự cập nhật firmware qua OTA.}
 \label{fig:td_ota}
 \end{figure}
@@ -1425,31 +862,7 @@ mất mạng được gửi lại khi nối lại. Máy chủ giữ bản mã h�
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize]
-\sqactor{0}{Nhân sự}{-11.45}
-\foreach \x/\w/\n in {3.0/19mm/API, 6.0/19mm/EMQX, 9.0/27mm/Máy chấm công} {
-  \sqobj{\x}{\w}{\n}{-11.45}
-}
-\sqactor{12.0}{Người tại máy}{-11.45}
-\sqexec{3.0}{-1.0}{-2.85}
-\draw[sqsync] (0,-1.0) -- node[sqlab] {gán người vào máy} (2.92,-1.0);
-\sqselfr[0]{3.0}{-1.35}{kiểm đồng ý\\dữ liệu mặt}
-\draw[sqasync] (3.08,-2.3) -- node[sqlab] {\texttt{down/enroll}} (6.0,-2.3);
-\draw[sqreply] (2.92,-2.85) -- node[sqlab] {đã gán} (0,-2.85);
-\draw[sqasync] (6.0,-3.3) -- node[sqlab] {thêm vào\\danh sách chờ} (9.0,-3.3);
-\draw[sqsync] (12.0,-3.9) -- node[sqlab] {chọn tên} (9.0,-3.9);
-\sqfrag{7.75}{-4.25}{12.9}{-6.7}{loop}
-\node[sqnote, anchor=west] at (8.6,-4.45) {[3 tư thế: thẳng, trái, phải]};
-\draw[sqsync] (12.0,-5.0) -- node[sqlab] {đưa mặt theo tư thế} (9.0,-5.0);
-\sqselfr{9.0}{-5.4}{xác thực,\\lấy mẫu}
-\draw[sqasync] (9.0,-6.4) -- node[sqlab] {bíp} (12.0,-6.4);
-\sqselfr{9.0}{-7.25}{ghi bảng mẫu\\xuống flash}
-\draw[sqasync] (9.0,-8.15) -- node[sqlab] {\texttt{up/enroll}, từng mẫu} (6.0,-8.15);
-\draw[sqasync] (6.0,-8.7) -- node[sqlab] {PUBACK} (9.0,-8.7);
-\draw[sqasync] (6.0,-9.25) -- node[sqlab] {chuyển mẫu} (3.0,-9.25);
-\sqselfr{3.0}{-9.65}{mã hóa mẫu,\\đánh dấu đã đăng ký}
-\draw[sqasync] (3.0,-11.1) -- node[sqlab] {\texttt{down/enroll} tới\\các máy khác} (6.0,-11.1);
-\end{tikzpicture}
+\includegraphics{drawio/td_dang_ky}
 \caption{Trình tự đăng ký một khuôn mặt tại máy.}
 \label{fig:td_dang_ky}
 \end{figure}
@@ -1462,29 +875,7 @@ giữ lượt trong flash. Broker không tự kiểm JWT mà hỏi API ở mỗi
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize]
-\foreach \x/\w/\n in {0/27mm/Máy chấm công, 3.7/20mm/EMQX, 7.4/20mm/API} {
-  \sqobj{\x}{\w}{\n}{-9.6}
-}
-\sqactor{11.1}{Quản trị}{-9.6}
-\sqexec{7.4}{-1.25}{-2.45}
-\draw[sqsync] (0,-1.25) -- node[sqlab, pos=0.75] {\texttt{POST /devices/register}\\token lô, \texttt{deviceId}, mã 6 số} (7.32,-1.25);
-\sqselfr[0]{7.4}{-1.6}{tạo dòng \texttt{PENDING}}
-\draw[sqreply] (7.32,-2.45) -- node[sqlab, pos=0.25] {202} (0,-2.45);
-\sqselfr{0}{-2.9}{hiện mã nhận máy}
-\sqexec{7.4}{-3.85}{-4.25}
-\draw[sqsync] (11.1,-3.85) -- node[sqlab] {duyệt: mã đọc trên\\màn hình, tên, vị trí} (7.48,-3.85);
-\sqexec{7.4}{-4.75}{-5.35}
-\draw[sqsync] (0,-4.75) -- node[sqlab, pos=0.75] {hỏi lại} (7.32,-4.75);
-\draw[sqreply] (7.32,-5.35) -- node[sqlab, pos=0.25] {200, JWT 90 ngày} (0,-5.35);
-\sqselfr{0}{-5.8}{ghi JWT vào NVS}
-\draw[sqasync] (0,-7) -- node[sqlab] {CONNECT qua TLS:\\\texttt{deviceId}, JWT} (3.7,-7);
-\sqexec{7.4}{-7.55}{-8.1}
-\draw[sqsync] (3.7,-7.55) -- node[sqlab] {\texttt{POST /mqtt/auth}} (7.32,-7.55);
-\draw[sqreply] (7.32,-8.1) -- node[sqlab] {cho phép} (3.7,-8.1);
-\draw[sqasync] (3.7,-8.65) -- node[sqlab] {CONNACK} (0,-8.65);
-\draw[sqasync] (0,-9.2) -- node[sqlab] {\texttt{up/status}: \texttt{online}} (3.7,-9.2);
-\end{tikzpicture}
+\includegraphics{drawio/td_duyet_may}
 \caption{Trình tự duyệt một máy chấm công mới.}
 \label{fig:td_duyet_may}
 \end{figure}
@@ -1499,56 +890,7 @@ công và lượt chấm, ở giữa là tổ chức và thời gian, bên phả
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\scriptsize,
-  e/.style={draw, align=center, text width=27mm, minimum height=6.5mm, inner sep=1pt},
-  k/.style={e, thick, fill=black!8},
-  y=1.16cm]
-\node[e] (dev) at (0,0) {Device};
-\node[e] (enr) at (0,-1.25) {DeviceEnrollment};
-\node[e] (rec) at (0,-2.5) {AttendanceRecord};
-\node[e] (ftp) at (0,-3.75) {FaceTemplate};
-\node[e] (day) at (0,-5.0) {AttendanceDay};
-\node[e] (leg) at (3.75,0) {LegalEntity};
-\node[e] (dep) at (3.75,-1.25) {Department};
-\node[k] (emp) at (3.75,-2.5) {Employee};
-\node[e] (req) at (3.75,-3.75) {Request};
-\node[e] (bal) at (3.75,-5.0) {LeaveBalance};
-\node[e] (lty) at (3.75,-6.25) {LeaveType};
-\node[e] (usr) at (7.5,0) {User};
-\node[e] (cmp) at (7.5,-1.25) {CompensationRecord};
-\node[e] (asg) at (7.5,-2.5) {ShiftAssignment};
-\node[e] (shf) at (7.5,-3.75) {Shift};
-\node[e] (pol) at (11.25,0) {PayrollPolicy};
-\node[e] (tax) at (11.25,-1.25) {TaxBracket};
-\node[e] (per) at (11.25,-2.5) {PayrollPeriod};
-\node[e] (run) at (11.25,-3.75) {PayrollRun};
-\node[e] (psl) at (11.25,-5.0) {Payslip};
-\node[e] (lin) at (11.25,-6.25) {PayslipLine};
-\draw[erfk] (enr) -- (dev);
-\draw[erfk] (enr.south east) -- (emp.north west);
-\draw[erfk] (rec.north west) to[bend left=35] (dev.south west);
-\draw[erfk] (rec) -- (emp);
-\draw[erfk] (ftp.north east) -- (emp.south west);
-\draw[erfk] (day.north east) -- ([xshift=4mm]emp.south west);
-\draw[erfk] (dep) -- (leg);
-\draw[erfkopt] (emp) -- (dep);
-\draw[eroo] (usr.south west) -- (emp.north east);
-\draw[erfk] (cmp.south west) -- ([xshift=-4mm]emp.north east);
-\draw[erfk] (asg) -- (emp);
-\draw[erfk] (asg) -- (shf);
-\draw[erfk] (req) -- (emp);
-\draw[erfkopt] (req.west) -- ++(-0.3,0) |- (lty.west);
-\draw[erfk] (bal) -- (lty);
-\draw[erfk] (bal.east) -- ++(0.2,0) |- ([yshift=-0.7mm]emp.east);
-\draw[erfk] (psl.west) -| ([xshift=4mm,yshift=-1.9mm]emp.east) -- ([yshift=-1.9mm]emp.east);
-\draw[erfk] (tax) -- (pol);
-\draw[erfkopt] (pol.north) -- ++(0,0.3) -| ([xshift=3mm]leg.north);
-\draw[erfk] (per.east) -- ++(0.3,0) -- ++(0,3.4) -| ([xshift=-3mm]leg.north);
-\draw[erfk] (run) -- (per);
-\draw[erfk] (psl) -- (run);
-\draw[erfk] (lin) -- (psl);
-\end{tikzpicture}
+\includegraphics{drawio/er}
 \caption{Các bảng lõi và quan hệ chính, ký hiệu chân chim.}
 \label{fig:er}
 \end{figure}
@@ -1639,29 +981,7 @@ trước máy cũng chạm được; hai việc đó chỉ làm từ dashboard b
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=6mm and 8mm,
-  s/.style={draw, rounded corners, align=center, text width=24mm, minimum height=9mm, inner sep=1.5pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[s] (scan) {Quét};
-\node[s, right=of scan] (menu) {Menu};
-\node[s, right=of menu] (enrol) {Thêm người};
-\node[s, right=of enrol] (cap) {Chụp mẫu};
-\node[s, below=of enrol] (ppl) {Danh sách};
-\node[s, below=of ppl] (set) {Cài đặt};
-\node[s, right=of set, yshift=7mm] (wifi) {Wi-Fi};
-\node[s, right=of set, yshift=-7mm] (devi) {Thiết bị của tôi};
-\node[s, below=of scan] (upd) {Cập nhật};
-\draw[arr] (scan) -- (menu);
-\draw[arr] (menu) -- (enrol);
-\draw[arr] (enrol) -- (cap);
-\draw[arr] (menu.south) |- (ppl.west);
-\draw[arr] (menu.south) |- (set.west);
-\draw[arr] (set.east) -- (wifi.west);
-\draw[arr] (set.east) -- (devi.west);
-\draw[arr] (scan) -- node[font=\scriptsize, right] {khi cập nhật} (upd);
-\end{tikzpicture}
+\includegraphics{drawio/man_hinh}
 \caption{Bản đồ màn hình của máy chấm công.}
 \label{fig:man_hinh}
 \end{figure}

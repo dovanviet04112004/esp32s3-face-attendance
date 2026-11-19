@@ -80,23 +80,7 @@ gấp ba lần toàn bộ SRAM, nên mọi tensor, trọng số và khung camera
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  box/.style={draw, align=center, text width=64mm, inner sep=3pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (c0) {Lõi 0: Wi-Fi, camera, giao diện, MQTT};
-\node[box, right=6mm of c0] (c1) {Lõi 1: chỉ chạy task AI};
-\node[box, below=9mm of c0] (sram) {SRAM 512~KB\\ngăn xếp task, Wi-Fi, đệm DMA};
-\node[box, below=9mm of c1] (cache) {Bộ đệm dữ liệu 64~KB, dòng 64~B\\chung cho flash và PSRAM};
-\node[box, below=9mm of sram] (psram) {PSRAM 8~MB, 8 đường, 80~MHz\\ba mô hình 3.574~KB\\khung camera 4$\times$300~KB\\bảng mẫu khuôn mặt 576~KB};
-\node[box, below=9mm of cache] (flash) {Flash 16~MB, 4 đường, 80~MHz\\firmware 2$\times$2,75~MB\\mô hình 2$\times$2,25~MB\\LittleFS 4~MB};
-\draw[arr] (c0) -- (sram);
-\draw[arr] (c1) -- (cache);
-\draw[arr] (c0.south east) -- (cache.north west);
-\draw[arr] (c1.south west) -- (sram.north east);
-\draw[arr] (cache.south west) -- (psram.north east);
-\draw[arr] (cache) -- (flash);
-\end{tikzpicture}
+\includegraphics{drawio/bo_nho}
 \caption{Các tầng bộ nhớ của máy chấm công.}
 \label{fig:bo_nho}
 \end{figure}
@@ -190,54 +174,14 @@ Hình~\ref{fig:vung_anh} vẽ theo tỉ lệ ba vùng ảnh đó với mặt r�
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=5mm and 3.5mm,
-  box/.style={draw, align=center, text width=33mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (cam) {Khung camera\\480$\times$320};
-\node[box, right=of cam] (small) {Thu nhỏ\\160$\times$120};
-\node[box, right=of small] (yunet) {YuNet\\32,9~ms};
-\node[box, right=of yunet] (face) {Hộp mặt,\\năm điểm mốc};
-\node[box, below=of face] (crop) {Cắt vùng 2,7$\times$\\80$\times$80};
-\node[box, left=of crop] (fas) {MiniFASNetV1SE\\73,3~ms};
-\node[box, left=of fas] (live) {Điểm sống\\$\geq 0{,}50$};
-\node[box, left=of live] (align) {Căn chỉnh\\112$\times$112};
-\node[box, below=of align] (mfn) {\mbox{MobileFaceNet-ECA}\\246,4~ms};
-\node[box, right=of mfn] (vec) {Vector đặc trưng\\512 chiều};
-\node[box, right=of vec] (cos) {So cosine\\$\geq 0{,}45$};
-\node[box, right=of cos] (id) {Mã nhân viên};
-\draw[arr] (cam) -- (small);
-\draw[arr] (small) -- (yunet);
-\draw[arr] (yunet) -- (face);
-\draw[arr] (face) -- (crop);
-\draw[arr] (crop) -- (fas);
-\draw[arr] (fas) -- (live);
-\draw[arr] (live) -- (align);
-\draw[arr] (align) -- (mfn);
-\draw[arr] (mfn) -- (vec);
-\draw[arr] (vec) -- (cos);
-\draw[arr] (cos) -- (id);
-\end{tikzpicture}
+\includegraphics{drawio/chuoi}
 \caption{Chuỗi ba mô hình trên máy chấm công.}
 \label{fig:chuoi}
 \end{figure}
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize, x=0.16mm, y=0.16mm]
-\draw (0,0) rectangle (480,320);
-\node[anchor=north west] at (2,318) {Khung 480$\times$320};
-\draw[dashed] (87.5,7.5) rectangle (392.5,312.5);
-\draw[thick] (183.5,103.5) rectangle (296.5,216.5);
-\node at (240,160) {Mặt 113~px};
-\draw (392.5,262) -- (505,262);
-\draw (296.5,160) -- (505,160);
-\draw (480,58) -- (505,58);
-\node[anchor=west, align=left] at (510,262) {Vùng cắt 2,7 lần, cạnh 305~px,\\thu về 80$\times$80 cho MiniFASNetV1SE};
-\node[anchor=west, align=left] at (510,160) {Hộp mặt, căn chỉnh về 112$\times$112\\cho MobileFaceNet-ECA};
-\node[anchor=west, align=left] at (510,58) {Cả khung thu về 160$\times$120 cho\\YuNet, mặt còn 38~px};
-\end{tikzpicture}
+\includegraphics{drawio/vung_anh}
 \caption{Ba vùng ảnh của ba mô hình trên một khung camera, vẽ theo tỉ lệ.}
 \label{fig:vung_anh}
 \end{figure}
@@ -363,35 +307,7 @@ chiều~\cite{ecanet}. Hình~\ref{fig:se_eca} đặt hai khối cạnh nhau.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=13mm and 3mm,
-  box/.style={draw, align=center, text width=20mm, minimum height=11mm, inner sep=2pt},
-  wide/.style={draw, align=center, text width=44.4mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (si) {Khối SE:\\tensor $C$ kênh};
-\node[box, right=of si] (sp) {Gộp trung bình};
-\node[box, right=of sp] (s1) {Kết nối đầy đủ giảm chiều, ReLU};
-\node[box, right=of s1] (s2) {Kết nối đầy đủ trả chiều};
-\node[box, right=of s2] (ss) {Sigmoid};
-\node[box, right=of ss] (sm) {Nhân vào từng kênh};
-\node[box, below=of si] (ei) {Khối ECA:\\tensor $C$ kênh};
-\node[box, right=of ei] (ep) {Gộp trung bình};
-\node[wide, right=of ep] (e1) {Tích chập một chiều cỡ $k$ dọc trục kênh};
-\node[box, right=of e1] (es) {Sigmoid};
-\node[box, right=of es] (em) {Nhân vào từng kênh};
-\draw[arr] (si) -- (sp);
-\draw[arr] (sp) -- (s1);
-\draw[arr] (s1) -- (s2);
-\draw[arr] (s2) -- (ss);
-\draw[arr] (ss) -- (sm);
-\draw[arr] (ei) -- (ep);
-\draw[arr] (ep) -- (e1);
-\draw[arr] (e1) -- (es);
-\draw[arr] (es) -- (em);
-\draw[arr] (si.north) -- ++(0,3mm) -| (sm.north);
-\draw[arr] (ei.south) -- ++(0,-3mm) -| (em.south);
-\end{tikzpicture}
+\includegraphics{drawio/se_eca}
 \caption{Khối SE và khối ECA~\cite{senet,ecanet}.}
 \label{fig:se_eca}
 \end{figure}
@@ -495,23 +411,7 @@ gặp chỗ này.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[font=\footnotesize, x=1mm, y=1mm]
-\node[anchor=west] at (0,23) {Luật affine};
-\fill[black!15] (58,16) rectangle (130,19);
-\foreach \i in {0,...,16} \draw (58+4.5*\i,16) -- (58+4.5*\i,19);
-\node[below] at (56,16) {$q = -128$};
-\node[above] at (65,19) {$q = Z$};
-\draw (65,19) -- (65,16);
-\node[below] at (130,16) {$q = 127$};
-\node[anchor=west] at (0,10.5) {Luật đối xứng};
-\draw (0,0) rectangle (130,3);
-\fill[black!15] (58,0) rectangle (130,3);
-\foreach \i in {0,...,16} \draw (8.125*\i,0) -- (8.125*\i,3);
-\node[below] at (0,0) {$q = -128$};
-\node[below] at (65,0) {$q = 0$};
-\node[below] at (130,0) {$q = 127$};
-\node at (29,5) {lưới không có dữ liệu};
-\end{tikzpicture}
+\includegraphics{drawio/hai_luat}
 \caption{Cùng một dải activation trên hai luật lượng tử, mỗi ô là 16 mức.}
 \label{fig:hai_luat}
 \end{figure}
@@ -574,27 +474,7 @@ ghi PSRAM hơn.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=6mm and 4mm,
-  box/.style={draw, align=center, text width=32mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (torch) {Mô hình PyTorch};
-\node[box, right=of torch] (onnx) {Xuất ONNX,\\so với PyTorch};
-\node[box, right=of onnx] (ppq) {ESP-PPQ: thang\\lượng tử bốn bậc};
-\node[box, right=of ppq] (patch) {Bản vá đồ thị,\\xuất \texttt{.espdl}};
-\node[box, below=of patch] (flash) {Phân vùng mô hình\\trên flash};
-\node[box, left=of flash] (run) {ESP-DL và kernel\\PIE của đồ án};
-\node[box, left=of run] (test) {\texttt{model->test()}\\so với mô phỏng};
-\node[box, left=of test] (lock) {Chọn cấu hình,\\khóa phiên bản};
-\draw[arr] (torch) -- (onnx);
-\draw[arr] (onnx) -- (ppq);
-\draw[arr] (ppq) -- (patch);
-\draw[arr] (patch) -- (flash);
-\draw[arr] (flash) -- (run);
-\draw[arr] (run) -- (test);
-\draw[arr] (test) -- (lock);
-\end{tikzpicture}
+\includegraphics{drawio/chuoi_quant}
 \caption{Chuỗi đưa một mô hình từ PyTorch lên chip, hàng trên chạy trên máy tính.}
 \label{fig:chuoi_quant}
 \end{figure}
@@ -724,20 +604,7 @@ Hình~\ref{fig:mqtt}. Đồ án dùng bản 3.1.1 với các cơ chế ở Bản
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  box/.style={draw, align=center, text width=26mm, minimum height=24mm, inner sep=2pt},
-  lab/.style={font=\scriptsize, align=center},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (k) {Máy chấm công\\ESP32-S3};
-\node[box, right=33mm of k] (b) {Broker EMQX\\cổng 8883, TLS};
-\node[box, right=33mm of b] (a) {Backend\\NestJS};
-\draw[arr] ([yshift=6mm]k.east) -- node[lab, above] {\texttt{up/}: lượt chấm,\\nhịp sống, Last Will} ([yshift=6mm]b.west);
-\draw[arr] ([yshift=-6mm]b.west) -- node[lab, below] {\texttt{down/}: lệnh,\\danh sách, OTA} ([yshift=-6mm]k.east);
-\draw[arr] ([yshift=8mm]b.east) -- node[lab, above] {bản tin \texttt{up/}} ([yshift=8mm]a.west);
-\draw[arr] ([yshift=0mm]a.west) -- node[lab, above] {bản tin \texttt{down/}} ([yshift=0mm]b.east);
-\draw[arr] ([yshift=-8mm]b.east) -- node[lab, below] {HTTP: kiểm JWT\\khi máy nối vào} ([yshift=-8mm]a.west);
-\end{tikzpicture}
+\includegraphics{drawio/mqtt}
 \caption{Đường bản tin giữa máy chấm công, broker và backend.}
 \label{fig:mqtt}
 \end{figure}
@@ -883,23 +750,7 @@ vài hôm.
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=7mm and 5mm,
-  box/.style={draw, align=center, text width=31mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (p) {Lượt chấm\\từ máy chấm công};
-\node[box, right=of p] (d) {Ngày công\\mỗi người mỗi ngày};
-\node[box, right=of d] (r) {Lượt chạy\\của kỳ lương};
-\node[box, right=of r] (s) {Phiếu lương\\sau khi chốt kỳ};
-\node[box, above=of d] (i) {Ca làm, ngày lễ,\\đơn nghỉ, đơn làm thêm};
-\node[box, above=of r] (c) {Mức lương, chính sách\\theo ngày hiệu lực};
-\draw[arr] (p) -- (d);
-\draw[arr] (d) -- (r);
-\draw[arr] (r) -- (s);
-\draw[arr] (i) -- (d);
-\draw[arr] (c) -- (r);
-\end{tikzpicture}
+\includegraphics{drawio/chuoi_luong}
 \caption{Chuỗi từ lượt chấm tới phiếu lương.}
 \label{fig:chuoi_luong}
 \end{figure}

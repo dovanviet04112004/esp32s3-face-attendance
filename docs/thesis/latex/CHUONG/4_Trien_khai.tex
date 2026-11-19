@@ -334,27 +334,7 @@ cho AI, một nằm chờ trong hàng đợi, một cho \texttt{cam} đang vẽ,
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=9mm and 14mm,
-  box/.style={draw, align=center, text width=24mm, minimum height=11mm, inner sep=2pt},
-  lab/.style={font=\scriptsize, align=center},
-  arr/.style={-{Latex[length=2mm]}}]
-\node[box] (s) {OV5640};
-\node[box, right=of s] (b) {Bốn bộ đệm\\ở PSRAM};
-\node[box, right=of b] (c) {Task \texttt{cam},\\lõi 0};
-\node[box, right=of c] (p) {Panel ST7796S};
-\node[box, below=of c] (a) {Task \texttt{ai},\\lõi 1};
-\node[box, right=of a] (t) {Tensor vào của\\từng mô hình};
-\node[box, left=of a] (r) {Task \texttt{attend}};
-\draw[arr] (s) -- node[lab, above] {DMA} (b);
-\draw[arr] (b) -- (c);
-\draw[arr] (c) -- node[lab, above] {SPI} (p);
-\draw[arr] (c) -- node[lab, right] {\texttt{q\_frame\_ai}, con trỏ} (a);
-\draw[arr] (b.south east) -- node[lab, sloped, below] {đọc tại chỗ} (a.north west);
-\draw[arr] (a) -- node[lab, below] {cắt,\\thu nhỏ} (t);
-\draw[arr] (a) -- node[lab, below] {\texttt{q\_result}} (r);
-\end{tikzpicture}
+\includegraphics{drawio/duong_khung}
 \caption{Đường đi của một khung trong firmware.}
 \label{fig:duong_khung}
 \end{figure}
@@ -465,36 +445,7 @@ Hình~\ref{fig:mot_ngay} là chuỗi xử lý một ngày công, từ lúc máy 
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\scriptsize,
-  node distance=4mm and 4.5mm,
-  box/.style={draw, align=center, text width=22mm, minimum height=15mm, inner sep=1.5pt},
-  note/.style={draw, rounded corners=1.5mm, align=center, text width=22mm, minimum height=11mm, inner sep=1.5pt},
-  when/.style={font=\scriptsize\bfseries, above=0.5mm},
-  arr/.style={-{Latex[length=1.8mm]}}]
-\node[box] (k) {Máy ghi lượt xuống flash, gửi khi có mạng};
-\node[box, right=of k] (r) {Máy chủ nhận: bỏ, lưu có nghi vấn, giữ chờ duyệt, hoặc tính};
-\node[box, right=of r] (b) {Dựng ngày hôm qua: lượt đầu, lượt cuối, ca, ngày lễ, đơn};
-\node[box, right=of b] (d) {Một dòng ngày công cho mỗi người};
-\node[box, right=of d] (p) {Lượt tính lương đọc ngày công của kỳ};
-\node[when] at (k.north) {Trong ngày};
-\node[when] at (r.north) {Khi lượt tới};
-\node[when] at (b.north) {00:30};
-\node[when] at (p.north) {Khi chạy lương};
-\node[note, below=9mm of r] (rb) {Lượt của ngày đã qua: dựng lại ngày đó};
-\node[note, below=9mm of d] (fx) {Đơn duyệt muộn, giải trình, sửa tay};
-\node[note, below=9mm of b] (ex) {Mở việc: vắng, muộn, về sớm, thiếu lượt};
-\node[note, below=4mm of ex] (ps) {08:30 báo nhân viên; 5:00--11:00 tóm tắt cho quản lý};
-\draw[arr] (k) -- (r);
-\draw[arr] (r) -- (b);
-\draw[arr] (b) -- (d);
-\draw[arr] (d) -- (p);
-\draw[arr] (r) -- (rb);
-\draw[arr] (rb.north east) -- (b.south west);
-\draw[arr] (fx) -- (d);
-\draw[arr] (b) -- (ex);
-\draw[arr] (ex) -- (ps);
-\end{tikzpicture}
+\includegraphics{drawio/mot_ngay}
 \caption{Chuỗi xử lý một ngày công.}
 \label{fig:mot_ngay}
 \end{figure}
@@ -670,26 +621,7 @@ trong khi cả stack lúc chạy chỉ khoảng 390~MB. Khóa SSH của GitHub b
 
 \begin{figure}[!htb]
 \centering
-\begin{tikzpicture}[
-  font=\footnotesize,
-  node distance=6mm and 5mm,
-  box/.style={draw, align=center, text width=28mm, minimum height=11mm, inner sep=2pt},
-  arr/.style={-{Latex[length=2mm]}},
-  lab/.style={font=\scriptsize, align=center}]
-\node[box] (p) {Push lên\\\texttt{main}};
-\node[box, right=of p] (t) {Job \texttt{test}};
-\node[box, right=of t] (i) {Job \texttt{image}};
-\node[box, right=of i] (s) {Job \texttt{ship}:\\\texttt{deploy.sh}};
-\node[box, below=of s] (h) {Chờ \texttt{/health}\\tối đa 120~s};
-\node[box, left=12mm of h] (d) {Ghi \texttt{.deployed},\\dọn ảnh cũ};
-\node[box, below=of h] (r) {Lùi về sha\\ở \texttt{.deployed}};
-\draw[arr] (p) -- (t);
-\draw[arr] (t) -- (i);
-\draw[arr] (i) -- (s);
-\draw[arr] (s) -- (h);
-\draw[arr] (h) -- node[lab, above] {200} (d);
-\draw[arr] (h) -- node[lab, right] {không đạt} (r);
-\end{tikzpicture}
+\includegraphics{drawio/cd}
 \caption{Đường triển khai backend lên VPS.}
 \label{fig:cd}
 \end{figure}
