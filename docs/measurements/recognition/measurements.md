@@ -450,3 +450,53 @@ Giới hạn:
   điểm của chính mẫu mình, nên chịu ít hơn bảng trên. Tỉ lệ ấy chưa đo.
 
 Tái lập: `make data-fetch ARGS=lfw_pairs`, rồi `make recog-far TOP=60` để in đủ 46 cặp.
+
+### 8.3 Buổi chấm công giả lập trên LFW, 30 và 50 người — đo 19/11
+
+Cùng tệp `int8/qat/recognition.espdl`, cùng mô phỏng ESP-PPQ và 7.701 ảnh của §8.2. Đo bằng
+`make recog-session`. **Đây là giả lập trên ảnh LFW, không phải buổi đo trên kiosk.**
+
+Mỗi lần chọn: N người ngẫu nhiên trong 439 người có từ 4 ảnh trở lên. Mỗi người góp 3 ảnh làm mẫu
+như ba tư thế đăng ký, các ảnh còn lại là lượt chấm. Mọi ảnh của người không được chọn là một lượt
+người lạ đứng thử. Mỗi lượt là một khung, quyết như kiosk: cosine cao nhất trên mọi mẫu, qua ngưỡng
+thì nhận chủ của mẫu đó. Lặp 200 lần chọn (seed 0–199).
+
+**Một buổi mẫu (lần chọn 0)**
+
+| Người đăng ký | Ngưỡng | Nhận đúng | Từ chối | Nhận nhầm người | Người lạ lọt |
+|---:|---:|---:|---:|---:|---:|
+| 30 | 0,40 | 66/66 | 0/66 | 0/66 | 4/7.545 |
+| 30 | **0,45** | **64/66** | **2/66** | **0/66** | **1/7.545** |
+| 30 | 0,50 | 63/66 | 3/66 | 0/66 | 1/7.545 |
+| 50 | 0,40 | 117/118 | 1/118 | 0/118 | 6/7.433 |
+| 50 | **0,45** | **115/118** | **3/118** | **0/118** | **0/7.433** |
+| 50 | 0,50 | 113/118 | 5/118 | 0/118 | 0/7.433 |
+
+**Qua 200 lần chọn** (trung bình, [thấp nhất–cao nhất])
+
+| Người đăng ký | Ngưỡng | Nhận đúng | Từ chối | Nhận nhầm | Người lạ lọt mỗi buổi |
+|---:|---:|---:|---:|---:|---:|
+| 30 (75 lượt, 7.536 người lạ) | 0,40 | 0,9951 [0,9524–1] | 0,0049 [0–0,0476] | 0 | 2,92 [0–9] |
+| 30 | **0,45** | **0,9868 [0,9275–1]** | **0,0132 [0–0,0725]** | **0** | **0,48 [0–2]** |
+| 30 | 0,50 | 0,9689 [0,8750–1] | 0,0311 [0–0,1250] | 0 | 0,23 [0–2] |
+| 50 (127 lượt, 7.424 người lạ) | 0,40 | 0,9952 [0,9737–1] | 0,0048 [0–0,0263] | 0 | 4,62 [0–13] |
+| 50 | **0,45** | **0,9867 [0,9495–1]** | **0,0133 [0–0,0505]** | **0** | **0,64 [0–3]** |
+| 50 | 0,50 | 0,9709 [0,8947–1] | 0,0291 [0–0,1053] | 0 | 0,33 [0–2] |
+
+- Ở 0,45, người lạ lọt khoảng 6,4·10⁻⁵ mỗi lượt với 30 người và 8,6·10⁻⁵ với 50 người. Cùng cỡ
+  với phép tính của §8.2: 3N mẫu × 1,55·10⁻⁶ mỗi phép so ra 1,4·10⁻⁴ và 2,3·10⁻⁴ mỗi lượt, một
+  khung. Giả lập thấp hơn vì 3 mẫu của một người không độc lập nhau, và một số cặp lọt của §8.2 là
+  lỗi nhãn.
+- Không lần chọn nào nhận nhầm người đã đăng ký thành người khác, ở cả ba ngưỡng.
+
+Giới hạn:
+
+- Ảnh LFW là ảnh báo chí gần chính diện, mẫu và lượt chấm là các ảnh chụp ở những lúc khác nhau,
+  không phải khung OV5640 liên tiếp. FAR, FRR trên kiosk vẫn là E8-T12 🔬.
+- Một khung mỗi lượt. Kiosk thử tối đa 2 khung (`kUnknownTries`), nên từ chối ít hơn và người lạ
+  có tới hai cơ hội.
+- LFW chỉ đủ 1–nhiều lượt cho mỗi người (75 lượt cho 30 người), không phải 10 lượt mỗi người.
+- Các lần chọn dùng chung kho người lạ, nên khoảng dao động không phải khoảng tin cậy.
+- Như §8.2, danh tính trùng giữa MS1M và LFW chưa được kiểm.
+
+Tái lập: `make data-fetch ARGS=lfw_pairs`, rồi `make recog-session` (`PEOPLE=30 50`, `DRAWS=200`).
