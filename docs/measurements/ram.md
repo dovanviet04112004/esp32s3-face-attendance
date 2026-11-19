@@ -529,3 +529,19 @@ Heartbeat tới được server tức là phiên MQTT/TLS sống suốt lượt 
 Tái lập: `make flash PROFILE=bench MONITOR= PORT=/dev/ttyACM0`, đợi ít nhất 10 phút, rồi đọc
 `heapMinFreeBytes` và `psramFreeBytes` của dòng `Device` trên server (chỉ đọc).
 
+
+## 14. Cỡ ảnh firmware theo profile — 19/11, firmware 0.9.13
+
+Cả ba dòng dựng từ cùng mã firmware, tức trạng thái sau commit `46de46e6`. Khe ứng dụng `ota_0`, `ota_1` rộng 0x2C0000
+(2.883.584 B).
+
+| Profile | Lệnh | Ảnh `face_attendance.bin` | Còn trống trong khe |
+|---|---|---:|---:|
+| `prod` | `make fw-prod` | 2.324.432 B (0x2377D0) | 559.152 B (19 %) |
+| `bench` | `make fw-bench` | 2.513.360 B (0x2659D0) | 370.224 B (13 %) |
+| `ci` | job `firmware` của CI | 2.548.763 B | 334.821 B (12 %) |
+
+- `prod` nhỏ hơn `bench` 188.928 B vì log chỉ còn mức cảnh báo và không có console.
+- Ảnh `prod` dựng ngày 22/10 nặng 2.321.952 B; phần lớn hơn 2.480 B là mã thêm vào từ đó tới 0.9.13.
+
+Tái lập: `make fw-prod` rồi `stat -c %s firmware/build_prod/face_attendance.bin`.
