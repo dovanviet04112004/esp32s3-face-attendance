@@ -19,6 +19,7 @@ from facepipe.tasks.recognition.data import (
     normalize_batch,
     read_identities,
 )
+from facepipe.tasks.recognition.eval import kiosk_session
 from facepipe.tasks.recognition.losses import (
     ArcFaceLoss,
 )
@@ -214,3 +215,20 @@ def test_decoding_returns_the_declared_size() -> None:
     image = decode(face_bytes(30, size=64), size=INPUT_SIZE)
     assert image.shape == (INPUT_SIZE, INPUT_SIZE, 3)
     assert image.dtype == np.uint8
+
+
+def test_a_kiosk_session_counts_each_punch_and_each_stranger_once() -> None:
+    owner = np.repeat(np.arange(8), 5)
+    jitter = 0.01 * np.random.default_rng(0).standard_normal((owner.size, 8))
+    vectors = np.eye(8)[owner] + jitter
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+    counts = kiosk_session(vectors, owner, people=3, floors=(0.5, 1.5), seed=1)
+    assert counts[0].tolist() == [6, 0, 0, 6, 0, 25]
+    assert counts[1].tolist() == [0, 6, 0, 6, 0, 25]
+
+
+def test_a_kiosk_session_counts_a_punch_nearer_someone_else_as_taken_for_another() -> None:
+    owner = np.repeat(np.arange(2), 4)
+    vectors = np.vstack([np.eye(4), np.full((4, 4), 0.5)])
+    counts = kiosk_session(vectors, owner, people=2, floors=(0.4,), seed=0)
+    assert counts[0].tolist() == [1, 0, 1, 2, 0, 0]

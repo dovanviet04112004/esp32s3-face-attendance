@@ -143,6 +143,50 @@ def evaluate_pairs(scores: np.ndarray, issame: np.ndarray) -> dict[str, float]:
     return result
 
 
+SESSION_TEMPLATES = 3  # enrolment keeps three poses per person
+
+
+def kiosk_session(
+    vectors: np.ndarray, owner: np.ndarray, people: int, floors: tuple[float, ...], seed: int
+) -> np.ndarray:
+    """One simulated kiosk session: `people` enrolled from three images each, the rest punch.
+
+    Each punch is one unit vector matched as the kiosk matches, best cosine over every template;
+    every image of a person left out is a stranger at the door. One row per floor: right,
+    rejected, taken for another, punches, strangers let in, strangers.
+    """
+    rng = np.random.default_rng(seed)
+    eligible = np.flatnonzero(np.bincount(owner) > SESSION_TEMPLATES)
+    if eligible.size < people:
+        raise ValueError(f"only {eligible.size} people have a punch beyond their templates")
+    chosen = rng.choice(eligible, size=people, replace=False)
+    templates, punches = [], []
+    for person in chosen:
+        own = rng.permutation(np.flatnonzero(owner == person))
+        templates.append(own[:SESSION_TEMPLATES])
+        punches.append(own[SESSION_TEMPLATES:])
+    gallery = np.concatenate(templates)
+    punch = np.concatenate(punches)
+    strangers = np.flatnonzero(~np.isin(owner, chosen))
+    punch_score = vectors[punch] @ vectors[gallery].T
+    best = punch_score.max(axis=1)
+    taken = owner[gallery][punch_score.argmax(axis=1)]
+    stranger_best = (vectors[strangers] @ vectors[gallery].T).max(axis=1)
+    counts = np.zeros((len(floors), 6), dtype=np.int64)
+    for row, floor in enumerate(floors):
+        passed = best >= floor
+        right = passed & (taken == owner[punch])
+        counts[row] = (
+            right.sum(),
+            (~passed).sum(),
+            (passed & ~right).sum(),
+            punch.size,
+            (stranger_best >= floor).sum(),
+            strangers.size,
+        )
+    return counts
+
+
 def evaluate_benchmark(
     model: torch.nn.Module,
     path: Path,

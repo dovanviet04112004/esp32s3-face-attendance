@@ -264,14 +264,11 @@ def lfw_names(path: Path) -> tuple[list[tuple[str, int]], np.ndarray]:
     return slots, np.array(same)
 
 
-def far_table(runner, cfg, top: int) -> str:
-    """How often each match_min floor takes one person for another, over every pair LFW names.
+def lfw_vectors(runner, cfg) -> tuple[list[tuple[str, int]], np.ndarray, np.ndarray]:
+    """Each distinct image of lfw.bin, its unflipped unit embedding, and whose it is.
 
-    Each distinct image of lfw.bin is scored once against every other, unflipped, and pairs.txt
-    says whose it is (KEHOACH 1.2). The bound is one-sided Clopper-Pearson at 95%.
+    pairs.txt names the images (KEHOACH 1.2); a slot it names twice must hold one image.
     """
-    from scipy.stats import beta
-
     from facepipe import ML_ROOT
     from facepipe.compress.quant.ladder import data_path
     from facepipe.tasks.recognition.eval import read_bin
@@ -289,7 +286,19 @@ def far_table(runner, cfg, top: int) -> str:
     vectors = embeddings(runner, [encoded[first[key]] for key in keys], int(cfg.model.input_hw[0]))
     vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-10)
     people = {name: index for index, name in enumerate(sorted({name for name, _ in keys}))}
-    owner = np.array([people[name] for name, _ in keys])
+    return keys, vectors, np.array([people[name] for name, _ in keys])
+
+
+def far_table(runner, cfg, top: int) -> str:
+    """How often each match_min floor takes one person for another, over every pair LFW names.
+
+    Each distinct image of lfw.bin is scored once against every other. The bound is one-sided
+    Clopper-Pearson at 95%.
+    """
+    from scipy.stats import beta
+
+    keys, vectors, owner = lfw_vectors(runner, cfg)
+    people = np.unique(owner)
     columns = np.arange(len(keys))
     over = np.zeros(len(FLOORS), dtype=np.int64)
     total, moments, highest, kin = 0, np.zeros(2), [], []
@@ -327,6 +336,49 @@ def far_table(runner, cfg, top: int) -> str:
             f"{floor:.2f}   {count:14d}  {count / total:14.2e}  {bound:13.2e}"
             f"  {(kept >= floor).mean():.3f}"
         )
+    return "\n".join(lines)
+
+
+SESSION_FLOORS = (0.40, 0.45, 0.50)
+
+
+def session_table(runner, cfg, sizes: list[int], draws: int) -> str:
+    """Kiosk sessions simulated on LFW through the locked recog, for each number of people.
+
+    One frame per punch, so a kiosk that tries twice rejects fewer; draw 0 is shown whole as
+    one session, and every draw feeds the mean and the range.
+    """
+    from facepipe.tasks.recognition.eval import kiosk_session
+
+    _, vectors, owner = lfw_vectors(runner, cfg)
+    lines = ["floor  right  rejected  taken for another  strangers let in"]
+    for people in sizes:
+        runs = np.stack(
+            [kiosk_session(vectors, owner, people, SESSION_FLOORS, seed) for seed in range(draws)]
+        )
+        first = runs[0]
+        lines.append(f"{people} enrolled, draw 0: {first[0, 3]} punches, {first[0, 5]} strangers")
+        for row, floor in enumerate(SESSION_FLOORS):
+            right, rejected, wrong, punches, inside, strangers = first[row]
+            lines.append(
+                f"{floor:.2f}   {right}/{punches}  {rejected}/{punches}  {wrong}/{punches}"
+                f"  {inside}/{strangers}"
+            )
+        lines.append(
+            f"{people} enrolled, {draws} draws: punches {runs[:, 0, 3].mean():.0f} a draw,"
+            f" strangers {runs[:, 0, 5].mean():.0f}"
+        )
+        for row, floor in enumerate(SESSION_FLOORS):
+            rate = runs[:, row, :3] / runs[:, row, 3:4]
+            let_in = runs[:, row, 4]
+            lines.append(
+                f"{floor:.2f}   "
+                + "  ".join(
+                    f"{rate[:, k].mean():.4f} [{rate[:, k].min():.4f}-{rate[:, k].max():.4f}]"
+                    for k in range(3)
+                )
+                + f"  {let_in.mean():.2f} [{let_in.min()}-{let_in.max()}]"
+            )
     return "\n".join(lines)
 
 
@@ -407,6 +459,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--top", type=int, default=8, help="--floors, --far: how many highest strangers to name"
     )
+    parser.add_argument(
+        "--session",
+        type=int,
+        nargs="+",
+        help="recognition: simulate a kiosk session on LFW with this many people enrolled",
+    )
+    parser.add_argument("--draws", type=int, default=200, help="--session: random picks of people")
     parser.add_argument("--runtime", choices=("tflite", "onnx", "espdl"), default="tflite")
     parser.add_argument("--split", default=None, help="anti-spoof: score this split")
     parser.add_argument(
@@ -433,6 +492,13 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("--far measures the recognition floor; this run is " + branch)
         model = args.model or locked_espdl(run)
         print(f"{model}\n{far_table(espdl_runner(model, run), cfg, args.top)}")
+        return 0
+    if args.session:
+        if branch != "recognition":
+            raise SystemExit("--session simulates the recognition branch; this run is " + branch)
+        model = args.model or locked_espdl(run)
+        table = session_table(espdl_runner(model, run), cfg, args.session, args.draws)
+        print(f"{model}\n{table}")
         return 0
     if args.floors:
         if branch not in ("recognition", "detection"):
