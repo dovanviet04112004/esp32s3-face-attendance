@@ -2625,6 +2625,10 @@ esp32s3-face-attendance/
     │                 └ {antispoof,detection,recognition,rppg}/   # số theo nhánh; rppg: vì sao không dùng (§3)
     └── thesis/                                  # bản báo cáo ĐATN
         └── latex/                               # nguồn LaTeX của quyển, PDF dựng ở build/ ❌ gitignore
+            └── Hinhve/                          # ảnh chụp, ảnh màn hình, sơ đồ
+                └── drawio/                      # nguồn duy nhất của mọi sơ đồ: <nhãn>.drawio cho \label{fig:<nhãn>},
+                                                 #   cạnh nó <nhãn>.pdf do make thesis-figs xuất, commit để quyển
+                                                 #   dựng được ở máy không có draw.io
 ```
 
 | File gốc | Vai trò |
