@@ -273,8 +273,8 @@ mô hình học vết chụp lại như moiré và vân giấy. Ở cự ly làm
 không phân giải được lưới điểm ảnh của màn hình, nên ảnh thẻ trên điện thoại hiện
 ra mịn và sáng đều, và mô hình đọc thành ảnh nguyên bản.
 
-Đồ án bỏ các bản tự huấn luyện và nhập nguyên trọng số V1SE, đọc vùng cắt rộng
-2,7 lần hộp mặt đúng như lúc trọng số được huấn luyện. Vùng rộng chứa viền máy,
+Đồ án vì thế khởi tạo nhánh này từ trọng số tiền huấn luyện của V1SE và cho mô hình đọc vùng
+cắt rộng 2,7 lần hộp mặt, đúng như lúc trọng số được huấn luyện. Vùng rộng chứa viền máy,
 tay cầm và mép màn hình, và tín hiệu nằm ở đó: bản MiniFASNetV2 cùng kho trọng số,
 đo trên 85 khung OV5640, đạt AUC 1,0000 ở vùng 2,7$\times$ và 0,9241 ở vùng sát
 mặt 1,0$\times$.
@@ -312,12 +312,11 @@ chiều~\cite{ecanet}. Hình~\ref{fig:se_eca} đặt hai khối cạnh nhau.
 \label{fig:se_eca}
 \end{figure}
 
-Trọng số nhập từ FRBench được huấn luyện trên MS-Celeb-1M~\cite{ms1m} bằng hàm mất
-mát ArcFace, công thức~\eqref{eq:arcface}~\cite{arcface}. Trong đó $\theta_j$ là góc
+Điểm khởi tạo của nhánh này là trọng số tiền huấn luyện của FRBench, học trên
+MS-Celeb-1M~\cite{ms1m} bằng hàm mất mát ArcFace, công thức~\eqref{eq:arcface}~\cite{arcface}. Trong đó $\theta_j$ là góc
 giữa vector đặc trưng và tâm lớp $j$, $y$ là lớp đúng, $s$ là hệ số tỉ lệ và $m$
 là biên góc; bài báo gốc dùng $s = 64$, $m = 0{,}5$. Cộng $m$ vào góc của lớp đúng
-buộc mạng đẩy các lớp xa nhau trên mặt cầu. Lúc chạy, máy bỏ lớp phân loại và chỉ so góc giữa hai vector. Bản nhập vượt mọi bản tự huấn luyện sau
-lượng tử hóa: TAR tại FAR $10^{-3}$ trên AgeDB-30~\cite{agedb} đạt 0,841 so với
+buộc mạng đẩy các lớp xa nhau trên mặt cầu. Lúc chạy, máy bỏ lớp phân loại và chỉ so góc giữa hai vector. Sau lượng tử hóa, bản khởi tạo từ trọng số này vượt mọi bản đồ án học từ đầu: TAR tại FAR $10^{-3}$ trên AgeDB-30~\cite{agedb} đạt 0,841 so với
 0,599. Đổi lại, MS-Celeb-1M chỉ dành cho nghiên cứu, nên muốn thương mại hóa phải
 huấn luyện lại trên dữ liệu khác.
 \begin{equation}
@@ -504,10 +503,10 @@ Chương~\ref{chapter:Implementation}, số đo ở Chương~\ref{chapter:Experi
 \label{section:2.4.4}
 
 Hai hướng nén khác đã được xét và không đi vào bản chạy thật. Chưng cất tri thức
-dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn} trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không có gì để chưng cất và đồ án không dùng hướng này. Khi đã có trọng số MiniFASNet nhập, một
-bản trò rộng 32 kênh chưng cất từ đó nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi ảnh in khi thử trực tiếp; bản này chỉ được giữ làm phương án nhẹ.
+dạy mạng nhỏ bắt chước đầu ra của mạng lớn~\cite{hinton2015}. Ở chống giả mạo, mạng thầy CDCN++~\cite{cdcn} trên cùng tập kiểm tra cho ACER 0,2087, tệ hơn 0,1184 của mạng trò, nên không có gì để chưng cất và đồ án không dùng hướng này. Từ trọng số MiniFASNet tiền huấn luyện, đồ án chưng cất một
+bản trò rộng 32 kênh, nhanh hơn 347~ms trên TFLM, nhưng cho qua mọi ảnh in khi thử trực tiếp; bản này chỉ được giữ làm phương án nhẹ.
 
-Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Vi điều khiển không có kernel cho ma trận thưa, và chỉ cắt theo kênh mới giảm được thời gian. Trọng số nhập có bộ kênh cố định, không cắt được nếu
+Cắt tỉa loại bớt kênh hoặc trọng số ít giá trị~\cite{liu2017}. Vi điều khiển không có kernel cho ma trận thưa, và chỉ cắt theo kênh mới giảm được thời gian. Trọng số tiền huấn luyện có bộ kênh cố định, không cắt được nếu
 không huấn luyện lại, nên đồ án không dùng bước này.
 
 \section{Nền tảng nhúng và truyền thông IoT}

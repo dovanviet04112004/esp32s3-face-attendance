@@ -118,33 +118,41 @@ Loa rè, USB của board rớt 3 lần khi phát to & Bộ khuếch đại lấy
 \subsection{Nguồn của ba mô hình}
 \label{section:4.3.1}
 
-Chỉ nhánh phát hiện do đồ án tự huấn luyện. Hai nhánh còn lại nhập trọng số công khai, vì
-các bản tự huấn luyện đều thua sau lượng tử hóa hoặc thua trên ảnh OV5640
-(Mục~\ref{section:2.3}). Bảng~\ref{tab:nguon_mo_hinh} ghi rõ nguồn và giấy phép. Chuỗi này có
-mắt xích chỉ dùng cho nghiên cứu, nên muốn thương mại hóa phải huấn luyện lại nhánh nhận
-diện trên dữ liệu khác.
+Đồ án huấn luyện cả ba nhánh trên dữ liệu công khai và chọn bản đưa lên máy bằng thước đo của
+chính máy. Nhánh phát hiện chạy bản học từ đầu. Ở hai nhánh còn lại, bản học từ đầu thua bản khởi
+tạo từ trọng số tiền huấn luyện trên cùng thước. Các bản chống giả mạo học trên
+CelebA-Spoof~\cite{celebaspoof}, có bản trộn thêm LCC-FASD~\cite{lccfasd} và
+SynthASpoof~\cite{synthaspoof}, và bản từng nạp lên board chỉ đạt AUC 0,6473 trên khung OV5640
+(Mục~\ref{section:5.8.3}). Bản nhận diện học trên MS1MV3, bản làm sạch của
+MS-Celeb-1M~\cite{ms1m}, đạt TAR 0,599 tại FAR $10^{-3}$ trên AgeDB-30 sau lượng tử hóa, so với
+0,841 của bản khởi tạo từ trọng số FRBench. Hai nhánh này vì vậy xuất phát từ trọng số tiền huấn
+luyện. Nhánh nhận diện được huấn luyện tiếp bằng QAT 2.000 bước trên đồ thị đã mô phỏng lượng tử,
+còn nhánh chống giả mạo được chuyển về đúng đường ảnh của chip rồi qua thang lượng tử như hai nhánh
+kia (Mục~\ref{section:4.3.3}, Mục~\ref{section:4.3.4}). Bảng~\ref{tab:nguon_mo_hinh} ghi dữ liệu,
+điểm khởi tạo và giấy phép của từng nhánh. CelebA-Spoof, MS1MV3 và trọng số FRBench chỉ dùng cho
+nghiên cứu, nên muốn thương mại hóa phải huấn luyện lại trên dữ liệu có giấy phép thương mại.
 
 \begin{table}[!htb]
 \centering
 \small
-\caption{Nguồn trọng số và giấy phép của ba mô hình.}
+\caption{Dữ liệu, điểm khởi tạo và giấy phép của ba mô hình.}
 \label{tab:nguon_mo_hinh}
-\begin{tabular}{|L{2.5cm}|L{3.8cm}|L{3.6cm}|L{3.3cm}|}
+\begin{tabular}{|L{2.2cm}|L{4.1cm}|L{4.4cm}|L{2.4cm}|}
 \hline
-\textbf{Nhánh} & \textbf{Trọng số} & \textbf{Dữ liệu huấn luyện} & \textbf{Giấy phép} \\
+\textbf{Nhánh} & \textbf{Bản học từ đầu} & \textbf{Bản chạy trên máy} & \textbf{Giấy phép} \\
 \hline
-Phát hiện & Tự huấn luyện YuNet~\cite{yunet2023}, 300 epoch & WIDER FACE~\cite{wider}, 12.880 ảnh, giữ lại 1.262 ảnh để đo & Mã nguồn MIT \\
+Phát hiện & YuNet~\cite{yunet2023}, 300 epoch trên WIDER FACE~\cite{wider}: 12.880 ảnh, giữ 1.262 ảnh để đo & Chính bản học từ đầu & Mã nguồn MIT \\
 \hline
-Chống giả mạo & Nhập MiniFASNetV1SE của Minivision~\cite{minifas} & Dữ liệu riêng của Minivision & Apache-2.0 \\
+Chống giả mạo & MiniFASNet trên CelebA-Spoof, có bản thêm LCC-FASD, SynthASpoof; AUC 0,6473 trên khung OV5640 & Khởi tạo từ MiniFASNetV1SE của Minivision~\cite{minifas}, chuyển về đường ảnh của chip, lượng tử hàng \texttt{int16\_top1} & Apache-2.0 \\
 \hline
-Nhận diện & Nhập MobileFaceNet-ECA của FRBench~\cite{frbench} & MS-Celeb-1M~\cite{ms1m} & Mã nguồn MIT, trọng số chỉ dùng nghiên cứu \\
+Nhận diện & MobileFaceNet trên MS1MV3; TAR 0,599 trên AgeDB-30 sau lượng tử hóa & Khởi tạo từ MobileFaceNet-ECA của FRBench~\cite{frbench}, học trên MS-Celeb-1M; huấn luyện tiếp bằng QAT 2.000 bước & Mã nguồn MIT, trọng số chỉ dùng nghiên cứu \\
 \hline
 \end{tabular}
 \end{table}
 
 Dữ liệu đi qua ba tầng: thư mục \texttt{raw/} chỉ đọc, \texttt{interim/} đã chuẩn hóa, và tệp
 chia tập ghi kèm seed và sha256. Mỗi lần huấn luyện ghi vào một thư mục mang ngày, mã commit
-và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên mỗi kết quả truy được về đúng lần huấn luyện. Script nhập trọng số viết ra thư mục cùng cấu trúc đó, để bước lượng tử hóa không phải phân biệt mô hình tự huấn luyện hay nhập.
+và băm cấu hình, kèm cấu hình đã phân giải, \texttt{split.lock} và \texttt{env.txt}, nên mỗi kết quả truy được về đúng lần huấn luyện. Bước chuyển trọng số tiền huấn luyện cũng viết ra thư mục cùng cấu trúc đó, để bước lượng tử hóa không phải phân biệt mô hình học từ đầu hay khởi tạo từ trọng số có sẵn.
 
 \subsection{Huấn luyện YuNet}
 \label{section:4.3.2}
@@ -160,12 +168,12 @@ chứ không bỏ khỏi tập dữ liệu, để cùng một mặt vẫn đư�
 ba tầng ở các mốc 16 và 48~px, được 61,1\%, 33,6\% và 5,3\% số mặt. Bản FP32 chọn theo AP đạt
 0,9414 trên mặt từ 38~px, qua mốc 0,90 của NF3.
 
-\subsection{Nhập trọng số}
+\subsection{Chuyển trọng số tiền huấn luyện về chip}
 \label{section:4.3.3}
 
 Với MiniFASNet, đồ án dựng lại kiến trúc rồi gấp các khác biệt tiền xử lý vào
 trọng số, để code trên chip không phải biết gì về kho gốc. Kho gốc đọc ảnh BGR thang 0--255 nên
-bước nhập đảo trục kênh vào và nhân 255 vào tích chập đầu, rồi hoán vị đầu ra để lớp sống đứng ở
+bước chuyển đảo trục kênh vào và nhân 255 vào tích chập đầu, rồi hoán vị đầu ra để lớp sống đứng ở
 chỉ số 0. Nhờ vậy mô hình nhận ảnh RGB thang 0--1 đúng như đường tiền xử lý sẵn có.
 
 Trọng số MobileFaceNet-ECA được nạp bằng \texttt{load\_state\_dict}

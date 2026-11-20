@@ -1125,7 +1125,7 @@ nét bề mặt chỉ ra nguyên nhân: trong tập huấn luyện ảnh giả n
 phép nhân nên giữ nguyên tỉ số, và không hiệu chỉnh mù nhãn nào lật được dấu. Bão hòa màu của mặt thật cũng lệch 1,82 lần, 0,6556 trên máy và 0,3606 trong tập huấn
 luyện. Mô hình càng khớp tập huấn luyện càng học chặt quan hệ ngược dấu đó.
 
-Đồ án bỏ hướng huấn luyện tiếp và chọn trọng số công khai bằng cách chấm trên đúng đường ảnh của chip. Bảng~\ref{tab:mo_hinh_cong_khai} là kết quả với mô hình
+Đồ án dừng hướng học từ đầu và chọn điểm khởi tạo trong các bộ trọng số tiền huấn luyện công khai, bằng cách chấm chúng trên đúng đường ảnh của chip. Bảng~\ref{tab:mo_hinh_cong_khai} là kết quả với mô hình
 float trên 87 khung. Cột thật mất là số mặt thật bị loại khi chặn hết khung giả. Hai mô hình của Minivision giữ đủ 62 mặt thật ở vùng cắt 2,7 lần. Phần lớn mô hình huấn
 luyện trên CelebA-Spoof mất từ 6 tới 34 mặt. facenox giữ đủ ở vùng cắt 1,5 lần, nhưng nó có 108,9 triệu MAC, gấp 2,6 lần V1SE, và ở vùng cắt 2,7 lần của firmware mất
 5 mặt.
