@@ -641,11 +641,98 @@ mình ở lõi 1 và chỉ nhận khung mới nhất. Kết quả của nó, tí
 \label{fig:task}
 \end{figure}
 
-Bốn khóa \texttt{m\_facedb\_io}, \texttt{m\_facedb}, \texttt{m\_littlefs}, \texttt{m\_i2c}
+Bảng~\ref{tab:hang_doi} liệt kê các hàng đợi giữa các task, mũi tên chỉ từ bên gửi sang bên nhận. Hàng sâu nhất là
+\texttt{q\_roster}: 1.072 ô 576~B, tổng 617.472~B, lớn hơn cả 512~KB SRAM của chip, nên bộ đệm của nó nằm ở PSRAM.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các hàng đợi của firmware.}
+\label{tab:hang_doi}
+\begin{tabular}{|L{2.6cm}|L{2.6cm}|L{3.7cm}|L{4.1cm}|}
+\hline
+\textbf{Hàng đợi} & \textbf{Số ô $\times$ cỡ ô} & \textbf{Gửi $\rightarrow$ nhận} & \textbf{Vì sao} \\
+\hline
+\texttt{q\_frame\_ai} & $1\times4$~B & \texttt{cam} $\rightarrow$ \texttt{ai} & AI luôn nhận khung mới nhất, trễ không dồn \\
+\hline
+\texttt{q\_result} & $4\times156$~B & \texttt{ai} $\rightarrow$ \texttt{attend} & Tách suy luận khỏi nghiệp vụ \\
+\hline
+\texttt{q\_presence} & $2\times4$~B & \texttt{tof} $\rightarrow$ \texttt{attend} & Chỉ chở cạnh có người và hết người \\
+\hline
+\texttt{q\_audio} & $4\times4$~B & \texttt{attend}, \texttt{ui} $\rightarrow$ \texttt{audio} & Phát tiếng không chặn nghiệp vụ \\
+\hline
+\texttt{q\_uplink} & $16\times48$~B & \texttt{attend} $\rightarrow$ \texttt{sync} & Chỉ là lời nhắc, bản ghi đã nằm trên flash \\
+\hline
+\texttt{q\_cmd} & $4\times160$~B & task esp-mqtt $\rightarrow$ \texttt{sync} & Callback MQTT không được chặn, đầy thì rơi lệnh và
+  ghi log \\
+\hline
+\texttt{q\_ota} & $1\times1.856$~B & task esp-mqtt $\rightarrow$ \texttt{ota} & Mỗi lúc chỉ cài một ảnh \\
+\hline
+\texttt{q\_roster} & $1.072\times576$~B, ở PSRAM & task esp-mqtt, \texttt{ui}, \texttt{ota} $\rightarrow$ \texttt{sync} & Chứa
+  trọn một lượt đồng bộ lại, đầy thì bên gửi chờ tới 3~s \\
+\hline
+\texttt{q\_event} & $8\times88$~B & bảy task $\rightarrow$ \texttt{sync} & Bên phát sự kiện không đứng chờ PUBACK \\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:dong_bo} liệt kê các khóa, semaphore và ô chung. Bốn khóa \texttt{m\_facedb\_io}, \texttt{m\_facedb}, \texttt{m\_littlefs}, \texttt{m\_i2c}
 luôn lấy theo đúng thứ tự đó, và mọi lần chờ khóa đều có thời hạn. Ghi 576~KB bảng mẫu xuống
 flash mất 1,8--2,3~s, lâu hơn hạn 200~ms của lượt tra bảng. Giữ \texttt{m\_facedb} suốt phép
 ghi thì lượt tra hết hạn và mặt quen bị báo không nhận ra, nên phép ghi chạy dưới khóa riêng
 \texttt{m\_facedb\_io}. Ngắt chỉ gọi các hàm \texttt{FromISR} rồi nhường CPU.
+
+\begin{table}[!htb]
+\centering
+\small
+\caption{Các khóa, semaphore và ô chung của firmware.}
+\label{tab:dong_bo}
+\begin{tabular}{|L{3.3cm}|L{2.5cm}|L{3.1cm}|L{4.1cm}|}
+\hline
+\textbf{Đối tượng} & \textbf{Kiểu} & \textbf{Bên dùng} & \textbf{Vì sao} \\
+\hline
+\texttt{m\_facedb\_io} & Mutex, chờ 4~s, riêng \texttt{ai} chờ 200~ms & \texttt{sync}, \texttt{ui}, \texttt{ai} & Xếp hàng các
+  phép ghi bảng mẫu xuống flash \\
+\hline
+\texttt{m\_facedb} & Mutex, chờ 200~ms & \texttt{ai} tra bảng, bên ghi giữ ngắn & Bảng không bị sửa giữa lượt so khớp \\
+\hline
+\texttt{m\_littlefs} & Mutex, chờ 5~s & Mọi lời gọi \texttt{sys\_storage} & LittleFS không an toàn khi nhiều task cùng gọi \\
+\hline
+\texttt{m\_i2c} & Mutex, chờ 200~ms & Driver của bốn thiết bị I2C & GT911, VL53L1X, PCF8574, DS3231 chung một bus \\
+\hline
+\texttt{m\_door} & Mutex, chờ 50~ms & \texttt{attend}, \texttt{sync}, \texttt{esp\_timer} & Lệnh mở và hẹn giờ tự đóng cùng
+  sửa servo \\
+\hline
+\texttt{s\_send\_lock} & Mutex, chờ 5~s & Bên gửi MQTT & Mỗi lúc một lượt gửi QoS~1 chờ PUBACK \\
+\hline
+\texttt{s\_acked} & Semaphore nhị phân & Handler esp-mqtt $\rightarrow$ bên gửi & Báo PUBACK đã về \\
+\hline
+\texttt{s\_ready} & Semaphore nhị phân & Ngắt GPIO3 $\rightarrow$ \texttt{tof} & Mỗi lần đo xong đánh thức một lần \\
+\hline
+\texttt{s\_report} & Semaphore nhị phân & Ngắt GPIO14 $\rightarrow$ \texttt{touch} & GT911 có điểm chạm mới \\
+\hline
+\texttt{s\_published} & Semaphore nhị phân & \texttt{ui} $\rightarrow$ \texttt{cam} & Màn phủ kín chờ lớp phủ mới tối đa một
+  khung \\
+\hline
+\texttt{s\_bounce\_free} & Semaphore đếm, 2 suất & Callback \texttt{esp\_lcd} $\rightarrow$ \texttt{drv\_lcd} & Hai đệm bounce,
+  mỗi đệm rỗi một suất \\
+\hline
+\texttt{eg\_system} & Nhóm sự kiện, 10 bit & Mọi task $\rightarrow$ \texttt{ui}, \texttt{sync}, \texttt{ota} & Mười cờ: Wi-Fi,
+  MQTT, giờ, AI, có người, vé JWT \\
+\hline
+\texttt{s\_state} & Nhóm sự kiện & Handler Wi-Fi $\rightarrow$ \texttt{net} & \texttt{net\_wifi} ở tầng dưới không thấy
+  \texttt{eg\_system} \\
+\hline
+\texttt{s\_touch} & Biến nguyên tử, 4~B & \texttt{touch} $\rightarrow$ \texttt{ui} & Điểm chạm là mức, chỉ cần giá trị mới nhất \\
+\hline
+\texttt{s\_offer} & Spinlock và ô 44~B & \texttt{attend} $\rightarrow$ \texttt{ui} & Phán quyết dài hơn một từ máy, chép trọn
+  dưới khóa \\
+\hline
+Bảy ô \texttt{Mailbox} & Spinlock và số thứ tự & \texttt{attend}, \texttt{sync}, \texttt{ota} $\rightarrow$ \texttt{ui} & Mạng,
+  vé, hàng chờ gửi: giao diện chỉ cần bản mới nhất \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection{Máy trạng thái chấm công}
 \label{section:3.5.3}
@@ -860,7 +947,7 @@ lúc máy mất mạng sẽ không bao giờ tới, và khuôn mặt người đ
 Hình~\ref{fig:td_dang_ky} là trình tự đăng ký một khuôn mặt. Máy chỉ xóa cờ chưa báo của một mẫu khi broker trả PUBACK, nên mẫu chụp lúc
 mất mạng được gửi lại khi nối lại. Máy chủ giữ bản mã hóa và đẩy mẫu xuống các máy khác của người đó chạy cùng phiên bản mô hình; người đó không phải đứng chụp lại ở từng máy.
 
-\begin{figure}[!htb]
+\begin{figure}[!htbp]
 \centering
 \includegraphics{drawio/td_dang_ky}
 \caption{Trình tự đăng ký một khuôn mặt tại máy.}
@@ -873,7 +960,7 @@ của broker rồi đá phiên, theo đúng thứ tự đó. Phải đá phiên 
 Hình~\ref{fig:td_duyet_may} là trình tự đưa một máy mới vào hệ thống. Trước khi được duyệt, máy nhận 202 ở mỗi lần hỏi và vẫn chấm công,
 giữ lượt trong flash. Broker không tự kiểm JWT mà hỏi API ở mỗi lần nối, nên máy đã bị thu hồi không nối lại được.
 
-\begin{figure}[!htb]
+\begin{figure}[!htbp]
 \centering
 \includegraphics{drawio/td_duyet_may}
 \caption{Trình tự duyệt một máy chấm công mới.}
